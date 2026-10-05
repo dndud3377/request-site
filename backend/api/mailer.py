@@ -64,6 +64,8 @@
   (resolve_withdraw_completed_recipients 재사용) — 개인 수신자 1통 + 진행된 팀별로 각각
   별도 메일. 반드시 document.delete() 앞에서 호출해야 한다.
 - 후결자 제거(post_approver_removed, 2026-09 신설): 제거된 후결자 본인에게만 개인화 메일 1통.
+- 결재선 제외(route_member_removed, 2026-10 신설): 결재 경로 변경으로 PL/SA 에서 빠진 사람 본인에게만
+  개인화 메일 1통. 새로 추가된 PL/SA/RA 에게는 기존 단계 도착(stage_arrival) 메일을 그대로 쓴다.
 - Validation System 변경 / Partial Shot 변경: 상신자가 상신 후 값을 직접 고치는 기능이지만,
   둘 다 **메일을 보내지 않는다**(2026-09 정책) — 화면(결재 현황/상세보기)에서만 확인한다.
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
@@ -216,6 +218,12 @@ AGENT_LABEL = {
     'SA': '영업/기술지원 합의자',
 }
 
+# 결재선 제외 메일(route_member_removed)에서 "무엇에서 제외됐는지" 로 쓰는 지정 항목 이름
+ROUTE_MEMBER_LABEL = {
+    'PL': '검토자(PL)',
+    'SA': '영업/기술지원 합의자',
+}
+
 # (2026-08) 후결자 행 라벨을 웹 그리드와 맞춘다. (2026-09) 고정 후결자 라벨을 'R'에서
 # 'RFG 후결'로 변경 — 실제 R(담당자) 행과 라벨이 같아져 세로 목록인 메일 카드에 'R'이
 # 두 줄 나오던 문제가 이 변경으로 함께 해소된다(웹 그리드도 동시에 'RFG'→'RFG 후결'로 변경).
@@ -241,6 +249,7 @@ EVENT_STATUS_LABEL = {
     'pause_resumed': '결재 재개',
     'document_deleted': '삭제',
     'post_approver_removed': '후결자 제외',
+    'route_member_removed': '결재선 제외',
     'notify_rjo_completed': 'R/J/O 완료 통보',
 }
 
@@ -301,6 +310,8 @@ EVENT_THEME['pause_resumed'] = EVENT_THEME['stage_arrival']
 EVENT_THEME['document_deleted'] = EVENT_THEME['rejected']
 # 후결자 제외: 정보성 통보라 통보 계열(퍼플) 테마
 EVENT_THEME['post_approver_removed'] = EVENT_THEME['notify_submitted']
+# 결재선 제외(PL/SA): 후결자 제외와 같은 정보성 통보라 같은 테마
+EVENT_THEME['route_member_removed'] = EVENT_THEME['notify_submitted']
 # VOC 등록: 새 요청이 도착했다는 알림이라 결재 도착과 같은 블루 테마
 EVENT_THEME['voc_created'] = EVENT_THEME['stage_arrival']
 # VOC 답글: 논의가 진행됐다는 정보성 알림이라 통보 계열(퍼플) 테마
@@ -1223,6 +1234,11 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'{name_prefix}[후결자 제외] {document.title}'
         headline = '후결자 지정에서 제외되었습니다. 더 이상 이 의뢰서의 결재 대상이 아닙니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'route_member_removed':
+        label = ROUTE_MEMBER_LABEL.get(agent, agent)
+        subject = f'{name_prefix}[결재선 제외] {document.title}'
+        headline = f'결재 경로가 변경되어 {label} 지정에서 제외되었습니다. 더 이상 이 의뢰서의 결재 대상이 아닙니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     else:
         subject = f'[알림] {document.title}'
         headline = '새로운 알림이 있습니다.'
@@ -1531,6 +1547,16 @@ def enqueue_post_approver_removed(document, removed_mail, removed_name=None):
     """
     recipients = _apply_redirect([removed_mail] if removed_mail else [], document)
     return _enqueue(document, 'post_approver_removed', recipients, recipient_name=removed_name)
+
+
+def enqueue_route_member_removed(document, agent, removed_mail, removed_name=None):
+    """결재 경로 변경으로 PL/SA 에서 제외된 사람 본인에게만 개인화 메일 1통(2026-10).
+
+    `enqueue_post_approver_removed` 와 같은 규칙 — 호출부가 step 삭제 "전"에 이메일·이름을
+    읽어 넘겨야 한다. agent 는 'PL' 또는 'SA'(메일 본문의 지정 항목 이름에 쓴다).
+    """
+    recipients = _apply_redirect([removed_mail] if removed_mail else [], document)
+    return _enqueue(document, 'route_member_removed', recipients, agent=agent, recipient_name=removed_name)
 
 
 # --------------------------------------------------------------------------- #

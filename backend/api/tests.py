@@ -561,24 +561,257 @@ class PlSubmitMailTest(TestCase):
         doc.refresh_from_db()
         self.assertGreater(doc.submitted_at, old_stamp)
 
-    def test_change_designee_sends_mail_to_new_pl_only(self):
-        doc = self._make_draft('draft')
+class ChangeRouteTest(TestCase):
+    """결재 경로 변경(change-route): 상신 때 지정한 PL·SA·후결자·통보처를 진행 중에 수정한다.
+
+    합의를 마친 사람은 제외할 수 없고, 검증이 하나라도 실패하면 아무것도 바뀌지 않아야 한다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.other = UserProfile.objects.create(loginid='oth', mail='oth@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='mst', mail='mst@c.com', role='MASTER')
+        self.pl_a = UserProfile.objects.create(loginid='pla', mail='pla@c.com', username='A', role='PL')
+        self.pl_b = UserProfile.objects.create(loginid='plb', mail='plb@c.com', username='B', role='PL')
+        self.pl_c = UserProfile.objects.create(loginid='plc', mail='plc@c.com', username='C', role='PL')
+        self.not_pl = UserProfile.objects.create(loginid='te', mail='te@c.com', role='TE_R')
+        self.doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=json.dumps({'detail': {}, 'jayerRows': []}),
+        )
+
+    def _submit(self, pls, sas=None):
+        if sas:
+            detail = {'sales_agreers': [{'loginid': u.loginid, 'name': u.username} for u in sas]}
+            self.doc.additional_notes = json.dumps({'detail': detail, 'jayerRows': []})
+            self.doc.save()
         self.client.force_authenticate(user=self.requester)
-        r = self.client.post(f'/api/documents/{doc.id}/submit/', {
-            'designated_pl_loginids': [self.pl_a.loginid],
+        r = self.client.post(f'/api/documents/{self.doc.id}/submit/', {
+            'designated_pl_loginids': [p.loginid for p in pls],
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
-        MailNotification.objects.all().delete()  # 상신 시 발송분 제거하고 지정자 변경분만 확인
+        MailNotification.objects.all().delete()  # 상신 시 발송분을 지우고 경로 변경분만 확인한다
 
-        r = self.client.post(f'/api/documents/{doc.id}/change-designee/', {
-            'designated_pl_loginid': self.pl_b.loginid,
+    def _change(self, body, user=None):
+        self.client.force_authenticate(user=user or self.requester)
+        return self.client.post(f'/api/documents/{self.doc.id}/change-route/', body, format='json')
+
+    def _steps(self, agent):
+        return [(s.assignee.loginid, s.action) for s in
+                ApprovalStep.objects.filter(document=self.doc, agent=agent).order_by('id')]
+
+    def _detail(self):
+        self.doc.refresh_from_db()
+        return json.loads(self.doc.additional_notes)['detail']
+
+    def _approve(self, agent, user):
+        ApprovalStep.objects.filter(document=self.doc, agent=agent, assignee=user).update(
+            action='approved', acted_at=timezone.now())
+
+    # ---- PL ----
+    def test_pl_swap_mails_new_pl_and_removed_pl(self):
+        self._submit([self.pl_a])
+        r = self._change({'designated_pl_loginids': ['plb']})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._steps('PL'), [('plb', 'pending')])
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.designated_pl.loginid, 'plb')
+        arrival = MailNotification.objects.get(document=self.doc, event_type='stage_arrival')
+        self.assertEqual(arrival.recipients, ['plb@c.com'])
+        self.assertTrue(arrival.subject.startswith('[B님] '), arrival.subject)
+        removed = MailNotification.objects.get(document=self.doc, event_type='route_member_removed')
+        self.assertEqual(removed.recipients, ['pla@c.com'])
+        self.assertIn('검토자(PL)', removed.contents)
+
+    def test_pl_add_keeps_existing_without_mailing_them(self):
+        self._submit([self.pl_a])
+        r = self._change({'designated_pl_loginids': ['pla', 'plb']})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._steps('PL'), [('pla', 'pending'), ('plb', 'pending')])
+        notis = MailNotification.objects.filter(document=self.doc)
+        self.assertEqual([n.recipients for n in notis], [['plb@c.com']])
+
+    def test_approved_pl_cannot_be_removed_and_nothing_changes(self):
+        self._submit([self.pl_a, self.pl_b])
+        self._approve('PL', self.pl_a)
+        r = self._change({'designated_pl_loginids': ['plb', 'plc']})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('합의를 마친', r.json()['error'])
+        self.assertEqual(self._steps('PL'), [('pla', 'approved'), ('plb', 'pending')])
+        self.assertEqual(MailNotification.objects.count(), 0)
+
+    def test_approved_pl_stays_while_pending_one_is_replaced(self):
+        self._submit([self.pl_a, self.pl_b])
+        self._approve('PL', self.pl_a)
+        r = self._change({'designated_pl_loginids': ['pla', 'plc']})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._steps('PL'), [('pla', 'approved'), ('plc', 'pending')])
+
+    def test_removing_all_pending_leaves_no_one_to_open_next_stage(self):
+        self._submit([self.pl_a, self.pl_b])
+        self._approve('PL', self.pl_a)
+        r = self._change({'designated_pl_loginids': ['pla']})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._steps('PL'), [('pla', 'approved'), ('plb', 'pending')])
+
+    def test_pl_validation_failures(self):
+        self._submit([self.pl_a])
+        for body, needle in (
+            ({'designated_pl_loginids': []}, '최소 1명'),
+            ({'designated_pl_loginids': 'plb'}, '형식'),
+            ({'designated_pl_loginids': ['te']}, '유효하지 않은'),
+            ({'designated_pl_loginids': ['nobody']}, '유효하지 않은'),
+        ):
+            r = self._change(body)
+            self.assertEqual(r.status_code, 400, (body, r.content))
+            self.assertIn(needle, r.json()['error'])
+        self.assertEqual(self._steps('PL'), [('pla', 'pending')])
+
+    def test_requester_cannot_designate_self(self):
+        pl_requester = UserProfile.objects.create(loginid='plr', mail='plr@c.com', role='PL')
+        RequestDocument.objects.filter(pk=self.doc.pk).update(requester=pl_requester)
+        self._submit_as(pl_requester, [self.pl_a])
+        r = self._change({'designated_pl_loginids': ['plr']}, user=pl_requester)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('본인', r.json()['error'])
+
+    def _submit_as(self, user, pls):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{self.doc.id}/submit/', {
+            'designated_pl_loginids': [p.loginid for p in pls],
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
+        MailNotification.objects.all().delete()
 
-        notis = MailNotification.objects.filter(document=doc, event_type='stage_arrival')
-        self.assertEqual(notis.count(), 1)
-        self.assertEqual(notis[0].recipients, ['plb@c.com'])
-        self.assertTrue(notis[0].subject.startswith('[plb님] '), notis[0].subject)
+    # ---- 권한 / 문서 상태 ----
+    def test_permissions(self):
+        self._submit([self.pl_a])
+        self.assertEqual(self._change({'designated_pl_loginids': ['plb']}, user=self.other).status_code, 403)
+        self.assertEqual(self._change({'designated_pl_loginids': ['plb']}, user=self.pl_a).status_code, 403)
+        self.assertEqual(self._change({'designated_pl_loginids': ['plb']}, user=self.master).status_code, 200)
+
+    def test_requester_without_fk_is_identified_by_email(self):
+        """requester FK 가 비어도(레거시/계정 삭제) 이메일이 같은 작성자는 변경할 수 있다(B-08)."""
+        self._submit([self.pl_a])
+        RequestDocument.objects.filter(pk=self.doc.pk).update(requester=None)
+        r = self._change({'designated_pl_loginids': ['plb']})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_blocked_for_rejected_and_paused_documents(self):
+        self._submit([self.pl_a])
+        for st in ('rejected', 'pause'):
+            RequestDocument.objects.filter(pk=self.doc.pk).update(status=st)
+            r = self._change({'designated_pl_loginids': ['plb']})
+            self.assertEqual(r.status_code, 400, (st, r.content))
+        self.assertEqual(self._steps('PL'), [('pla', 'pending')])
+        self.assertEqual(MailNotification.objects.count(), 0)
+
+    def test_no_change_is_rejected(self):
+        self._submit([self.pl_a])
+        r = self._change({'designated_pl_loginids': ['pla']})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('변경된 내용이 없습니다', r.json()['error'])
+        self.assertEqual(MailNotification.objects.count(), 0)
+
+    # ---- SA ----
+    def test_sales_agreer_add_remove_and_detail_sync(self):
+        self._submit([self.pl_a], sas=[self.pl_b])
+        self.assertEqual(self._steps('SA'), [('plb', 'pending')])
+        r = self._change({'sales_agreer_loginids': ['plc']})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._steps('SA'), [('plc', 'pending')])
+        self.assertEqual(self._detail()['sales_agreers'], [{'loginid': 'plc', 'name': 'C'}])
+        types = sorted(MailNotification.objects.values_list('event_type', 'recipients'))
+        self.assertEqual(types, [('route_member_removed', ['plb@c.com']), ('stage_arrival', ['plc@c.com'])])
+        self.assertTrue(ApprovalStep.objects.get(document=self.doc, agent='SA').is_parallel)
+
+    def test_approved_sales_agreer_is_locked(self):
+        self._submit([self.pl_a], sas=[self.pl_b])
+        self._approve('SA', self.pl_b)
+        r = self._change({'sales_agreer_loginids': []})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._steps('SA'), [('plb', 'approved')])
+
+    def test_pl_and_sa_are_locked_once_pl_stage_is_complete(self):
+        self._submit([self.pl_a])
+        self._approve('PL', self.pl_a)
+        r = self._change({'designated_pl_loginids': ['pla', 'plb']})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('끝나', r.json()['error'])
+
+    # ---- 통보처 ----
+    def test_notifiers_replace_without_mail(self):
+        self._submit([self.pl_a])
+        r = self._change({'notifiers': [{'loginid': 'n1', 'name': '강'}, {'loginid': 'n1', 'name': 'dup'},
+                                        {'loginid': 'n2'}]})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._detail()['notifiers'],
+                         [{'loginid': 'n1', 'name': '강'}, {'loginid': 'n2', 'name': 'n2'}])
+        self.assertEqual(MailNotification.objects.count(), 0)
+        self.assertEqual(self._change({'notifiers': 'x'}).status_code, 400)
+
+    def test_notifiers_editable_after_pl_stage_complete(self):
+        self._submit([self.pl_a])
+        self._approve('PL', self.pl_a)
+        r = self._change({'notifiers': [{'loginid': 'n1', 'name': '강'}]})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    # ---- 후결자 ----
+    def test_post_approver_before_r_updates_detail_only(self):
+        self._submit([self.pl_a])
+        r = self._change({'post_approver_loginids': ['plb']})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._detail()['post_approvers'], [{'loginid': 'plb', 'name': 'B'}])
+        self.assertFalse(ApprovalStep.objects.filter(document=self.doc, agent='RA').exists())
+        self.assertEqual(MailNotification.objects.count(), 0)
+
+    @override_settings(POST_APPROVER_LOGINID='fixed')
+    def test_post_approver_after_r_adds_removes_and_locks(self):
+        fixed = UserProfile.objects.create(loginid='fixed', mail='fixed@c.com', username='F', role='TE_R')
+        self._submit([self.pl_a])
+        self._approve('PL', self.pl_a)
+        now = timezone.now()
+        ApprovalStep.objects.create(document=self.doc, agent='R', action='approved', round=1, acted_at=now)
+        due = now.date()
+        ApprovalStep.objects.create(document=self.doc, agent='RA', action='pending', round=1,
+                                    is_parallel=True, due_date=due, assignee=fixed, assignee_name='F')
+        ApprovalStep.objects.create(document=self.doc, agent='RA', action='pending', round=1,
+                                    is_parallel=True, due_date=due, assignee=self.pl_b, assignee_name='B')
+
+        r = self._change({'post_approver_loginids': ['plc']})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._steps('RA'), [('fixed', 'pending'), ('plc', 'pending')])
+        self.assertEqual(ApprovalStep.objects.get(document=self.doc, agent='RA', assignee=self.pl_c).due_date, due)
+        types = sorted(MailNotification.objects.values_list('event_type', 'recipients'))
+        self.assertEqual(types, [('post_approver_removed', ['plb@c.com']), ('stage_arrival', ['plc@c.com'])])
+
+        ApprovalStep.objects.filter(document=self.doc, agent='RA', assignee=self.pl_c).update(action='approved')
+        r = self._change({'post_approver_loginids': []})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('합의를 마친', r.json()['error'])
+        r = self._change({'post_approver_loginids': ['fixed', 'plc']})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('고정 후결자', r.json()['error'])
+
+    def test_post_approver_requires_at_least_one_for_lab_product(self):
+        self._submit([self.pl_a])
+        RequestDocument.objects.filter(pk=self.doc.pk).update(
+            additional_notes=json.dumps({'detail': {'only_prodc': 'Yes'}, 'jayerRows': []}))
+        r = self._change({'post_approver_loginids': []})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('최소 1명', r.json()['error'])
+
+    def test_mixed_request_is_all_or_nothing(self):
+        """한 항목이라도 검증에 실패하면 다른 항목도 반영되지 않는다."""
+        self._submit([self.pl_a])
+        r = self._change({'designated_pl_loginids': ['plb'], 'sales_agreer_loginids': ['te']})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._steps('PL'), [('pla', 'pending')])
+        self.assertEqual(MailNotification.objects.count(), 0)
 
 
 class MessageBuildingTest(TestCase):

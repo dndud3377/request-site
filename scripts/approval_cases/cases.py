@@ -293,21 +293,19 @@ def l11(ctx):
     return f'doc={doc_id}'
 
 
-@case('L-12', 'L', '지정 PL 변경(change-designee) → 현재 회차 PL step assignee 교체')
+@case('L-12', 'L', '결재 경로 변경(change-route) → 대기 PL 교체, 합의 완료 PL 제외 시도는 400')
 def l12(ctx):
-    ctx.need(PL=3)
-    doc_id, author, pls = F.submitted_doc(ctx)
-    new_pl = ctx.user('PL', 2)
-    res = author.post(f'/api/documents/{doc_id}/change-designee/',
-                      {'designated_pl_loginid': new_pl['loginid'],
-                       'designated_pl_name': new_pl.get('name', '')})
-    if not res.ok:
-        raise CaseFailure(f'change-designee 실패: {res.status} {res.error_text()}')
+    ctx.need(PL=4)
+    doc_id, author, pls = F.submitted_doc(ctx, pl_count=2)
+    keep_pl, swap_pl, new_pl = pls[0], pls[1], ctx.user('PL', 3)
+    F.change_route(author, doc_id, {'designated_pl_loginids': [keep_pl['loginid'], new_pl['loginid']]})
     doc = F.fetch(author, doc_id)
-    assignees = [s.get('assignee_loginid') for s in F.steps(doc, agent='PL', action='pending')]
-    if new_pl['loginid'] not in assignees:
-        raise CaseFailure(f'새 지정 PL 이 반영되지 않았다: {assignees}')
-    return f'doc={doc_id} → {new_pl["loginid"]}'
+    assignees = {s.get('assignee_loginid') for s in F.steps(doc, agent='PL', action='pending')}
+    if assignees != {keep_pl['loginid'], new_pl['loginid']}:
+        raise CaseFailure(f'PL 교체가 반영되지 않았다: {assignees} (제외 대상 {swap_pl["loginid"]})')
+    F.peer_approve(ctx.actor('PL', 1), doc_id)
+    F.change_route(author, doc_id, {'designated_pl_loginids': [new_pl['loginid']]}, expect=400)
+    return f'doc={doc_id} → {new_pl["loginid"]} (합의 완료 {keep_pl["loginid"]} 잠금 확인)'
 
 
 # ============================================================ R. R 단계 · 병렬 전환

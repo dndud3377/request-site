@@ -644,11 +644,13 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 - 조작: PL-B 가 '수정 후 상신'
 - ✅ 목록·상세의 **의뢰자가 계속 PL-A**(PL-B 로 바뀌지 않음). 백엔드 `RequestDocumentSerializer.update` 가 `requester_*` pop
 
-#### T-H3 지정자 변경
-- 조작: **PL-A(작성자)** 또는 **M** → 상세 → '지정자 변경' → PL-C 선택
-- ✅ 현재 회차 PL step 의 담당자 교체 + **새 지정자에게 상신과 동일한 메일**
-- ❌ 작성자인데 403 이면 → §5 **B-08** (레거시 `requester` FK 없는 문서)
-- ⚠️ 다중 PL 중 특정 1명 스왑은 미지원(대표 1건만 교체) — 알려진 제약
+#### T-H3 결재 경로 변경 (2026-10 — 구 '지정자 변경')
+- 조작: **PL-A(작성자)** 또는 **M** → 상세 → '결재 경로 변경' → 모달에서 PL-C 추가 / 대기 중 PL 제거 → '변경 저장'
+- ✅ 현재 회차 PL step 이 추가·제거되고 **새 PL 에게 상신과 동일한 메일**, 제외된 PL 에게 '결재선 제외' 메일
+- ✅ 이미 합의한 PL·SA·후결자는 🔒(✕ 없음) — API 로 제외 시도해도 400
+- ✅ PL 검토 단계가 끝난 뒤에는 ①②가 잠기고 후결자·통보처만 수정 가능
+- ✅ 반려·중단 문서와 철회/중단 요청 확인 대기 중에는 버튼이 없고 API 도 400
+- (구 B-08: 작성자인데 403 → `change-route` 는 `doc_permissions.is_requester` 를 써서 해소)
 
 #### T-H4 인가 우회 시도
 - 조작: PL-B 가 아닌 제3자가 `peer-approve/` 를 직접 호출
@@ -1382,6 +1384,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   ```
 - 영향: 실제 작성자가 지정자 변경만 못 한다. `add_post_approver` 는 2026-07 에 같은 버그를 고쳤는데 **여기만 남았다.**
 - 권고: `doc_permissions.is_requester(request.user, document)` 로 교체.
+- ✅ **해소(2026-10)**: `change_designee` 가 `change_route`(결재 경로 변경)로 교체되며 `doc_permissions.is_requester` 를 쓴다 — `ChangeRouteTest.test_requester_without_fk_is_identified_by_email`.
 
 ### 🟡 B-09 철회 시 **모든 회차의 결재 이력이 전량 삭제**된다 **재현✅**
 - 위치: `views.py:403` (`withdraw` 안의 `ApprovalStep.objects.filter(document=document).delete()`) — **2026-08-04 미수정 확인**
@@ -2385,7 +2388,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 | B-04 Only MAP 후결 생략 | `POST_APPROVER_LOGINID=''` + Only MAP → R 합의 | **status=approved** |
 | B-06 PAUSE 우회 | pause 문서에 `peer-approve/`·`peer-reject/` | **200 / under_review, R 생성 / rejected** |
 | B-07 담당자 역할 검증 | R 담당자에 role=NONE + 위장 이름 지정 | **200, 그대로 저장** |
-| B-08 레거시 작성자 | FK=None 문서에서 작성자가 `change-designee/` | **403** (withdraw 는 200) |
+| B-08 레거시 작성자 | FK=None 문서에서 작성자가 `change-route/` (구 `change-designee/`) | **200** (2026-10 해소) |
 | B-09 이력 삭제 | 2회차 4단계 문서 철회 | **4건 → 0건** |
 | X-4 잔여 pending | 다중 PL 1명 반려 후 재상신 | **1회차 PL step 이 pending 잔존, 회차 [1,2] 공존** |
 | PAUSE 정상 동작 | 동결(400) + 재개 기한 연장 | **정상** (5일 중단 → due +5일) |

@@ -538,7 +538,7 @@ class ApprovalStep(models.Model):
     round = models.PositiveSmallIntegerField(default=1, verbose_name='상신 회차')
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True, verbose_name='생성일시')
     # 대기중 → 검토중 으로 바뀐 시각 — 검토중 클릭(claim_step)·R 지정(assign_step)·지정 PL 변경
-    # (change_designee) 시점에 기록하고, 검토중 취소(unclaim_step)·재개 초기화(resume, R/P/J/O/E) 시 비운다.
+    # (change_route 로 새로 추가된 PL) 시점에 기록하고, 검토중 취소(unclaim_step)·재개 초기화(resume, R/P/J/O/E) 시 비운다.
     # 재개 시 담당자를 유지하는 PL/SA/RA 는 재개 시각으로 기록한다. 그 밖에 상신 시점부터 담당자가
     # 정해져 바로 검토중인 단계는 기록하지 않으며, 화면은 그 경우 created_at 을 검토중 시작 시각으로
     # 쓴다(docs/APPROVAL.md).
@@ -1417,6 +1417,8 @@ class MailNotification(models.Model):
         ('pause_resumed', '결재 재개'),
         ('document_deleted', '의뢰서 삭제'),
         ('post_approver_removed', '후결자 제외'),
+        # 결재 경로 변경으로 PL/영업·기술지원 합의자가 제외됨 (2026-10 추가)
+        ('route_member_removed', '결재선 제외'),
         # R/J/O 완료 → P 팀 통보 (2026-09 추가)
         ('notify_rjo_completed', 'R/J/O 완료 통보'),
     ]

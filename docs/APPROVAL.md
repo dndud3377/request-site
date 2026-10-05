@@ -46,7 +46,7 @@
 | `is_parallel` | 병렬 단계 여부(O/E/RA/SA에 사용) |
 | `due_date` | 완료 예정일(영업일 계산) |
 | `acted_at` / `comment` | 처리 시각 / 의견 |
-| `review_started_at` | 대기중→검토중 전환 시각(2026-10-05). 검토중 클릭·R 지정·지정 PL 변경·재개(PL/SA/RA) 때 기록, 검토중 취소·재개(R/P/J/O/E) 때 비움. 상세는 문서 끝 "요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동" 절 |
+| `review_started_at` | 대기중→검토중 전환 시각(2026-10-05). 검토중 클릭·R 지정·결재 경로 변경으로 새로 추가된 PL·재개(PL/SA/RA) 때 기록, 검토중 취소·재개(R/P/J/O/E) 때 비움. 상세는 문서 끝 "요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동" 절 |
 
 > 별도 "이력 테이블"은 없다. ApprovalStep 자체가 결재선이자 이력이며, `round`로 회차를
 > 구분하고 `acted_at`/`comment`로 처리 내역을 남긴다.
@@ -519,10 +519,42 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   변경을 원하시면 1명 추가 후 삭제하시기 바랍니다."`
 - 테스트: `backend/api/tests.py::EvReviewerManagementTest`(`PEStageReviewerFlowTest`의 fixture 재사용).
 
-### Case L — 지정 PL 변경 (`change_designee`)
-- 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
-- ⚠️ **다중 PL 미대응(보류)**: 현재는 `_get_pending_pl_step`(첫 pending PL step, = 대표)만 1:1 교체한다. 다중 PL 중 특정 담당자 지정 스왑은 후속 작업으로 보류(2026-07).
-- **메일(2026-07 추가)**: 새로 지정된 PL에게 상신 때와 동일한 stage_arrival 메일(제목 `[이름님] [결재 요청] ...`)이 즉시 발송된다. 기존 지정자에게는 별도 알림 없음.
+### Case L — 결재 경로 변경 (`change_route`, 2026-10)
+
+예전 '지정자 변경'(`change-designee`, 대표 PL 1명만 교체)을 **결재 경로 변경**으로 바꿨다. 상신 모달에서 사람을
+지정하는 4개 항목을 진행 중에 수정한다.
+
+| 항목 | 요청 키 | 단계 | 변경 가능 시점 |
+|---|---|---|---|
+| ① 검토자(PL, 다중) | `designated_pl_loginids` | `PL` step | PL 검토 단계(PL·SA 전원 합의 전) |
+| ② 영업/기술지원 합의자(SA, 다중) | `sales_agreer_loginids` | `SA` step(병렬) + `detail.sales_agreers` | 〃 |
+| ③ 추가 후결자(RA, 다중) | `post_approver_loginids` | R 합의 전엔 `detail.post_approvers`만, 후에는 `RA` step | `under_review` 동안(문서 유형에 RA 가 없는 MAP 삭제·ADI CD 변경은 불가) |
+| ④ 통보처 | `notifiers` (`[{loginid,name}]`) | `detail.notifiers` (단계 없음) | `under_review` 동안 |
+
+- **API**: `POST /documents/{id}/change-route/`. 요청에 **실린 항목만** 처리하고, PL·SA·후결자는 변경 후 **최종 loginid 목록**
+  (합의 완료자 포함)을 보낸다. 새 회차는 열지 않고 **같은 회차 안에서 대기(pending) 중인 사람만** 추가·제거한다.
+- **권한**: 작성자 본인(`doc_permissions.is_requester` — `requester_email` 폴백 포함) 또는 MASTER. 문서가 `under_review` 가
+  아니거나 철회·중단 요청 확인 대기 중이면 `_blocked_progress_response` 로 400.
+- **합의 완료자는 수정 불가**: 이미 합의(pending 이 아닌 상태)한 PL·SA·RA 가 최종 목록에서 빠지면 400
+  (`이미 합의를 마친 …은(는) 제외할 수 없습니다`). 화면은 🔒 칩(✕ 없음)으로 잠근다.
+- **PL 가드**: PL 은 최소 1명. PL·SA 변경은 PL 단계가 끝나면(`_pl_stage_complete`) 400. 변경 후 대기 중인 PL·SA 가
+  한 명도 없어 다음 단계를 열 트리거가 사라지는 변경도 400. 후보는 문서 지역의 제품 담당자(`document.pl_role()`),
+  본인(작성자) 지정 불가, 중복 지정은 한 번만 반영.
+- **후결자 가드**: 고정 후결자 지정 불가(400). Only MAP 은 후결자 총원 ≥ 1, `requires_post_approver()`(C가문·연구소 제품)는
+  추가 후결자 ≥ 1. RA step 을 새로 만들 땐 `add-post-approver` 와 같은 기한 규칙(같은 회차 RA 기한, 없으면 R 합의일 +6영업일).
+- **원자성**: 검증을 모두 끝낸 뒤에만 DB 를 바꾼다(한 항목이라도 실패하면 아무것도 바뀌지 않음). 변경이 하나도 없으면 400.
+- **대표 PL**: `document.designated_pl` 은 변경 후 현재 회차 첫 PL step 으로 다시 계산. 새로 추가된 PL step 은
+  `review_started_at` 을 기록한다(예전 지정자 변경과 동일).
+- **메일**: 새 PL·SA·(R 합의 후)RA → `stage_arrival`(제목 `[이름님] [결재 요청] …`). 제외된 PL·SA → `route_member_removed`
+  ("결재선 제외", 본인에게만, 모델 choices 변경 → 마이그레이션 `0050`). 제외된 RA → 기존 `post_approver_removed`.
+  R 합의 전 후결자·통보처 변경은 메일 없음(통보처는 이후 결재 완료 시점에만 받는다).
+- **화면**: 결재 상세 하단 '결재 경로 변경' 버튼(작성자 `requester_loginid` 기준 또는 MASTER, `under_review`, 확인 대기 요청 없음)
+  → `RouteChangeModal`. 칩 + 검색 UI, 추가 예정(초록)·제거 예정(빨강 취소선, ↩ 로 취소), 저장 전 변경·메일 미리보기,
+  PL 단계 종료 시 ①②는 잠금 안내. 변경된 항목만 전송하고 서버 거부 사유를 그대로 보여준다.
+- 테스트: `backend/api/tests.py::ChangeRouteTest`, `frontend/src/components/RouteChangeModal.test.tsx`,
+  케이스 러너 `L-12`.
+- 이 개편으로 해소된 항목: `E2E_TEST_AND_BUGS.md` B-08(FK 없는 작성자 403)·R-11(이름 기반 작성자 판정)의 '지정자 변경' 부분,
+  반려·중단 문서에서도 변경되던 문제, 다중 PL 중복·대상 선택 불가 문제.
 
 ### Case M — 결재 중단(PAUSE) 요청·확인·거부·재개 (2026-07, 거부·동결 강화 2026-08)
 
@@ -1265,7 +1297,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 검토중 (J·O·E·P, 2026-07 P 포함) | `canUserClaim`가 참 | `claimStep` |
 | 검토중 취소 (J·O·E·P, 2026-08) | `canUserUnclaim`가 참(선점자 본인/MASTER) | `unclaimStep` |
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
-| 지정자 변경 | PL/MASTER | `changeDesignee` |
+| 결재 경로 변경 (2026-10) | 작성자(`requester_loginid`)/MASTER + under_review + 확인 대기 요청 없음 | `changeRoute` (`RouteChangeModal`) |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
 | 철회 | `can_withdraw` + 철회 요청중이 아닐 때 | 사유 입력 모달 → `withdraw`(진행 중이면 철회 요청, 그 외 즉시 삭제) |
 | 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함) | `confirmWithdraw` / `rejectWithdraw` |
@@ -1310,7 +1342,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 재개 | `resume/` | - (pause → under_review) |
 | 중단 요청 취소 | `cancel-pause/` | - |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
-| 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
+| 결재 경로 변경 (2026-10) | `change-route/` | `designated_pl_loginids`·`sales_agreer_loginids`·`post_approver_loginids`·`notifiers` (실린 항목만, 의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
 | MASK 검토자(EV) 추가 (2026-09) | `add-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, E 담당자 합의 후 |
@@ -2092,7 +2124,7 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 | 동작 | review_started_at |
 |---|---|
 | `claim_step`(검토중 클릭) / `assign_step`(R 지정) | 현재 시각 기록 |
-| `change_designee`(지정 PL 변경) | 현재 시각으로 갱신 |
+| `change_route`(결재 경로 변경으로 새로 추가된 PL) | 현재 시각으로 기록 |
 | `unclaim_step`(검토중 취소) | 비움 |
 | `resume`(재개) — R/P/J/O/E(담당자 초기화) | 비움(다시 검토중을 눌러야 함) |
 | `resume`(재개) — PL/SA/RA(담당자 유지) | 재개 시각 기록 |

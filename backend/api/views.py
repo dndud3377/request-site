@@ -1526,8 +1526,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         assignee_name = request.data.get('assignee_name', '')
         reviewer_loginid = str(request.data.get('reviewer_loginid', '') or '').strip()
 
-        # agent 화이트리스트: 'PL' 등으로 지정 PL 단계를 덮어써 change_designee 권한검증을
-        # 우회하는 것을 차단한다(PL 지정 변경은 change_designee 전용).
+        # agent 화이트리스트: 'PL' 등으로 지정 PL 단계를 덮어써 change_route 권한검증을
+        # 우회하는 것을 차단한다(PL 지정 변경은 change_route 전용).
         if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2821,50 +2821,311 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                else '수정 후 상신되었습니다. 다른 지정 PL의 합의를 기다립니다.')
         return Response({'message': msg, 'status': 'under_review'})
 
-    @action(detail=True, methods=['post'], url_path='change-designee')
-    @transaction.atomic
-    def change_designee(self, request, pk=None):
-        """지정자 변경: PL 단계 pending 동안 원 PL 또는 MASTER가 변경 가능"""
-        document = self.get_object()
-        user_role = getattr(request.user, 'role', '')
+    # ---- 결재 경로 변경(change-route) — 요청 본문 키 / 지정 항목 이름 ----
+    ROUTE_KEY_PL = 'designated_pl_loginids'
+    ROUTE_KEY_SA = 'sales_agreer_loginids'
+    ROUTE_KEY_RA = 'post_approver_loginids'
+    ROUTE_KEY_NOTIFIERS = 'notifiers'
+    ROUTE_LABEL_PL = '검토자(PL)'
+    ROUTE_LABEL_SA = '영업/기술지원 합의자'
+    ROUTE_LABEL_RA = '후결자'
+
+    @staticmethod
+    def _clean_loginid_list(raw):
+        """요청의 loginid 배열을 공백·중복 제거(순서 보존)해 돌려준다. 배열이 아니면 None."""
+        if not isinstance(raw, list):
+            return None
+        cleaned = []
+        for lid in raw:
+            lid = str(lid or '').strip()
+            if lid and lid not in cleaned:
+                cleaned.append(lid)
+        return cleaned
+
+    @staticmethod
+    def _plan_member_change(steps, desired, label):
+        """한 지정 항목(PL/SA/RA)의 step 목록과 원하는 최종 loginid 목록을 비교해 변경 계획을 만든다.
+
+        반환: (추가할 loginid 리스트, 제거할 step 리스트, error). 이미 합의(pending 이 아닌 상태)를
+        마친 사람은 이력 보존을 위해 제외할 수 없어, 최종 목록에 없으면 error 다.
+        """
+        existing = {s.assignee.loginid: s for s in steps if s.assignee_id}
+        for lid, s in existing.items():
+            if s.action != 'pending' and lid not in desired:
+                name = s.assignee_name or lid
+                return None, None, f'이미 합의를 마친 {label}은(는) 제외할 수 없습니다: {name}'
+        to_remove = [s for lid, s in existing.items() if s.action == 'pending' and lid not in desired]
+        to_add = [lid for lid in desired if lid not in existing]
+        return to_add, to_remove, None
+
+    def _plan_route_stage_pl_sa(self, request, document, round_no):
+        """PL·SA 변경 계획. (계획 dict, error) 를 반환한다. 변경 요청 키가 없으면 해당 항목은 계획에서 빠진다."""
+        plan = {}
+        pl_role = document.pl_role()
         caller_loginid = getattr(request.user, 'loginid', '')
+        requester_loginid = document.requester.loginid if document.requester_id else ''
+        for key, agent, label in ((self.ROUTE_KEY_PL, 'PL', self.ROUTE_LABEL_PL),
+                                  (self.ROUTE_KEY_SA, 'SA', self.ROUTE_LABEL_SA)):
+            if key not in request.data:
+                continue
+            desired = self._clean_loginid_list(request.data.get(key))
+            if desired is None:
+                return None, f'{label} 목록 형식이 올바르지 않습니다.'
+            if agent == 'PL' and not desired:
+                return None, f'{label}는 최소 1명을 지정해야 합니다.'
+            steps = list(ApprovalStep.objects.filter(
+                document=document, agent=agent, round=round_no
+            ).select_related('assignee'))
+            to_add, to_remove, err = self._plan_member_change(steps, desired, label)
+            if err:
+                return None, err
+            # 새로 넣는 사람만 자격을 검증한다 — 지정 PL·SA 와 같은 규칙(문서와 같은 지역의 제품 담당자).
+            users = {}
+            for lid in to_add:
+                try:
+                    users[lid] = User.objects.get(loginid=lid, role=pl_role)
+                except User.DoesNotExist:
+                    return None, f'유효하지 않은 {label}입니다: {lid}'
+                if agent == 'PL' and lid in (caller_loginid, requester_loginid):
+                    return None, '본인을 지정할 수 없습니다.'
+            names = {s.assignee.loginid: s.assignee_name for s in steps if s.assignee_id}
+            names.update({lid: (u.username or lid) for lid, u in users.items()})
+            plan[agent] = {
+                'desired': desired, 'steps': steps, 'add': [users[lid] for lid in to_add],
+                'remove': to_remove, 'names': names, 'label': label,
+            }
+        return plan, None
 
-        is_requester = (
-            document.requester and document.requester.loginid == caller_loginid
-        )
-        if user_role != 'MASTER' and not is_requester:
+    def _plan_route_post_approvers(self, request, document, round_no):
+        """후결자(RA) 변경 계획. (계획 dict 또는 None, error). RA 단계가 아직 없으면(R 합의 전)
+        detail.post_approvers 만 바꾸는 'detail_only' 계획이다."""
+        if self.ROUTE_KEY_RA not in request.data:
+            return None, None
+        if document.is_map_delete_edit() or document.is_adi_cd_change():
+            return None, '이 문서 유형은 후결자 단계가 없어 변경할 수 없습니다.'
+        desired = self._clean_loginid_list(request.data.get(self.ROUTE_KEY_RA))
+        if desired is None:
+            return None, f'{self.ROUTE_LABEL_RA} 목록 형식이 올바르지 않습니다.'
+        fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+        if fixed_lid in desired:
+            return None, '고정 후결자와 중복 지정할 수 없습니다.'
+        if document.requires_post_approver() and not desired:
+            return None, 'C가문 제품·연구소 제품은 (고정 후결자 외) 후결자를 최소 1명 지정해야 합니다.'
+
+        all_ra = list(ApprovalStep.objects.filter(
+            document=document, agent='RA', round=round_no
+        ).select_related('assignee'))
+        steps = [s for s in all_ra if not (s.assignee_id and s.assignee.loginid == fixed_lid)]
+        detail = document.get_detail().get('detail', {}) or {}
+        detail_names = {str((p or {}).get('loginid', '') or '').strip(): (p or {}).get('name', '')
+                        for p in (detail.get('post_approvers') or [])}
+        if not all_ra:
+            current = [lid for lid in detail_names if lid]
+            users = {}
+            for lid in desired:
+                try:
+                    users[lid] = User.objects.get(loginid=lid)
+                except User.DoesNotExist:
+                    return None, f'유효하지 않은 사용자입니다: {lid}'
+            return {
+                'detail_only': True, 'desired': desired, 'changed': current != desired,
+                'names': {lid: (u.username or lid) for lid, u in users.items()},
+            }, None
+
+        to_add, to_remove, err = self._plan_member_change(steps, desired, self.ROUTE_LABEL_RA)
+        if err:
+            return None, err
+        users = {}
+        for lid in to_add:
+            try:
+                users[lid] = User.objects.get(loginid=lid)
+            except User.DoesNotExist:
+                return None, f'유효하지 않은 사용자입니다: {lid}'
+        # Only MAP 은 후결자(고정 포함)가 유일한 종단 경로라 총원이 0이 되면 영영 승인될 수 없다.
+        if document.is_only_map() and len(all_ra) - len(to_remove) + len(to_add) == 0:
+            return None, 'Only MAP 의뢰서는 최종 승인 경로인 후결자를 최소 1명 유지해야 합니다.'
+        ra_due = None
+        if to_add:
+            ra_due = self._post_approver_due_date(document, round_no)
+            if ra_due is None:
+                return None, 'R 합의 이후에만 후결자를 추가할 수 있습니다.'
+        names = {s.assignee.loginid: s.assignee_name for s in steps if s.assignee_id}
+        names.update({lid: (u.username or lid) for lid, u in users.items()})
+        return {
+            'detail_only': False, 'desired': desired, 'add': [users[lid] for lid in to_add],
+            'remove': to_remove, 'names': names, 'due_date': ra_due,
+            'changed': bool(to_add or to_remove) or [lid for lid in detail_names if lid] != desired,
+        }, None
+
+    def _post_approver_due_date(self, document, round_no):
+        """새 후결자의 기한: 같은 회차의 기존 RA 기한에 맞추고, 없으면 R 합의일 기준 6영업일. 못 구하면 None."""
+        sibling_ra = ApprovalStep.objects.filter(
+            document=document, agent='RA', round=round_no
+        ).exclude(due_date__isnull=True).order_by('-id').first()
+        if sibling_ra:
+            return sibling_ra.due_date
+        r_step = ApprovalStep.objects.filter(
+            document=document, agent='R', round=round_no, action='approved'
+        ).first()
+        if not r_step or not r_step.acted_at:
+            return None
+        from .utils import calculate_business_due_date
+        return calculate_business_due_date(r_step.acted_at.date(), 6)
+
+    @action(detail=True, methods=['post'], url_path='change-route')
+    @transaction.atomic
+    def change_route(self, request, pk=None):
+        """결재 경로 변경: 상신 때 지정한 사람(PL·영업/기술지원 합의자·후결자·통보처)을 진행 중에 수정한다.
+
+        권한은 작성자 본인(doc_permissions.is_requester) 또는 MASTER. 요청 본문에 **실린 항목만**
+        처리한다(`designated_pl_loginids` / `sales_agreer_loginids` / `post_approver_loginids` 는
+        최종 loginid 배열, `notifiers` 는 `[{loginid, name}]`). 새 회차는 열지 않고 같은 회차 안에서
+        **대기 중(pending)인 사람만** 추가·제거한다 — 이미 합의한 사람은 목록에서 빠지면 400.
+        - PL·SA: PL 검토 단계(전원 합의 전)에서만 변경 가능. 변경 후 대기 중인 PL·SA 가 한 명도
+          없으면(= 다음 단계를 열 트리거가 없어짐) 400. 추가된 사람에게 단계 도착 메일, 제외된
+          사람에게 제외 안내 메일.
+        - 후결자: R 합의 전이면 detail.post_approvers 만 갱신(메일 없음), 이후면 RA 단계를 추가·제거
+          (add/remove-post-approver 와 같은 최소 인원 가드·메일).
+        - 통보처: detail.notifiers 만 갱신(메일 없음).
+        검증은 전부 끝낸 뒤에만 DB 를 바꾼다(검증 실패 Response 는 롤백을 일으키지 않기 때문).
+        """
+        import json
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        if getattr(request.user, 'role', '') != 'MASTER' and not doc_permissions.is_requester(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
 
-        step = self._get_pending_pl_step(document)
-        if not step:
-            return Response({'error': '변경 가능한 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        round_no = self._max_round(document)
+        plan, err = self._plan_route_stage_pl_sa(request, document, round_no)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+        pa_plan, err = self._plan_route_post_approvers(request, document, round_no)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
-        new_loginid = request.data.get('designated_pl_loginid', '').strip()
-        if not new_loginid:
-            return Response({'error': '새 지정 PL의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        # PL·SA: 변경이 있을 때만 단계 상태·진행 가능 여부를 본다.
+        pl_sa_changed = any(p['add'] or p['remove'] for p in plan.values())
+        if pl_sa_changed:
+            if self._pl_stage_complete(document, round_no):
+                return Response({'error': 'PL 검토 단계가 끝나 검토자·합의자는 변경할 수 없습니다.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            pending_after = 0
+            for agent in ('PL', 'SA'):
+                if agent in plan:
+                    p = plan[agent]
+                    kept = [s for s in p['steps'] if s.action == 'pending' and s not in p['remove']]
+                    pending_after += len(kept) + len(p['add'])
+                else:
+                    pending_after += ApprovalStep.objects.filter(
+                        document=document, agent=agent, round=round_no, action='pending'
+                    ).count()
+            if pending_after == 0:
+                return Response({'error': '변경 후 대기 중인 검토자·합의자가 한 명도 없어 다음 단계로 진행할 수 없습니다. '
+                                          '변경을 원하시면 1명 추가 후 삭제하시기 바랍니다.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+        if 'SA' in plan and document.requires_sales_agreer() and not plan['SA']['desired']:
+            detail = document.get_detail().get('detail', {}) or {}
+            if not str(detail.get('sales_agreer_none_reason', '') or '').strip():
+                return Response({'error': '예외 구역 값을 기본값과 다르게 지정한 의뢰서는 영업/기술지원 합의자를 '
+                                          '1명 이상 지정하거나 지정하지 않는 사유를 입력해야 합니다.'},
+                                status=status.HTTP_400_BAD_REQUEST)
 
+        # 통보처
+        notifiers = None
+        if self.ROUTE_KEY_NOTIFIERS in request.data:
+            raw = request.data.get(self.ROUTE_KEY_NOTIFIERS)
+            if not isinstance(raw, list):
+                return Response({'error': '통보처 목록 형식이 올바르지 않습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            notifiers, seen = [], set()
+            for n in raw:
+                lid = str((n or {}).get('loginid', '') or '').strip() if isinstance(n, dict) else ''
+                if lid and lid not in seen:
+                    seen.add(lid)
+                    notifiers.append({'loginid': lid, 'name': str(n.get('name', '') or '').strip() or lid})
+
+        data = None
         try:
-            # 지정 PL 과 같은 규칙 — 문서와 같은 지역의 제품 담당자만 새 지정자가 될 수 있다.
-            new_pl_user = User.objects.get(loginid=new_loginid, role=document.pl_role())
-        except User.DoesNotExist:
-            return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            data = json.loads(document.additional_notes or '{}')
+        except (json.JSONDecodeError, TypeError):
+            data = None
+        old_detail = ((data or {}).get('detail') or {}) if isinstance(data, dict) else {}
+        old_notifier_ids = [str((n or {}).get('loginid', '') or '').strip() for n in (old_detail.get('notifiers') or [])]
+        notifiers_changed = notifiers is not None and [n['loginid'] for n in notifiers] != old_notifier_ids
+        sa_changed = 'SA' in plan and bool(plan['SA']['add'] or plan['SA']['remove'])
+        pa_changed = bool(pa_plan and pa_plan['changed'])
 
-        if new_pl_user.loginid == caller_loginid:
-            return Response({'error': '본인을 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not (pl_sa_changed or pa_changed or notifiers_changed):
+            return Response({'error': '변경된 내용이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if (sa_changed or pa_changed or notifiers_changed) and not isinstance(data, dict):
+            return Response({'error': '의뢰서 데이터를 읽을 수 없어 변경할 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        step.assignee = new_pl_user
-        step.assignee_name = new_pl_user.username or new_loginid
-        step.review_started_at = timezone.now()
-        step.save()
+        # ---- 적용: 여기부터는 검증이 모두 끝났다 ----
+        for agent, p in plan.items():
+            for s in p['remove']:
+                removed_mail = s.assignee.mail if s.assignee else ''
+                removed_name = s.assignee_name
+                s.delete()
+                mailer.enqueue_route_member_removed(document, agent, removed_mail, removed_name)
+            for u in p['add']:
+                # 새로 추가된 PL 은 이 시점부터 검토를 시작하는 것이므로 시각을 기록한다
+                # (예전 지정자 변경이 하던 동작 유지). SA 는 상신 시 생성과 같이 기록하지 않는다.
+                step = ApprovalStep.objects.create(
+                    document=document, agent=agent, action='pending', round=round_no,
+                    is_parallel=(agent == 'SA'), assignee=u, assignee_name=(u.username or u.loginid),
+                    review_started_at=timezone.now() if agent == 'PL' else None,
+                )
+                mailer.enqueue_stage_arrival(document, agent, step, recipient_name=step.assignee_name)
 
-        document.designated_pl = new_pl_user
-        document.designated_pl_name = step.assignee_name
-        document.save()
+        if pa_plan and not pa_plan['detail_only']:
+            for s in pa_plan['remove']:
+                removed_mail = s.assignee.mail if s.assignee else ''
+                removed_name = s.assignee_name
+                s.delete()
+                mailer.enqueue_post_approver_removed(document, removed_mail, removed_name)
+            for u in pa_plan['add']:
+                ra_step = ApprovalStep.objects.create(
+                    document=document, agent='RA', action='pending', is_parallel=True,
+                    round=round_no, due_date=pa_plan['due_date'], assignee=u, assignee_name=(u.username or u.loginid),
+                )
+                mailer.enqueue_stage_arrival(document, 'RA', ra_step, recipient_name=ra_step.assignee_name)
 
-        # 새로 지정된 PL에게 최초 상신과 동일한 결재 요청 메일 발송(이전 지정자에게는 안 감)
-        mailer.enqueue_stage_arrival(document, 'PL', step, recipient_name=step.assignee_name)
+        update_fields = []
+        if 'PL' in plan and (plan['PL']['add'] or plan['PL']['remove']):
+            rep_step = ApprovalStep.objects.filter(
+                document=document, agent='PL', round=round_no
+            ).select_related('assignee').order_by('id').first()
+            if rep_step and rep_step.assignee_id:
+                document.designated_pl = rep_step.assignee
+                document.designated_pl_name = rep_step.assignee_name
+                update_fields += ['designated_pl', 'designated_pl_name']
 
-        return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
+        if sa_changed or pa_changed or notifiers_changed:
+            detail = data.get('detail', {}) or {}
+            if sa_changed:
+                detail['sales_agreers'] = [
+                    {'loginid': lid, 'name': plan['SA']['names'].get(lid, lid)} for lid in plan['SA']['desired']
+                ]
+            if pa_changed:
+                detail['post_approvers'] = [
+                    {'loginid': lid, 'name': pa_plan['names'].get(lid, lid)} for lid in pa_plan['desired']
+                ]
+            if notifiers_changed:
+                detail['notifiers'] = notifiers
+            data['detail'] = detail
+            document.additional_notes = json.dumps(data, ensure_ascii=False)
+            update_fields.append('additional_notes')
+        if update_fields:
+            document.save(update_fields=update_fields)
+
+        return Response({
+            'message': '결재 경로가 변경되었습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
 
     # Validation System 대상/비대상 값 (프론트 constants.ts 의 VS_TARGET/VS_NONTARGET 과 동일)
     VALIDATION_SYSTEM_VALUES = ('YES', 'NO')

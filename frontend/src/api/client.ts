@@ -1,5 +1,6 @@
 import {
   RequestDocument,
+  ChangeRoutePayload,
   RejectionSnapshot,
   ReviewItem,
   VOC,
@@ -272,10 +273,10 @@ const peerSubmit = async (docId: number, comment?: string) => {
   return { data };
 };
 
-const changeDesignee = async (docId: number, designatedPlLoginid: string) => {
+const changeRoute = async (docId: number, payload: ChangeRoutePayload) => {
   const data = await post<{ message: string; document: RequestDocument }>(
-    `/documents/${docId}/change-designee/`,
-    { designated_pl_loginid: designatedPlLoginid }
+    `/documents/${docId}/change-route/`,
+    payload
   );
   return { data };
 };
@@ -657,7 +658,7 @@ export const documentsAPI = {
   salesAgree,
   salesReject,
   peerSubmit,
-  changeDesignee,
+  changeRoute,
   stats: documentStats,
   getApproved: getApprovedDocuments,
   annualDesignRuleStats,

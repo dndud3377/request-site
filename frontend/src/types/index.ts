@@ -121,6 +121,19 @@ export interface ApprovalStepFrontend {
   zone_index?: number | null; // 이 단계가 속한 구역의 0-based 인덱스(1구역=0, 2구역=1, ...). 철회 '이전 회차 도달 구역' 확인 UI에 쓴다.
 }
 
+// 결재 경로 변경(change-route) 요청 본문 — 실린 항목만 서버가 처리한다.
+// PL·합의자·후결자는 변경 후 최종 loginid 목록(합의 완료자 포함), 통보처는 {loginid, name} 목록.
+export interface RouteNotifier {
+  loginid: string;
+  name: string;
+}
+export interface ChangeRoutePayload {
+  designated_pl_loginids?: string[];
+  sales_agreer_loginids?: string[];
+  post_approver_loginids?: string[];
+  notifiers?: RouteNotifier[];
+}
+
 // 결재 중단(PAUSE) 요청 상태
 export type PauseState = 'requested' | 'confirmed' | 'rejected' | 'cancelled' | 'resumed';
 

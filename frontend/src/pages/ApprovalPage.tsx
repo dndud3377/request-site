@@ -14,6 +14,7 @@ import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
 import ApprovalListExportModal from '../components/ApprovalListExportModal';
+import RouteChangeModal from '../components/RouteChangeModal';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, isPlRole, plRoleFor } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
@@ -407,12 +408,8 @@ export default function ApprovalPage(): React.ReactElement {
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
-  // 지정자 변경 UI (모달 footer)
-  const [changingDesigneeOpen, setChangingDesigneeOpen] = useState(false);
-  const [changingDesigneeUserId, setChangingDesigneeUserId] = useState('');
-  const [changingDesigneeQuery, setChangingDesigneeQuery] = useState('');
-  const [changingDesigneeDropdownOpen, setChangingDesigneeDropdownOpen] = useState(false);
-  const changingDesigneeRef = React.useRef<HTMLDivElement>(null);
+  // 결재 경로 변경 모달 (상신 때 지정한 PL·합의자·후결자·통보처 수정)
+  const [routeModalOpen, setRouteModalOpen] = useState(false);
 
   // 검토자 선택 UI (P/E 담당자 본인 — 합의 버튼과 함께 노출, R 담당자지정 드롭다운과 동일한 스타일)
   // 드롭다운에서 이름을 클릭하면 바로 추가되고(별도 '추가'/'확인' 버튼 없음), '합의' 클릭 시 그 순간
@@ -742,16 +739,6 @@ export default function ApprovalPage(): React.ReactElement {
     };
   }, [isTourMode]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (changingDesigneeRef.current && !changingDesigneeRef.current.contains(e.target as Node)) {
-        setChangingDesigneeDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   const tabBaseLabels: { key: string; baseLabel: string }[] = [
     { key: '', baseLabel: t('approval.filter_all') },
     { key: 'my', baseLabel: t('approval.filter_my') },
@@ -877,8 +864,7 @@ export default function ApprovalPage(): React.ReactElement {
     setAssigningOpen(false);
     setAssigningUserId('');
     setTeamMembers([]);
-    setChangingDesigneeOpen(false);
-    setChangingDesigneeUserId('');
+    setRouteModalOpen(false);
     setReviewerSelectedIds([]);
     setReviewerCandidates([]);
     setReviewerDropdownOpen(false);
@@ -1237,23 +1223,11 @@ export default function ApprovalPage(): React.ReactElement {
     navigate('/request', { state: { peerReviewDocId: doc.id } });
   };
 
-  const handleChangeDesignee = async () => {
-    if (!selected || !changingDesigneeUserId) return;
-    setProcessing(true);
-    try {
-      await documentsAPI.changeDesignee(selected.id, changingDesigneeUserId);
-      setChangingDesigneeOpen(false);
-      setChangingDesigneeUserId('');
-      setChangingDesigneeQuery('');
-      setChangingDesigneeDropdownOpen(false);
-      setTeamMembers([]);
-      addToast(t('approval.designee_changed_toast'), 'success');
-      await refreshAndSelect(selected.id);
-    } catch {
-      addToast(t('common.process_error'), 'error');
-    } finally {
-      setProcessing(false);
-    }
+  // 결재 경로 변경 저장 성공 후: 모달을 닫고 문서를 다시 불러온다. 실패 처리는 모달이 직접 한다.
+  const handleRouteChanged = async (docId: number) => {
+    setRouteModalOpen(false);
+    addToast(t('approval.route_changed_toast'), 'success');
+    await refreshAndSelect(docId);
   };
 
   const handleClaim = async (agent: AgentType) => {
@@ -2528,10 +2502,10 @@ export default function ApprovalPage(): React.ReactElement {
             && reviewerSelectedIds.length === 0
             && existingReviewerLoginids.length === 0;
 
-          // 지정자 변경 가능 여부: 원 PL 또는 MASTER, under_review, PL 단계 pending
-          const hasPendingPLStep = (selected?.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending');
-          const isOriginalPL = isPL && selected?.requester_name === currentUser.name;
-          const canChangeDesignee = (isOriginalPL || isMaster) && selected?.status === 'under_review' && hasPendingPLStep;
+          // 결재 경로 변경 가능 여부: 작성자 본인(loginid 기준) 또는 MASTER, 진행 중(under_review)인 문서.
+          // 항목별(PL·합의자 단계 종료, 합의 완료자 잠금 등)·철회/중단 차단은 모달·서버가 판정한다.
+          const canChangeRoute = !!selected && !progressFrozen && selected.status === 'under_review'
+            && (isMaster || (!!selected.requester_loginid && selected.requester_loginid === currentUser.username));
 
           // 중단(PAUSE) 관련 버튼 노출 계산
           const pr = selected?.pause_request;
@@ -2856,120 +2830,25 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.withdraw')}
                 </button>
               )}
-              {/* 지정자 변경 */}
-              {canChangeDesignee && !changingDesigneeOpen && !assigningOpen && (
+              {/* 결재 경로 변경 */}
+              {canChangeRoute && !assigningOpen && (
                 <button
                   className="btn btn-secondary"
                   disabled={processing}
-                  onClick={async () => {
-                    setChangingDesigneeOpen(true);
-                    setChangingDesigneeUserId('');
-                    setLoadingMembers(true);
-                    // 서버도 같은 규칙으로 검증한다(views._resolve_designated_pls) —
-                    // 지역이 다른 담당자를 지정하면 400 이 된다.
-                    const members = await usersAPI.list(plRoleFor(selected?.is_overseas));
-                    setTeamMembers(members.data.filter(u => u.loginid !== currentUser.username));
-                    setLoadingMembers(false);
-                  }}
+                  onClick={() => setRouteModalOpen(true)}
                 >
-                  {t('approval.change_designee')}
+                  {t('approval.change_route')}
                 </button>
               )}
-              {canChangeDesignee && changingDesigneeOpen && (
-                <>
-                  <div ref={changingDesigneeRef} style={{ position: 'relative' }}>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={changingDesigneeQuery}
-                      placeholder={loadingMembers ? t('common.loading') : t('approval.designee_search_placeholder')}
-                      disabled={loadingMembers}
-                      autoComplete="off"
-                      style={{ fontSize: '0.85rem', padding: '4px 8px', width: 220 }}
-                      onChange={(e) => {
-                        setChangingDesigneeQuery(e.target.value);
-                        setChangingDesigneeUserId('');
-                        setChangingDesigneeDropdownOpen(true);
-                      }}
-                      onFocus={() => setChangingDesigneeDropdownOpen(true)}
-                    />
-                    {changingDesigneeDropdownOpen && !loadingMembers && (
-                      <ul style={{
-                        position: 'absolute', bottom: '100%', left: 0, right: 0,
-                        background: 'var(--bg-modal)', border: '1px solid var(--border)',
-                        borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)',
-                        margin: 0, padding: 0, listStyle: 'none',
-                        maxHeight: 220, overflowY: 'auto', zIndex: 9999,
-                      }}>
-                        {teamMembers.filter((u) => {
-                          const q = changingDesigneeQuery.toLowerCase();
-                          if (!q) return true;
-                          return (
-                            u.name.toLowerCase().includes(q) ||
-                            u.loginid.toLowerCase().includes(q) ||
-                            (u.mail ?? '').toLowerCase().includes(q) ||
-                            (u.deptname ?? '').toLowerCase().includes(q)
-                          );
-                        }).length === 0 ? (
-                          <li style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                            {t('approval.no_search_results')}
-                          </li>
-                        ) : (
-                          teamMembers.filter((u) => {
-                            const q = changingDesigneeQuery.toLowerCase();
-                            if (!q) return true;
-                            return (
-                              u.name.toLowerCase().includes(q) ||
-                              u.loginid.toLowerCase().includes(q) ||
-                              (u.mail ?? '').toLowerCase().includes(q) ||
-                              (u.deptname ?? '').toLowerCase().includes(q)
-                            );
-                          }).map((u) => (
-                            <li
-                              key={u.loginid}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setChangingDesigneeQuery(u.name);
-                                setChangingDesigneeUserId(u.loginid);
-                                setChangingDesigneeDropdownOpen(false);
-                              }}
-                              style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
-                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                            >
-                              <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.name}</span>
-                              <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
-                                {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
-                              </span>
-                            </li>
-                          ))
-                        )}
-                      </ul>
-                    )}
-                  </div>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    disabled={!changingDesigneeUserId || processing || loadingMembers}
-                    onClick={handleChangeDesignee}
-                  >
-                    {t('approval.change')}
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setChangingDesigneeOpen(false);
-                      setChangingDesigneeUserId('');
-                      setChangingDesigneeQuery('');
-                      setChangingDesigneeDropdownOpen(false);
-                      setTeamMembers([]);
-                    }}
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </>
+              {canChangeRoute && selected && (
+                <RouteChangeModal
+                  isOpen={routeModalOpen}
+                  onClose={() => setRouteModalOpen(false)}
+                  doc={selected}
+                  onChanged={handleRouteChanged}
+                />
               )}
-              {/* 담당자 지정 (R·P 단계) */}
-              {assignableStep && !assigningOpen && !changingDesigneeOpen && (
+              {assignableStep && !assigningOpen && (
                 <button
                   className="btn btn-secondary"
                   data-tour={isTourMode ? 'assign-btn' : undefined}
@@ -2989,7 +2868,7 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 검토중(claim) — J/O/E 단계 선점 */}
-              {claimableStep && !assigningOpen && !changingDesigneeOpen && (
+              {claimableStep && !assigningOpen && (
                 <button
                   className="btn btn-secondary"
                   disabled={processing}
@@ -2999,7 +2878,7 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 검토중(claim) 취소 — 내가 선점한 단계를 다시 대기중으로 되돌린다 */}
-              {unclaimableStep && !assigningOpen && !changingDesigneeOpen && (
+              {unclaimableStep && !assigningOpen && (
                 <button
                   className="btn btn-secondary"
                   disabled={processing}
