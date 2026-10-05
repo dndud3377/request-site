@@ -649,12 +649,14 @@ export const hasActivePendingStep = (
 };
 
 /**
- * 결재현황 단계별 필터 탭(agent_R/P/J/O/E)이 하나의 "단계"로 봐야 하는 agent 묶음.
+ * 결재현황 단계별 필터 탭(agent_PL/R/P/J/O/E)이 하나의 "단계"로 봐야 하는 agent 묶음.
  * R/P/E 는 담당자 합의 후 검토자(RV/PV/EV)만 남아도 화면상 같은 단계로 표시되므로
  * (stageLabel 참고 — RV 도 라벨은 그대로 'RFG') 필터도 담당자 pending 뿐 아니라
  * 검토자 pending 도 같은 단계로 인식해야 한다. J/O 는 검토자 agent 자체가 없다.
+ * PL(1구역)은 PL 검토와 영업/기술지원 합의자(SA)가 병렬이라 둘 중 하나라도 pending 이면 같은 단계다.
  */
 export const STAGE_AGENT_GROUPS: Partial<Record<string, AgentType[]>> = {
+  PL: ['PL', 'SA'],
   R: ['R', 'RV'],
   P: ['P', 'PV'],
   J: ['J'],
