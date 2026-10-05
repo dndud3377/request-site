@@ -743,6 +743,69 @@ class ChangeRouteTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
         self.assertIn('끝나', r.json()['error'])
 
+    # ---- SA 미지정 사유 (합의자가 필수인 문서: 예외 구역 값이 기본값과 다름) ----
+    def _submit_sa_required(self, sas=None, none_reason=''):
+        """예외 구역 '변경 있음'+350(기본값 300과 다름)으로 합의자가 필수인 문서를 상신한다."""
+        detail = {
+            'ea_change': '변경 있음', 'ea_value': '350',
+            'sales_agreers': [{'loginid': u.loginid, 'name': u.username} for u in (sas or [])],
+            'sales_agreer_none_reason': none_reason,
+        }
+        self.doc.additional_notes = json.dumps({'detail': detail, 'jayerRows': []})
+        self.doc.save()
+        self._submit([self.pl_a])
+
+    def test_required_sa_removal_without_reason_is_blocked(self):
+        self._submit_sa_required(sas=[self.pl_b])
+        r = self._change({'sales_agreer_loginids': []})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('사유', r.json()['error'])
+        self.assertEqual(self._steps('SA'), [('plb', 'pending')], '막힌 요청은 아무것도 바꾸지 않는다')
+
+    def test_required_sa_removal_with_reason_records_detail_and_round(self):
+        self._submit_sa_required(sas=[self.pl_b])
+        r = self._change({'sales_agreer_loginids': [], 'sales_agreer_none_reason': ' 영업 협의 완료 '})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._steps('SA'), [])
+        self.assertEqual(self._detail()['sales_agreer_none_reason'], '영업 협의 완료')
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.sales_agreer_none_reasons, {'1': '영업 협의 완료'})
+        self.assertEqual(r.json()['document']['sales_agreer_none_reasons'], {'1': '영업 협의 완료'})
+
+    def test_required_sa_removal_with_blank_reason_is_blocked(self):
+        self._submit_sa_required(sas=[self.pl_b])
+        r = self._change({'sales_agreer_loginids': [], 'sales_agreer_none_reason': '   '})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._steps('SA'), [('plb', 'pending')])
+
+    def test_adding_sa_clears_stored_reason_and_round_record(self):
+        self._submit_sa_required(none_reason='XXX')
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.sales_agreer_none_reasons, {'1': 'XXX'})
+        r = self._change({'sales_agreer_loginids': ['plb']})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._detail()['sales_agreer_none_reason'], '')
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.sales_agreer_none_reasons, {})
+        # 다시 전원 제거하려면 사유를 새로 받아야 한다
+        r = self._change({'sales_agreer_loginids': []})
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_reason_is_not_recorded_when_sa_not_required(self):
+        self._submit([self.pl_a], sas=[self.pl_b])
+        r = self._change({'sales_agreer_loginids': [], 'sales_agreer_none_reason': '필요 없는 사유'})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._detail()['sales_agreer_none_reason'], '')
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.sales_agreer_none_reasons, {})
+
+    def test_detail_exposes_requires_sales_agreer(self):
+        self._submit_sa_required(sas=[self.pl_b])
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.get(f'/api/documents/{self.doc.id}/')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertIs(res.json()['requires_sales_agreer'], True)
+
     # ---- 통보처 ----
     def test_notifiers_replace_without_mail(self):
         self._submit([self.pl_a])

@@ -47,6 +47,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     post_approver_fixed_loginid = serializers.SerializerMethodField()
     post_approver_fixed_name = serializers.SerializerMethodField()
     map_info_locked = serializers.SerializerMethodField()
+    requires_sales_agreer = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
     shared_group_name = serializers.CharField(source='shared_group.name', read_only=True, default=None)
 
@@ -92,6 +93,10 @@ class DocPermFieldsMixin(serializers.Serializer):
         사용자와 무관한 문서 상태 판정이라 로그인 여부와 상관없이 계산한다.
         """
         return doc_permissions.map_info_locked(obj)
+
+    def get_requires_sales_agreer(self, obj):
+        """합의자(SA) 지정이 필수인 문서인가 — 결재 경로 변경 모달이 미지정 사유 입력칸을 보여줄지 판단한다."""
+        return obj.requires_sales_agreer()
 
     def get_post_approver_fixed_loginid(self, obj):
         """고정 후결자(.env) loginid — 프론트가 '🔒 고정' 표시·변경 잠금에 사용."""
@@ -295,6 +300,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'review_items', 'layer_drift_detected',
             'layer_drift_auto_rejected', 'is_overseas', 'sales_agreer_none_reasons',
+            'requires_sales_agreer',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
         # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
