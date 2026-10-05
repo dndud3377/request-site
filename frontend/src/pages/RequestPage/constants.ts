@@ -105,6 +105,17 @@ const EA_DEFAULT_PRODC = '500';
 export const eaDefaultValue = (onlyProdc?: string): string =>
   onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
 
+/**
+ * 예외 구역 값이 기본값(300/500)과 숫자로 같은가 — `300`·`300.0`·`0300` 은 모두 같은 값이다.
+ * 빈 값·숫자가 아닌 값은 false. 백엔드 `RequestDocument._ea_value_state` 와 같은 기준이어야 한다.
+ */
+export const isEaDefaultValue = (value: string | undefined, onlyProdc?: string): boolean => {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return false;
+  const parsed = Number(trimmed);
+  return !Number.isNaN(parsed) && parsed === Number(eaDefaultValue(onlyProdc));
+};
+
 // 요청 목적 'ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청.
 // (2026-08) 기타 목적이었다가 단독 요청 목적으로 승격됐다 — 다른 요청 목적처럼 단독 선택이며,
 // MAP 정보·J-layer·O-layer·Backbone 을 전부 작성하지 않고 이 표만 필수로 채워 바로 상신한다.
