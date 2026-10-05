@@ -119,3 +119,12 @@ test('서버가 거부하면 사유를 보여주고 모달 갱신(onChanged)은 
   expect((await screen.findByRole('alert')).textContent).toContain('이미 합의를 마친');
   expect(onChanged).not.toHaveBeenCalled();
 });
+
+test('상세(additional_notes)가 없는 목록 항목이면 통보처를 잠가 기존 값을 덮어쓰지 않는다', async () => {
+  const doc = makeDoc([step(2, 'PL', 'plb', '이제품', 'pending')]);
+  delete (doc as { additional_notes?: string }).additional_notes;
+  renderModal(doc);
+  await waitFor(() => expect(screen.getAllByText('의뢰서 상세 정보를 불러오지 못해 변경할 수 없습니다. 상세를 다시 열어 주세요.').length).toBeGreaterThan(0));
+  // 잠긴 항목(통보처·예정 후결자)에는 입력창이 없고, PL·합의자 입력창만 남는다.
+  await waitFor(() => expect(screen.getAllByPlaceholderText(/검색해서 추가/)).toHaveLength(2));
+});
