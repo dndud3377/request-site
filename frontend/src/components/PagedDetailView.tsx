@@ -2924,7 +2924,12 @@ type Page = { label: string; content: React.ReactNode; key?: string };
     if (agent === 'SA') {
       const saSteps = allSteps.filter((s) => s.agent === 'SA' && (s.round ?? 1) === round);
       if (saSteps.length === 0) {
-        return [{ status: 'na', label: t('approval.step_na') }];
+        // 합의자를 지정하지 않고 사유를 남긴 회차는 사유를 함께 보여준다(회차별 서버 기록).
+        const noneReason = doc.sales_agreer_none_reasons?.[String(round)];
+        return [{
+          status: 'na', label: t('approval.step_na'),
+          comment: noneReason ? t('approval.sales_agreer_none_reason_label', { reason: noneReason }) : undefined,
+        }];
       }
       return saSteps.map((s) => stepToInfo(s));
     }
