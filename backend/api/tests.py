@@ -17,7 +17,7 @@ from .management.commands import backfill_title_flow_step
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
-    UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
+    UserProfile, WithdrawRequest, LayerFilterSet, LayerSdException, ProcessProduct, ProductProcessId, Guide,
 )
 
 
@@ -9437,3 +9437,221 @@ class BackfillTitleFlowStepTest(TestCase):
         target.refresh_from_db()
         self.assertEqual(target.title, 'T_요청서_261001')
         self.assertIn('같은 제목의 다른 문서가 이미 있음', out)
+
+
+class LayerSdCheckTest(TestCase):
+    """J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검증 + 예외(LayerSdException) 관리 권한."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='sd_req', mail='sd_req@c.com', role='NONE')
+        self.pl = UserProfile.objects.create(loginid='sd_pl', mail='sd_pl@c.com', role='PL')
+        self.te_j = UserProfile.objects.create(loginid='sd_j', mail='sd_j@c.com', role='TE_J')
+        self.te_o = UserProfile.objects.create(loginid='sd_o', mail='sd_o@c.com', role='TE_O')
+        self.te_p = UserProfile.objects.create(loginid='sd_p', mail='sd_p@c.com', role='TE_P')
+        self.master = UserProfile.objects.create(loginid='sd_m', mail='sd_m@c.com', role='MASTER')
+
+    def _row(self, **kwargs):
+        base = {
+            'id': 'r1', 'process_id': 'P1', 'sp': '10', 'sd': '1000.123 월평동 지점', 'pp': 'PP01',
+            'layerid': '1000.123', 'st': 'O', 'new_or_copy': '신규', 'product_name': '제품A',
+            'step': '10', 'item_id': 'ITEM1',
+        }
+        base.update(kwargs)
+        return base
+
+    def _make_draft(self, jayer_rows=None, oayer_rows=None, detail=None):
+        return RequestDocument.objects.create(
+            title='sd-doc', requester=self.requester, requester_name='요청자',
+            requester_email='sd_req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({
+                'detail': detail or {}, 'jayerRows': jayer_rows or [], 'oayerRows': oayer_rows or [],
+                # 기존 bb 매핑 검증(_validate_bb_mapping)이 먼저 걸리지 않도록 J 행마다 bb 행을 매핑해 둔다.
+                'bbRows': [{'id': f"bb-{r['id']}", 'sourceJayerRowId': r['id']} for r in (jayer_rows or [])],
+            }),
+        )
+
+    def _submit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        return self.client.post(
+            f'/api/documents/{doc.id}/submit/', {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+
+    # ----- 숫자 추출 -----
+
+    def test_extract_sd_number(self):
+        from api.layer_sd_check import extract_sd_number
+        self.assertEqual(extract_sd_number('1000.123 월평동 지점'), '1000.123')
+        self.assertEqual(extract_sd_number('  7 abc'), '7')
+        self.assertEqual(extract_sd_number('1000.123월평동'), '1000.123')
+        self.assertEqual(extract_sd_number('1.2.3 x'), '1.2.3')
+        self.assertEqual(extract_sd_number('ABLD'), '')
+        self.assertEqual(extract_sd_number('SD01'), '')
+        self.assertEqual(extract_sd_number('월평동 3'), '')
+        self.assertEqual(extract_sd_number(''), '')
+        self.assertEqual(extract_sd_number(None), '')
+
+    # ----- 상신 차단 -----
+
+    def test_submit_blocked_when_j_sd_number_differs_from_layer(self):
+        doc = self._make_draft(jayer_rows=[self._row(layerid='2000')])
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('J-layer', r.json()['error'])
+        self.assertIn('1000.123', r.json()['error'])
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft')
+
+    def test_submit_blocked_when_o_sd_number_differs_from_layer(self):
+        doc = self._make_draft(oayer_rows=[self._row(layerid='2000')])
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('O-layer', r.json()['error'])
+
+    def test_submit_passes_when_sd_number_equals_layer(self):
+        doc = self._make_draft(jayer_rows=[self._row()], oayer_rows=[self._row()])
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_submit_passes_when_sd_has_no_leading_number(self):
+        doc = self._make_draft(jayer_rows=[self._row(sd='ABLD', layerid='M1')])
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_submit_passes_when_layerid_blank(self):
+        doc = self._make_draft(jayer_rows=[self._row(layerid='')])
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_submit_passes_for_inactive_and_noc_special_rows(self):
+        rows = [
+            self._row(id='a', layerid='9', st='X'),
+            self._row(id='b', layerid='9', new_or_copy='기등록'),
+            self._row(id='c', layerid='9', new_or_copy='layer삭제'),
+            self._row(id='d', layerid='9', new_or_copy='미진행'),
+        ]
+        doc = self._make_draft(jayer_rows=rows)
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_submit_skips_check_for_only_map(self):
+        doc = self._make_draft(
+            jayer_rows=[self._row(layerid='2000')], detail={'request_purpose': 'Only MAP'})
+        r = self._submit(doc)
+        self.assertNotIn('SD 첫 숫자', (r.json() or {}).get('error', ''), r.content)
+
+    # ----- 예외 -----
+
+    def _add_exception(self, table='J', **kwargs):
+        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd_number': '1000.123', 'layerid': '2000'}
+        data.update(kwargs)
+        return LayerSdException.objects.create(**data)
+
+    def test_registered_exception_lets_submit_pass(self):
+        self._add_exception('J')
+        doc = self._make_draft(jayer_rows=[self._row(layerid='2000')])
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_exception_requires_all_four_values_to_match(self):
+        self._add_exception('J')
+        for override in ({'process_id': 'P2'}, {'sp': '20'}, {'layerid': '3000'}, {'sd': '1000.124 x'}):
+            doc = self._make_draft(jayer_rows=[self._row(**{'layerid': '2000', **override})])
+            r = self._submit(doc)
+            self.assertEqual(r.status_code, 400, (override, r.content))
+
+    def test_j_exception_does_not_apply_to_oayer(self):
+        self._add_exception('J')
+        doc = self._make_draft(oayer_rows=[self._row(layerid='2000')])
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_resubmit_also_blocked(self):
+        doc = self._make_draft(jayer_rows=[self._row(layerid='2000')])
+        doc.status = 'rejected'
+        doc.save()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(
+            f'/api/documents/{doc.id}/resubmit/', {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('SD 첫 숫자', r.json().get('error', ''), r.content)
+
+    def test_requester_resubmit_also_blocked(self):
+        doc = self._make_draft(jayer_rows=[self._row()])
+        self.assertEqual(self._submit(doc).status_code, 200)
+        # 상신 후 PL 검토 단계에서 내용을 SD-Layer 불일치로 고쳐 재상신한다.
+        doc.refresh_from_db()
+        notes = self._json.loads(doc.additional_notes)
+        notes['jayerRows'][0]['layerid'] = '2000'
+        doc.additional_notes = self._json.dumps(notes)
+        doc.save()
+        r = self.client.post(
+            f'/api/documents/{doc.id}/requester-resubmit/',
+            {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('SD 첫 숫자', r.json().get('error', ''), r.content)
+
+    # ----- 예외 관리 권한 -----
+
+    def _payload(self, table, **kwargs):
+        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd_number': '1000.123', 'layerid': '2000'}
+        data.update(kwargs)
+        return data
+
+    def test_j_exception_manage_roles(self):
+        for user, expected in ((self.te_j, 201), (self.te_p, 201), (self.master, 201),
+                               (self.te_o, 403), (self.requester, 403)):
+            LayerSdException.objects.all().delete()
+            self.client.force_authenticate(user=user)
+            r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
+            self.assertEqual(r.status_code, expected, (user.role, r.content))
+
+    def test_o_exception_manage_roles(self):
+        for user, expected in ((self.te_o, 201), (self.te_p, 201), (self.master, 201),
+                               (self.te_j, 403), (self.requester, 403)):
+            LayerSdException.objects.all().delete()
+            self.client.force_authenticate(user=user)
+            r = self.client.post('/api/layer-sd-exceptions/', self._payload('O'), format='json')
+            self.assertEqual(r.status_code, expected, (user.role, r.content))
+
+    def test_te_p_manages_both_tables_and_records_creator(self):
+        self.client.force_authenticate(user=self.te_p)
+        for table in ('J', 'O'):
+            r = self.client.post('/api/layer-sd-exceptions/', self._payload(table), format='json')
+            self.assertEqual(r.status_code, 201, r.content)
+            self.assertEqual(r.json()['created_by'], 'sd_p')
+
+    def test_anyone_authenticated_can_list_but_not_anonymous(self):
+        self._add_exception('J')
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.get('/api/layer-sd-exceptions/', {'table': 'J'})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(len(r.json()), 1)
+        r = self.client.get('/api/layer-sd-exceptions/', {'table': 'O'})
+        self.assertEqual(r.json(), [])
+        self.client.force_authenticate(user=None)
+        r = self.client.get('/api/layer-sd-exceptions/', {'table': 'J'})
+        self.assertIn(r.status_code, (401, 403), r.content)
+
+    def test_delete_permission_follows_table(self):
+        exc_j = self._add_exception('J')
+        self.client.force_authenticate(user=self.te_o)
+        self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{exc_j.id}/').status_code, 403)
+        self.client.force_authenticate(user=self.te_j)
+        self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{exc_j.id}/').status_code, 204)
+        self.assertFalse(LayerSdException.objects.filter(pk=exc_j.id).exists())
+
+    def test_create_validation(self):
+        self.client.force_authenticate(user=self.te_j)
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd_number='abc'), format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', layerid=''), format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self.client.patch(f'/api/layer-sd-exceptions/1/', {}, format='json').status_code, 405)
