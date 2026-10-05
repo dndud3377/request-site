@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0001_squashed_0048_rejectionsnapshot_layer_drift_detected"),
+        ("api", "0049_approvalstep_review_started_at"),
     ]
 
     operations = [
