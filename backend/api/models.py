@@ -1412,6 +1412,8 @@ class MailNotification(models.Model):
         ('pause_resumed', '결재 재개'),
         ('document_deleted', '의뢰서 삭제'),
         ('post_approver_removed', '후결자 제외'),
+        # 결재 경로 변경으로 PL/영업·기술지원 합의자가 제외됨 (2026-10 추가)
+        ('route_member_removed', '결재선 제외'),
         # R/J/O 완료 → P 팀 통보 (2026-09 추가)
         ('notify_rjo_completed', 'R/J/O 완료 통보'),
     ]
