@@ -1534,6 +1534,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         step.assignee_name = assignee_name
+        step.review_started_at = timezone.now()
         step.save()
 
         # R 담당자 지정 메일은 제목에 이름을 붙인다("[이름님] ..."). 그 외(P)는 기존과 동일.
@@ -1760,6 +1761,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.assignee = request.user
         step.assignee_name = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
+        step.review_started_at = timezone.now()
         step.save()
 
         return Response({'message': '검토를 시작했습니다.'})
@@ -1800,6 +1802,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.assignee = None
         step.assignee_name = ''
+        step.review_started_at = None
         step.save()
 
         return Response({'message': '검토중을 취소했습니다.'})
@@ -1955,7 +1958,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # - 그 담당자가 지정하는 검토자(RV/PV/EV)는 담당자가 다시 정해질 때 이전 지정과
         #   무관하게 새로 고를 수 있어야 하므로 행 자체를 지운다.
         # - 작성자가 상신 시 직접 지정한 단계(PL/SA/RA)는 "미배정" 상태 자체가 없는
-        #   개인 지정 방식이라 담당자는 유지하고 대기중으로만 되돌린다.
+        #   개인 지정 방식이라 담당자는 유지하고 대기중으로만 되돌린다. 재개 시점부터 다시
+        #   검토중이므로 검토중 시작 시각(review_started_at)은 재개 시각으로 기록한다.
         _CLAIM_MAIN_AGENTS = {'R', 'P', 'J', 'O', 'E'}
         _REVIEWER_AGENTS = {'RV', 'PV', 'EV'}
         reset_round = self._max_round(document)
@@ -1966,7 +1970,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if zone_agents:
             ApprovalStep.objects.filter(
                 document=document, round=reset_round, agent__in=(zone_agents & _CLAIM_MAIN_AGENTS),
-            ).update(assignee=None, assignee_name='', action='pending', acted_at=None)
+            ).update(assignee=None, assignee_name='', action='pending', acted_at=None, review_started_at=None)
             ApprovalStep.objects.filter(
                 document=document, round=reset_round, agent__in=(zone_agents & _REVIEWER_AGENTS),
             ).delete()
@@ -1974,7 +1978,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if individually_designated:
                 ApprovalStep.objects.filter(
                     document=document, round=reset_round, agent__in=individually_designated,
-                ).update(action='pending', acted_at=None)
+                ).update(action='pending', acted_at=None, review_started_at=timezone.now())
 
         # 멈춘 기간(중단 확정~재개)만큼 현재 pending 단계의 마감 기한을 미뤄, 중단 동안
         # 남은 기한이 깎이지 않게 한다(감사 #1). 달력일 기준으로 밀어 남은 여유를 보존한다.
@@ -2828,6 +2832,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.assignee = new_pl_user
         step.assignee_name = new_pl_user.username or new_loginid
+        step.review_started_at = timezone.now()
         step.save()
 
         document.designated_pl = new_pl_user

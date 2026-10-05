@@ -116,6 +116,7 @@ export interface ApprovalStepFrontend {
   assignee_mail?: string | null; // 담당자 이메일 (결재 경로 탭 표시용)
   round: number;             // 상신 회차
   created_at?: string | null; // 단계 생성일시 (R 단계의 경우 해당 회차 상신 시각)
+  review_started_at?: string | null; // 대기중→검토중 전환 시각(검토중 클릭·지정·지정 PL 변경). 상신 때부터 담당자가 정해진 단계는 null
   due_date?: string | null;   // 완료 기한 (YYYY-MM-DD)
   zone_index?: number | null; // 이 단계가 속한 구역의 0-based 인덱스(1구역=0, 2구역=1, ...). 철회 '이전 회차 도달 구역' 확인 UI에 쓴다.
 }

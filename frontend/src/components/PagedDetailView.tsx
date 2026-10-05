@@ -767,8 +767,8 @@ const buildTbvtlvTable = (entries: any, t: TFunction): DiffTable | null => {
 /** 탭 목록에서 '기타' 탭을 찾는 식별자(전체 export 캡처용). */
 const ETC_PAGE_KEY = 'etc';
 
-/** '기타' 탭 칩 최대 폭(px) — 항목이 하나뿐이라 가로로 늘어나지 않게 제한한다. */
-const ETC_CHIP_MAX_WIDTH = 260;
+// 대기중 → 검토중 전환이 사용자 동작(검토중 클릭·담당자 지정)으로 일어나는 단계 — 결재 경로 탭의 검토중 시각 판정용.
+const REVIEW_START_BY_ACTION_AGENTS: string[] = ['R', 'P', 'J', 'O', 'E'];
 
 /**
  * 블록 빌더 3종 — 한 회차(detail) 하나만 받아 항목 목록을 만든다.
@@ -1964,6 +1964,24 @@ type Page = { label: string; content: React.ReactNode; key?: string };
               </div>
             )}
 
+            {/* CC 적용 여부 — (2026-10) '기타' 탭에서 옮겨왔다. 값이 비어 있어도 회색 "없음"으로 표시한다. */}
+            {(isR || isO || isP) && !isAdiCdChange && (
+              <div style={rowStyle}>
+                {fmtCcStatus(detail.mshot_change_cc, t) ? (
+                  <Chip
+                    label={t('request.mshot_change_cc_label')}
+                    value={fmtCcStatus(detail.mshot_change_cc, t)}
+                    style={chipWide}
+                    changed={changedFields.has('mshot_change_cc')}
+                    fieldKey="mshot_change_cc"
+                    buildValue={(d) => fmtCcStatus(d?.mshot_change_cc, t)}
+                  />
+                ) : (
+                  <PlaceholderChip label={t('request.mshot_change_cc_label')} style={chipWide} />
+                )}
+              </div>
+            )}
+
           </div>
 
           {showFlowChart && (detail.flow_chart?.length ?? 0) > 0 && (
@@ -2148,7 +2166,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
           )}
 
           {/* X표시 변경 여부 — 상신 시점에 선택된 값을 그대로 보여준다. CC 적용 여부(mshot_change_cc)는
-              '기타' 탭에서 보여준다.
+              '의뢰 상세' 탭의 상세 정보 카드에서 보여준다.
               (2026-09) 이전에는 CLONE/EXISTING 한정으로 api_maptable 을 실시간 재조회해 드리프트를
               감지·강조했으나, 이제는 그 기능을 폐지하고 다른 필드(map_change 등)와 동일하게
               회차별 상신 값만 비교한다(changedFields/buildMshotItems 공용 로직). */}
@@ -2893,7 +2911,14 @@ type Page = { label: string; content: React.ReactNode; key?: string };
     };
     // pending
     if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned') };
-    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name || undefined, email };
+    // 검토중 시작 시각 — 검토중 클릭·지정으로 바뀌는 단계(R/P/J/O/E)는 review_started_at 만 쓴다(기능 도입 전
+    // 문서는 기록이 없어 시간을 비운다). 상신 때부터 담당자가 정해진 단계(PL/SA/RA/RV/PV/EV)는 생성 시각이 곧 시작 시각이다.
+    const reviewStartedAt = s.review_started_at
+      ?? (REVIEW_START_BY_ACTION_AGENTS.includes(s.agent) ? null : s.created_at);
+    return {
+      status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name || undefined, email,
+      date: reviewStartedAt ? formatDateTimeShort(reviewStartedAt) : undefined,
+    };
   };
 
   // 한 단계(agent·round)의 표시 정보 목록. PL/J 등 다중 담당자는 담당자별로 여러 항목을 반환한다.
@@ -3079,40 +3104,25 @@ type Page = { label: string; content: React.ReactNode; key?: string };
     textTransform: 'uppercase', letterSpacing: '.04em', padding: '10px 0 2px',
   };
 
-  // '기타' 탭 — R 탭에서 뺀 항목을 섹션(카드) 단위로 담는다. 섹션을 늘릴 때는 etcSections 에 항목만 추가한다.
-  // R 탭과 같은 조건에서 보이며(ADI CD 변경은 안내 문구만), 값이 비어 있어도 탭 수가 문서마다 달라지지 않도록
-  // 회색 "없음"으로 표시한다. export 버튼은 첫 카드에만 둔다(캡처·시트는 탭 전체 기준).
+  // '기타' 탭 — 섹션(카드) 단위로 항목을 담는다. 섹션을 늘릴 때는 etcSections 에 항목만 추가한다.
+  // (2026-10) 유일한 항목이던 CC 적용 여부를 '의뢰 상세' 탭으로 옮겨 지금은 비어 있다 — 탭은 유지하고
+  // 섹션이 없으면 "없음" 카드 하나만 보여준다. export 버튼은 첫 카드에만 둔다(캡처·시트는 탭 전체 기준).
   if (showMap) {
-    const ccLabel = t('request.mshot_change_cc_label');
-    const ccValue = fmtCcStatus(detail.mshot_change_cc, t);
-    const etcChipStyle: React.CSSProperties = { maxWidth: ETC_CHIP_MAX_WIDTH };
-    const etcSections: Array<{ key: string; title: string; content: React.ReactNode }> = [
-      {
-        key: 'map',
-        title: t('request.etc_section_map'),
-        content: isAdiCdChange ? adiCdNotice : (
-          <div style={rowStyle}>
-            {ccValue ? (
-              <Chip
-                label={ccLabel}
-                value={ccValue}
-                style={etcChipStyle}
-                changed={changedFields.has('mshot_change_cc')}
-                fieldKey="mshot_change_cc"
-                buildValue={(d) => fmtCcStatus(d?.mshot_change_cc, t)}
-              />
-            ) : (
-              <PlaceholderChip label={ccLabel} style={etcChipStyle} />
-            )}
-          </div>
-        ),
-      },
-    ];
+    const etcSections: Array<{ key: string; title: string; content: React.ReactNode }> = [];
     pages.push({
       key: ETC_PAGE_KEY,
       label: t('request.section_etc'),
       content: (
         <div ref={etcTabRef}>
+          {etcSections.length === 0 && (
+            <div style={cardStyle}>
+              <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{t('request.section_etc')}</span>
+                <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('request.value_none')}</div>
+            </div>
+          )}
           {etcSections.map((section, idx) => (
             <div key={section.key} style={cardStyle}>
               <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
