@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory,
+    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, LayerSdException, PersonalMarkCategory,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -515,6 +515,27 @@ class LayerFilterSetSerializer(serializers.ModelSerializer):
         for k in ('sp', 'sd', 'pp'):
             if k in value and not isinstance(value[k], list):
                 raise serializers.ValidationError(f"words.{k} 는 배열이어야 합니다.")
+        return value
+
+
+class LayerSdExceptionSerializer(serializers.ModelSerializer):
+    """J/O-layer SD-Layer 검사 예외. 한 건 = (table, process_id, sp, SD 첫 숫자, layerid)."""
+    SD_NUMBER_RE = re.compile(r'^\d+(?:\.\d+)*$')
+
+    class Meta:
+        model = LayerSdException
+        fields = ['id', 'table', 'process_id', 'sp', 'sd_number', 'layerid',
+                  'created_by', 'created_by_name', 'created_at']
+        read_only_fields = ['id', 'created_by', 'created_by_name', 'created_at']
+
+    def validate_table(self, value):
+        if value not in ('J', 'O'):
+            raise serializers.ValidationError("table 은 'J' 또는 'O' 여야 합니다.")
+        return value
+
+    def validate_sd_number(self, value):
+        if not self.SD_NUMBER_RE.match(value):
+            raise serializers.ValidationError("sd_number 는 '1000.123' 같은 숫자 형식이어야 합니다.")
         return value
 
 
