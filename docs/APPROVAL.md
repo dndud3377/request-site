@@ -535,6 +535,13 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   (합의 완료자 포함)을 보낸다. 새 회차는 열지 않고 **같은 회차 안에서 대기(pending) 중인 사람만** 추가·제거한다.
 - **권한**: 작성자 본인(`doc_permissions.is_requester` — `requester_email` 폴백 포함) 또는 MASTER. 문서가 `under_review` 가
   아니거나 철회·중단 요청 확인 대기 중이면 `_blocked_progress_response` 로 400.
+- **합의자 미지정 사유 (2026-10)**: 합의자가 필수인 문서(`requires_sales_agreer`, 상세 응답에 같은 이름의 읽기 전용 필드)에서
+  SA 를 **모두 빼려면** 요청에 `sales_agreer_none_reason`(미지정 사유)을 함께 보내야 한다. 키가 없으면 저장된
+  `detail.sales_agreer_none_reason` 을 쓰고, 둘 다 비어 있으면 400. SA 가 바뀌면 상신 때와 같은 규칙으로
+  `detail.sales_agreer_none_reason`(필수 문서이고 SA 0명이면 사유, 아니면 `''`)과 `sales_agreer_none_reasons[회차]`
+  (`_record_sales_agreer_none_reason`, 실제 남은 이번 회차 SA step 기준)를 갱신한다. SA 를 다시 추가하면 사유는
+  지워지고, 다시 모두 빼려면 사유를 새로 받는다. SA 가 바뀌지 않는 요청에 실린 사유는 무시한다.
+  화면: `RouteChangeModal` 이 필수 문서에서 SA 를 모두 제거하면 입력칸을 보여주고 사유가 비면 저장 버튼을 막는다.
 - **합의 완료자는 수정 불가**: 이미 합의(pending 이 아닌 상태)한 PL·SA·RA 가 최종 목록에서 빠지면 400
   (`이미 합의를 마친 …은(는) 제외할 수 없습니다`). 화면은 🔒 칩(✕ 없음)으로 잠근다.
 - **PL 가드**: PL 은 최소 1명. PL·SA 변경은 PL 단계가 끝나면(`_pl_stage_complete`) 400. 변경 후 대기 중인 PL·SA 가
@@ -804,6 +811,7 @@ RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 
 
 - 기록 시점: `submit`(1회차) / `resubmit`·`requester_resubmit`(새 회차)가 SA step 을 만든 직후,
   같은 트랜잭션에서 `_record_sales_agreer_none_reason` 호출.
+  결재 경로 변경(`change_route`)에서 SA 가 바뀔 때도 같은 회차 키를 다시 맞춘다(Case L 참조).
 - 기록 조건: `requires_sales_agreer()` **이고** 지정 합의자 0명 **이고** 사유가 비어 있지 않을 때만.
   그 외(기본값으로 되돌렸는데 사유만 남은 경우·합의자를 지정한 경우·사유 없음)는 **그 회차 키를 지운다**.
   다른 회차 키는 건드리지 않는다. 판정을 서버가 하므로 프론트 상태와 무관하다.
@@ -1355,7 +1363,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 재개 | `resume/` | - (pause → under_review) |
 | 중단 요청 취소 | `cancel-pause/` | - |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
-| 결재 경로 변경 (2026-10) | `change-route/` | `designated_pl_loginids`·`sales_agreer_loginids`·`post_approver_loginids`·`notifiers` (실린 항목만, 의뢰자/MASTER) |
+| 결재 경로 변경 (2026-10) | `change-route/` | `designated_pl_loginids`·`sales_agreer_loginids`·`sales_agreer_none_reason`·`post_approver_loginids`·`notifiers` (실린 항목만, 의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
 | MASK 검토자(EV) 추가 (2026-09) | `add-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, E 담당자 합의 후 |
