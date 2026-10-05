@@ -532,6 +532,12 @@ class ApprovalStep(models.Model):
     assignee_name = models.CharField(max_length=100, blank=True, verbose_name='담당자 이름')
     round = models.PositiveSmallIntegerField(default=1, verbose_name='상신 회차')
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True, verbose_name='생성일시')
+    # 대기중 → 검토중 으로 바뀐 시각 — 검토중 클릭(claim_step)·R 지정(assign_step)·지정 PL 변경
+    # (change_designee) 시점에 기록하고, 검토중 취소(unclaim_step)·재개 초기화(resume, R/P/J/O/E) 시 비운다.
+    # 재개 시 담당자를 유지하는 PL/SA/RA 는 재개 시각으로 기록한다. 그 밖에 상신 시점부터 담당자가
+    # 정해져 바로 검토중인 단계는 기록하지 않으며, 화면은 그 경우 created_at 을 검토중 시작 시각으로
+    # 쓴다(docs/APPROVAL.md).
+    review_started_at = models.DateTimeField(null=True, blank=True, verbose_name='검토중 시작일시')
     due_date = models.DateField(null=True, blank=True, verbose_name='완료 기한')
 
     class Meta:
