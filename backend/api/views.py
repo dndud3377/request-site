@@ -2847,6 +2847,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # ---- 결재 경로 변경(change-route) — 요청 본문 키 / 지정 항목 이름 ----
     ROUTE_KEY_PL = 'designated_pl_loginids'
     ROUTE_KEY_SA = 'sales_agreer_loginids'
+    ROUTE_KEY_SA_NONE_REASON = 'sales_agreer_none_reason'
     ROUTE_KEY_RA = 'post_approver_loginids'
     ROUTE_KEY_NOTIFIERS = 'notifiers'
     ROUTE_LABEL_PL = '검토자(PL)'
@@ -3006,7 +3007,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         **대기 중(pending)인 사람만** 추가·제거한다 — 이미 합의한 사람은 목록에서 빠지면 400.
         - PL·SA: PL 검토 단계(전원 합의 전)에서만 변경 가능. 변경 후 대기 중인 PL·SA 가 한 명도
           없으면(= 다음 단계를 열 트리거가 없어짐) 400. 추가된 사람에게 단계 도착 메일, 제외된
-          사람에게 제외 안내 메일.
+          사람에게 제외 안내 메일. 합의자가 필수인 문서(`requires_sales_agreer`)에서 SA 를 모두
+          빼려면 `sales_agreer_none_reason`(미지정 사유)을 함께 보내야 하며(없으면 저장된 사유를
+          쓴다), SA 변경 시 `detail.sales_agreer_none_reason`·`sales_agreer_none_reasons[회차]` 를
+          상신 때와 같은 규칙으로 갱신한다.
         - 후결자: R 합의 전이면 detail.post_approvers 만 갱신(메일 없음), 이후면 RA 단계를 추가·제거
           (add/remove-post-approver 와 같은 최소 인원 가드·메일).
         - 통보처: detail.notifiers 만 갱신(메일 없음).
@@ -3050,9 +3054,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 return Response({'error': '변경 후 대기 중인 검토자·합의자가 한 명도 없어 다음 단계로 진행할 수 없습니다. '
                                           '변경을 원하시면 1명 추가 후 삭제하시기 바랍니다.'},
                                 status=status.HTTP_400_BAD_REQUEST)
-        if 'SA' in plan and document.requires_sales_agreer() and not plan['SA']['desired']:
+        # 합의자 미지정 사유: 요청에 실린 값이 있으면 그 값, 없으면 저장된 detail 값을 쓴다.
+        sa_none_reason = ''
+        if 'SA' in plan:
             detail = document.get_detail().get('detail', {}) or {}
-            if not str(detail.get('sales_agreer_none_reason', '') or '').strip():
+            if self.ROUTE_KEY_SA_NONE_REASON in request.data:
+                sa_none_reason = str(request.data.get(self.ROUTE_KEY_SA_NONE_REASON) or '').strip()
+            else:
+                sa_none_reason = str(detail.get('sales_agreer_none_reason', '') or '').strip()
+            if document.requires_sales_agreer() and not plan['SA']['desired'] and not sa_none_reason:
                 return Response({'error': '예외 구역 값을 기본값과 다르게 지정한 의뢰서는 영업/기술지원 합의자를 '
                                           '1명 이상 지정하거나 지정하지 않는 사유를 입력해야 합니다.'},
                                 status=status.HTTP_400_BAD_REQUEST)
@@ -3133,6 +3143,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 detail['sales_agreers'] = [
                     {'loginid': lid, 'name': plan['SA']['names'].get(lid, lid)} for lid in plan['SA']['desired']
                 ]
+                # 상신 때와 같은 규칙 — 합의자가 필수인데 0명일 때만 사유를 남기고, 그 외에는 비운다.
+                detail['sales_agreer_none_reason'] = (
+                    sa_none_reason if document.requires_sales_agreer() and not plan['SA']['desired'] else ''
+                )
             if pa_changed:
                 detail['post_approvers'] = [
                     {'loginid': lid, 'name': pa_plan['names'].get(lid, lid)} for lid in pa_plan['desired']
@@ -3144,6 +3158,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             update_fields.append('additional_notes')
         if update_fields:
             document.save(update_fields=update_fields)
+        if sa_changed:
+            # 회차별 기록은 detail 을 저장한 뒤, 실제로 남은 이번 회차 SA 단계 기준으로 맞춘다.
+            self._record_sales_agreer_none_reason(
+                document,
+                list(ApprovalStep.objects.filter(document=document, agent='SA', round=round_no)),
+                round_no,
+            )
 
         return Response({
             'message': '결재 경로가 변경되었습니다.',
