@@ -5782,10 +5782,56 @@ class SalesAgreerStageTests(TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn('영업/기술지원 합의자', res.json()['error'])
 
-    def test_not_required_when_ea_value_is_default(self):
-        """'변경 있음'이어도 값이 기본값 그대로면 필수가 아니다."""
+    def test_blocked_when_ea_change_with_default_value(self):
+        """'변경 있음'인데 값이 기본값(300) 그대로면 혼란을 주므로 상신할 수 없다."""
         doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '300'})
+        res = self._submit(doc)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('기본값과 같습니다', res.json()['error'])
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft', '막힌 문서는 상태가 바뀌지 않는다')
+
+    def test_blocked_when_default_written_in_other_notation(self):
+        """300.0 / 0300 / 공백 포함 표기도 숫자로 기본값과 같으면 막는다."""
+        for value in ('300.0', '0300', ' 300 ', '+300', '300.00'):
+            doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': value})
+            res = self._submit(doc)
+            self.assertEqual(res.status_code, 400, f'{value!r} 은 기본값과 같다')
+            self.assertIn('기본값과 같습니다', res.json()['error'])
+
+    def test_not_blocked_when_value_numerically_differs(self):
+        """숫자로 다르면 막지 않는다(합의자 필수 조건만 적용된다)."""
+        doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '300.5'})
+        res = self._submit(doc)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('영업/기술지원 합의자', res.json()['error'])
+        self.assertNotIn('기본값과 같습니다', res.json()['error'])
+
+    def test_blocked_on_resubmit_when_ea_change_with_default_value(self):
+        """재상신(resubmit)도 같은 규칙으로 막는다."""
+        doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '350',
+                              'sales_agreer_none_reason': 'XXX'})
         self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.pl_user)
+        self.client.post(f'/api/documents/{doc.id}/peer-reject/', {'comment': 'x'}, format='json')
+        self._set_detail(doc, {'ea_change': '변경 있음', 'ea_value': '300'})
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                               {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('기본값과 같습니다', res.json()['error'])
+
+    def test_blocked_on_requester_resubmit_when_ea_change_with_default_value(self):
+        """의뢰자 재상신(requester-resubmit)도 같은 규칙으로 막는다."""
+        doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '350',
+                              'sales_agreer_none_reason': 'XXX'})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self._set_detail(doc, {'ea_change': '변경 있음', 'ea_value': '300'})
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                               {'designated_pl_loginids': [self.pl_user.loginid]}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('기본값과 같습니다', res.json()['error'])
 
     def test_not_required_when_no_change(self):
         """'변경 없음'이면 필수가 아니다."""
@@ -5793,11 +5839,16 @@ class SalesAgreerStageTests(TestCase):
         self.assertEqual(self._submit(doc).status_code, 200)
 
     def test_prodc_default_is_500(self):
-        """C가문(only_prodc=Yes)의 기본값은 500 이라, 500 은 필수 조건에 걸리지 않는다."""
+        """C가문(only_prodc=Yes)의 기본값은 500 이라, '변경 있음'+500 은 막히고 300 은 합의 대상이다."""
         base = {'ea_change': '변경 있음', 'only_prodc': 'Yes', 'post_approvers': [
             {'loginid': self.sa_user.loginid, 'name': 'x'}]}
-        ok_doc = self._make_doc(dict(base, ea_value='500'))
-        self.assertEqual(self._submit(ok_doc).status_code, 200)
+        blocked_doc = self._make_doc(dict(base, ea_value='500'))
+        res = self._submit(blocked_doc)
+        self.assertEqual(res.status_code, 400, "C가문에서 '변경 있음'+500 은 기본값 그대로라 막힌다")
+        self.assertIn('기본값과 같습니다', res.json()['error'])
+
+        ok_doc = self._make_doc(dict(base, ea_change='변경 없음', ea_value='500'))
+        self.assertEqual(self._submit(ok_doc).status_code, 200, "'변경 없음'+500 은 정상 상신")
 
         ng_doc = self._make_doc(dict(base, ea_value='300'))
         res = self._submit(ng_doc)
@@ -5863,7 +5914,7 @@ class SalesAgreerStageTests(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX'})
 
-        self._set_detail(doc, {'ea_change': '변경 있음', 'ea_value': '300'})
+        self._set_detail(doc, {'ea_change': '변경 없음', 'ea_value': '300'})
         self._reject_and_resubmit(doc)
         doc.refresh_from_db()
         self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX'}, '2회차는 사유가 없어 키가 없다')
@@ -5876,9 +5927,9 @@ class SalesAgreerStageTests(TestCase):
         self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX', '3': 'XXXX'})
 
     def test_none_reason_not_recorded_when_value_back_to_default(self):
-        """기본값으로 되돌렸는데 사유만 남아 있으면 기록하지 않는다."""
+        """'변경 없음'(기본값)으로 되돌렸는데 사유만 남아 있으면 기록하지 않는다."""
         doc = self._make_doc({
-            'ea_change': '변경 있음', 'ea_value': '300', 'sales_agreer_none_reason': '남은 사유',
+            'ea_change': '변경 없음', 'ea_value': '300', 'sales_agreer_none_reason': '남은 사유',
         })
         self.assertEqual(self._submit(doc).status_code, 200)
         doc.refresh_from_db()
