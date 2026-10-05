@@ -1128,10 +1128,18 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   정렬은 상신일 오래된 순. 파일명 `결재현황_YYYYMMDD_HHMMSS.xlsx`.
 
 ### 3.2 필터 탭 (`applyClientFilter`, 클라이언트 측)
-- 전체 / 내 차례(my) / agent별(R·P·J·O·E) / 중단(pause) / **철회(withdraw)** / 임시저장(draft) / 반려(rejected).
-- ✅ **(2026-10) 철회 탭(`withdraw`)**: 확인 대기 중인 철회 요청이 있는 문서(`withdraw_request != null`,
-  서버는 `state='requested'` 요청만 내려준다)만 보여주고 탭 건수(`getTabCount`)도 같은 기준이다.
-  목록 응답에 이미 `withdraw_request` 가 있어 서버 변경은 없다. i18n 키 `approval.filter_withdraw`.
+- 전체 / 내 차례(my) / **PM(agent_PL)** / agent별(R·P·J·O·E) / **중단/철회(pause_withdraw)** / 임시저장(draft) / 반려(rejected).
+- ✅ **(2026-10) PM 탭(`agent_PL`)**: 1구역(PL 검토 + 영업/기술지원 합의자 SA)이 진행 중인 문서만 보여준다.
+  `STAGE_AGENT_GROUPS.PL = ['PL','SA']` 라 PL·SA 중 하나라도 현재 회차 pending 이면 잡히고, 둘 다 합의하고
+  R 단계로 넘어가면 빠진다. 다른 단계 탭과 같은 `hasActiveStageStep` 경로라 탭 카운트·정렬
+  (`getStagePendingEnteredAt`, 그 단계로 먼저 넘어온 문서가 위)도 동일하게 적용된다. 탭 위치는 MY 다음·RFG 앞.
+  i18n 키 `approval.filter_agent_PL`("PM"). 테스트: `approvalTable.test.ts` `hasActiveStageStep — PL(1구역)`.
+- ✅ **(2026-10) 중단/철회 탭(`pause_withdraw`)**: 예전의 '중단'(`pause`)·'철회'(`withdraw`) 탭 2개를 하나로 합쳤다.
+  `status === 'pause'` **또는** 확인 대기 중인 철회 요청이 있는 문서(`withdraw_request != null`, 서버는
+  `state='requested'` 요청만 내려준다)의 합집합이며, 둘이 겹치는 문서는 한 번만 센다(탭 건수 `getTabCount`도 같은 기준).
+  목록 응답에 이미 `withdraw_request` 가 있어 서버 변경은 없다. i18n 키 `approval.filter_pause_withdraw`
+  (`approval.filter_withdraw` 는 제거, `approval.filter_pause` 는 목록의 '중단' 표시용으로 유지).
+  ⚠️ `?filter=pause` / `?filter=withdraw` 쿼리는 더 이상 탭에 대응하지 않는다(코드 내 사용처 없음).
 - ✅ **(2026-08) '내 차례'·agent별 필터 판정 기준**: 공용 헬퍼 `hasActivePendingStep` 로 통일해
   **진행 중(`under_review`) 문서의 현재 회차 pending 단계만** 대상으로 본다. 예전엔 상태·회차를
   보지 않아 ① 반려 문서의 잔여 pending 단계 ② 재상신으로 회차가 올라간 뒤 남은 **이전 회차**
