@@ -108,7 +108,7 @@ import {
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
-  layeridFieldConsensus, soleParticipantByLayerid, stClearExtra,
+  layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -353,6 +353,7 @@ export default function RequestPage(): React.ReactElement {
   const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null; startIndex: number } | null>(null);
   const [adiCdPendingApply, setAdiCdPendingApply] = useState<{ side: 'before' | 'after'; rows: AdiCdStep[]; startIndex: number } | null>(null); // 붙여넣기 범위에 값이 있을 때 겹쳐쓰기 확인
   const [adiCdRemoveConfirm, setAdiCdRemoveConfirm] = useState<{ index: number } | null>(null); // 행 삭제 시 반대쪽에 값이 있을 때 확인
+  const [layerRowRemoveConfirm, setLayerRowRemoveConfirm] = useState<{ table: 'jayer' | 'oayer'; id: string } | null>(null); // 값이 입력된 수동 행 삭제 확인
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -2746,6 +2747,29 @@ export default function RequestPage(): React.ReactElement {
     setJayerRows((rows) => [...rows, makeJayerRow()]);
   };
 
+  // 수동 추가 행(loaded 아님)만 삭제한다. 매핑된 bb 행·바코드 요청/캐시도 함께 정리한다.
+  const removeJayerRowById = (id: string) => {
+    unmapIfMapped([id]);
+    barcodeReqSeq.current[id] = (barcodeReqSeq.current[id] ?? 0) + 1; // 진행 중 요청 무효화
+    if (barcodeDebounceTimers.current[id]) clearTimeout(barcodeDebounceTimers.current[id]);
+    setJayerBarcodeCache((prev) => {
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
+    jayerCellSel.clearCellSelection();
+    setJayerRows((rows) => rows.filter((r) => r.id !== id));
+  };
+
+  const handleJayerRemoveRow = (id: string) => {
+    const row = jayerRows.find((r) => r.id === id);
+    if (!row || row.loaded) return;
+    if (layerRowHasInput(row)) {
+      setLayerRowRemoveConfirm({ table: 'jayer', id });
+      return;
+    }
+    removeJayerRowById(id);
+  };
+
   // 필터 조건에 맞는(아직 활성인) 행의 st를 'X'로 실제 기록한다 — 일회성 적용(되돌리는 토글이 아님).
   // st='X' 전환과 동일하게 new_or_copy/product_name/step/item_id를 초기화하고 bb 매핑을 해제한다.
   const handleJayerApplyFilter = (filterId: string) => {
@@ -2852,6 +2876,29 @@ export default function RequestPage(): React.ReactElement {
 
   const handleOayerAddRow = () => {
     setOayerRows((rows) => [...rows, makeOayerRow()]);
+  };
+
+  // 수동 추가 행(loaded 아님)만 삭제한다.
+  const removeOayerRowById = (id: string) => {
+    oayerCellSel.clearCellSelection();
+    setOayerRows((rows) => rows.filter((r) => r.id !== id));
+  };
+
+  const handleOayerRemoveRow = (id: string) => {
+    const row = oayerRows.find((r) => r.id === id);
+    if (!row || row.loaded) return;
+    if (layerRowHasInput(row)) {
+      setLayerRowRemoveConfirm({ table: 'oayer', id });
+      return;
+    }
+    removeOayerRowById(id);
+  };
+
+  const handleLayerRowRemoveConfirm = () => {
+    if (!layerRowRemoveConfirm) return;
+    if (layerRowRemoveConfirm.table === 'jayer') removeJayerRowById(layerRowRemoveConfirm.id);
+    else removeOayerRowById(layerRowRemoveConfirm.id);
+    setLayerRowRemoveConfirm(null);
   };
 
   // 필터 조건에 맞는(아직 활성인) 행의 st를 'X'로 실제 기록한다 — 일회성 적용(되돌리는 토글이 아님).
@@ -4872,6 +4919,7 @@ export default function RequestPage(): React.ReactElement {
           handleJayerApplyFilter={handleJayerApplyFilter}
           handleJayerChange={handleJayerChange}
           handleJayerAddRow={handleJayerAddRow}
+          handleJayerRemoveRow={handleJayerRemoveRow}
           cellSel={jayerCellSel}
           GuideTourBadge={<StepTourBadge step={3} />}
           GuideBadge={GuideBadge}
@@ -4906,6 +4954,7 @@ export default function RequestPage(): React.ReactElement {
           handleOayerApplyFilter={handleOayerApplyFilter}
           handleOayerChange={handleOayerChange}
           handleOayerAddRow={handleOayerAddRow}
+          handleOayerRemoveRow={handleOayerRemoveRow}
           cellSel={oayerCellSel}
           GuideTourBadge={<StepTourBadge step={4} />}
           GuideBadge={GuideBadge}
@@ -5825,6 +5874,15 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={handleAdiCdRemoveConfirm}
         title={t('request.adi_cd_remove_row_title')}
         message={t('request.adi_cd_remove_row_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={layerRowRemoveConfirm !== null}
+        onClose={() => setLayerRowRemoveConfirm(null)}
+        onConfirm={handleLayerRowRemoveConfirm}
+        title={t('request.layer_row_remove_title')}
+        message={t('request.layer_row_remove_msg')}
         danger
       />
 
