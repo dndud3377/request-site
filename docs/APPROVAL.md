@@ -46,6 +46,7 @@
 | `is_parallel` | 병렬 단계 여부(O/E/RA/SA에 사용) |
 | `due_date` | 완료 예정일(영업일 계산) |
 | `acted_at` / `comment` | 처리 시각 / 의견 |
+| `review_started_at` | 대기중→검토중 전환 시각(2026-10-05). 검토중 클릭·R 지정·지정 PL 변경·재개(PL/SA/RA) 때 기록, 검토중 취소·재개(R/P/J/O/E) 때 비움. 상세는 문서 끝 "요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동" 절 |
 
 > 별도 "이력 테이블"은 없다. ApprovalStep 자체가 결재선이자 이력이며, `round`로 회차를
 > 구분하고 `acted_at`/`comment`로 처리 내역을 남긴다.
@@ -1579,6 +1580,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   - **기타 탭 = 섹션(카드) 단위 구성**: 섹션마다 카드를 따로 그리고 카드 제목이 섹션 이름이다(이모티콘 없음). `📊 export` 버튼은 **첫 카드에만** 둔다(캡처·시트는 탭 전체 기준). 현재 섹션은 **MAP**(`request.etc_section_map`) 하나이고 그 안에 `CC 적용 여부` 칩이 들어 있다. 값이 있으면 칩 + (재상신으로 바뀌었으면) 빨간 테두리·'이력 확인'(`Chip`의 `fieldKey`/`buildValue`), 비어 있으면(C가문이 아닌 문서 등) 섹션·탭은 유지한 채 회색 '없음'. **섹션 추가 방법**: `PagedDetailView.tsx` 의 `etcSections` 배열에 `{ key, title, content }` 를 추가하고, 엑셀 텍스트 시트(`detailExport.ts` 의 `addEtcInfoSheet`)에 같은 섹션의 `{ kind: 'section' }` 행 + 항목 행을 추가한다.
   - **export**: R 탭은 시트명만 'R'로 바뀐다(내용 동일). 기타 탭에 `📊 export` 버튼을 달아 캡처 시트 + `기타 (텍스트)` 시트를 만든다(섹션 제목 행 `MAP` → 그 아래 `CC 적용 여부` 행. 섹션 제목 행은 `addInfoSheet` 의 신규 `section` 블록 종류, 굵게 + 연한 파란 배경). **전체 export** 는 모든 문서에 R 시트 2장(캡처·텍스트)과 BB 다음의 기타 시트 2장을 항상 포함한다. 'ADI CD 변경' 문서의 R/기타 텍스트 시트에는 위 안내 문구만 들어간다(`addMapInfoSheet`/`addEtcInfoSheet`). `captureAllScreenshots()`/`ExportAllScreenshots` 에 `etc` 가 추가됐다.
   - **탭 인덱스 의존 코드**: 결재 경로 탭이 5→6번이 되어 `ApprovalPage.tsx` 의 `TOUR_PAGE_IDX.route`(전체 가이드 투어 `page-route`)를 6으로 고쳤다. R·기타 탭이 ADI CD 변경을 포함한 모든 문서에 나타나므로 탭 번호는 문서와 무관하게 0~6으로 고정이다(예전엔 ADI CD 문서만 5개 탭이라 `jayer`/`route` 번호가 어긋날 수 있었다). `PagedDetailView` 의 전체 export 캡처는 탭 목록에서 `key: 'etc'`(`ETC_PAGE_KEY`)로 기타 탭 위치를 찾는다(인덱스 하드코딩·렌더 중 변수 재할당 없음).
+  - **(2026-10-05 변경)** CC 적용 여부는 '의뢰 상세' 탭으로 옮겨져 기타 탭은 현재 비어 있다(탭은 유지). 문서 끝 "요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동" 절 참고.
   - **백엔드 무변경**: 저장 필드·`MAP_INFO_FIELDS`·API 는 그대로다(표시 위치만 변경).
 
 ---
@@ -2046,3 +2048,40 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
   "2026-10-04 — 결재 현황: '변경 감지' 자동 반려 문서는 반려 후에도 배지 유지" 절 참고.
 - 구현: `backend/api/layer_drift.py` `auto_reject_document` / `auto_reject_if_confirmed`,
   `views.py` `cancel_withdraw`. 테스트: `LayerDriftAutoRejectTest`.
+
+## 요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동 (2026-10-05)
+
+### 1. 결재 경로 탭: '검토중' 단계에도 시간 표시
+- 단계는 생성 시 담당자가 없으면 '대기중'이고, **검토중 클릭(`claim-step/`, J/O/E/P)** 또는
+  **담당자 지정(`assign-step/`, R)** 으로 담당자가 들어가며 '검토중'이 된다. 이 전환 시각을 저장하는
+  필드가 없었으므로 `ApprovalStep.review_started_at`(DateTimeField, null 허용)을 추가했다
+  (마이그레이션 `0049_approvalstep_review_started_at`, 직렬화 필드·`ApprovalStepFrontend` 타입 포함).
+- 기록/초기화 시점(`backend/api/views.py`):
+
+| 동작 | review_started_at |
+|---|---|
+| `claim_step`(검토중 클릭) / `assign_step`(R 지정) | 현재 시각 기록 |
+| `change_designee`(지정 PL 변경) | 현재 시각으로 갱신 |
+| `unclaim_step`(검토중 취소) | 비움 |
+| `resume`(재개) — R/P/J/O/E(담당자 초기화) | 비움(다시 검토중을 눌러야 함) |
+| `resume`(재개) — PL/SA/RA(담당자 유지) | 재개 시각 기록 |
+
+- 화면(`PagedDetailView.tsx` `stepToInfo`): 검토중 행에 `review_started_at` 을 표시한다. 값이 없으면
+  - 동작으로 검토중이 되는 단계(R/P/J/O/E, 상수 `REVIEW_START_BY_ACTION_AGENTS`)는 **시간을 비운다** —
+    기능 도입 전에 검토중이 된 기존 데이터는 기록이 없기 때문(생성 시각으로 대신 채우면 틀린 시간이 보임).
+  - 상신 때부터 담당자가 정해져 바로 검토중인 단계(PL/SA/RA/RV/PV/EV)는 단계 생성 시각(`created_at`)을 쓴다.
+
+### 2. CC 적용 여부(`mshot_change_cc`) → '의뢰 상세' 탭
+- '기타' 탭 MAP 섹션에 있던 칩을 '의뢰 상세' 탭의 **상세 정보 카드**(PRODUCT 담당자 아래)로 옮겼다.
+  노출 조건은 그대로(ADI CD 변경 제외), 값이 없어도 숨기지 않고 회색 '없음' 칩. 재상신 변경 강조·이력 확인 유지.
+- '기타' 탭은 유지하되 섹션이 없으면 '기타 / 없음' 카드 하나만 보인다(export 버튼 유지). ADI CD 변경 문서도
+  동일하게 '없음'(예전의 안내 문구 대신).
+- 엑셀: 상세 정보 시트에 `CC 적용 여부` 행 추가(ADI CD 변경 제외), 기타 텍스트 시트는 `기타 | 없음` 한 행.
+- `request.etc_section_map` i18n 키는 현재 미사용(삭제하지 않고 남김).
+
+### 3. 수동 검증
+1. 결재 현황 → 진행 중 의뢰서 클릭 → '결재 경로' 탭 → J/O/E/P 중 대기중 단계가 있는 문서에서 해당 팀 계정으로
+   '검토중' 클릭 → 다시 결재 경로 탭: 그 행에 검토중 배지 + 이름 + 이메일 + **클릭 시각**이 보이면 정상.
+2. 같은 단계에서 검토중 취소 → 행이 '대기중'으로 돌아가고 시간이 사라지면 정상.
+3. 의뢰 상세 탭 → 상세 정보 카드에 'CC 적용 여부' 칩(값 없으면 회색 '없음'), 기타 탭에는 '없음'만 보이면 정상.
+
