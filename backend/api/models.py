@@ -182,6 +182,11 @@ class RequestDocument(models.Model):
     # 새 회차 번호를 기록하고, PL 전원 합의 시점(`_open_stage_after_pl`)에 그 회차와 일치하면
     # R을 만들지 않고 바로 3구역을 생성한 뒤 소진(None)한다. 평소엔 항상 null.
     r_skip_round = models.PositiveIntegerField(null=True, blank=True, verbose_name='R 생략 회차')
+    # 영업/기술지원 합의자(SA)를 지정하지 않은 사유의 회차별 기록 — `{"1": "사유", "3": "사유"}`.
+    # 키는 회차 번호(문자열). 상신 계열 액션(submit/resubmit/requester_resubmit)이 새 회차를 만들 때
+    # 서버가 `requires_sales_agreer()` 이고 합의자가 0명인 경우에만 기록한다(그 외 회차는 키가 없다).
+    # additional_notes 에는 최신 회차 값 하나만 남아 지난 회차 사유를 읽을 수 없어 따로 둔다.
+    sales_agreer_none_reasons = models.JSONField(default=dict, blank=True, verbose_name='합의자 미지정 사유(회차별)')
 
     # J-layer/O-layer 자동 채움 값이 마스터 DB(PhotoStepS*)와 달라졌는지 여부 — `layer_drift.py`가
     # 스케줄러 동기화(sync_rtdb_options, 10분 주기) 직후 결재 진행중 문서 전체를 다시 계산해 갱신한다.
