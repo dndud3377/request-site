@@ -31,7 +31,7 @@ from .models import (
     PhotoStepChangeLog,
     VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
-    DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
+    DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet, LayerSdException,
     PersonalMarkCategory, PersonalDocumentMark,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
@@ -42,6 +42,7 @@ from . import design_rule_stats
 from . import review_items as review_items_sync
 from . import rejection_snapshots
 from . import layer_drift
+from . import layer_sd_check
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
@@ -49,7 +50,7 @@ from .serializers import (
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
-    RejectionSnapshotSerializer, LayerFilterSetSerializer, PersonalMarkCategorySerializer,
+    RejectionSnapshotSerializer, LayerFilterSetSerializer, LayerSdExceptionSerializer, PersonalMarkCategorySerializer,
 )
 import uuid
 import logging
@@ -103,6 +104,31 @@ class CanManageLayerFilter(BasePermission):
         return True  # retrieve/update/destroy 는 has_object_permission 에서 판정
 
     def has_object_permission(self, request, view, obj):
+        return self._allowed(request.user, obj.table)
+
+
+class CanManageLayerSdException(BasePermission):
+    """J/O-layer SD-Layer 검사 예외: 조회는 로그인한 누구나, 등록·삭제는 팀 역할만.
+
+    조회는 의뢰서 작성자(요청자)의 화면 검증이 같은 목록을 써야 하므로 역할을 묻지 않는다.
+    등록·삭제는 J 예외는 TE_J·TE_P, O 예외는 TE_O·TE_P(P 는 J·O 둘 다)이고 MASTER 는 둘 다 가능하다.
+    """
+    TABLE_ROLES = {'J': ('TE_J', 'TE_P'), 'O': ('TE_O', 'TE_P')}
+
+    def _allowed(self, user, table):
+        role = getattr(user, 'role', '')
+        return role == 'MASTER' or role in self.TABLE_ROLES.get(table, ())
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method == 'POST':
+            return self._allowed(request.user, request.data.get('table'))
+        return True  # 목록 조회는 누구나, destroy 는 has_object_permission 에서 판정
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
         return self._allowed(request.user, obj.table)
 
 
@@ -582,6 +608,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = layer_sd_check.validate_document(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -687,6 +717,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = layer_sd_check.validate_document(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -782,6 +816,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = layer_sd_check.validate_document(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3971,6 +4009,25 @@ class LayerFilterSetViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         table = self.request.query_params.get('table')
         return qs.filter(table=table) if table else qs
+
+
+class LayerSdExceptionViewSet(viewsets.ModelViewSet):
+    """J/O-layer SD-Layer 검사 예외 목록·등록·삭제. 목록은 ?table=J|O 로 거를 수 있다(수정 API 는 없다 — 삭제 후 재등록)."""
+    queryset = LayerSdException.objects.all()
+    serializer_class = LayerSdExceptionSerializer
+    permission_classes = [CanManageLayerSdException]
+    pagination_class = None
+    filter_backends = []
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        table = self.request.query_params.get('table')
+        return qs.filter(table=table) if table else qs
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(created_by=user.loginid, created_by_name=user.username or user.loginid)
 
 
 class AdminNoticeViewSet(viewsets.ModelViewSet):
