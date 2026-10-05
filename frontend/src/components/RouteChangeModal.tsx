@@ -239,12 +239,15 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
   const [candidatesError, setCandidatesError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const initialNoneReason = doc.sales_agreer_none_reasons?.[String(round)] ?? '';
+  const [saNoneReason, setSaNoneReason] = useState(initialNoneReason);
 
   useEffect(() => {
     if (!isOpen) return;
     setState(initial.state);
+    setSaNoneReason(initialNoneReason);
     setSaveError('');
-  }, [isOpen, initial]);
+  }, [isOpen, initial, initialNoneReason]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -292,6 +295,9 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
   };
   const anyChange = changed.pl || changed.sa || changed.ra || changed.notifiers;
   const plEmpty = changed.pl && keptLoginids(state.pl).length === 0;
+  // 합의자가 필수인 문서에서 SA 를 모두 빼면 미지정 사유가 필요하다(서버도 400).
+  const saNeedsReason = !!doc.requires_sales_agreer && changed.sa && keptLoginids(state.sa).length === 0;
+  const saReasonMissing = saNeedsReason && saNoneReason.trim() === '';
 
   const sectionTitle: Record<SectionKey, string> = {
     pl: t('approval.route_section_pl'),
@@ -317,6 +323,7 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
     const payload: ChangeRoutePayload = {};
     if (changed.pl) payload.designated_pl_loginids = keptLoginids(state.pl);
     if (changed.sa) payload.sales_agreer_loginids = keptLoginids(state.sa);
+    if (saNeedsReason) payload.sales_agreer_none_reason = saNoneReason.trim();
     if (changed.ra) payload.post_approver_loginids = keptLoginids(state.ra);
     if (changed.notifiers) {
       payload.notifiers = state.notifiers.filter((m) => m.status !== 'remove').map((m) => ({ loginid: m.loginid, name: m.name }));
@@ -355,7 +362,7 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
         <>
           <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginRight: 'auto' }}>{t('approval.route_footer_hint')}</span>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>{t('common.cancel')}</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={!anyChange || plEmpty || saving}>
+          <button className="btn btn-primary" onClick={handleSave} disabled={!anyChange || plEmpty || saReasonMissing || saving}>
             {saving ? t('common.loading') : t('approval.route_save')}
           </button>
         </>
@@ -381,6 +388,23 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
         disabled={!stageOpen} disabledMessage={lockedMessage}
         onAdd={addMember('sa')} onRemove={removeMember('sa')} onUndo={undoRemove('sa')}
       />
+      {saNeedsReason && (
+        <div style={{ margin: '-6px 0 12px' }}>
+          <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 4px' }}>{t('approval.route_sa_none_reason_help')}</p>
+          <input
+            type="text"
+            className="form-control"
+            style={{ fontSize: '0.85rem' }}
+            value={saNoneReason}
+            aria-label={t('approval.route_sa_none_reason_placeholder')}
+            placeholder={t('approval.route_sa_none_reason_placeholder')}
+            onChange={(e) => setSaNoneReason(e.target.value)}
+          />
+          {saReasonMissing && (
+            <p style={{ color: 'var(--danger)', fontSize: '0.78rem', margin: '4px 0 0' }}>{t('approval.route_sa_none_reason_required')}</p>
+          )}
+        </div>
+      )}
       {hasPostApprover && (
         <RouteSection
           title={sectionTitle.ra}
