@@ -229,6 +229,9 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
     (s) => (s.agent === 'PL' || s.agent === 'SA') && (s.round ?? 1) === round && s.action === 'pending'
   );
 
+  // 상세 조회에 실패해 목록 항목으로 대체된 문서는 additional_notes(통보처·예정 후결자 원본)가 없다.
+  // 비어 있다고 오인해 기존 값을 덮어쓰지 않도록 그 항목들은 잠근다.
+  const detailKnown = typeof doc.additional_notes === 'string';
   const initial = useMemo(() => buildInitialState(doc, round), [doc, round]);
   const [state, setState] = useState<RouteState>(initial.state);
   const [candidates, setCandidates] = useState<UserWithRole[]>([]);
@@ -285,7 +288,7 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
     pl: stageOpen && hasChange(state.pl),
     sa: stageOpen && hasChange(state.sa),
     ra: hasPostApprover && hasChange(state.ra),
-    notifiers: hasChange(state.notifiers),
+    notifiers: detailKnown && hasChange(state.notifiers),
   };
   const anyChange = changed.pl || changed.sa || changed.ra || changed.notifiers;
   const plEmpty = changed.pl && keptLoginids(state.pl).length === 0;
@@ -384,12 +387,14 @@ export default function RouteChangeModal({ isOpen, onClose, doc, onChanged }: Ro
           help={initial.raCreated ? t('approval.route_section_ra_help_after_r') : t('approval.route_section_ra_help_before_r')}
           members={state.ra} showStatus={initial.raCreated} candidates={candidates} loadingCandidates={loadingCandidates}
           fixedChip={fixedChip}
+          disabled={!initial.raCreated && !detailKnown} disabledMessage={t('approval.route_detail_unavailable')}
           onAdd={addMember('ra')} onRemove={removeMember('ra')} onUndo={undoRemove('ra')}
         />
       )}
       <RouteSection
         title={sectionTitle.notifiers} help={t('approval.route_section_notifiers_help')}
         members={state.notifiers} showStatus={false} candidates={candidates} loadingCandidates={loadingCandidates}
+        disabled={!detailKnown} disabledMessage={t('approval.route_detail_unavailable')}
         onAdd={addMember('notifiers')} onRemove={removeMember('notifiers')} onUndo={undoRemove('notifiers')}
       />
 
