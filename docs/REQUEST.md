@@ -288,6 +288,18 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-10-05 — 요청 목적 'P 변경' + 기타 목적 'B 변경' 추가)
+
+- **요청**: 의뢰서 Step1 요청 목적에 `P 변경`, 기타 목적에 `B 변경` 선택지를 추가. 의미·세부 동작은 아직
+  정해지지 않아 **선택값만 추가**하는 방식(특수 로직 없음 — 2026-06의 `기타`·`Short loop` 추가와 동일)으로 진행.
+- **변경**: `RequestPage/constants.ts`
+  - `OPTION_REQUEST_PURPOSE`: `'ADI CD 변경'` 과 `'기타'` 사이에 `'P 변경'` 추가.
+  - `OPTION_OTHER_PURPOSE`: `'FirstA 변경'` 과 `'연구소 제품'` 사이에 `'B 변경'` 추가.
+  - 표시 문자열이 곧 DB 저장값(`additional_notes.detail.request_purpose` / `other_purpose[]`)이다. 띄어쓰기 포함 그대로 저장된다.
+- **변경 없음(의도)**: 결재 경로(`RequestDocument` 판정 메서드), 입력 잠금(`disableOptional`), 필수 검증, i18n(옵션 라벨은 i18n 키가 아니라 값 그대로 표시), 마이그레이션.
+- **파급**: 결재 현황의 요청 목적 필터는 `OPTION_REQUEST_PURPOSE` 를 그대로 쓰므로 `P 변경` 이 자동으로 필터 항목에 나온다.
+  홈 설계룰 통계(`design_rule_stats.REQUEST_PURPOSES`)는 `MAP 삭제`·`ADI CD 변경` 과 마찬가지로 목록에 없어 `P 변경` 문서는 `기타` 로 집계된다.
+
 ### 기능 수정 (2026-10-04 — MAP 정보: INTER YES 시 EDS Backside 잠금 / 자동 매칭 EXISTING 잠금 / 지도 편차 '-' 부호 강조)
 
 - **요청 1 — INTER YES 이면 `map_opt_eds_backside` 선택 불가**:
