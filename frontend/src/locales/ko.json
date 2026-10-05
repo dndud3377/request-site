@@ -694,6 +694,7 @@
     "route_remove": "제거",
     "route_undo_remove": "제거 취소",
     "route_locked_stage_done": "PL 검토 단계가 끝나 변경할 수 없습니다.",
+    "route_detail_unavailable": "의뢰서 상세 정보를 불러오지 못해 변경할 수 없습니다. 상세를 다시 열어 주세요.",
     "route_no_members": "지정된 사람이 없습니다.",
     "route_search_placeholder": "이름·ID·이메일·부서로 검색해서 추가",
     "route_pl_min": "검토자(PL)는 최소 1명을 유지해야 합니다.",
