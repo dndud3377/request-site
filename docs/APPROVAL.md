@@ -759,6 +759,24 @@ RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 
 - 필수인데 합의자가 0명이면 `sales_agreer_none_reason`(미지정 사유)이 있어야 상신된다.
 - 프론트 `requiresSalesAgreer` 와 **같은 기준**이어야 한다(양쪽 모두 상신을 막는다).
 
+#### 미지정 사유의 회차별 기록 (`RequestDocument.sales_agreer_none_reasons`, 2026-10)
+`detail.sales_agreer_none_reason` 은 `additional_notes` 안의 **최신 회차 값 하나**뿐이라, 재상신하면
+지난 회차 사유가 사라진다. 결재 경로 탭이 회차별로 사유를 보여주려고 별도 JSON 필드(`{"회차": "사유"}`,
+마이그레이션 `0049`)에 서버가 따로 기록한다.
+
+- 기록 시점: `submit`(1회차) / `resubmit`·`requester_resubmit`(새 회차)가 SA step 을 만든 직후,
+  같은 트랜잭션에서 `_record_sales_agreer_none_reason` 호출.
+- 기록 조건: `requires_sales_agreer()` **이고** 지정 합의자 0명 **이고** 사유가 비어 있지 않을 때만.
+  그 외(기본값으로 되돌렸는데 사유만 남은 경우·합의자를 지정한 경우·사유 없음)는 **그 회차 키를 지운다**.
+  다른 회차 키는 건드리지 않는다. 판정을 서버가 하므로 프론트 상태와 무관하다.
+- 예: 1회차 `XXX` → 2회차 기본값(사유 없음) → 3회차 `XXXX` ⇒ `{"1": "XXX", "3": "XXXX"}`.
+- `resume`(중단 재개)·`peer_submit`(지정 PL 수정 후 상신)은 **새 회차를 만들지 않으므로** 기록하지 않는다.
+  (⚠️ 프론트는 이 두 경우에도 `additional_notes.history` 스냅샷을 추가해 `history[i]` ≠ `i+1` 회차다 —
+  그래서 history 로 회차를 매핑하지 않고 서버 기록을 쓴다.)
+- 응답: `RequestDocumentSerializer`(상세)에만 `sales_agreer_none_reasons` 가 내려가고 **read-only**.
+  목록 응답에는 없다. PUT/PATCH 로 덮어쓸 수 없다.
+- 이 기능 이전에 상신된 문서는 회차별 값이 저장돼 있지 않아 백필하지 않았다 — 다음 재상신부터 기록된다.
+
 #### 진행 판정
 - `_pl_stage_complete(document, round)` = `_all_pl_approved` **AND** `_all_sales_agreers_approved`
 - SA step 이 하나도 없으면 `_all_sales_agreers_approved` 는 **True**(기다릴 대상이 없다 = 해당없음).
@@ -779,6 +797,11 @@ RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 
   - 한쪽이 끝나고 다른 쪽이 남아 있어도 이 단계가 계속 표시된다
     (`plStagePending` = PL·SA 중 하나라도 pending).
 - 상세 '결재 경로' 탭: PL 바로 다음 줄에 표시. 그 회차에 SA step 이 없으면 '해당없음'.
+  - (2026-10) 그 회차에 `sales_agreer_none_reasons[회차]` 가 있으면 '해당없음' 옆에 `"사유: …"` 를 함께
+    보여준다(`PagedDetailView.getStepDisplays` SA 분기, i18n `approval.sales_agreer_none_reason_label`).
+    SA step 이 실제로 있는 회차는 사유를 보여주지 않고 단계 정보만 보여준다.
+  - 이 표시는 **결재 현황 상세**만 대상이다. 이력 조회 '반려' 탭은 스냅샷으로 문서를 다시 만드는 화면이라
+    이 필드가 없어 사유가 나오지 않는다. 현재 단계 그리드·메일 결재 경로 카드에도 사유를 싣지 않는다.
 - 메일 결재 경로 카드: `ROUTE_DISPLAY_ORDER` 에서 PL 다음. step 이 없으면 '예정'이 아니라 '해당없음'.
 
 ### Case Q — 요청 목적 'ADI CD 변경': PL → P·J 병렬 경로 (2026-08)
