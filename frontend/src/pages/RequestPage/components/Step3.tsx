@@ -41,6 +41,7 @@ interface Step3Props {
   handleOayerApplyFilter: (filterId: string) => void;
   handleOayerChange: (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => void;
   handleOayerAddRow: () => void;
+  handleOayerRemoveRow: (id: string) => void;
   cellSel: CellSelectionApi;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
@@ -69,6 +70,7 @@ const Step3: React.FC<Step3Props> = ({
   handleOayerApplyFilter,
   handleOayerChange,
   handleOayerAddRow,
+  handleOayerRemoveRow,
   cellSel,
   GuideTourBadge,
   GuideBadge,
@@ -213,6 +215,7 @@ const Step3: React.FC<Step3Props> = ({
                 <col /><col /><col /><col />
                 <col className="sd-column" />
                 <col /><col /><col /><col /><col /><col />
+                <col style={{ width: 36 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -227,6 +230,7 @@ const Step3: React.FC<Step3Props> = ({
                   <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
+                  <th style={{ width: 36 }} />
                 </tr>
               </thead>
               <tbody>
@@ -288,6 +292,19 @@ const Step3: React.FC<Step3Props> = ({
                       </td>
                       <td {...cellProps('product_name', greyBg ? regBg : undefined)}><input value={row.product_name} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} className={errors[`oayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                       <td {...cellProps('step', greyBg ? regBg : undefined)}><input value={row.step} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} className={errors[`oayer_noc_${row.id}_step`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                      <td style={{ textAlign: 'center' }}>
+                        {!row.loaded && (
+                          <button
+                            type="button"
+                            className="adi-cd-row-remove"
+                            title={t('common.delete')}
+                            aria-label={t('common.delete')}
+                            onClick={() => handleOayerRemoveRow(row.id)}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
