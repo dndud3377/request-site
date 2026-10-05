@@ -332,6 +332,17 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      그대로이고 EXISTING 으로 바뀌지 않는다. 그 화면에서 Step1 제품을 바꾸면 그때부터 재매칭된다.]
 - **주의**: 마지막 재매칭 후에도 사용자가 Step1 을 건드리면 StepMap 입력값이 다시 초기화된다(의도된 동작).
   MAP 정보 작성을 끝낸 뒤 Step1 의 조합법/제품을 수정하면 StepMap 을 처음부터 다시 입력해야 한다.
+- **후속 — MAP 목적 변경 확인 모달의 초기화도 `mapInfoDefaults()` 로 통일 (사용자 결정, 같은 날)**:
+  `handleMapTypeChangeConfirm` 은 StepMap 필드를 직접 나열해 초기화했는데 `mshot_change_cc`(CC 적용 여부)가 빠져 있었다.
+  C가문 Yes + CC 선택 후 MAP 목적을 바꾸면 `only_prodc` 는 No 로 돌아가는데 CC 값은 남았다(재현 확인).
+  핸들러가 `mapInfoDefaults()` 를 쓰도록 바꿨다 — 위 자동 매칭 초기화와 같은 범위다.
+  `map_type`·리전별 지도편차 기본값(`regionMapChangeDefault(newType)`)은 종전대로 새 목적 기준이다.
+  `mapInfoDefaults()` 에만 있던 필드는 `mshot_change_cc` 와 `map_change_reason`(MAP 삭제 이유) 두 개이고,
+  후자는 이 모달이 열리지 않는 MAP 삭제 모드 전용이라 실제 동작 변화는 CC 하나뿐이다.
+  - 검증: `cloneMapRegionDefault.test.tsx` 에 테스트 1건 추가 — 수정 전 실패(CC 잔존), 수정 후 통과.
+  - 수동 시나리오: [`/request` → 2단계 MAP 정보 → NEW 선택 → Only C가문 제품 Yes → CC 적용 여부 '적용' 선택 → MAP 목적을
+    CLONE 으로 변경 → 확인 모달 '확인' → 다시 Only C가문 제품을 Yes 로 변경] → [기대 결과: CC 적용 여부가 '선택' 으로
+    비어 있다('적용' 이 남아 있으면 실패).]
 
 ### 기능 변경 (2026-10-05 — 요청 목적 'P 변경' + 기타 목적 'B 변경' 추가)
 
