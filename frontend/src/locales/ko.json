@@ -834,6 +834,7 @@
     "step_done": "✓ 완료",
     "step_unassigned": "대기중",
     "step_na": "해당없음",
+    "sales_agreer_none_reason_label": "사유: {{reason}}",
     "adi_targets_count": "동일 변경 {{count}}건",
     "stage_cell_done": "완료",
     "step_skip": "건너뜀",
