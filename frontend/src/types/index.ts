@@ -409,6 +409,35 @@ export interface LayerFilterSet {
   updated_at: string;
 }
 
+/**
+ * J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검사의 예외(팀 공유, 서버 저장).
+ * (process_id, sp, sd_number, layerid) 4개 값이 모두 같은 행은 SD 첫 숫자와 Layer 가 달라도 통과한다.
+ */
+export interface LayerSdException {
+  id: number;
+  table: 'J' | 'O';
+  process_id: string;
+  sp: string;
+  sd_number: string;
+  layerid: string;
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+}
+
+/** 예외 등록 요청 본문 — 서버가 등록자(created_by*)를 채운다. */
+export type LayerSdExceptionInput = Pick<LayerSdException, 'table' | 'process_id' | 'sp' | 'sd_number' | 'layerid'>;
+
+/** SD 첫 숫자와 Layer 가 다르고 예외도 아닌 J/O-layer 행 한 건. */
+export interface LayerSdMismatch {
+  rowId: string;
+  process_id: string;
+  sp: string;
+  sd: string;
+  sdNumber: string;
+  layerid: string;
+}
+
 /** 키워드 하나 + 그 키워드에 지정된 색상. */
 export interface ColorFilterKeyword {
   word: string;
