@@ -315,6 +315,7 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
   if (detail.customer_name) blocks.push({ kind: 'kv', label: t('request.customer_name'), value: detail.customer_name });
   if (detail.customer_requirement) blocks.push({ kind: 'kv', label: t('request.customer_requirement'), value: detail.customer_requirement });
   if (detail.product_manager) blocks.push({ kind: 'kv', label: t('request.product_manager'), value: detail.product_manager });
+  if (!isAdiCdChange) blocks.push({ kind: 'kv', label: t('request.mshot_change_cc_label'), value: fmtCcText(detail, t) });
 
   if (isAdiCdChange && (detail.adi_cd_extra_targets?.length ?? 0) > 0) {
     const rows = [
@@ -395,6 +396,13 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
   }
 
   addInfoSheet(wb, t, sheetName, blocks);
+}
+
+/** CC 적용 여부(mshot_change_cc) 표시 텍스트 — 미선택이면 "없음". */
+function fmtCcText(detail: Partial<DetailFormState>, t: TFunction): string {
+  if (detail.mshot_change_cc === 'exists') return t('request.cc_apply');
+  if (detail.mshot_change_cc === 'not_exists') return t('request.cc_not_apply');
+  return t('request.value_none');
 }
 
 // ===== MAP 정보 텍스트 시트 =====
@@ -494,24 +502,12 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
   addInfoSheet(wb, t, sheetName, blocks);
 }
 
-// ===== 기타 텍스트 시트 — R 탭에서 뺀 항목을 섹션(MAP: CC 적용 여부) 단위로 담는다 =====
+// ===== 기타 텍스트 시트 — (2026-10) CC 적용 여부를 상세 정보 시트로 옮겨 지금은 항목이 없다 =====
 
-function addEtcInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, detail: Partial<DetailFormState>): void {
-  if (detail.request_purpose === 'ADI CD 변경') {
-    addInfoSheet(wb, t, sheetName, [
-      { kind: 'section', label: t('request.etc_section_map') },
-      { kind: 'kv', label: t('request.section_etc'), value: t('request.tab_adi_cd_not_applicable') },
-    ]);
-    return;
-  }
-  const ccText = detail.mshot_change_cc === 'exists' ? t('request.cc_apply')
-    : detail.mshot_change_cc === 'not_exists' ? t('request.cc_not_apply')
-    : t('request.value_none');
-  const blocks: InfoBlock[] = [
-    { kind: 'section', label: t('request.etc_section_map') },
-    { kind: 'kv', label: t('request.mshot_change_cc_label'), value: ccText },
-  ];
-  addInfoSheet(wb, t, sheetName, blocks);
+function addEtcInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string): void {
+  addInfoSheet(wb, t, sheetName, [
+    { kind: 'kv', label: t('request.section_etc'), value: t('request.value_none') },
+  ]);
 }
 
 function addOvlInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>): void {
@@ -619,11 +615,10 @@ export async function exportMapInfoImage(doc: RequestDocument, t: TFunction, scr
 }
 
 export async function exportEtcInfoImage(doc: RequestDocument, t: TFunction, screenshot: ScreenshotCapture | null): Promise<void> {
-  const { detail } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
   const sheetName = t('request.section_etc');
   addScreenshotSheet(wb, sheetName, screenshot, t('request.export_capture_failed'));
-  addEtcInfoSheet(wb, t, textSheetName(sheetName, t), detail);
+  addEtcInfoSheet(wb, t, textSheetName(sheetName, t));
   await downloadWorkbook(wb, `${doc.title}_${sheetName}_${getNowString()}.xlsx`);
 }
 
@@ -663,6 +658,6 @@ export async function exportAll(
   addBbSheet(wb, t, detail, bb);
   const etcSheetName = t('request.section_etc');
   addScreenshotSheet(wb, etcSheetName, screenshots.etc, t('request.export_capture_failed'));
-  addEtcInfoSheet(wb, t, textSheetName(etcSheetName, t), detail);
+  addEtcInfoSheet(wb, t, textSheetName(etcSheetName, t));
   await downloadWorkbook(wb, `${doc.title}_전체_${getNowString()}.xlsx`);
 }
