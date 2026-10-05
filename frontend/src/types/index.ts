@@ -130,6 +130,7 @@ export interface RouteNotifier {
 export interface ChangeRoutePayload {
   designated_pl_loginids?: string[];
   sales_agreer_loginids?: string[];
+  sales_agreer_none_reason?: string; // 합의자가 필수인 문서에서 SA 를 모두 제외할 때 함께 보내는 미지정 사유
   post_approver_loginids?: string[];
   notifiers?: RouteNotifier[];
 }
@@ -265,6 +266,8 @@ export interface RequestDocument {
   // 영업/기술지원 합의자 미지정 사유의 회차별 기록 `{"1": "사유"}` (읽기 전용). 결재 경로 탭 SA 행에 표시한다.
   // 해당 회차에 합의자가 없고 예외 구역 값이 기본값과 달랐을 때만 그 회차 키가 있다.
   sales_agreer_none_reasons?: Record<string, string>;
+  // 합의자(SA) 지정이 필수인 문서인지 (읽기 전용) — 결재 경로 변경 모달이 미지정 사유 입력칸을 보일지 정한다.
+  requires_sales_agreer?: boolean;
 }
 
 /**
