@@ -128,3 +128,48 @@ test('상세(additional_notes)가 없는 목록 항목이면 통보처를 잠가
   // 잠긴 항목(통보처·예정 후결자)에는 입력창이 없고, PL·합의자 입력창만 남는다.
   await waitFor(() => expect(screen.getAllByPlaceholderText(/검색해서 추가/)).toHaveLength(2));
 });
+
+const saDoc = (requires: boolean): RequestDocument => ({
+  ...makeDoc([step(1, 'PL', 'pla', '김제품', 'pending'), step(2, 'SA', 'plb', '이제품', 'pending')]),
+  requires_sales_agreer: requires,
+});
+
+test('합의자가 필수인 문서에서 합의자를 모두 빼면 사유 입력이 필요하고, 입력하면 함께 전송한다', async () => {
+  renderModal(saDoc(true));
+  await waitFor(() => expect((screen.getAllByPlaceholderText(/검색해서 추가/)[0] as HTMLInputElement).disabled).toBe(false));
+  expect(screen.queryByPlaceholderText('합의자를 지정하지 않는 사유')).toBeNull();
+
+  fireEvent.click(screen.getAllByRole('button', { name: '제거' })[1]);
+  const reason = screen.getByPlaceholderText('합의자를 지정하지 않는 사유');
+  expect(screen.getByText('지정하지 않는 사유를 입력해주세요.')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '변경 저장' }) as HTMLButtonElement).disabled).toBe(true);
+
+  fireEvent.change(reason, { target: { value: ' 영업 협의 완료 ' } });
+  expect((screen.getByRole('button', { name: '변경 저장' }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '변경 저장' }));
+  await waitFor(() => expect(mockState.captured).not.toBeNull());
+  expect(mockState.captured).toEqual({
+    docId: 7, payload: { sales_agreer_loginids: [], sales_agreer_none_reason: '영업 협의 완료' },
+  });
+});
+
+test('합의자가 필수가 아닌 문서는 합의자를 모두 빼도 사유 입력 없이 저장된다', async () => {
+  renderModal(saDoc(false));
+  await waitFor(() => expect((screen.getAllByPlaceholderText(/검색해서 추가/)[0] as HTMLInputElement).disabled).toBe(false));
+  fireEvent.click(screen.getAllByRole('button', { name: '제거' })[1]);
+  expect(screen.queryByPlaceholderText('합의자를 지정하지 않는 사유')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '변경 저장' }));
+  await waitFor(() => expect(mockState.captured).not.toBeNull());
+  expect(mockState.captured).toEqual({ docId: 7, payload: { sales_agreer_loginids: [] } });
+});
+
+test('합의자가 필수인 문서라도 합의자가 남아 있으면 사유를 묻지 않는다', async () => {
+  renderModal(saDoc(true));
+  await waitFor(() => expect((screen.getAllByPlaceholderText(/검색해서 추가/)[0] as HTMLInputElement).disabled).toBe(false));
+  fireEvent.focus(screen.getAllByPlaceholderText(/검색해서 추가/)[1]);
+  fireEvent.mouseDown(await screen.findByText('최제품'));
+  expect(screen.queryByPlaceholderText('합의자를 지정하지 않는 사유')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '변경 저장' }));
+  await waitFor(() => expect(mockState.captured).not.toBeNull());
+  expect(mockState.captured).toEqual({ docId: 7, payload: { sales_agreer_loginids: ['plb', 'plc'] } });
+});
