@@ -11,9 +11,9 @@ import {
 } from '../../types';
 
 // ===== Option Constants =====
-export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제', 'ADI CD 변경', '기타'] as const;
+export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제', 'ADI CD 변경', 'P 변경', '기타'] as const;
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5', 'nv'] as const;
-export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'FirstA 변경', '연구소 제품'] as const;
+export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'FirstA 변경', 'B 변경', '연구소 제품'] as const;
 
 // 의뢰서 자동 제목의 `_{라벨}_YYMMDD` 구간. 기준 키와 일치하는 흐름도 행이 없으면 이 라벨을 쓴다
 // (일치 행이 있으면 그 행들의 Step 이 `[10~20][90~100]` 형태로 대신 들어간다 — buildFlowStepTitlePart).

@@ -152,7 +152,7 @@ CI=true npx react-scripts test --watchAll=false --passWithNoTests    # 67건 통
 npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 24 (baseline 47 → 감소)
 ```
 
-#### 1.4.2 마이그레이션 squash (2026-10-04, 1단계 완료)
+#### 1.4.2 마이그레이션 squash (2026-10-04, 1단계 배포 · 2단계 코드 완료 · 2단계 배포 대기)
 
 `api` 앱의 마이그레이션 0001~0048(48개)을 Django `squashmigrations` 로
 `api/migrations/0001_squashed_0048_rejectionsnapshot_layer_drift_detected.py` 하나로 합쳤다
@@ -173,12 +173,33 @@ npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 24 (baseli
   - 0030까지만 적용된 DB → 기존 파일 0031~0048(19건)로 이어서 적용된다. 최종 스키마도 같다.
   - `makemigrations --check` → `No changes detected`. `manage.py test api` → 621건 OK.
   - `migrate api zero` 로 되돌리기도 성공했다.
-- **2단계(미실행)**: **모든 환경**(운영·개발·각자 로컬 DB)이 0048 이후로 migrate 된 것을 확인한 뒤에 한다.
-  1. 기존 0001~0048 파일을 삭제한다.
-  2. squash 파일의 `replaces` 를 제거한다.
+- **2단계 (코드 완료, 배포는 아래 전제 조건 확인 후)**: 기존 0001~0048 파일 48개를 삭제하고 squash 파일의
+  `replaces` 를 제거했다. 이제 `api/migrations/` 에는 squash 파일과 `__init__.py` 만 남는다.
+  squash **파일명은 바꾸지 않는다**(기존 DB 의 `django_migrations` 에 이 이름으로 기록돼 있음).
+  - ⚠️ **배포 전제 조건**: 2단계를 배포할 **모든 DB**(운영·개발·각자 로컬)에서
+    `python manage.py showmigrations api` 를 **2단계 배포 전에** 실행해 확인한다.
+    - `[X] 0001_squashed_0048_... (48 squashed migrations)` → 준비 완료.
+    - `[-] ... Run 'manage.py migrate' to finish recording.` → 1단계 코드로 `migrate` 를 한 번 실행한다
+      (SQL 없이 squash 이름만 기록된다). 그러면 `[X]` 가 된다.
+    - 1단계 코드로 `migrate` 가 한 번이라도 돈 DB 는 이미 `[X]` 다. 컨테이너 시작 시 `migrate` 가 자동 실행된다.
+  - **전제 조건을 어기면**: squash 이름이 기록되지 않은 DB 에 2단계 코드로 `migrate` 하면 아래 에러로
+    실패한다. 컨테이너 시작 명령이 `migrate && gunicorn` 이므로 **백엔드가 뜨지 않는다**.
+    ```
+    django.db.migrations.exceptions.InconsistentMigrationHistory: Migration admin.0001_initial is
+    applied before its dependency api.0001_squashed_0048_rejectionsnapshot_layer_drift_detected on database 'default'.
+    ```
+    복구: 1단계 코드(squash 파일에 `replaces` 가 있는 버전)로 `migrate` 를 한 번 돌린 뒤 2단계 코드로
+    돌아오면 된다(아래 검증 ③).
+  - **검증**(sqlite, §1.4.1 환경, 2026-10-04):
+    1. 빈 DB → squash 1건 적용. 1단계 기준 스키마와 동일(테이블 53개, 인덱스 81개).
+    2. squash 이름이 기록된 DB(`[X]`) → `No migrations to apply`.
+    3. squash 이름이 없는 DB(`[-]`, 48행만 있음) → 위 `InconsistentMigrationHistory` 로 실패(재현).
+       같은 DB 를 1단계 코드로 `migrate` 한 번 → 2단계 코드로 `migrate` 하니 `No migrations to apply`, `[X]`.
+    4. `makemigrations --check` → `No changes detected`. `manage.py test api` → 628건 OK.
+  - 다른 문서(APPROVAL.md 등)의 "마이그레이션 `00xx`" 언급은 **이력**으로 남겨 둔다. 해당 파일은 삭제됐고,
+    내용은 모두 squash 파일에 들어 있다. 옛 파일 내용이 필요하면 `git show 65dffcf:backend/api/migrations/<파일명>` 으로 본다.
 - **이후 새 마이그레이션**: 평소처럼 `makemigrations` 로 만들면 된다. 의존성은 squash 파일
-  (`0001_squashed_0048_...`)로 잡힌다(그래프 leaf 확인). 0048 까지 안 간 DB 에서도 Django 가
-  이 의존성을 기존 0048 로 해석한다.
+  (`0001_squashed_0048_...`)로 잡힌다. 번호는 `0049_` 부터 이어진다(squash 이름의 끝 번호 기준, dry-run 으로 확인).
 
 ### 1.5 실행 결과
 
