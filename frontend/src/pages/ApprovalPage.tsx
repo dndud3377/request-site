@@ -175,6 +175,12 @@ interface FilterTab {
   label: string;
 }
 
+// '중단/철회' 필터 탭 키 — 중단(status=pause) 문서와 확인 대기 중인 철회 요청 문서의 합집합.
+const PAUSE_WITHDRAW_FILTER = 'pause_withdraw';
+
+const isPausedOrWithdrawing = (d: RequestDocument): boolean =>
+  d.status === 'pause' || d.withdraw_request != null;
+
 export default function ApprovalPage(): React.ReactElement {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -436,8 +442,7 @@ export default function ApprovalPage(): React.ReactElement {
     }
     if (filter === 'draft') return all.filter(d => d.status === 'draft');
     if (filter === 'rejected') return all.filter(d => d.status === 'rejected');
-    if (filter === 'pause') return all.filter(d => d.status === 'pause');
-    if (filter === 'withdraw') return all.filter(d => d.withdraw_request != null);
+    if (filter === PAUSE_WITHDRAW_FILTER) return all.filter(isPausedOrWithdrawing);
     // MY 판정은 홈 '나의 의뢰 현황'과 공유한다(utils/approvalTable.isMyDocument).
     if (filter === 'my') return all.filter((d) => isMyDocument(d, currentUser));
     if (filter.startsWith('agent_')) {
@@ -456,8 +461,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (key === '') return base.length;
     if (key === 'draft') return base.filter(d => d.status === 'draft').length;
     if (key === 'rejected') return base.filter(d => d.status === 'rejected').length;
-    if (key === 'pause') return base.filter(d => d.status === 'pause').length;
-    if (key === 'withdraw') return base.filter(d => d.withdraw_request != null).length;
+    if (key === PAUSE_WITHDRAW_FILTER) return base.filter(isPausedOrWithdrawing).length;
     if (key === 'my') return base.filter(d => isMyDocument(d, currentUser)).length;
     if (key.startsWith('agent_')) {
       const agent = key.replace('agent_', '');
@@ -742,13 +746,13 @@ export default function ApprovalPage(): React.ReactElement {
   const tabBaseLabels: { key: string; baseLabel: string }[] = [
     { key: '', baseLabel: t('approval.filter_all') },
     { key: 'my', baseLabel: t('approval.filter_my') },
+    { key: 'agent_PL', baseLabel: t('approval.filter_agent_PL') },
     { key: 'agent_R', baseLabel: t('approval.filter_agent_R') },
     { key: 'agent_P', baseLabel: t('approval.filter_agent_P') },
     { key: 'agent_J', baseLabel: t('approval.filter_agent_J') },
     { key: 'agent_O', baseLabel: t('approval.filter_agent_O') },
     { key: 'agent_E', baseLabel: t('approval.filter_agent_E') },
-    { key: 'pause', baseLabel: t('approval.filter_pause') },
-    { key: 'withdraw', baseLabel: t('approval.filter_withdraw') },
+    { key: PAUSE_WITHDRAW_FILTER, baseLabel: t('approval.filter_pause_withdraw') },
     { key: 'draft', baseLabel: t('approval.filter_draft') },
     { key: 'rejected', baseLabel: t('approval.filter_rejected') },
   ];
