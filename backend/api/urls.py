@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     RequestDocumentViewSet, ExternalRequestDocumentViewSet, RejectionSnapshotViewSet,
-    VOCViewSet, LineViewSet, LayerFilterSetViewSet, AdminNoticeViewSet, VocHistoryViewSet,
+    VOCViewSet, LineViewSet, LayerFilterSetViewSet, LayerSdExceptionViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet, GuideViewSet, UserGroupViewSet, AddressBookViewSet,
     ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet, PersonalMarkCategoryViewSet,
     health_check, upload_image, upload_video, user_events,
@@ -21,6 +21,7 @@ router.register(r'voc', VOCViewSet, basename='voc')
 router.register(r'voc-histories', VocHistoryViewSet, basename='voc-history')
 router.register(r'lines', LineViewSet, basename='line')
 router.register(r'layer-filter-sets', LayerFilterSetViewSet, basename='layer-filter-set')
+router.register(r'layer-sd-exceptions', LayerSdExceptionViewSet, basename='layer-sd-exception')
 router.register(r'notices', AdminNoticeViewSet, basename='notice')
 router.register(r'users', UserViewSet, basename='user')
 router.register(r'guides', GuideViewSet, basename='guide')
