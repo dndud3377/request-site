@@ -61,6 +61,7 @@ import {
   isMapDeleteEditType,
   EA_NO_CHANGE,
   EA_HAS_CHANGE,
+  isEaDefaultValue,
   eaDefaultValue,
   MAP_NO_CHANGE,
   MAP_TYPE_EXISTING,
@@ -1798,7 +1799,7 @@ export default function RequestPage(): React.ReactElement {
   const requiresSalesAgreer =
     detail.ea_change === EA_HAS_CHANGE
     && !!detail.ea_value?.trim()
-    && detail.ea_value.trim() !== eaDefaultValue(detail.only_prodc);
+    && !isEaDefaultValue(detail.ea_value, detail.only_prodc);
   // ADI CD 변경 표(STEP1 인라인)를 보여줄지 — 이제 요청 목적 자체이므로 isAdiCdChange 와 같다.
   const isAdiCdSelected = isAdiCdChange;
   const hasMapChange = detail.map_change === '변경 있음';
@@ -4075,6 +4076,11 @@ export default function RequestPage(): React.ReactElement {
         if (!detail.ea_value?.trim()) {
           newErrors['ea_value'] = t('request.required');
           errorMessages.push('예외 구역 값: 필수 입력 항목입니다.');
+        } else if (isEaDefaultValue(detail.ea_value, detail.only_prodc)) {
+          // '변경 있음'인데 값이 기본값과 같으면 혼란을 주므로 상신할 수 없다(백엔드도 같은 기준으로 막는다).
+          const eaDefaultMessage = t('request.ea_value_same_as_default', { value: eaDefaultValue(detail.only_prodc) });
+          newErrors['ea_value'] = eaDefaultMessage;
+          errorMessages.push(eaDefaultMessage);
         }
       }
       if (detail.inter === 'YES') {

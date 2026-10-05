@@ -401,6 +401,7 @@
     "map_reason": "변경 사유",
     "ea_change": "예외 구역 변경",
     "ea_value": "예외 구역 값(mm)",
+    "ea_value_same_as_default": "예외 구역을 '변경 있음'으로 선택했지만 값이 기본값({{value}})과 같습니다. 기본값을 사용하려면 '변경 없음'을 선택하거나, 다른 값을 입력해주세요.",
     "bb_status": "뼈찜 조합 영역",
     "bb_omit": "없음",
     "bb_input": "존재",

@@ -401,6 +401,7 @@
     "map_reason": "Reason for Change",
     "ea_change": "Exception Zone Change",
     "ea_value": "Exception Zone Value (mm)",
+    "ea_value_same_as_default": "Exception Zone is set to 'Has Change' but the value equals the default ({{value}}). Select 'No Change' to use the default, or enter a different value.",
     "bb_status": "Bone Stew Zone",
     "bb_omit": "None",
     "bb_input": "Exists",
