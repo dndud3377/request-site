@@ -205,6 +205,11 @@ def remove_post_approver(actor, doc_id, loginid, expect=200):
                    expect, '후결자 제거')
 
 
+def change_route(actor, doc_id, body, expect=200):
+    return _expect(actor.post(f'/api/documents/{doc_id}/change-route/', body),
+                   expect, '결재 경로 변경')
+
+
 # ===== 복합 시나리오 =====
 
 def submitted_doc(ctx, *, pl_count=1, sa_users=(), plel=False, **kw):
