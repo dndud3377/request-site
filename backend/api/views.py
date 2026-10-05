@@ -510,6 +510,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 return None, f'유효하지 않은 영업/기술지원 합의자입니다: {lid}'
         return users, None
 
+    def _validate_ea_value_not_default(self, document):
+        """예외 구역을 '변경 있음'으로 두고 기본값(일반 300 / C가문 500)과 같은 값을 적은 의뢰서는 상신할 수 없다.
+
+        '바꿨다'고 선택해 놓고 값은 그대로라 혼란을 주기 때문이다. 기본값을 쓰려면 '변경 없음'을 골라야 한다.
+        문제 있으면 error 문자열, 없으면 None.
+        """
+        if document.is_ea_change_with_default_value():
+            return ('예외 구역을 \'변경 있음\'으로 선택했지만 값이 기본값과 같습니다. '
+                    '기본값을 사용하려면 \'변경 없음\'을 선택하거나, 기본값과 다른 값을 입력해주세요.')
+        return None
+
     def _validate_sales_agreers(self, document, sa_users):
         """예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 합의자 지정이 필수다.
 
@@ -583,6 +594,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_post_approvers(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_ea_value_not_default(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -691,6 +706,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_ea_value_not_default(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         sa_users, err = self._resolve_sales_agreers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -786,6 +805,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_post_approvers(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_ea_value_not_default(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
