@@ -576,6 +576,8 @@
     "adi_cd_empty_hint": "No rows. Use + Add row or paste from Excel.",
     "adi_cd_remove_row_title": "Delete row",
     "adi_cd_remove_row_msg": "The matching row in the other table has a value and will be deleted too. Continue?",
+    "layer_row_remove_title": "Delete row",
+    "layer_row_remove_msg": "This row has values entered. Delete it?",
     "adi_cd_gate_length_mismatch": "The Before and After tables have a different number of rows.",
     "adi_cd_paste_hint": "Copy the STEPSEQ/STEP 설명 columns from Excel and paste here (Ctrl+V).",
     "adi_cd_paste_empty": "No valid rows were found in the pasted content.",

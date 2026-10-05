@@ -112,8 +112,8 @@ pages/RequestPage/
 ### 2.2 핸들러 그룹 (접두사별 — 2026-08-06 실측, 총 89개)
 | 접두사 | 개수 | 비고 |
 |--------|------|------|
-| `handleJayer*` | 6 | J-layer 행 편집/붙여넣기/일괄설정/필터적용 (2026-08-25: 체크/드래그/일괄비활성·복원 6개 폐지, `handleJayerApplyFilter` 신설) |
-| `handleOayer*` | 6 | O-layer (J-layer와 대칭 구조) |
+| `handleJayer*` | 7 | J-layer 행 편집/붙여넣기/일괄설정/필터적용 (2026-08-25: 체크/드래그/일괄비활성·복원 6개 폐지, `handleJayerApplyFilter` 신설) + 수동 추가 행 삭제 `handleJayerRemoveRow`(2026-10-05 신설) |
+| `handleOayer*` | 7 | O-layer (J-layer와 대칭 구조) + `handleOayerRemoveRow`(2026-10-05 신설) |
 | `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 |
 | `handleAdiCd*` | 10 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 + '동일 변경 적용 대상' 입력칸 편집/추가(완전성·중복 검사)/삭제 3개(2026-08-21 신설) |
 | `handleFlow*` | 4 | Flow chart 행 |
@@ -3693,7 +3693,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - 행이 어느 탭에서 왔는지 `BbTableRow.entryIdx`(+`ExternalBbDataItem.entryIdx`)에 기록·저장 → **결재 상세보기·이력조회**(`PagedDetailView`의 `BbTable`, `tabCount` prop)에서도 같은 색을 재현. 자동채움은 `range.entryIdx`, 수동매핑은 `ext.entryIdx` 기준.
   - 기존 저장 문서(`entryIdx` 없음)·수동 `+행 추가` 행은 색 없이 표시(안전).
 
-- **불러온(loaded) 행의 원본 컬럼 읽기전용 잠금**: 자동채움(JOB FILE/OVL)·참조요청서 병합으로 "불러온" J/O 행의 `process_id·sp·sd·layerid·pp`(`LOADED_LOCK_COLS`)를 읽기전용으로 잠가, 다른 값(st 등) 편집·엑셀식 붙여넣기·Delete로 인해 원본 값이 바뀌지 않도록 한다. **수동 `+행 추가` 행은 전 컬럼 편집 허용.**
+- **불러온(loaded) 행의 원본 컬럼 읽기전용 잠금**: 자동채움(JOB FILE/OVL)·참조요청서 병합으로 "불러온" J/O 행의 `process_id·sp·sd·layerid·pp`(`LOADED_LOCK_COLS`)를 읽기전용으로 잠가, 다른 값(st 등) 편집·엑셀식 붙여넣기·Delete로 인해 원본 값이 바뀌지 않도록 한다. **수동 `+행 추가` 행은 전 컬럼 편집 허용**하며, 이 행만 `✕` 로 삭제할 수 있다(2026-10-05 §4 '수동 추가 행 삭제').
   - 행에 `loaded?: boolean` 추가(`JayerRow`/`OayerRow`). 자동채움·병합 행에 `loaded:true` 저장(영속). 재상신/지정PL 수정 로드 시 신규 작성과 동일하게 잠금 재현.
   - 옛 문서(`loaded` 없음)는 **Update 날짜 유무**로 보정(`loaded = r.loaded ?? !!r.updated`): Update 날짜는 백엔드 자동채움에서만 채워지고 사용자가 못 넣으므로 수동 행을 오인 잠금하지 않는다.
   - `useCellSelection`을 셀 단위 잠금(`isCellLocked(row,col)`)으로 확장 — 붙여넣기/Delete/연동 콜백에서 잠긴 셀만 건너뜀(선택 하이라이트는 허용, 쓰기만 차단). 미전달 시 기존 행 단위(disabled/기등록) 동작.
@@ -5158,6 +5158,35 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      어느 쪽 검색인지는 확인하지 못했다.** 운영 DB 에 `--apply` 하기 전에 외부 소비자를 확인하는 것을 권장한다.
 - ⚠️ **주의**: 흐름도가 같은 조합의 행을 많이 가지면 제목이 길어진다(`[..]` 가 행마다 추가). 600자를 넘으면 서버가 잘라낸다(`_unique_title`).
   Step 값에 `[`·`]` 가 들어가면 제목에서 구분이 모호해진다(Step 입력이 `[`·`]` 를 막는지는 확인하지 않았다).
+
+### 기능 추가 (2026-10-05 — J-layer/O-layer: '+ 행 추가'로 만든 행만 삭제하는 `✕` 버튼)
+
+- **배경**: J-layer(STEP3)·O-layer(STEP4) 표에는 `+ 행 추가`만 있고 삭제가 없어, 잘못 추가한 행을 지울 방법이 없었다.
+- **규칙**: 삭제 가능한 행은 **수동 추가 행(`!row.loaded`)뿐**이다. 자동채움(JOB FILE/OVL)·참조요청서 병합으로 불러온 행(`loaded:true`)은
+  `✕` 자체가 렌더되지 않는다. 옛 문서의 `loaded` 보정(`loaded ?? !!updated`)이 그대로 적용돼 Update 날짜가 있는 행은 불러온 행으로 본다.
+  핸들러도 `row.loaded` 면 아무것도 하지 않는다(화면 가드와 이중 방어).
+- **확인 모달**: 행에 입력된 값이 하나라도 있으면(`layerRowHasInput`, `helpers.ts`) 확인 모달(`request.layer_row_remove_title/_msg`)을 거치고,
+  완전히 빈 행은 즉시 삭제한다(ADI CD 행 삭제의 확인 방식과 같은 취지).
+- **J-layer 부수 정리**(`removeJayerRowById`): 삭제 행이 bb 에 매핑돼 있으면 `unmapIfMapped` 로 매핑(bb 행·`mappedJayerRowIds`·
+  `stagedMappings`·`selectedJayerRowId`)을 함께 해제하고(편집/비활성화와 동일), 바코드 디바운스 타이머·진행 중 요청(`barcodeReqSeq`)·
+  `jayerBarcodeCache` 항목과 셀 선택 상태를 정리한다. O-layer 는 셀 선택만 정리한다.
+- **J↔O 짝은 건드리지 않는다**: 같은 `layerid` 의 반대쪽 표 행은 그대로 둔다(각 표에서 따로 삭제).
+- **UI**: 두 표 맨 오른쪽에 폭 36px 열 추가(`Step2.tsx`/`Step3.tsx`), 버튼은 기존 `.adi-cd-row-remove`(ADI CD 의 `✕`) 재사용, 툴팁은 `common.delete`.
+  백엔드·저장 형식 변경 없음(행이 배열에서 빠질 뿐이라 저장·재상신·결재 상세보기 모두 기존 경로 그대로).
+- **i18n**: `request.layer_row_remove_title`, `request.layer_row_remove_msg` 를 ko/en 에 동시 추가.
+- **테스트**: `RequestPage/jayerOayerRowRemove.test.tsx`(신규, 6건) — 수동 행에만 `✕` 가 있음(J/O), 빈 행 즉시 삭제, 값 있는 행은 모달
+  (취소=유지/확인=삭제), 매핑된 J 행 삭제 시 bb 행 제거, O-layer 동일 동작. 프론트 전체 18 suites / 360건, 백엔드 `manage.py test api` 638건 통과.
+- **수동 검증 시나리오**:
+  1. [`/request` → 라인/조합법/제품/조리법을 입력해 STEP3(J-layer) 진입] → [기대 결과: 자동으로 채워진 행에는 오른쪽 끝에 `✕` 가 없다.]
+  2. [`+ 행 추가` 클릭] → [기대 결과: 새 행 오른쪽 끝에만 빨간 `✕` 가 생긴다.]
+  3. [새 행이 완전히 빈 상태에서 `✕` 클릭] → [기대 결과: 확인 없이 즉시 사라진다.]
+  4. [`+ 행 추가` 후 SP·SD·Layer 등에 값을 입력하고 `✕` 클릭] → [기대 결과: "입력한 값이 있는 행입니다. 삭제하시겠습니까?" 모달 →
+     취소는 행 유지, 삭제는 행 제거 및 상단 `활성 N / 전체 N` 갱신.]
+  5. [STEP5(Backbone)에서 방금 만든 수동 J 행을 매핑 → STEP3 로 돌아와 그 행 삭제 → STEP5 확인] → [기대 결과: 그 행으로 만든 bb 행이 사라지고
+     원본 데이터 목록에 다시 노출되지 않는다(행 자체가 없으므로).]
+  6. [STEP4(O-layer)에서 1~4 반복] → [기대 결과: J-layer 와 동일. 같은 Layer 의 J 행은 그대로 남는다.]
+  7. [임시저장 → 다시 열기] → [기대 결과: 삭제한 행은 돌아오지 않고, 불러온 행에는 여전히 `✕` 가 없다.]
+- ⚠️ **주의**: 삭제한 행을 되돌리는 기능(실행 취소)은 없다. 조리법(process_id)을 다시 선택하면 J/O 가 재조회되어 수동 행도 초기화되는 기존 동작은 그대로다.
 
 ## 5. 검증 방법
 ```bash

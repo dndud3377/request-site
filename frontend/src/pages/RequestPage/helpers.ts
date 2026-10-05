@@ -1,4 +1,4 @@
-import { FlowChartRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
+import { FlowChartRow, JayerRow, OayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -634,6 +634,12 @@ export const validateMergePairs = (pairs: MergePair[]): MergePairsValidation => 
   });
   return { incompleteCells, blankRows, validCount };
 };
+
+/** J/O-layer 행에 사용자가 입력한 값이 하나라도 있는가 — 수동 행 삭제 시 확인 모달 여부 판단용 */
+export const layerRowHasInput = (row: JayerRow | OayerRow): boolean =>
+  [row.process_id, row.sp, row.sd, row.pp, row.layerid, row.st, row.new_or_copy, row.product_name, row.step,
+    'item_id' in row ? row.item_id : '']
+    .some((v) => !!v?.trim());
 
 /** 행 단위: 이 행의 pp 가 판정 키워드를 포함하는가 (셀 하이라이트·문서 판정 공용) */
 export const isValidationKeywordRow = (pp: string | undefined): boolean =>

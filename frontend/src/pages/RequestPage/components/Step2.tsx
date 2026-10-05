@@ -22,6 +22,7 @@ interface Step2Props {
   handleJayerApplyFilter: (filterId: string) => void;
   handleJayerChange: (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => void;
   handleJayerAddRow: () => void;
+  handleJayerRemoveRow: (id: string) => void;
   cellSel: CellSelectionApi;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
@@ -49,6 +50,7 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerApplyFilter,
   handleJayerChange,
   handleJayerAddRow,
+  handleJayerRemoveRow,
   cellSel,
   GuideTourBadge,
   GuideBadge,
@@ -137,6 +139,7 @@ const Step2: React.FC<Step2Props> = ({
             <col />
             <col />
             <col />
+            <col style={{ width: 36 }} />
           </colgroup>
           <thead>
             <tr>
@@ -152,6 +155,7 @@ const Step2: React.FC<Step2Props> = ({
               <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_product_name')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_item_id')}</th>
+              <th style={{ width: 36 }} />
             </tr>
           </thead>
           <tbody>
@@ -235,6 +239,19 @@ const Step2: React.FC<Step2Props> = ({
                       multiSelectIdentity={stripDateBracket}
                       formatMultiValue={formatMultiItemId}
                     />
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {!row.loaded && (
+                      <button
+                        type="button"
+                        className="adi-cd-row-remove"
+                        title={t('common.delete')}
+                        aria-label={t('common.delete')}
+                        onClick={() => handleJayerRemoveRow(row.id)}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
