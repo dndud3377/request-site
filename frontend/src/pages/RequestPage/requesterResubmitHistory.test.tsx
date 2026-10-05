@@ -70,6 +70,7 @@ jest.mock('../../api/client', () => ({
   usersAPI: { list: () => Promise.resolve({ data: [{ loginid: 'pl1', name: 'PL담당자', role: 'PL' }] }) },
   addressBooksAPI: { list: () => Promise.resolve([]) },
   userGroupsAPI: { list: () => Promise.resolve([]) },
+  layerSdExceptionsAPI: { list: () => Promise.resolve([]) },
 }));
 
 const LINE = '라인1';
