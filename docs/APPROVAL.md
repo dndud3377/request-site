@@ -791,6 +791,11 @@ RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 
 
 - 필수인데 합의자가 0명이면 `sales_agreer_none_reason`(미지정 사유)이 있어야 상신된다.
 - 프론트 `requiresSalesAgreer` 와 **같은 기준**이어야 한다(양쪽 모두 상신을 막는다).
+- **(2026-10) `변경 있음` + 기본값은 상신 불가**: 값이 기본값과 **숫자로 같으면**(`300`·`300.0`·`0300`·공백 포함
+  모두 동일) "바꿨다"고 선택해 놓고 값은 그대로라 혼란을 주므로 합의 대상이 아니라 **상신 자체가 막힌다**.
+  `submit` / `resubmit` / `requester_resubmit` 가 `_validate_ea_value_not_default`(→
+  `RequestDocument.is_ea_change_with_default_value`)로 400 을 돌려준다. 기본값을 쓰려면 `변경 없음` 을 고른다.
+  숫자로 해석할 수 없는 값은 문자열로 비교한다(`_ea_value_state`). 이미 상신된 문서는 건드리지 않는다.
 
 #### 미지정 사유의 회차별 기록 (`RequestDocument.sales_agreer_none_reasons`, 2026-10)
 `detail.sales_agreer_none_reason` 은 `additional_notes` 안의 **최신 회차 값 하나**뿐이라, 재상신하면
