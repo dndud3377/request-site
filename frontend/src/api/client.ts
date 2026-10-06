@@ -40,6 +40,8 @@ import {
   ValidationSystemValue,
   PartialShotValue,
   LayerFilterSet,
+  LayerSdException,
+  LayerSdExceptionInput,
   MapInfo,
   PersonalMarkCategory,
   PhotoStepChangeListResponse,
@@ -820,6 +822,17 @@ export const layerFilterSetsAPI = {
   update: (id: number, label: string, words: LayerFilterSet['words']): Promise<LayerFilterSet> =>
     patch<LayerFilterSet>(`/layer-filter-sets/${id}/`, { label, words }),
   delete: (id: number): Promise<void> => request(`/layer-filter-sets/${id}/`, { method: 'DELETE' }),
+};
+
+// ===== J/O-layer SD-Layer 검사 예외 API =====
+
+export const layerSdExceptionsAPI = {
+  list: (table: 'J' | 'O'): Promise<LayerSdException[]> =>
+    get<LayerSdException[] | { results: LayerSdException[] }>(`/layer-sd-exceptions/?table=${table}`)
+      .then((data) => (Array.isArray(data) ? data : data.results ?? [])),
+  create: (input: LayerSdExceptionInput): Promise<LayerSdException> =>
+    post<LayerSdException>('/layer-sd-exceptions/', input),
+  delete: (id: number): Promise<void> => request(`/layer-sd-exceptions/${id}/`, { method: 'DELETE' }),
 };
 
 // ===== 공지사항 API =====

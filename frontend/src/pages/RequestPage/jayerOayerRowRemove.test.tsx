@@ -56,6 +56,7 @@ jest.mock('../../api/client', () => ({
   usersAPI: { list: () => Promise.resolve({ data: [] }) },
   addressBooksAPI: { list: () => Promise.resolve([]) },
   userGroupsAPI: { list: () => Promise.resolve([]) },
+  layerSdExceptionsAPI: { list: () => Promise.resolve([]) },
 }));
 
 // ---- 픽스처: 모든 detail 항목을 기본값과 다른 값으로 채운 문서 ----

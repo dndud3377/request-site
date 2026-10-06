@@ -498,6 +498,36 @@ class LayerFilterSet(models.Model):
         return f'[{self.table}] {self.label}'
 
 
+class LayerSdException(models.Model):
+    """J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사의 예외 목록 (팀 공유).
+
+    J/O-layer 행의 `sd` 맨 앞 숫자(예: "1000.123 월평동 지점" → 1000.123)가 `layerid` 와 다르면
+    상신할 수 없다(`layer_sd_check.py`). 다만 무조건 막을 수는 없으므로, 아래 4개 값이 모두 같은
+    행은 예외로 통과시킨다 — (process_id, sp, SD 첫 숫자, layerid).
+    table='J' 예외는 J-layer 행에만, table='O' 예외는 O-layer 행에만 적용한다.
+    관리 권한은 `CanManageLayerSdException`(J=TE_J·TE_P, O=TE_O·TE_P, MASTER 는 둘 다).
+    """
+    TABLE_CHOICES = [('J', 'J'), ('O', 'O')]
+
+    table = models.CharField(max_length=1, choices=TABLE_CHOICES, verbose_name='대상 표')
+    process_id = models.CharField(max_length=100, blank=True, default='', verbose_name='Process ID')
+    sp = models.CharField(max_length=100, blank=True, default='', verbose_name='SP(STEPSEQ)')
+    sd_number = models.CharField(max_length=100, verbose_name='SD 첫 숫자')
+    layerid = models.CharField(max_length=100, verbose_name='Layer')
+    created_by = models.CharField(max_length=100, blank=True, default='', verbose_name='등록자 ID')
+    created_by_name = models.CharField(max_length=100, blank=True, default='', verbose_name='등록자 이름')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='등록일')
+
+    class Meta:
+        ordering = ['table', '-created_at']
+        unique_together = [('table', 'process_id', 'sp', 'sd_number', 'layerid')]
+        verbose_name = 'J/O-layer SD-Layer 검사 예외'
+        verbose_name_plural = 'J/O-layer SD-Layer 검사 예외'
+
+    def __str__(self):
+        return f'[{self.table}] {self.process_id}/{self.sp}/{self.sd_number}/{self.layerid}'
+
+
 class Holiday(models.Model):
     """대한민국 공휴일 캐시 (스케줄러 동기화)"""
     date_name = models.CharField(max_length=100, verbose_name='공휴일명')

@@ -288,6 +288,62 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-10-05 — J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검증 + 팀 공유 예외 목록)
+
+- **요청**: J-layer/O-layer 행의 `col_sd`(SD)에서 맨 앞 숫자(예: `1000.123 월평동 지점` → `1000.123`)가
+  같은 행의 `layerid`(Layer)와 다르면 상신이 안 되게 한다. 다만 무조건 막을 수는 없으므로 **예외**를
+  등록해 통과시킬 수 있고, 예외는 J·P·O 팀이 관리한다 — J-layer 예외는 TE_J, O-layer 예외는 TE_O,
+  **TE_P 는 J·O 둘 다** (MASTER 도 둘 다, 기존 `LayerFilterSet` 권한과 같은 관례).
+- **비교 규칙** (프론트 `helpers.ts` `extractSdNumber`/`findLayerSdMismatches` ↔ 백엔드 `layer_sd_check.py`
+  — **두 구현은 같은 규칙이어야 한다**):
+  - SD 값 앞 공백을 무시하고 **맨 앞에서 시작하는** `\d+(\.\d+)*` 를 "SD 첫 숫자"로 본다.
+    `1000.123월평동` → `1000.123`. SD 가 숫자로 시작하지 않으면(`ABLD`, `SD01`, `월평동 3`) 비교할 값이 없어 통과한다.
+  - `layerid`(앞뒤 공백 제거)와 **문자열 완전 일치**해야 통과한다(`1000.123` ≠ `1000.1230`).
+  - **검사 제외 행**: 비활성(`st==='X'`), `new_or_copy` 가 기등록/layer삭제/미진행, `layerid` 가 빈 행.
+  - **예외**: `(process_id, sp, SD 첫 숫자, layerid)` 4개 값이 **모두** 같은 행만 통과. J 예외는 J-layer 행에만,
+    O 예외는 O-layer 행에만 적용된다(서로 영향 없음).
+- **막는 시점**:
+  - 화면 `validate()` — STEP3(J)·STEP4(O)에서 '다음'이 막히고, 불일치 행의 **SD·Layer 셀이 빨간 테두리**(마우스를
+    올리면 `SD 첫 숫자 1000.123 ≠ Layer 2000`)로 표시된다. STEP5 `validate(5)`(= 상신 클릭 시 도는 최종 검증)에도
+    같은 안전망이 있어 초안 복원 등으로 건너뛴 경우도 막는다.
+  - 서버 — `submit` / `resubmit` / `requester_resubmit` 가 `_validate_bb_mapping` 직후
+    `layer_sd_check.validate_document()` 를 호출해 400 으로 막는다(API 직접 호출 방어).
+    Only MAP·MAP 삭제·ADI CD 변경은 J/O-layer 표가 없으므로 검사하지 않는다(`layer_drift` 와 같은 제외 기준).
+    **`direct-approve`(MASTER 이력 바로 등록)·`peer-submit`(지정 PL 수정 후 상신)은 이번 범위에서 검사하지 않는다.**
+  - 이미 상신된 문서에는 소급 적용하지 않는다(재상신부터 적용).
+- **데이터**: 신규 모델 `LayerSdException`(`table`, `process_id`, `sp`, `sd_number`, `layerid`, `created_by`,
+  `created_by_name`, `created_at`, 4개 값+table 유니크). 마이그레이션 `0052_layersdexception.py`.
+- **API**: `GET /api/layer-sd-exceptions/?table=J|O`(**로그인한 누구나 조회** — 요청자의 화면 검증이 같은 목록을 쓴다),
+  `POST`(등록 — J: TE_J·TE_P·MASTER, O: TE_O·TE_P·MASTER, 그 외 403), `DELETE /{id}/`(같은 권한). 수정(PATCH/PUT)은
+  없다(삭제 후 재등록). 중복 등록·숫자 형식이 아닌 `sd_number`·빈 `layerid` 는 400. 권한 클래스 `CanManageLayerSdException`.
+- **UI**: STEP3(J-layer)·STEP4(O-layer) 표 툴바(`+ 필터` 왼쪽)에 `SD-Layer 예외` 버튼 — **관리 권한이 있는 역할에게만** 보인다
+  (`SD_EXCEPTION_ROLES`, 백엔드와 같은 값). 모달(`LayerSdExceptionModal.tsx`)에는 ① 이 문서의 불일치 행(`예외 등록` 한 번 클릭)
+  ② 직접 추가(4개 값 입력) ③ 등록된 예외 목록(삭제는 `삭제 → 확인` 두 단계)이 있다. J 목록과 O 목록은 따로다.
+  예외 목록은 작성 화면 진입 시 한 번 불러온다(`layerSdExceptionsAPI`). 불러오기에 실패하면 토스트로 알리고 예외가
+  없는 것으로 검증한다(서버 검증이 더 엄격해지는 방향의 실패).
+- **i18n**: `request.sd_layer_*`, `request.jayer_sd_layer_mismatch`, `request.oayer_sd_layer_mismatch` (ko/en 동시 추가).
+- **테스트**: 백엔드 `LayerSdCheckTest` 19건, 프론트 `helpers.test.ts`(+9) · `layerSdMismatch.test.tsx`(20건).
+  기존 RequestPage 통합 테스트 11개의 `api/client` 목에 `layerSdExceptionsAPI.list` 를 추가했다(새 호출이 생겨서).
+- **알려진 한계**: ① 예외 키에 `layerid` 가 들어가 있어, 같은 행의 SD·Layer 값을 고치면 예외도 다시 등록해야 한다.
+  ② `process_id`/`sp` 가 비어 있는 수동 행은 빈 값끼리 일치할 때만 예외가 적용된다. ③ 예외 등록·삭제 이력은 등록자만 남고
+  삭제 로그는 없다.
+- **수동 검증 시나리오** (개발환경 `http://localhost:10011`, `AUTH_MODE=dev` — 화면 우상단 DEV 사용자 전환으로 역할을 바꾼다):
+  1. [일반 요청자 — `pl_user`] 의뢰서 작성 → STEP3(J-ayer) 표에서 SD `1000.123 월평동 지점`, Layer `2000` 인 행을 만든다
+     (자동채움 행은 값 잠금이라 수동 `+ 행 추가` 로 입력) → `다음` 클릭 → **STEP3 에 머물고** 빨간 토스트
+     "J-layer 1개 행의 SD 첫 숫자가 Layer 와 일치하지 않습니다…", 그 행의 SD·Layer 칸이 빨갛게 표시되면 정상.
+     이 사용자에게는 `SD-Layer 예외` 버튼이 **보이지 않아야** 한다.
+  2. [같은 문서] Layer 를 `1000.123` 으로 고치고 `다음` → STEP4 로 넘어가면 정상. SD 를 `ABLD`(숫자 없음)로 두면 Layer 가
+     무엇이든 통과해야 한다.
+  3. [TE_J — `agent_j1`] 불일치 문서의 STEP3 → 툴바 `SD-Layer 예외` 버튼 클릭 → 모달 "J-layer SD·Layer 일치 예외 관리" →
+     '이 문서의 불일치 행' 의 `예외 등록` 클릭 → "예외를 등록했습니다" 토스트 + 아래 '등록된 예외' 표에 1건 → `닫기` → `다음` 이 통과하면 정상.
+  4. [일반 요청자 — `pl_user`] 3번 이후 같은 문서로 `다음` → J-layer 는 통과(예외는 팀 공유). 같은 값의 **O-layer** 불일치는 계속
+     막혀야 한다(J 예외는 O 에 적용되지 않음).
+  5. [TE_P — `agent_p1`] STEP3 와 STEP4 **둘 다** 버튼이 보여야 하고, J 모달에는 3번에서 등록한 J 예외가 보이며 O 모달은 별도 목록이다.
+     [TE_O — `agent_o1`] STEP4 에서만 버튼이 보이고 STEP3 에서는 안 보여야 한다.
+  6. [삭제] 모달 '등록된 예외' 에서 `삭제` → `삭제할까요?` → `확인` 으로 지운 뒤, 그 예외에 기대던 문서는 다시 막혀야 한다.
+  7. [서버 방어] 브라우저 우회 확인(선택): `POST /api/documents/{id}/submit/` 를 불일치 문서로 직접 호출하면 400
+     `J-layer 1행의 SD 첫 숫자가 Layer 와 일치하지 않습니다 (…)` 가 와야 한다.
+
 ### 기능 변경 (2026-10-05 — 요청서 상세 모달: 검토중 시각 표시 / CC 적용 여부 '의뢰 상세' 탭으로 이동)
 
 - 결재 경로 탭의 '검토중' 단계에 검토중 전환 시각(신규 `ApprovalStep.review_started_at`, 마이그레이션 0049)을 표시.

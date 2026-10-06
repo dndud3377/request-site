@@ -69,6 +69,7 @@ jest.mock('../../api/client', () => {
     usersAPI: { list: () => Promise.resolve({ data: [] }) },
     addressBooksAPI: { list: () => Promise.resolve([]) },
     userGroupsAPI: { list: () => Promise.resolve([]) },
+    layerSdExceptionsAPI: { list: () => Promise.resolve([]) },
   };
 });
 
