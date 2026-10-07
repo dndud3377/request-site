@@ -504,6 +504,8 @@ class LayerSdException(models.Model):
     J/O-layer 행의 `sd` 맨 앞 숫자(예: "1000.123 월평동 지점" → 1000.123)가 `layerid` 와 다르면
     상신할 수 없다(`layer_sd_check.py`). 다만 무조건 막을 수는 없으므로, 아래 4개 값이 모두 같은
     행은 예외로 통과시킨다 — (process_id, sp, SD 첫 숫자, layerid).
+    `sd` 에는 입력받은 SD 원문 전체를 저장하고, 매칭 키인 `sd_number` 는 그 맨 앞 숫자를 서버가 뽑아 채운다
+    (`sd` 가 빈 행은 `sd` 필드 추가 전에 숫자만 등록된 예외다).
     table='J' 예외는 J-layer 행에만, table='O' 예외는 O-layer 행에만 적용한다.
     관리 권한은 `CanManageLayerSdException`(J=TE_J·TE_P, O=TE_O·TE_P, MASTER 는 둘 다).
     """
@@ -512,6 +514,7 @@ class LayerSdException(models.Model):
     table = models.CharField(max_length=1, choices=TABLE_CHOICES, verbose_name='대상 표')
     process_id = models.CharField(max_length=100, blank=True, default='', verbose_name='Process ID')
     sp = models.CharField(max_length=100, blank=True, default='', verbose_name='SP(STEPSEQ)')
+    sd = models.CharField(max_length=255, blank=True, default='', verbose_name='SD')
     sd_number = models.CharField(max_length=100, verbose_name='SD 첫 숫자')
     layerid = models.CharField(max_length=100, verbose_name='Layer')
     created_by = models.CharField(max_length=100, blank=True, default='', verbose_name='등록자 ID')
