@@ -288,7 +288,57 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-10-07 — SD-Layer 검사: 숫자 값 비교 / ASCII 숫자 / peer-submit·direct-approve 검사 / 예외 관리 홈 이동·엑셀 붙여넣기)
+
+2026-10-05 항목(아래)을 다음과 같이 바꾼다. 아래 항목과 다르면 **이 항목이 우선**한다.
+
+- **숫자 값 비교**: SD 첫 숫자와 `layerid` 를 문자열이 아니라 **숫자 값**으로 비교한다 — `100.930 = 100.93`,
+  `100.0 = 100`, `0100 = 100`. 정규화 규칙(`normalize_number` ↔ `helpers.ts` `normalizeNumber`, 두 구현 동일):
+  `^\d+(\.\d+)?$` 형식이면 정수부 앞 0 과 소수부 끝 0 을 지운다. 점이 2개 이상(`1.2.30`)이거나 숫자가 아닌 값(`M1`)은
+  trim 한 문자열 그대로 비교한다. **예외 매칭 키**의 SD 첫 숫자·`layerid` 도 같은 정규화로 비교한다
+  (예외 `100.930/0200` 은 행 `100.93 …/200` 에 적용된다).
+- **ASCII 숫자만**: 서버 정규식에 `re.ASCII` 를 넣어 프론트(JS `\d`)와 맞췄다. 전각(`１０００`)·아랍 숫자로 시작하는 SD 는
+  "숫자로 시작하지 않는 SD" 로 보고 통과한다(예전엔 화면은 통과·서버는 400 으로 판정이 갈렸다).
+  예외 등록 입력 검증(`LayerSdExceptionSerializer`)도 같은 추출 함수(`extract_sd_number`)를 써 전각 숫자 SD 는 400.
+- **검사 경로 추가**: `peer-submit`(지정 PL 수정 후 상신 — 본인 PL 단계 확인 직후, 단계 진행 전)과
+  `direct-approve`(MASTER 이력 바로 등록 — `_validate_bb_mapping` 직후)도 `layer_sd_check.validate_document()` 로 막는다(400).
+  화면은 두 경로 모두 원래 `validate(5)` 를 거치므로 동작 변화는 없고, API 직접 호출 우회만 막힌다.
+- **예외 저장 형식**: `LayerSdException` 에 `sd`(SD 원문 전체, `max_length=255`) 필드 추가 — 마이그레이션 `0053_layersdexception_sd.py`.
+  등록 API 입력은 `sd_number` 대신 **`sd`**(예: `1000.123 월평동 지점`)이고, 서버가 `sd_number`(맨 앞 숫자, 매칭 키)를 뽑아 채운다
+  (`sd_number` 는 읽기 전용). 숫자로 시작하지 않는 `sd` 는 400. 매칭 규칙은 그대로 **SD 첫 숫자** 기준이라, 뒤 글만 다른
+  `1000.123 다른 지점` 은 같은 조합으로 보고 중복 400(`이미 등록된 예외입니다.`). 기존 예외(`sd` 빈 값)는 그대로 동작하고 화면 SD 칸엔
+  `sd_number` 를 보여준다.
+- **예외 관리 화면 이동**: 의뢰서 작성 STEP3·STEP4 툴바의 `SD-Layer 예외` 버튼·모달을 없애고 **홈 상단 버튼 줄**
+  (`의뢰 시작 / 결재 현황 / 가이드` 옆)에 `🧩 SD-Layer 예외` 버튼을 둔다 — 관리 권한 역할(`SD_EXCEPTION_ROLES`)에게만 보인다.
+  모달(`components/LayerSdExceptionModal.tsx`)은 관리 가능한 표만 탭으로 보여준다(TE_J: J, TE_O: O, TE_P·MASTER: J·O 탭).
+  문서 맥락이 없으므로 '이 문서의 불일치 행' 영역은 없앴다. 작성 화면은 검증용 예외 목록 로드만 유지한다.
+- **엑셀 붙여넣기 + 일괄 등록**: 등록 입력이 여러 행 표(Process ID·SP·SD·Layer)가 됐다. 비고(tbvtlv) 좌표 표
+  (`Step3.tsx` `handleTbvtlvCoordPaste`)와 같은 방식으로, 엑셀에서 복사한 여러 칸·여러 행을 아무 칸에 붙여넣으면
+  **그 칸부터 오른쪽으로** 채우고 모자란 행은 자동으로 늘린다. `추가` 는 빈 행을 뺀 모든 행을 한 건씩 등록한다 —
+  SD 가 숫자로 시작하지 않거나 Layer 가 빈 행이 하나라도 있으면 아무것도 등록하지 않고 그 행을 빨갛게 표시한다.
+  등록에 실패한 행(중복·권한)만 입력 표에 남기고 성공·실패 건수를 토스트로 알린다.
+- **i18n**: `request.sd_layer_exc_title`·`_tab_j/_o`·`_manual_title_j/_o`·`_paste_hint`·`_row_add`·`_sd_invalid`·`_list_load_failed`
+  추가, `_add_success`/`_add_failed`/`_desc` 문구 변경(건수 `{{count}}`), 쓰지 않게 된 `_title_j/_o`·`_mismatch_*`·`_register`·
+  `_manual_title`·`_col_sd_number`·`_sd_number_invalid` 삭제(ko/en 동시).
+- **테스트**: 백엔드 `LayerSdCheckTest` 19 → 27건(숫자 값 비교·정규화·예외 정규화 매칭·전각 숫자·SD 전체 저장·peer-submit·direct-approve).
+  프론트 `helpers.test.ts`(+5), `layerSdMismatch.test.tsx`(작성 화면 버튼 없음 4건·숫자 값 비교 1건으로 교체),
+  신규 `components/LayerSdExceptionModal.test.tsx`(9건)·`pages/HomePage.sdException.test.tsx`(7건).
+- **수동 검증 시나리오** (개발환경 `http://localhost:10011`, `AUTH_MODE=dev`):
+  1. [`pl_user`] 의뢰서 작성 → STEP3 `+ 행 추가` 로 SD `100.930 월평동`, Layer `100.93` → `다음` → STEP4 로 넘어가면 정상.
+     Layer 를 `100.931` 로 바꾸면 막히고 빨간 셀 표시가 돼야 한다. STEP3·STEP4 툴바에 `SD-Layer 예외` 버튼이 **어떤 역할로도 없어야** 한다.
+  2. [`agent_j1`(TE_J)] 홈 → 상단 `🧩 SD-Layer 예외` 클릭 → 탭 없이 'J-layer 예외 추가' 표가 보이면 정상.
+     엑셀에서 `P1 | SP01 | 1000.123 월평동 지점 | 2000` 두 줄을 복사해 첫 칸에 붙여넣기 → 2행·4칸이 채워지고 → `추가` →
+     "예외 2건을 등록했습니다." + '등록된 예외' 표의 SD 칸에 **원문 전체**(`1000.123 월평동 지점`)가 보이면 정상.
+  3. [같은 모달] SP 칸에 `SP01⇥1000.123 x⇥2000` 3칸을 붙여넣기 → SP·SD·Layer 만 채워지면 정상. SD 를 `ABLD` 로 두고 `추가` →
+     등록 0건, 빨간 행 + "빨간 행을 확인하세요…" 안내. 같은 4개 값을 다시 `추가` → 실패 토스트, 그 행만 입력 표에 남아야 한다.
+  4. [`agent_p1`(TE_P)/MASTER] 홈 버튼 → J/O 탭 두 개, 탭마다 다른 목록. [`agent_o1`(TE_O)] O 표만. [`pl_user`] 홈에 버튼이 없어야 한다.
+  5. [`pl_user`] 2번 예외와 같은 (Process ID, SP, SD 첫 숫자, Layer) 행이 있는 의뢰서 → STEP3 `다음` 이 통과하면 정상(예외는 SD 첫 숫자로 매칭).
+  6. [서버 방어, 선택] 불일치 문서로 `POST /api/documents/{id}/peer-submit/`(지정 PL 계정)·`/direct-approve/`(MASTER) 직접 호출 →
+     400 `J-layer 1행의 SD 첫 숫자가 Layer 와 일치하지 않습니다 (…)`.
+
 ### 기능 추가 (2026-10-05 — J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검증 + 팀 공유 예외 목록)
+
+> ⚠️ 2026-10-07 항목(위)으로 일부 바뀌었다 — 숫자 값 비교, `peer-submit`·`direct-approve` 검사, 예외 `sd` 저장·홈 관리 화면.
 
 - **요청**: J-layer/O-layer 행의 `col_sd`(SD)에서 맨 앞 숫자(예: `1000.123 월평동 지점` → `1000.123`)가
   같은 행의 `layerid`(Layer)와 다르면 상신이 안 되게 한다. 다만 무조건 막을 수는 없으므로 **예외**를
@@ -309,7 +359,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - 서버 — `submit` / `resubmit` / `requester_resubmit` 가 `_validate_bb_mapping` 직후
     `layer_sd_check.validate_document()` 를 호출해 400 으로 막는다(API 직접 호출 방어).
     Only MAP·MAP 삭제·ADI CD 변경은 J/O-layer 표가 없으므로 검사하지 않는다(`layer_drift` 와 같은 제외 기준).
-    **`direct-approve`(MASTER 이력 바로 등록)·`peer-submit`(지정 PL 수정 후 상신)은 이번 범위에서 검사하지 않는다.**
+    ~~`direct-approve`·`peer-submit` 은 검사하지 않는다~~ → **2026-10-07 부터 검사한다.**
   - 이미 상신된 문서에는 소급 적용하지 않는다(재상신부터 적용).
 - **데이터**: 신규 모델 `LayerSdException`(`table`, `process_id`, `sp`, `sd_number`, `layerid`, `created_by`,
   `created_by_name`, `created_at`, 4개 값+table 유니크). 마이그레이션 `0052_layersdexception.py`.
