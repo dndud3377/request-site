@@ -1951,7 +1951,8 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 - (참고, 2026-10) 같은 TE_J/TE_O/MASTER 권한 관례를 쓰는 별도 목록으로 **J/O-layer SD-Layer 검사 예외**
   `GET/POST /api/layer-sd-exceptions/?table=J|O`, `DELETE /api/layer-sd-exceptions/{id}/` 가 있다. 이 필터와 달리
   조회는 로그인한 누구나 가능하고(작성 화면 검증이 같은 목록을 쓴다), 등록·삭제는 J 예외=TE_J·TE_P·MASTER,
-  O 예외=TE_O·TE_P·MASTER 다. 관리 화면은 **홈 상단 `SD-Layer 예외` 버튼**(2026-10-07, 작성 화면에서 이동).
+  O 예외=TE_O·TE_P·MASTER 다. 관리 화면은 **홈 상단 버튼 줄 아랫줄의 `SD-Layer 예외` 버튼**(2026-10-07, 작성 화면에서 이동) —
+  모달은 J/O 두 탭을 늘 보여주고, 관리 권한이 없는 탭은 조회 전용이다.
   상세는 `docs/REQUEST.md` §4.1 2026-10-05·2026-10-07 항목.
 
 #### 12-3-1. 초기화 (`reset-layer-filter`, 2026-09)
