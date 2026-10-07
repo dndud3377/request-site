@@ -68,6 +68,9 @@ PJO_AGENTS = ('P', 'PV', 'J', 'O')
 # 1·2구역 문서는 변경이 감지돼도 자동 반려하지 않고 배지만 띄운다.
 ZONE3_AGENTS = ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
 
+# 요청 기준(new_or_copy)이 이 값인 J/O-layer 행은 변경 감지 비교에서 뺀다(배지·자동 반려 모두 없음).
+DRIFT_EXCLUDED_NEW_OR_COPY = ('layer삭제', '미진행')
+
 LAYER_KEYS = ('jayer', 'oayer', 'extra')
 LAYER_LABELS = {'jayer': 'J-layer', 'oayer': 'O-layer', 'extra': 'XXXXXX'}
 # 반려 사유(단계 의견)에 나열하는 변경 건수 상한 — 초과분은 '외 N건' 으로 줄인다.
@@ -143,9 +146,19 @@ def _diff_rows(saved_rows, live_rows):
     행 삭제(저장에는 있는데 DB에 없음)·신규 행 추가(DB에는 있는데 저장에 없음)는 각각 그대로
     removed/added 한 건씩이고, 값 변경(sd/pp/layerid)은 변경 현황과 동일하게 옛 값 removed +
     새 값 added 한 쌍으로 표현한다 — PhotoStepChangeLog 도 값이 바뀐 행을 이렇게 남긴다.
+
+    요청 기준(new_or_copy)이 DRIFT_EXCLUDED_NEW_OR_COPY(layer삭제·미진행)인 저장 행의 stepseq 는
+    저장값·마스터 값 양쪽에서 빼고 비교한다 — 저장 행만 빼면 마스터에 남은 같은 stepseq 가
+    '신규 추가'로 잡히기 때문이다.
     """
-    saved_by_seq = {row.get('sp'): row for row in saved_rows if row.get('sp')}
-    live_by_seq = {row['stepseq']: row for row in live_rows if row.get('stepseq')}
+    excluded_seqs = {
+        row.get('sp') for row in saved_rows
+        if row.get('sp') and row.get('new_or_copy') in DRIFT_EXCLUDED_NEW_OR_COPY
+    }
+    saved_by_seq = {row.get('sp'): row for row in saved_rows
+                    if row.get('sp') and row.get('sp') not in excluded_seqs}
+    live_by_seq = {row['stepseq']: row for row in live_rows
+                   if row.get('stepseq') and row['stepseq'] not in excluded_seqs}
 
     removed = []
     added = []
@@ -370,13 +383,16 @@ def auto_reject_document(document_id, changes):
     앞선 대기 단계 하나를 반려 단계로 삼고(변경된 레이어와 맞추지 않는다), 단계 의견에
     `[자동반려]` 머리말과 변경 요약을 남긴다.
 
-    건너뛰는 경우: 이미 상태가 바뀜(under_review/pause 아님) · 철회 확인 대기 중(결재 동결 —
+    건너뛰는 경우: 저장된 감지값이 더 이상 이 변경이 아님(그 사이 재상신으로 초기화됨) ·
+    이미 상태가 바뀜(under_review/pause 아님) · 철회 확인 대기 중(결재 동결 —
     철회가 취소되면 cancel_withdraw 가 다시 판정한다) · 3구역 미진입(1·2구역 — 배지만 띄운다 —
     `is_in_zone3`) · P·J·O 합의 완료(배지만 띄운다 — `is_pjo_agreed`) · 대기 단계가 없음.
     """
     with transaction.atomic():
         document = RequestDocument.objects.select_for_update().get(pk=document_id)
         if document.status not in AUTO_REJECT_STATUSES:
+            return False
+        if _cached_critical_changes(document) != changes:
             return False
         if WithdrawRequest.objects.filter(document=document, state='requested').exists():
             return False
@@ -470,8 +486,13 @@ def recompute_all_in_progress():
 
     N개 문서 개별 조회(2N 쿼리) + 개별 save(N 쿼리) 대신, 라인당 배치 조회(최대 8쿼리) +
     bulk_update(청크당 1쿼리)로 묶어 문서 수에 비례하던 쿼리 수를 줄인다.
+
+    계산 도중 재상신된 문서(reset_document_drift 가 layer_drift_checked_at 을 바꾼 문서)는 옛
+    저장값으로 계산한 결과이므로 이번 주기의 저장·반려에서 뺀다 — 재상신 직후의 초기화를 덮어쓰거나
+    옛 결과로 반려하지 않도록. 다음 주기부터 다시 정상 감지 대상이다.
     """
     documents = list(RequestDocument.objects.filter(status__in=IN_PROGRESS_STATUSES))
+    loaded_checked_at = {document.pk: document.layer_drift_checked_at for document in documents}
 
     doc_lines_processes = []
     for document in documents:
@@ -511,9 +532,24 @@ def recompute_all_in_progress():
             logger.error(f"[layer_drift] 문서 {document.id} 변경 감지 계산 실패: {e}", exc_info=True)
 
     if to_update:
-        RequestDocument.objects.bulk_update(
-            to_update, ['layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at'],
-        )
+        with transaction.atomic():
+            # 저장 직전에 잠그고 다시 읽어, 목록 조회 이후 재상신된 문서를 걸러낸다(pk 순서로 잠근다).
+            current_checked_at = dict(
+                RequestDocument.objects.select_for_update()
+                .filter(pk__in=[document.pk for document in to_update])
+                .order_by('pk').values_list('pk', 'layer_drift_checked_at')
+            )
+            stale_ids = {
+                pk for pk, checked_at in loaded_checked_at.items()
+                if pk in current_checked_at and current_checked_at[pk] != checked_at
+            }
+            to_update = [document for document in to_update if document.pk not in stale_ids]
+            to_reject = [(document_id, changes) for document_id, changes in to_reject
+                         if document_id not in stale_ids]
+            if to_update:
+                RequestDocument.objects.bulk_update(
+                    to_update, ['layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at'],
+                )
 
     # 캐시(배지)를 먼저 저장한 뒤 반려한다. 문서마다 별도 트랜잭션이라 한 문서가 실패해도 나머지는 계속된다.
     for document_id, changes in to_reject:
