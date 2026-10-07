@@ -298,6 +298,7 @@
     "sales_agreer_label": "영업/기술지원 합의자",
     "sales_agreer_help_required": "예외 구역 값을 기본값과 다르게 지정했습니다. PL 중 합의자를 1명 이상 지정하거나, 지정하지 않는 사유를 입력해주세요.",
     "sales_agreer_placeholder": "이름·ID로 합의자(PL) 검색",
+    "sales_agreer_none_reason_suffix": " / 합의자 미지정 사유: {{reason}}",
     "sales_agreer_none_toggle": "합의자 없음",
     "sales_agreer_none_reason_placeholder": "합의자를 지정하지 않는 사유",
     "sales_agreer_required": "영업/기술지원 합의자를 1명 이상 지정하거나 지정하지 않는 사유를 입력해주세요.",
