@@ -1,6 +1,6 @@
 /**
  * 홈 화면 SD-Layer 예외 관리 버튼 — 관리 권한 역할(J: TE_J·TE_P·MASTER, O: TE_O·TE_P·MASTER)에게만 보이고,
- * 모달은 그 역할이 관리할 수 있는 표(J/O)만 탭으로 보여준다.
+ * 모달은 J/O 두 탭을 늘 보여주되 관리 권한이 없는 탭은 조회만 된다.
  *
  * ⚠️ CRA jest 설정은 resetMocks: true 라 jest.fn 의 구현이 매 테스트마다 지워진다 → 평범한 함수 + mockState.
  */
@@ -50,12 +50,14 @@ const renderHome = async () => {
 beforeAll(async () => { await i18n.changeLanguage('ko'); });
 
 describe('홈 SD-Layer 예외 관리 버튼', () => {
-  it.each([['TE_J', 'J'], ['TE_O', 'O']])('%s → 버튼이 보이고 모달은 %s 표만(탭 없음)', async (role, table) => {
+  it.each([['TE_J', 'J', 'O'], ['TE_O', 'O', 'J']])('%s → 버튼이 보이고 %s 탭은 관리, %s 탭은 조회 전용', async (role, own, other) => {
     mockState.role = role;
     await renderHome();
     fireEvent.click(screen.getByTestId('sd-exc-open-btn'));
-    expect(await screen.findByText(`${table}-layer 예외 추가`)).toBeDefined();
-    expect(screen.queryByTestId('sd-exc-tab-J')).toBeNull();
+    expect(await screen.findByText(`${own}-layer 예외 추가`)).toBeDefined();
+    fireEvent.click(screen.getByTestId(`sd-exc-tab-${other}`));
+    expect(screen.getByTestId('sd-exc-readonly-hint')).toBeDefined();
+    expect(screen.queryByTestId('sd-exc-add-btn')).toBeNull();
   });
 
   it.each(['TE_P', 'MASTER'])('%s → 버튼이 보이고 모달에 J/O 탭이 둘 다 있다', async (role) => {
@@ -64,6 +66,18 @@ describe('홈 SD-Layer 예외 관리 버튼', () => {
     fireEvent.click(screen.getByTestId('sd-exc-open-btn'));
     expect(await screen.findByTestId('sd-exc-tab-J')).toBeDefined();
     expect(screen.getByTestId('sd-exc-tab-O')).toBeDefined();
+    fireEvent.click(screen.getByTestId('sd-exc-tab-O'));
+    expect(screen.getByText('O-layer 예외 추가')).toBeDefined();
+    expect(screen.queryByTestId('sd-exc-readonly-hint')).toBeNull();
+  });
+
+  it('버튼은 의뢰서 작성·결재 현황·가이드 버튼 줄의 아랫줄에 따로 있다', async () => {
+    mockState.role = 'TE_P';
+    await renderHome();
+    const sdRow = screen.getByTestId('sd-exc-open-btn').parentElement as HTMLElement;
+    const mainRow = screen.getByText(/의뢰서 작성하기/).closest('.hero-actions') as HTMLElement;
+    expect(sdRow).not.toBe(mainRow);
+    expect(mainRow.nextElementSibling).toBe(sdRow);
   });
 
   it.each(['PL', 'TE_R', 'NONE'])('%s → 버튼이 보이지 않는다', async (role) => {

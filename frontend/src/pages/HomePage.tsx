@@ -503,7 +503,7 @@ export default function HomePage(): React.ReactElement {
   const [showTour, setShowTour] = useState(false);
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
   const [showSdExceptionModal, setShowSdExceptionModal] = useState(false);
-  // SD-Layer 예외를 관리할 수 있는 표(J/O) — 하나라도 있으면 홈 상단에 관리 버튼을 보여준다.
+  // SD-Layer 예외를 관리할 수 있는 표(J/O) — 하나라도 있으면 홈 상단에 버튼을 보여준다(모달은 J/O 탭 모두 조회 가능).
   const sdExceptionTables = useMemo(
     () => (['J', 'O'] as const).filter((table) => SD_EXCEPTION_ROLES[table].includes(currentUser.role ?? '')),
     [currentUser.role],
@@ -635,7 +635,7 @@ export default function HomePage(): React.ReactElement {
         <LayerSdExceptionModal
           isOpen
           onClose={() => setShowSdExceptionModal(false)}
-          tables={sdExceptionTables}
+          manageableTables={sdExceptionTables}
         />
       )}
 
@@ -707,7 +707,10 @@ export default function HomePage(): React.ReactElement {
               >
                 ❓ {t('guide.tour.button')}
               </button>
-              {sdExceptionTables.length > 0 && (
+            </div>
+            {/* SD-Layer 예외는 위 버튼 줄의 아랫줄에 따로 둔다. */}
+            {sdExceptionTables.length > 0 && (
+              <div className="hero-actions" style={{ marginTop: 14 }}>
                 <button
                   type="button"
                   className="btn btn-secondary btn-lg"
@@ -717,8 +720,8 @@ export default function HomePage(): React.ReactElement {
                 >
                   🧩 {t('request.sd_layer_exc_btn')}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

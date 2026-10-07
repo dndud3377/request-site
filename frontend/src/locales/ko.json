@@ -497,6 +497,7 @@
     "sd_layer_exc_manual_title_o": "O-layer 예외 추가",
     "sd_layer_exc_paste_hint": "엑셀에서 Process ID·SP·SD·Layer 4칸(여러 행 가능)을 복사해 칸에 붙여넣으면 그 칸부터 채워지고 행이 자동으로 늘어납니다. SD 는 전체 값(예: 1000.123 월평동 지점) 그대로 저장됩니다.",
     "sd_layer_exc_row_add": "행 추가",
+    "sd_layer_exc_readonly_hint": "이 탭은 조회만 할 수 있습니다. 등록·삭제는 담당 역할만 할 수 있습니다.",
     "sd_layer_exc_saved_title": "등록된 예외",
     "sd_layer_exc_saved_empty": "등록된 예외가 없습니다.",
     "sd_layer_exc_col_creator": "등록자",

@@ -8,6 +8,8 @@ import { extractSdNumber } from '../pages/RequestPage/helpers';
 import { genId } from '../pages/RequestPage/constants';
 
 type SdTable = 'J' | 'O';
+// 모달은 역할과 관계없이 늘 두 탭을 보여준다 — 관리 권한이 없는 탭은 조회만 된다.
+const SD_TABLES: readonly SdTable[] = ['J', 'O'];
 type DraftRow = { id: string; process_id: string; sp: string; sd: string; layerid: string };
 type DraftField = Exclude<keyof DraftRow, 'id'>;
 
@@ -24,8 +26,8 @@ const isDraftRowValid = (row: DraftRow): boolean => extractSdNumber(row.sd) !== 
 interface LayerSdExceptionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** 이 사용자가 관리할 수 있는 표 — 탭으로 보여준다(TE_J: J, TE_O: O, TE_P·MASTER: J·O). */
-  tables: SdTable[];
+  /** 이 사용자가 등록·삭제할 수 있는 표(TE_J: J, TE_O: O, TE_P·MASTER: J·O). 나머지 탭은 조회만 된다. */
+  manageableTables: SdTable[];
 }
 
 const sectionTitleStyle: React.CSSProperties = {
@@ -38,13 +40,14 @@ const inputStyle: React.CSSProperties = {
 
 /**
  * J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검사의 예외 관리(홈 화면).
+ * J/O 두 탭을 늘 보여주고, 관리 권한이 있는 탭만 등록·삭제할 수 있다(다른 탭은 목록 조회만).
  * 예외 목록 조회·일괄 등록·삭제를 스스로 처리한다. 등록 입력은 여러 행 표이고, 엑셀에서 복사한
  * (Process ID, SP, SD, Layer) 4칸·여러 행을 붙여넣으면 붙여넣은 칸부터 채우고 모자란 행은 자동으로 늘린다.
  */
-const LayerSdExceptionModal: React.FC<LayerSdExceptionModalProps> = ({ isOpen, onClose, tables }) => {
+const LayerSdExceptionModal: React.FC<LayerSdExceptionModalProps> = ({ isOpen, onClose, manageableTables }) => {
   const { t } = useTranslation();
   const addToast = useToast();
-  const [table, setTable] = useState<SdTable>(tables[0] ?? 'J');
+  const [table, setTable] = useState<SdTable>(manageableTables[0] ?? 'J');
   const [exceptions, setExceptions] = useState<Record<SdTable, LayerSdException[]>>({ J: [], O: [] });
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -58,7 +61,7 @@ const LayerSdExceptionModal: React.FC<LayerSdExceptionModalProps> = ({ isOpen, o
     if (!isOpen) return undefined;
     let cancelled = false;
     setLoading(true);
-    Promise.all(tables.map((tb) => layerSdExceptionsAPI.list(tb).then((list) => [tb, list] as const)))
+    Promise.all(SD_TABLES.map((tb) => layerSdExceptionsAPI.list(tb).then((list) => [tb, list] as const)))
       .then((results) => {
         if (cancelled) return;
         setExceptions((prev) => results.reduce((acc, [tb, list]) => ({ ...acc, [tb]: list }), prev));
@@ -71,7 +74,7 @@ const LayerSdExceptionModal: React.FC<LayerSdExceptionModalProps> = ({ isOpen, o
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [isOpen, tables]);
+  }, [isOpen]);
 
   const resetDraft = () => {
     setRows([emptyDraftRow()]);
@@ -171,6 +174,7 @@ const LayerSdExceptionModal: React.FC<LayerSdExceptionModalProps> = ({ isOpen, o
     layerid: t('request.col_layer'),
   };
   const savedList = exceptions[table];
+  const canManage = manageableTables.includes(table);
 
   return (
     <Modal
@@ -184,81 +188,85 @@ const LayerSdExceptionModal: React.FC<LayerSdExceptionModalProps> = ({ isOpen, o
       <div style={{ fontSize: 13 }} data-testid="sd-exc-modal">
         <p style={{ color: 'var(--text-secondary)', marginTop: 0 }}>{t('request.sd_layer_exc_desc')}</p>
 
-        {tables.length > 1 && (
-          <div className="filter-tabs" style={{ marginBottom: 14 }}>
-            {tables.map((tb) => (
-              <button
-                key={tb}
-                type="button"
-                data-testid={`sd-exc-tab-${tb}`}
-                className={`filter-tab ${table === tb ? 'active' : ''}`}
-                onClick={() => switchTable(tb)}
-              >
-                {tb === 'J' ? t('request.sd_layer_exc_tab_j') : t('request.sd_layer_exc_tab_o')}
+        <div className="filter-tabs" style={{ marginBottom: 14 }}>
+          {SD_TABLES.map((tb) => (
+            <button
+              key={tb}
+              type="button"
+              data-testid={`sd-exc-tab-${tb}`}
+              className={`filter-tab ${table === tb ? 'active' : ''}`}
+              onClick={() => switchTable(tb)}
+            >
+              {tb === 'J' ? t('request.sd_layer_exc_tab_j') : t('request.sd_layer_exc_tab_o')}
+            </button>
+          ))}
+        </div>
+
+        {canManage ? (
+          <div style={{ marginBottom: 16 }}>
+            <div style={sectionTitleStyle}>
+              {table === 'J' ? t('request.sd_layer_exc_manual_title_j') : t('request.sd_layer_exc_manual_title_o')}
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>{t('request.sd_layer_exc_paste_hint')}</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }} data-testid="sd-exc-draft-table">
+              <thead>
+                <tr>
+                  {DRAFT_FIELDS.map((f) => <th key={f} style={cellStyle}>{draftHeaders[f]}</th>)}
+                  <th style={{ ...cellStyle, width: 40 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rowIdx) => {
+                  const invalid = invalidRowIds.has(row.id);
+                  return (
+                    <tr key={row.id} data-testid="sd-exc-draft-row">
+                      {DRAFT_FIELDS.map((field, colIdx) => (
+                        <td key={field} style={cellStyle}>
+                          <input
+                            type="text"
+                            data-testid={`sd-exc-draft-${field}-${rowIdx}`}
+                            value={row[field]}
+                            disabled={busy}
+                            style={invalid ? { ...inputStyle, borderColor: 'var(--danger)' } : inputStyle}
+                            onChange={(e) => handleRowChange(row.id, field, e.target.value)}
+                            onPaste={(e) => handleDraftPaste(e, rowIdx, colIdx)}
+                          />
+                        </td>
+                      ))}
+                      <td style={{ ...cellStyle, textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: 11, padding: '2px 7px' }}
+                          title={t('common.delete')}
+                          disabled={busy}
+                          onClick={() => handleRowDelete(row.id)}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRows((prev) => [...prev, emptyDraftRow()])}>
+                + {t('request.sd_layer_exc_row_add')}
               </button>
-            ))}
+              <button type="button" className="btn btn-primary btn-sm" data-testid="sd-exc-add-btn" disabled={busy} onClick={handleAddAll}>
+                {t('request.sd_layer_exc_add_btn')}
+              </button>
+            </div>
+            {invalidRowIds.size > 0 && (
+              <div className="form-error" style={{ marginTop: 6 }}>{t('request.sd_layer_exc_sd_invalid')}</div>
+            )}
+          </div>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 16 }} data-testid="sd-exc-readonly-hint">
+            {t('request.sd_layer_exc_readonly_hint')}
           </div>
         )}
-
-        <div style={{ marginBottom: 16 }}>
-          <div style={sectionTitleStyle}>
-            {table === 'J' ? t('request.sd_layer_exc_manual_title_j') : t('request.sd_layer_exc_manual_title_o')}
-          </div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>{t('request.sd_layer_exc_paste_hint')}</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }} data-testid="sd-exc-draft-table">
-            <thead>
-              <tr>
-                {DRAFT_FIELDS.map((f) => <th key={f} style={cellStyle}>{draftHeaders[f]}</th>)}
-                <th style={{ ...cellStyle, width: 40 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, rowIdx) => {
-                const invalid = invalidRowIds.has(row.id);
-                return (
-                  <tr key={row.id} data-testid="sd-exc-draft-row">
-                    {DRAFT_FIELDS.map((field, colIdx) => (
-                      <td key={field} style={cellStyle}>
-                        <input
-                          type="text"
-                          data-testid={`sd-exc-draft-${field}-${rowIdx}`}
-                          value={row[field]}
-                          disabled={busy}
-                          style={invalid ? { ...inputStyle, borderColor: 'var(--danger)' } : inputStyle}
-                          onChange={(e) => handleRowChange(row.id, field, e.target.value)}
-                          onPaste={(e) => handleDraftPaste(e, rowIdx, colIdx)}
-                        />
-                      </td>
-                    ))}
-                    <td style={{ ...cellStyle, textAlign: 'center' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ fontSize: 11, padding: '2px 7px' }}
-                        title={t('common.delete')}
-                        disabled={busy}
-                        onClick={() => handleRowDelete(row.id)}
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRows((prev) => [...prev, emptyDraftRow()])}>
-              + {t('request.sd_layer_exc_row_add')}
-            </button>
-            <button type="button" className="btn btn-primary btn-sm" data-testid="sd-exc-add-btn" disabled={busy} onClick={handleAddAll}>
-              {t('request.sd_layer_exc_add_btn')}
-            </button>
-          </div>
-          {invalidRowIds.size > 0 && (
-            <div className="form-error" style={{ marginTop: 6 }}>{t('request.sd_layer_exc_sd_invalid')}</div>
-          )}
-        </div>
 
         <hr style={{ margin: '14px 0', borderColor: 'var(--border)' }} />
 
@@ -292,7 +300,7 @@ const LayerSdExceptionModal: React.FC<LayerSdExceptionModalProps> = ({ isOpen, o
                     <td style={cellStyle}>{exc.layerid}</td>
                     <td style={cellStyle}>{exc.created_by_name || exc.created_by}</td>
                     <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {confirmingId === exc.id ? (
+                      {!canManage ? null : confirmingId === exc.id ? (
                         <>
                           <span style={{ marginRight: 6 }}>{t('request.sd_layer_exc_delete_confirm')}</span>
                           <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => handleDelete(exc)}>

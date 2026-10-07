@@ -1,5 +1,5 @@
 /**
- * 홈 화면 SD-Layer 예외 관리 모달 — J/O 탭, 엑셀 붙여넣기(여러 칸·여러 행), 일괄 등록, 삭제 확인.
+ * 홈 화면 SD-Layer 예외 관리 모달 — J/O 탭(관리 권한 없는 탭은 조회 전용), 엑셀 붙여넣기(여러 칸·여러 행), 일괄 등록, 삭제 확인.
  *
  * ⚠️ CRA jest 설정은 resetMocks: true 라 jest.fn 의 구현이 매 테스트마다 지워진다 →
  * jest.mock 은 평범한 함수 + mockState 로 쓴다(RouteChangeModal.test.tsx 와 같은 방식).
@@ -40,10 +40,10 @@ const LEGACY_J: MockException = {
   created_by: 'tej', created_by_name: 'TE_J 담당', created_at: '',
 };
 
-const renderModal = async (tables: Array<'J' | 'O'>) => {
+const renderModal = async (manageableTables: Array<'J' | 'O'>) => {
   const view = render(
     <ToastProvider>
-      <LayerSdExceptionModal isOpen onClose={() => undefined} tables={tables} />
+      <LayerSdExceptionModal isOpen onClose={() => undefined} manageableTables={manageableTables} />
     </ToastProvider>
   );
   await act(async () => { await Promise.resolve(); });
@@ -78,10 +78,24 @@ describe('탭', () => {
     expect(screen.getByText('등록된 예외가 없습니다.')).toBeDefined();
   });
 
-  it('관리 가능한 표가 하나면 탭이 없다', async () => {
+  it('관리 가능한 표가 하나여도 J/O 탭이 둘 다 있고, 관리 가능한 탭이 먼저 열린다', async () => {
     await renderModal(['O']);
-    expect(screen.queryByTestId('sd-exc-tab-J')).toBeNull();
+    expect(screen.getByTestId('sd-exc-tab-J')).toBeDefined();
+    expect(screen.getByTestId('sd-exc-tab-O').className).toContain('active');
     expect(screen.getByText('O-layer 예외 추가')).toBeDefined();
+    expect(screen.queryByTestId('sd-exc-readonly-hint')).toBeNull();
+  });
+
+  it('관리 권한이 없는 탭은 목록만 보이고 입력 표·삭제 버튼이 없다', async () => {
+    mockState.exceptions.J = [LEGACY_J];
+    await renderModal(['O']);
+    fireEvent.click(screen.getByTestId('sd-exc-tab-J'));
+    expect(screen.getByTestId('sd-exc-readonly-hint')).toBeDefined();
+    expect(screen.queryByTestId('sd-exc-draft-table')).toBeNull();
+    expect(screen.queryByTestId('sd-exc-add-btn')).toBeNull();
+    const saved = screen.getByTestId('sd-exc-saved-table');
+    expect(saved.textContent).toContain('2000');
+    expect(within(saved).queryByRole('button', { name: '삭제' })).toBeNull();
   });
 
   it('sd 필드가 없던 예전 예외는 SD 칸에 SD 첫 숫자를 보여준다', async () => {
