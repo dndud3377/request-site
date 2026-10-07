@@ -497,6 +497,7 @@
     "sd_layer_exc_manual_title_o": "Add O-layer exceptions",
     "sd_layer_exc_paste_hint": "Copy the four cells Process ID, SP, SD, Layer (multiple rows allowed) from Excel and paste into a cell: filling starts at that cell and rows are added automatically. SD is stored as the full value (e.g. 1000.123 Wolpyeong-dong).",
     "sd_layer_exc_row_add": "Add row",
+    "sd_layer_exc_readonly_hint": "This tab is view-only. Only the responsible role can add or delete exceptions.",
     "sd_layer_exc_saved_title": "Registered exceptions",
     "sd_layer_exc_saved_empty": "No exceptions registered.",
     "sd_layer_exc_col_creator": "Registered by",
