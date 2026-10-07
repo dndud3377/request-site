@@ -421,6 +421,9 @@ export interface LayerSdException {
   table: 'J' | 'O';
   process_id: string;
   sp: string;
+  /** 등록 시 입력한 SD 원문 전체 — `sd` 필드 추가 전에 등록된 예외는 빈 문자열이다. */
+  sd: string;
+  /** 매칭 키 — 서버가 `sd` 의 맨 앞 숫자를 뽑아 채운다. */
   sd_number: string;
   layerid: string;
   created_by: string;
@@ -429,7 +432,7 @@ export interface LayerSdException {
 }
 
 /** 예외 등록 요청 본문 — 서버가 등록자(created_by*)를 채운다. */
-export type LayerSdExceptionInput = Pick<LayerSdException, 'table' | 'process_id' | 'sp' | 'sd_number' | 'layerid'>;
+export type LayerSdExceptionInput = Pick<LayerSdException, 'table' | 'process_id' | 'sp' | 'sd' | 'layerid'>;
 
 /** SD 첫 숫자와 Layer 가 다르고 예외도 아닌 J/O-layer 행 한 건. */
 export interface LayerSdMismatch {
