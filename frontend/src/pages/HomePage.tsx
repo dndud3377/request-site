@@ -10,6 +10,8 @@ import RichTextEditor from '../components/RichTextEditor';
 import GuideTourModal from '../components/GuideTourModal';
 import AnnualDesignRuleChart from '../components/AnnualDesignRuleChart';
 import PagedDetailView from '../components/PagedDetailView';
+import LayerSdExceptionModal from '../components/LayerSdExceptionModal';
+import { SD_EXCEPTION_ROLES } from './RequestPage/constants';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
@@ -500,6 +502,12 @@ export default function HomePage(): React.ReactElement {
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
+  const [showSdExceptionModal, setShowSdExceptionModal] = useState(false);
+  // SD-Layer 예외를 관리할 수 있는 표(J/O) — 하나라도 있으면 홈 상단에 관리 버튼을 보여준다.
+  const sdExceptionTables = useMemo(
+    () => (['J', 'O'] as const).filter((table) => SD_EXCEPTION_ROLES[table].includes(currentUser.role ?? '')),
+    [currentUser.role],
+  );
 
   // 의뢰 상세 모달(읽기 전용) — HistoryPage 와 같은 방식: 결재 액션 없이 상세 내용만 보여준다.
   const [selectedDoc, setSelectedDoc] = useState<RequestDocument | null>(null);
@@ -622,6 +630,15 @@ export default function HomePage(): React.ReactElement {
         </p>
       </Modal>
 
+      {/* J/O-layer SD-Layer 일치 예외 관리 모달 (J: TE_J·TE_P·MASTER / O: TE_O·TE_P·MASTER) */}
+      {showSdExceptionModal && (
+        <LayerSdExceptionModal
+          isOpen
+          onClose={() => setShowSdExceptionModal(false)}
+          tables={sdExceptionTables}
+        />
+      )}
+
       {/* 전체 가이드 모달 */}
       <GuideTourModal isOpen={showTour} onClose={() => setShowTour(false)} />
 
@@ -690,6 +707,17 @@ export default function HomePage(): React.ReactElement {
               >
                 ❓ {t('guide.tour.button')}
               </button>
+              {sdExceptionTables.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-lg"
+                  data-testid="sd-exc-open-btn"
+                  title={t('request.sd_layer_exc_btn_hint')}
+                  onClick={() => setShowSdExceptionModal(true)}
+                >
+                  🧩 {t('request.sd_layer_exc_btn')}
+                </button>
+              )}
             </div>
           </div>
         </div>

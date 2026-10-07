@@ -9711,7 +9711,7 @@ class LayerSdCheckTest(TestCase):
     # ----- 예외 관리 권한 -----
 
     def _payload(self, table, **kwargs):
-        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd_number': '1000.123', 'layerid': '2000'}
+        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd': '1000.123 월평동 지점', 'layerid': '2000'}
         data.update(kwargs)
         return data
 
@@ -9760,7 +9760,9 @@ class LayerSdCheckTest(TestCase):
 
     def test_create_validation(self):
         self.client.force_authenticate(user=self.te_j)
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd_number='abc'), format='json')
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd='abc'), format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd='１０００.１２３ 월평동'), format='json')
         self.assertEqual(r.status_code, 400, r.content)
         r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', layerid=''), format='json')
         self.assertEqual(r.status_code, 400, r.content)
@@ -9769,3 +9771,87 @@ class LayerSdCheckTest(TestCase):
         r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
         self.assertEqual(r.status_code, 400, r.content)
         self.assertEqual(self.client.patch(f'/api/layer-sd-exceptions/1/', {}, format='json').status_code, 405)
+
+    def test_create_stores_full_sd_and_derives_sd_number(self):
+        self.client.force_authenticate(user=self.te_j)
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()['sd'], '1000.123 월평동 지점')
+        self.assertEqual(r.json()['sd_number'], '1000.123')
+        # 뒤 글이 달라도 SD 첫 숫자가 같으면 같은 예외 조합이라 중복으로 막는다.
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd='1000.123 다른 지점'), format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        # 등록한 예외는 SD 첫 숫자로 매칭된다(행의 SD 뒤 글은 달라도 된다).
+        doc = self._make_draft(jayer_rows=[self._row(sd='1000.123 전혀 다른 글', layerid='2000')])
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    # ----- 숫자 값 비교 / ASCII 숫자 -----
+
+    def test_normalize_number(self):
+        from api.layer_sd_check import normalize_number
+        self.assertEqual(normalize_number('100.930'), '100.93')
+        self.assertEqual(normalize_number('100.93'), '100.93')
+        self.assertEqual(normalize_number('0100'), '100')
+        self.assertEqual(normalize_number('100.0'), '100')
+        self.assertEqual(normalize_number('000'), '0')
+        self.assertEqual(normalize_number(' 7 '), '7')
+        self.assertEqual(normalize_number('1.2.30'), '1.2.30')
+        self.assertEqual(normalize_number('M1'), 'M1')
+
+    def test_submit_passes_when_sd_number_numerically_equals_layer(self):
+        rows = [
+            self._row(id='a', sd='100.930 월평동', layerid='100.93'),
+            self._row(id='b', sd='100.93 월평동', layerid='100.930'),
+            self._row(id='c', sd='0100 월평동', layerid='100'),
+            self._row(id='d', sd='100.0 월평동', layerid='100'),
+        ]
+        doc = self._make_draft(jayer_rows=rows, oayer_rows=rows)
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_submit_still_blocked_when_numerically_different(self):
+        doc = self._make_draft(jayer_rows=[self._row(sd='100.931 월평동', layerid='100.93')])
+        self.assertEqual(self._submit(doc).status_code, 400)
+
+    def test_exception_matches_numerically_equal_values(self):
+        self._add_exception('J', sd_number='100.930', layerid='0200')
+        doc = self._make_draft(jayer_rows=[self._row(sd='100.93 월평동', layerid='200')])
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_full_width_digits_are_not_sd_number(self):
+        """프론트(JS `\\d`)와 같게 ASCII 숫자만 SD 첫 숫자로 본다 — 전각 숫자 SD 는 비교할 값이 없어 통과."""
+        from api.layer_sd_check import extract_sd_number
+        self.assertEqual(extract_sd_number('１０００.１２３ 월평동'), '')
+        doc = self._make_draft(jayer_rows=[self._row(sd='１０００.１２３ 월평동', layerid='2000')])
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    # ----- peer-submit / direct-approve -----
+
+    def test_peer_submit_blocked_on_mismatch(self):
+        doc = self._make_draft(jayer_rows=[self._row()])
+        self.assertEqual(self._submit(doc).status_code, 200)
+        doc.refresh_from_db()
+        notes = self._json.loads(doc.additional_notes)
+        notes['jayerRows'][0]['layerid'] = '2000'
+        doc.additional_notes = self._json.dumps(notes)
+        doc.save()
+        self.client.force_authenticate(user=self.pl)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-submit/', {'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('SD 첫 숫자', r.json().get('error', ''), r.content)
+        # 고치면 통과한다.
+        notes['jayerRows'][0]['layerid'] = '1000.123'
+        doc.additional_notes = self._json.dumps(notes)
+        doc.save()
+        r = self.client.post(f'/api/documents/{doc.id}/peer-submit/', {'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_direct_approve_blocked_on_mismatch(self):
+        doc = self._make_draft(jayer_rows=[self._row(layerid='2000')])
+        self.client.force_authenticate(user=self.master)
+        payload = {'submitted_at': '2026-10-01', 'approved_at': '2026-10-02'}
+        r = self.client.post(f'/api/documents/{doc.id}/direct-approve/', payload, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('SD 첫 숫자', r.json().get('error', ''), r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft')

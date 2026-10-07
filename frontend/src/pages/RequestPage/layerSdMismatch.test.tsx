@@ -3,7 +3,9 @@
  *
  * 규칙: SD 맨 앞 숫자(예: "1000.123 월평동 지점" → 1000.123)가 Layer 와 다른 행이 있으면 J-layer(STEP3)·
  * O-layer(STEP4)에서 '다음'으로 못 넘어간다. (process_id, sp, SD 첫 숫자, layerid) 가 모두 같은 예외가
- * 등록돼 있으면 통과한다. 예외 관리 버튼은 J=TE_J·TE_P, O=TE_O·TE_P(MASTER 는 둘 다)에게만 보인다.
+ * 등록돼 있으면 통과한다. 숫자는 값으로 비교한다(100.930 = 100.93).
+ * 예외 관리 화면은 홈으로 옮겼다(HomePage.sdException.test.tsx / LayerSdExceptionModal.test.tsx) —
+ * 작성 화면에는 어떤 역할에게도 관리 버튼이 없다.
  */
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
@@ -257,7 +259,7 @@ const J_MATCH = { ...J_MISMATCH, layerid: '1000.123' };
 const O_MISMATCH = { id: 'o1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID_FX, sp: 'SP01', sd: '1000.123 월평동 지점', pp: 'PP01', layerid: '2000', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' };
 const O_MATCH = { ...O_MISMATCH, layerid: '1000.123' };
 
-const J_EXCEPTION = { id: 1, table: 'J', process_id: PROCESS_ID_FX, sp: 'SP01', sd_number: '1000.123', layerid: '2000', created_by: 'tej', created_by_name: 'TE_J 담당', created_at: '' };
+const J_EXCEPTION = { id: 1, table: 'J', process_id: PROCESS_ID_FX, sp: 'SP01', sd: '1000.123 월평동 지점', sd_number: '1000.123', layerid: '2000', created_by: 'tej', created_by_name: 'TE_J 담당', created_at: '' };
 
 const setDoc = (jayerRows: unknown[], oayerRows: unknown[]) => {
   mockState.doc = { ...fixtureDoc, additional_notes: JSON.stringify({ ...fixtureNotes, jayerRows, oayerRows, bbRows: [] }) };
@@ -327,6 +329,13 @@ describe('J-layer SD 첫 숫자 ↔ Layer 검증', () => {
     expect(container.querySelector(O_TABLE)).toBeNull();
   });
 
+  it('숫자는 값으로 비교한다 — SD 100.930 과 Layer 100.93 은 같은 값이라 통과한다', async () => {
+    setDoc([{ ...J_MISMATCH, sd: '100.930 월평동', layerid: '100.93' }], [O_MATCH]);
+    const { container } = await renderAtStep(J_TABLE);
+    await clickNext(container);
+    expect(container.querySelector(O_TABLE)).not.toBeNull();
+  });
+
   it('비활성(st=X) 행은 검사하지 않는다', async () => {
     setDoc([J_MATCH, { ...J_MISMATCH, id: 'j2', loaded: false, st: 'X', new_or_copy: '신규' }], [O_MATCH]);
     const { container } = await renderAtStep(J_TABLE);
@@ -347,74 +356,14 @@ describe('O-layer SD 첫 숫자 ↔ Layer 검증', () => {
   });
 });
 
-describe('예외 관리 버튼 노출(역할)', () => {
-  const openBtn = (c: HTMLElement) => c.querySelector('[data-testid="sd-exc-open-btn"]');
-
-  it.each([['TE_J', true], ['TE_P', true], ['MASTER', true], ['TE_O', false], ['PL', false]])('J-layer: %s → 버튼 %s', async (role, visible) => {
-    mockState.role = role as string;
+describe('작성 화면에는 예외 관리 버튼이 없다(홈으로 이동)', () => {
+  it.each(['TE_J', 'TE_O', 'TE_P', 'MASTER'])('%s: STEP3·STEP4 모두 버튼 없음', async (role) => {
+    mockState.role = role;
     setDoc([J_MATCH], [O_MATCH]);
     const { container } = await renderAtStep(J_TABLE);
-    expect(!!openBtn(container)).toBe(visible);
-  });
-
-  it.each([['TE_O', true], ['TE_P', true], ['MASTER', true], ['TE_J', false], ['PL', false]])('O-layer: %s → 버튼 %s', async (role, visible) => {
-    mockState.role = role as string;
-    setDoc([J_MATCH], [O_MATCH]);
-    const { container } = await renderAtStep(O_TABLE);
-    expect(!!openBtn(container)).toBe(visible);
-  });
-});
-
-describe('예외 관리 모달', () => {
-  it('불일치 행에서 예외 등록 → 서버로 4개 값이 전송되고 다음으로 넘어갈 수 있다', async () => {
-    mockState.role = 'TE_J';
-    setDoc([J_MISMATCH], [O_MATCH]);
-    const { container } = await renderAtStep(J_TABLE);
-    await clickNext(container);
-    expect(container.querySelector(O_TABLE)).toBeNull();
-
-    await act(async () => { (container.querySelector('[data-testid="sd-exc-open-btn"]') as HTMLButtonElement).click(); });
-    expect(screen.getByText('J-layer SD·Layer 일치 예외 관리')).toBeDefined();
-    await act(async () => { buttonWith(document, '예외 등록')!.click(); });
-    await flush(5);
-    expect(mockState.created).toEqual([{ table: 'J', process_id: PROCESS_ID_FX, sp: 'SP01', sd_number: '1000.123', layerid: '2000' }]);
-    expect(screen.getByTestId('sd-exc-saved-table').textContent).toContain('1000.123');
-
-    await act(async () => { buttonWith(document, '닫기')!.click(); });
+    expect(container.querySelector('[data-testid="sd-exc-open-btn"]')).toBeNull();
     await clickNext(container);
     expect(container.querySelector(O_TABLE)).not.toBeNull();
-  });
-
-  it('직접 추가: SD 첫 숫자가 숫자 형식이 아니면 등록하지 않고 안내한다', async () => {
-    mockState.role = 'TE_J';
-    setDoc([J_MATCH], [O_MATCH]);
-    const { container } = await renderAtStep(J_TABLE);
-    await act(async () => { (container.querySelector('[data-testid="sd-exc-open-btn"]') as HTMLButtonElement).click(); });
-    const setValue = (id: string, value: string) => {
-      const input = screen.getByTestId(id) as HTMLInputElement;
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-      act(() => { setter.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
-    };
-    setValue('sd-exc-draft-sd_number', 'abc');
-    setValue('sd-exc-draft-layerid', '2000');
-    await act(async () => { buttonWith(screen.getByTestId('sd-exc-modal'), '추가')!.click(); });
-    expect(mockState.created).toEqual([]);
-    expect(screen.getByText(/SD 첫 숫자는 1000.123 같은 숫자여야 하고/)).toBeDefined();
-  });
-
-  it('등록된 예외는 삭제 확인(두 번 클릭)을 거쳐 삭제된다', async () => {
-    mockState.role = 'TE_J';
-    mockState.exceptions.J = [J_EXCEPTION];
-    setDoc([J_MATCH], [O_MATCH]);
-    const { container } = await renderAtStep(J_TABLE);
-    await act(async () => { (container.querySelector('[data-testid="sd-exc-open-btn"]') as HTMLButtonElement).click(); });
-    const table = () => screen.getByTestId('sd-exc-saved-table');
-    await act(async () => { buttonWith(table(), '삭제')!.click(); });
-    expect(mockState.exceptions.J).toHaveLength(1);
-    expect(screen.getByText('삭제할까요?')).toBeDefined();
-    await act(async () => { buttonWith(table(), '확인')!.click(); });
-    await flush(5);
-    expect(mockState.exceptions.J).toHaveLength(0);
-    expect(screen.getByText('등록된 예외가 없습니다.')).toBeDefined();
+    expect(container.querySelector('[data-testid="sd-exc-open-btn"]')).toBeNull();
   });
 });

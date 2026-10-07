@@ -925,6 +925,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = layer_sd_check.validate_document(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         with transaction.atomic():
             document.status = 'approved'
             document.submitted_at = _as_aware_datetime(submitted_date)
@@ -2871,6 +2875,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step = self._get_caller_pl_step(document, request.user)
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 지정 PL 이 수정한 내용도 상신과 같은 SD-Layer 일치 검사를 거친다.
+        err = layer_sd_check.validate_document(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
         tagged = f'[수정 후 상신] {comment}'.strip()

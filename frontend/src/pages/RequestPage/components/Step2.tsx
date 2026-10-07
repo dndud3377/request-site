@@ -14,9 +14,6 @@ interface Step2Props {
   setJayerSortBySp: React.Dispatch<React.SetStateAction<boolean>>;
   jayerFilterSets: FilterSet[];
   setJayerFilterModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  /** 이 사용자가 J-layer SD-Layer 예외를 관리할 수 있는가 — 버튼 노출 여부 */
-  canManageSdException: boolean;
-  onOpenSdExceptionModal: () => void;
   mappedJayerRowIds: Set<string>;
   jayerBarcodeCache: Record<string, { label: string; spec: string }[]>;
   errors: Partial<Record<string, string>>;
@@ -45,8 +42,6 @@ const Step2: React.FC<Step2Props> = ({
   setJayerSortBySp,
   jayerFilterSets,
   setJayerFilterModalOpen,
-  canManageSdException,
-  onOpenSdExceptionModal,
   mappedJayerRowIds,
   jayerBarcodeCache,
   errors,
@@ -125,9 +120,6 @@ const Step2: React.FC<Step2Props> = ({
               {fs.label}
             </button>
           ))}
-          {canManageSdException && (
-            <button type="button" className="th-header-btn" data-testid="sd-exc-open-btn" title={t('request.sd_layer_exc_btn_hint')} onClick={onOpenSdExceptionModal}>{t('request.sd_layer_exc_btn')}</button>
-          )}
           <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
           <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
