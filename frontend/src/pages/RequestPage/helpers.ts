@@ -896,9 +896,25 @@ export const extractSdNumber = (sd: string | undefined | null): string => {
   return match ? match[1] : '';
 };
 
-/** 예외 일치 키 — (process_id, sp, SD 첫 숫자, layerid) 를 trim 한 4개 값. */
+/** 숫자 값으로 비교할 수 있는 형식 — 정수부와 (있으면) 소수부 하나. 점이 2개 이상이면 문자열로 비교한다. */
+const NUMERIC_PATTERN = /^(\d+)(?:\.(\d+))?$/;
+
+/**
+ * 숫자 비교용 정규화 — 정수부 앞 0 과 소수부 끝 0 을 지운다("0100.930" → "100.93", "100.0" → "100").
+ * 숫자 형식이 아니면 trim 한 원문. 백엔드 `layer_sd_check.normalize_number` 와 같은 규칙이어야 한다.
+ */
+export const normalizeNumber = (value: string | undefined | null): string => {
+  const text = (value ?? '').trim();
+  const match = NUMERIC_PATTERN.exec(text);
+  if (!match) return text;
+  const integer = match[1].replace(/^0+/, '') || '0';
+  const fraction = (match[2] ?? '').replace(/0+$/, '');
+  return fraction ? `${integer}.${fraction}` : integer;
+};
+
+/** 예외 일치 키 — (process_id, sp) 는 trim, (SD 첫 숫자, layerid) 는 숫자 정규화한 4개 값. */
 const sdExceptionKey = (processId: string, sp: string, sdNumber: string, layerid: string): string =>
-  [processId, sp, sdNumber, layerid].map((v) => (v ?? '').trim()).join('\u0001');
+  [(processId ?? '').trim(), (sp ?? '').trim(), normalizeNumber(sdNumber), normalizeNumber(layerid)].join('\u0001');
 
 /**
  * 행 목록에서 SD 첫 숫자와 layerid 가 다르고 예외도 아닌 행을 골라 돌려준다.
@@ -917,7 +933,7 @@ export const findLayerSdMismatches = (
     if (isRowInactive(row.st) || isNocSpecial(row.new_or_copy)) return;
     const sdNumber = extractSdNumber(row.sd);
     const layerid = (row.layerid ?? '').trim();
-    if (!sdNumber || !layerid || sdNumber === layerid) return;
+    if (!sdNumber || !layerid || normalizeNumber(sdNumber) === normalizeNumber(layerid)) return;
     if (allowed.has(sdExceptionKey(row.process_id, row.sp, sdNumber, layerid))) return;
     mismatches.push({
       rowId: row.id,
