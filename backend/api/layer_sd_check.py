@@ -11,13 +11,19 @@ J-layer/O-layer 행의 `sd`(화면 헤더 "SD")는 보통 "1000.123 월평동 �
 검사 대상 행: 비활성(st=='X')이 아니고, new_or_copy 가 기등록/layer삭제/미진행이 아니며,
 SD 가 숫자로 시작하고, layerid 가 비어 있지 않은 행. SD 가 숫자로 시작하지 않는 행은 비교할
 값이 없으므로 통과한다.
+
+비교는 숫자 값 기준이다 — `100.930` 과 `100.93`, `0100` 과 `100` 은 같은 값으로 본다
+(`normalize_number`). 숫자 형식이 아닌 값(`1.2.3`, `M1` 등)은 문자열 그대로 비교한다.
 """
 import re
 
 from .models import LayerSdException
 
 # SD 맨 앞 숫자 — "1000.123 월평동" → "1000.123". 앞 공백은 무시하고, 숫자로 시작하지 않으면 매치되지 않는다.
-SD_NUMBER_PATTERN = re.compile(r'^\s*(\d+(?:\.\d+)*)')
+# re.ASCII: 프론트(JS) `\d` 와 같게 ASCII 숫자만 숫자로 본다(전각 '１' 등은 숫자가 아님).
+SD_NUMBER_PATTERN = re.compile(r'^\s*(\d+(?:\.\d+)*)', re.ASCII)
+# 숫자 값으로 비교할 수 있는 형식 — 정수부와 (있으면) 소수부 하나. 점이 2개 이상이면 문자열로 비교한다.
+NUMERIC_PATTERN = re.compile(r'^(\d+)(?:\.(\d+))?$', re.ASCII)
 
 INACTIVE_ST = 'X'
 NOC_SPECIAL = ('기등록', 'layer삭제', '미진행')
@@ -38,12 +44,32 @@ def extract_sd_number(sd):
     return match.group(1) if match else ''
 
 
+def normalize_number(value):
+    """숫자 비교용 정규화 — 정수부 앞 0 과 소수부 끝 0 을 지운다("0100.930" → "100.93", "100.0" → "100").
+
+    숫자 형식(`NUMERIC_PATTERN`)이 아니면 앞뒤 공백만 지운 원문을 돌려준다.
+    프론트 `helpers.ts` 의 `normalizeNumber` 와 같은 규칙이어야 한다.
+    """
+    text = _text(value)
+    match = NUMERIC_PATTERN.match(text)
+    if not match:
+        return text
+    integer = match.group(1).lstrip('0') or '0'
+    fraction = (match.group(2) or '').rstrip('0')
+    return f'{integer}.{fraction}' if fraction else integer
+
+
+def _exception_key(process_id, sp, sd_number, layerid):
+    return (_text(process_id), _text(sp), normalize_number(sd_number), normalize_number(layerid))
+
+
 def exception_keys(table):
-    """해당 표(J/O)의 예외 (process_id, sp, sd_number, layerid) 집합."""
-    return set(
-        LayerSdException.objects.filter(table=table)
+    """해당 표(J/O)의 예외 (process_id, sp, sd_number, layerid) 집합 — 숫자 값은 정규화해 둔다."""
+    return {
+        _exception_key(*values)
+        for values in LayerSdException.objects.filter(table=table)
         .values_list('process_id', 'sp', 'sd_number', 'layerid')
-    )
+    }
 
 
 def find_mismatches(rows, exceptions):
@@ -57,15 +83,14 @@ def find_mismatches(rows, exceptions):
             continue
         sd_number = extract_sd_number(row.get('sd'))
         layerid = _text(row.get('layerid'))
-        if not sd_number or not layerid or sd_number == layerid:
+        if not sd_number or not layerid or normalize_number(sd_number) == normalize_number(layerid):
             continue
-        key = (_text(row.get('process_id')), _text(row.get('sp')), sd_number, layerid)
-        if key in exceptions:
+        if _exception_key(row.get('process_id'), row.get('sp'), sd_number, layerid) in exceptions:
             continue
         mismatches.append({
             'id': row.get('id'),
-            'process_id': key[0],
-            'sp': key[1],
+            'process_id': _text(row.get('process_id')),
+            'sp': _text(row.get('sp')),
             'sd': _text(row.get('sd')),
             'sd_number': sd_number,
             'layerid': layerid,
