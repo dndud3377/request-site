@@ -202,7 +202,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   `docs/REQUEST.md` §4.1 2026-10-05 항목) → `_validate_post_approvers` → `_resolve_sales_agreers` →
   `_validate_sales_agreers`. 통과 후 한 트랜잭션에서 상태 전이 + step 생성이 이뤄진다.
   `resubmit`·`requester_resubmit` 도 같은 두 검증(`_validate_bb_mapping` 직후 `layer_sd_check`)을 한다.
-  `direct-approve`·`peer-submit` 은 검사하지 않는다.
+  **(2026-10-07)** `direct-approve`(`_validate_bb_mapping` 직후)·`peer-submit`(본인 PL 단계 확인 직후, 단계 진행 전)도
+  `layer_sd_check` 를 검사해 불일치면 400 으로 막는다(`docs/REQUEST.md` §4.1 2026-10-07 항목).
 - ✅ **다중 지정 PL(2026-07)**: payload `designated_pl_loginids: [...]`(배열, 단일 `designated_pl_loginid` 도 호환). 지정 PL **전원**에 대해 `agent='PL', round=1` pending step을 각각 생성한다(`_resolve_designated_pls`로 파싱·검증). `document.designated_pl` FK 에는 **대표(첫 번째)** 만 기록(표시/하위호환용).
 - 동작: `status → under_review`, `submitted_at` 기록, 기존 step 전체 삭제 후 PL step N개 생성. 통보처(있으면) 상신 메일 발송.
 - ✅ **영업/기술지원 합의자(SA, 2026-08)**: `detail.sales_agreers` 에 지정된 PL 권한자마다 `agent='SA', is_parallel=True` step 을 **PL 과 같은 회차에 함께** 생성한다(`_create_sales_agreer_steps`). 지정이 없으면 step 자체를 만들지 않는다(화면·메일 모두 '해당없음'). 자세한 규칙은 **Case P** 참조.
@@ -224,6 +225,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case D — PL 수정 후 상신 (`peer_submit`)
 - 권한: MASTER 또는 (현재 회차 pending PL step) assignee 본인. 문서 내용은 사전에 `/request` 화면에서 수정·update됨(`can_edit` under_review 분기가 pending PL 담당자 전원 허용).
 - 동작: 본인 PL step `approved`(comment 앞 `[수정 후 상신]` 태그) → Case B와 동일하게 **전원 합의 시에만** R 생성.
+- ✅ **(2026-10-07) SD-Layer 일치 검사**: 단계를 진행하기 전에 `layer_sd_check.validate_document()` 를 돌려
+  J/O-layer SD 첫 숫자 ↔ Layer 불일치(예외 제외)면 400 — PL step 은 pending 그대로 남는다.
 
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), J(due: 6영업일, 병렬), O(due: 6영업일, 병렬)** 동시 생성.
@@ -1948,7 +1951,8 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 - (참고, 2026-10) 같은 TE_J/TE_O/MASTER 권한 관례를 쓰는 별도 목록으로 **J/O-layer SD-Layer 검사 예외**
   `GET/POST /api/layer-sd-exceptions/?table=J|O`, `DELETE /api/layer-sd-exceptions/{id}/` 가 있다. 이 필터와 달리
   조회는 로그인한 누구나 가능하고(작성 화면 검증이 같은 목록을 쓴다), 등록·삭제는 J 예외=TE_J·TE_P·MASTER,
-  O 예외=TE_O·TE_P·MASTER 다. 상세는 `docs/REQUEST.md` §4.1 2026-10-05 항목.
+  O 예외=TE_O·TE_P·MASTER 다. 관리 화면은 **홈 상단 `SD-Layer 예외` 버튼**(2026-10-07, 작성 화면에서 이동).
+  상세는 `docs/REQUEST.md` §4.1 2026-10-05·2026-10-07 항목.
 
 #### 12-3-1. 초기화 (`reset-layer-filter`, 2026-09)
 
