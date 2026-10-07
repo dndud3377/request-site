@@ -288,6 +288,34 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-10-07 — SD-Layer 예외: 버튼 아랫줄 배치 / J·O 탭 상시 표시·상대 탭 조회 전용)
+
+바로 아래 2026-10-07 항목의 '예외 관리 화면 이동' 내용을 다음과 같이 바꾼다(이 항목이 우선).
+
+- **버튼 위치**: `🧩 SD-Layer 예외` 버튼을 `의뢰서 작성하기 / 결재 현황 보기 / 전체 가이드` 버튼 줄 **옆이 아니라 아랫줄**
+  (별도 `.hero-actions` 줄, `HomePage.tsx`)에 둔다. 보이는 역할은 그대로 `SD_EXCEPTION_ROLES`(TE_J·TE_O·TE_P·MASTER).
+- **탭**: 모달(`LayerSdExceptionModal.tsx`)은 역할과 관계없이 **J-layer / O-layer 두 탭을 늘 보여준다.**
+  props 가 `tables` → `manageableTables`(등록·삭제 가능한 표)로 바뀌었고, 목록은 J·O 둘 다 불러온다.
+  처음 열리는 탭은 관리 가능한 첫 표(TE_O → O, 나머지 → J).
+  | 역할 | J 탭 | O 탭 |
+  |---|---|---|
+  | TE_J | 관리(추가·삭제) | 조회 전용 |
+  | TE_O | 조회 전용 | 관리(추가·삭제) |
+  | TE_P·MASTER | 관리 | 관리 |
+  조회 전용 탭은 '예외 추가' 입력 표와 '등록된 예외' 행의 삭제 버튼을 숨기고 안내 문구(`request.sd_layer_exc_readonly_hint`)를 보인다.
+- **서버 변경 없음**: 목록 조회는 원래 로그인한 누구나 가능하고, 등록·삭제 권한(`CanManageLayerSdException`)은 그대로다
+  (MASTER 는 이전부터 J·O 둘 다 관리 가능).
+- **i18n**: `request.sd_layer_exc_readonly_hint` 추가(ko/en 동시).
+- **테스트**: `LayerSdExceptionModal.test.tsx`(탭 상시 표시·조회 전용 탭 케이스로 교체/추가), `HomePage.sdException.test.tsx`
+  (TE_J/TE_O 상대 탭 조회 전용, TE_P·MASTER 두 탭 관리, 버튼이 아랫줄에 있는지).
+- **수동 검증 시나리오** (개발환경 `http://localhost:10011`, `AUTH_MODE=dev`):
+  1. [`agent_j1`(TE_J)] 홈 → 상단 `의뢰서 작성하기 / 결재 현황 보기 / 전체 가이드` **아랫줄**에 `🧩 SD-Layer 예외` 버튼이 있으면 정상.
+     클릭 → J/O 탭 두 개, J 탭이 선택된 상태로 'J-layer 예외 추가' 표가 보인다. O 탭 클릭 → 입력 표 없이 "이 탭은 조회만…"
+     안내 + O 예외 목록(삭제 버튼 없음)이 보이면 정상.
+  2. [`agent_o1`(TE_O)] 같은 버튼 → O 탭이 먼저 선택되고 'O-layer 예외 추가' 표가 보인다. J 탭은 조회 전용이어야 한다.
+  3. [`agent_p1`(TE_P) / MASTER 계정] 두 탭 모두 입력 표·삭제 버튼이 보이고 등록·삭제가 되면 정상.
+  4. [`pl_user`] 홈에 버튼이 없어야 한다. 화면 폭을 좁혔을 때(모바일) 버튼 줄이 세로로 쌓여도 예외 버튼이 맨 아래에 있으면 정상.
+
 ### 기능 변경 (2026-10-07 — SD-Layer 검사: 숫자 값 비교 / ASCII 숫자 / peer-submit·direct-approve 검사 / 예외 관리 홈 이동·엑셀 붙여넣기)
 
 2026-10-05 항목(아래)을 다음과 같이 바꾼다. 아래 항목과 다르면 **이 항목이 우선**한다.
