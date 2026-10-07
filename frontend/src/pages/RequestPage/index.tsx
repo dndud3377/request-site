@@ -1819,6 +1819,19 @@ export default function RequestPage(): React.ReactElement {
     detail.ea_change === EA_HAS_CHANGE
     && !!detail.ea_value?.trim()
     && !isEaDefaultValue(detail.ea_value, detail.only_prodc);
+  // 합의자가 필수였다가 필수가 아니게 되는 순간(변경 없음 전환·값을 기본값으로 되돌림·C가문 전환 등)
+  // 합의자 블록이 사라지므로, 사용자가 볼 수도 지울 수도 없는 선택값이 상신되지 않게 전부 초기화한다.
+  // true→false 전환만 감지한다 — 문서를 불러올 때(false→true 또는 계속 false)는 저장된 지정을 건드리지 않는다.
+  const prevRequiresSalesAgreerRef = useRef(requiresSalesAgreer);
+  useEffect(() => {
+    if (prevRequiresSalesAgreerRef.current && !requiresSalesAgreer) {
+      setSalesAgreers([]);
+      setSalesAgreerSearch('');
+      setSalesAgreerNoneReason('');
+      setSalesAgreerNone(false);
+    }
+    prevRequiresSalesAgreerRef.current = requiresSalesAgreer;
+  }, [requiresSalesAgreer]);
   // ADI CD 변경 표(STEP1 인라인)를 보여줄지 — 이제 요청 목적 자체이므로 isAdiCdChange 와 같다.
   const isAdiCdSelected = isAdiCdChange;
   const hasMapChange = detail.map_change === '변경 있음';

@@ -22,6 +22,7 @@ import {
   exportEtcInfoImage as exportEtcInfoImageXlsx,
   ScreenshotCapture,
   ExportAllScreenshots,
+  eaNoneReasonOf,
 } from '../utils/detailExport';
 
 /** J-ayer 검토 항목 패널에 그대로 넘겨주는 props (호출부가 상태·핸들러를 소유한다) */
@@ -1723,10 +1724,13 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
       + (d.map_reason ? t('request.reason_suffix', { reason: d.map_reason }) : '');
   };
 
-  /** Exclusive Area — 변경 여부 + 값(mm) */
+  /** Exclusive Area — 변경 여부 + 값(mm) + (합의자 미지정 사유) */
   const buildEaValue = (d: Partial<DetailFormState>): string => {
     if (!d.ea_change) return '';
-    return t('request.change_prefix', { value: d.ea_change }) + (d.ea_value ? t('request.value_suffix_mm', { value: d.ea_value }) : '');
+    const noneReason = eaNoneReasonOf(d);
+    return t('request.change_prefix', { value: d.ea_change })
+      + (d.ea_value ? t('request.value_suffix_mm', { value: d.ea_value }) : '')
+      + (noneReason ? t('request.sales_agreer_none_reason_suffix', { reason: noneReason }) : '');
   };
 
   /** 뼈찜(Backbone) — 등록된 항목 목록. 라벨은 의뢰서 작성(Step1)과 동일한 i18n 키를 그대로 쓴다. */
@@ -2154,7 +2158,12 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                 return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} highlightNumbers={mapHighlight} />;
               })()}
               {(isR || isO || isP) && detail.ea_change && (() => {
-                const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
+                // 합의자 미지정 사유는 칩에 함께 보이므로 사유만 바뀌어도 변경으로 본다.
+                // changedFields(JSON 비교)는 구버전 스냅샷의 undefined ↔ '' 를 변경으로 잡으므로 정규화해 따로 비교한다.
+                const eaNoneReasonChanged = historyMode
+                  ? roundSnaps.some((r, i) => i > 0 && eaNoneReasonOf(r.detail) !== eaNoneReasonOf(roundSnaps[i - 1].detail))
+                  : (!!prevSnap && eaNoneReasonOf(detail) !== eaNoneReasonOf(prevSnap.detail));
+                const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value') || eaNoneReasonChanged;
                 // '변경 있음'을 선택한 경우에만 강조 — '변경 없음'에 잔여 ea_value가 남아 있어도
                 // 강조하지 않는다(위 지도 편차와 동일한 이유).
                 const eaHighlight = detail.ea_change !== MAP_NO_CHANGE;

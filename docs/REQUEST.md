@@ -2958,8 +2958,21 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     `request.sales_agreer_help`는 제거했다(블록이 항상 필수 상태로만 보이므로 비필수용 문구가 불필요해짐).
 - **(2026-10) 미지정 사유 저장 조건**: `index.tsx` 의 `buildEnrichedForm` 이 `detail.sales_agreer_none_reason` 을
   **`requiresSalesAgreer` 이고 합의자 0명일 때만** 저장한다(그 외 `''`). 사유를 입력했다가 예외 구역 값을
-  기본값으로 되돌려도 사유가 데이터에 남지 않는다. 사유 입력 state(`salesAgreerNoneReason`)는 그대로라
-  값을 다시 바꾸면 입력해 둔 사유가 되살아난다.
+  기본값으로 되돌려도 사유가 데이터에 남지 않는다.
+- **(2026-10) 합의자 필수 해제 시 입력 전체 초기화**: `requiresSalesAgreer` 가 `true`→`false` 로 바뀌는 순간
+  (예외 구역을 `변경 없음`으로 전환 · 값을 기본값으로 되돌림 · C가문 전환으로 기본값 300↔500 이 바뀜)
+  `index.tsx` 의 effect 가 `salesAgreers`(지정한 합의자)·`salesAgreerSearch`(검색어)·`salesAgreerNoneReason`
+  (미지정 사유)·`salesAgreerNone`('합의자 없음' 체크)을 **모두 비운다**. 이전에는 합의자 블록이 사라져도
+  `salesAgreers` 가 남아, 사용자가 볼 수도 지울 수도 없는 SA 가 `detail.sales_agreers` 로 저장돼 SA 결재 단계로
+  상신됐다. 다시 필수가 돼도 이전 지정·사유는 **복구되지 않는다**(처음부터 다시 입력).
+  - `true`→`false` **전환만** 감지한다(`prevRequiresSalesAgreerRef`). 문서를 불러올 때(처음부터 `false` 이거나
+    `false`→`true`)는 저장된 지정을 건드리지 않는다 — 합의자 블록이 항상 보이던 구버전에서 선택으로 지정된
+    SA 가 불러오자마자 지워지지 않게 하기 위해서다.
+  - 별개로, 합의자 블록에서 '합의자 없음'을 체크하면 지정한 합의자가 비워지는 동작은 종전부터 있다
+    (체크 해제 시에는 사유가 비워진다).
+  - 서버는 필수 여부와 무관하게 `detail.sales_agreers` 를 SA 단계로 만드는 기존 동작 그대로다(API 직접 호출은
+    이 초기화의 대상이 아니다).
+  - 테스트: `RequestPage/salesAgreerAutoClear.test.tsx`(Only MAP 문서로 예외 구역을 토글하며 검증).
 - **(2026-10) 결재 경로 탭 표시**: 사유는 상신 시 서버가 회차별로 따로 기록해
   (`RequestDocument.sales_agreer_none_reasons`, `docs/APPROVAL.md` Case P) 결재 현황 상세의
   '결재 경로' 탭 SA 행에 그 회차의 사유로 보인다.

@@ -298,6 +298,7 @@
     "sales_agreer_label": "Sales/Tech Support Agreer",
     "sales_agreer_help_required": "The exception zone value differs from the default. Assign at least one agreer among PLs, or state why none is assigned.",
     "sales_agreer_placeholder": "Search agreer (PL) by name/ID",
+    "sales_agreer_none_reason_suffix": " / No-agreer reason: {{reason}}",
     "sales_agreer_none_toggle": "No agreer",
     "sales_agreer_none_reason_placeholder": "Reason for not assigning an agreer",
     "sales_agreer_required": "Assign at least one Sales/Tech Support agreer, or state why none is assigned.",

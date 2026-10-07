@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo, ColorFilterSet } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
-import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
 
 const NO_ACTIVE_COLOR_FILTERS = new Set<string>();
@@ -252,9 +252,22 @@ function buildMapValue(d: Partial<DetailFormState>, t: TFunction): string {
     + (d.map_reason ? t('request.reason_suffix', { reason: d.map_reason }) : '');
 }
 
+/**
+ * 예외 구역 칩에 함께 보여줄 합의자 미지정 사유 — '변경 있음'일 때만 의미가 있고, 없으면 ''.
+ * 상세 화면 칩·이력 확인·엑셀이 같은 기준을 쓰도록 여기서 공유한다.
+ * 구버전 스냅샷에는 필드가 없으므로 ?? '' 와 trim 으로 정규화해 비교 시 거짓 변경이 생기지 않게 한다.
+ */
+export function eaNoneReasonOf(d: Partial<DetailFormState> | null | undefined): string {
+  if (d?.ea_change !== EA_HAS_CHANGE) return '';
+  return String(d.sales_agreer_none_reason ?? '').trim();
+}
+
 function buildEaValue(d: Partial<DetailFormState>, t: TFunction): string {
   if (!d.ea_change) return '';
-  return t('request.change_prefix', { value: d.ea_change }) + (d.ea_value ? t('request.value_suffix_mm', { value: d.ea_value }) : '');
+  const noneReason = eaNoneReasonOf(d);
+  return t('request.change_prefix', { value: d.ea_change })
+    + (d.ea_value ? t('request.value_suffix_mm', { value: d.ea_value }) : '')
+    + (noneReason ? t('request.sales_agreer_none_reason_suffix', { reason: noneReason }) : '');
 }
 
 function buildBbValue(d: Partial<DetailFormState>, t: TFunction): string {

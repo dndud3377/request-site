@@ -829,6 +829,22 @@ RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 
   목록 응답에는 없다. PUT/PATCH 로 덮어쓸 수 없다.
 - 이 기능 이전에 상신된 문서는 회차별 값이 저장돼 있지 않아 백필하지 않았다 — 다음 재상신부터 기록된다.
 
+#### 상세 모달 '예외 구역' 칩에도 사유 표시 + 사유 변경 이력 (2026-10)
+결재 상세(`PagedDetailView`)의 **예외 구역** 칩이 `변경: 변경 있음 / 값: 350mm` 뒤에
+` / 합의자 미지정 사유: XXX` 를 함께 보여준다(`request.sales_agreer_none_reason_suffix`, ko/en).
+- 출처는 서버 기록(`sales_agreer_none_reasons`)이 아니라 **`detail.sales_agreer_none_reason`** 이다 — 이력 스냅샷
+  (`additional_notes.history[].detail`)에는 `detail` 만 들어 있어 회차별 비교는 이쪽으로만 가능하다.
+  결재 경로 탭 SA 행의 회차별 표시는 종전대로 서버 기록을 쓴다.
+- 사유는 `ea_change` 가 **`변경 있음`일 때만** 보인다(`eaNoneReasonOf`, `utils/detailExport.ts` 에서 export 해 화면·엑셀이 공유).
+- **변경 이력**: 재상신으로 사유가 바뀌면 칩에 빨간 테두리 + '이력 확인'이 뜨고, 모달에 변경 전/후(진행 중)
+  또는 회차별 값(이력 조회, `historyMode`)이 보인다. 칩 표시값과 이력 값이 같은 `buildEaValue` 라 사유도 그대로 비교된다.
+- 사유 비교는 `?? ''` + `trim()` 으로 **정규화**한다. `computeDetailDiff`(JSON 비교)는 사유 기능 이전 스냅샷의
+  `undefined` 와 현재 `''` 를 변경으로 잡기 때문에, 그대로 쓰면 아무것도 안 바꿨는데 거짓 변경 표시가 뜬다.
+- **엑셀 export**: MAP 정보 시트(`addMapInfoSheet`)의 예외 구역 행도 같은 문구를 쓴다(`detailExport.ts` 의 `buildEaValue`).
+- 한계: 스냅샷은 재상신·중단 후 재개 수정 때만 쌓인다. 결재 경로 변경(`change-route`)으로 사유만 바꾸면
+  칩 값은 바뀌지만 스냅샷이 없어 '이력 확인' 비교는 뜨지 않는다.
+- 테스트: `PagedDetailView.eaNoneReason.test.tsx`(칩·이력), `detailExport.eaNoneReason.test.ts`(엑셀).
+
 #### 진행 판정
 - `_pl_stage_complete(document, round)` = `_all_pl_approved` **AND** `_all_sales_agreers_approved`
 - SA step 이 하나도 없으면 `_all_sales_agreers_approved` 는 **True**(기다릴 대상이 없다 = 해당없음).
@@ -1550,7 +1566,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   `isMapDeleteEdit` 판정으로 '해당없음'(na) 표시한다(§6-9, Case O 참조).
 - **(2026-08) 합성 값 항목의 '이력 확인' 비교 불가 버그 수정**: `FieldHistoryModal` 은 과거 회차 값을 `snap.detail[fieldKey]` **단일 필드**로만 만들고 현재 행만 칩의 **합성 문자열**을 그대로 썼다. 그래서 지도 편차처럼 여러 필드를 합쳐 보여주는 항목은 `초기: 변경있음` / `현재: 변경있음 / X: 555um / Y: 444um` 처럼 **형식이 달라 값 비교가 불가능**했다.
   - `FieldHistoryModal` · `Chip` 에 `buildValue?: (d: Partial<DetailFormState>) => string` 을 추가했다. 넘기면 **회차 스냅샷과 현재 값을 모두 같은 함수**로 만들어 형식이 일치한다(`fieldKey` 는 단일 필드 항목 전용으로 선택 인자화).
-  - 칩 표시값과 이력 값을 한 함수로 공유하도록 생성기를 분리했다 — `buildPurposeValue`(의뢰 목적 + `other_purpose`) / `buildMapValue`(지도 편차: C가문 상·하판 리전별 + 일반, X·Y·사유 포함) / `buildEaValue`(EA 변경 + 값) / `buildBbValue`(뼈찜 항목 목록).
+  - 칩 표시값과 이력 값을 한 함수로 공유하도록 생성기를 분리했다 — `buildPurposeValue`(의뢰 목적 + `other_purpose`) / `buildMapValue`(지도 편차: C가문 상·하판 리전별 + 일반, X·Y·사유 포함) / `buildEaValue`(EA 변경 + 값 + 합의자 미지정 사유 — Case P 참조) / `buildBbValue`(뼈찜 항목 목록).
   - `buildMapValue` 는 C가문 여부를 **현재 문서가 아니라 각 스냅샷 자신의 `only_prodc`** 로 판별한다(회차 중간에 C가문 Yes/No 가 바뀐 문서도 그 회차 형식대로 보인다).
   - 저장값 판정 문자열은 상수화했다(`MAP_NO_CHANGE = '변경 없음'`, `PRODC_YES = 'Yes'`). 표시 문구 자체는 위 2026-07 항목의 관례대로 하드코딩 유지.
 - **(2026-08) Validation System 판정 주체를 상신자로 단일화**: 대상/비대상을 정하는 주체는 **상신자 하나**다. MASK(E) 합의 모달의 확정 토글을 제거하고(`approve-step` 의 `validation_system` 수용도 삭제), 결재현황 상세보기 J-layer 탭에 **상신자 본인에게만** 활성화되는 토글을 뒀다(`POST /documents/<id>/validation-system/`). 수정 창은 상신 직후부터 **지정된 EV 전원이 합의하기 전**까지(AND 재전환 이후 기준 — 아래 항목 참고). E 담당자 합의 후 값이 바뀌어도 **되감지 않고**, 값 변경 사실을 E step `comment` 에 note 로 남긴다.
