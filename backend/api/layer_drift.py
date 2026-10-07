@@ -370,13 +370,16 @@ def auto_reject_document(document_id, changes):
     앞선 대기 단계 하나를 반려 단계로 삼고(변경된 레이어와 맞추지 않는다), 단계 의견에
     `[자동반려]` 머리말과 변경 요약을 남긴다.
 
-    건너뛰는 경우: 이미 상태가 바뀜(under_review/pause 아님) · 철회 확인 대기 중(결재 동결 —
+    건너뛰는 경우: 저장된 감지값이 더 이상 이 변경이 아님(그 사이 재상신으로 초기화됨) ·
+    이미 상태가 바뀜(under_review/pause 아님) · 철회 확인 대기 중(결재 동결 —
     철회가 취소되면 cancel_withdraw 가 다시 판정한다) · 3구역 미진입(1·2구역 — 배지만 띄운다 —
     `is_in_zone3`) · P·J·O 합의 완료(배지만 띄운다 — `is_pjo_agreed`) · 대기 단계가 없음.
     """
     with transaction.atomic():
         document = RequestDocument.objects.select_for_update().get(pk=document_id)
         if document.status not in AUTO_REJECT_STATUSES:
+            return False
+        if _cached_critical_changes(document) != changes:
             return False
         if WithdrawRequest.objects.filter(document=document, state='requested').exists():
             return False
@@ -470,8 +473,13 @@ def recompute_all_in_progress():
 
     N개 문서 개별 조회(2N 쿼리) + 개별 save(N 쿼리) 대신, 라인당 배치 조회(최대 8쿼리) +
     bulk_update(청크당 1쿼리)로 묶어 문서 수에 비례하던 쿼리 수를 줄인다.
+
+    계산 도중 재상신된 문서(reset_document_drift 가 layer_drift_checked_at 을 바꾼 문서)는 옛
+    저장값으로 계산한 결과이므로 이번 주기의 저장·반려에서 뺀다 — 재상신 직후의 초기화를 덮어쓰거나
+    옛 결과로 반려하지 않도록. 다음 주기부터 다시 정상 감지 대상이다.
     """
     documents = list(RequestDocument.objects.filter(status__in=IN_PROGRESS_STATUSES))
+    loaded_checked_at = {document.pk: document.layer_drift_checked_at for document in documents}
 
     doc_lines_processes = []
     for document in documents:
@@ -511,9 +519,24 @@ def recompute_all_in_progress():
             logger.error(f"[layer_drift] 문서 {document.id} 변경 감지 계산 실패: {e}", exc_info=True)
 
     if to_update:
-        RequestDocument.objects.bulk_update(
-            to_update, ['layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at'],
-        )
+        with transaction.atomic():
+            # 저장 직전에 잠그고 다시 읽어, 목록 조회 이후 재상신된 문서를 걸러낸다(pk 순서로 잠근다).
+            current_checked_at = dict(
+                RequestDocument.objects.select_for_update()
+                .filter(pk__in=[document.pk for document in to_update])
+                .order_by('pk').values_list('pk', 'layer_drift_checked_at')
+            )
+            stale_ids = {
+                pk for pk, checked_at in loaded_checked_at.items()
+                if pk in current_checked_at and current_checked_at[pk] != checked_at
+            }
+            to_update = [document for document in to_update if document.pk not in stale_ids]
+            to_reject = [(document_id, changes) for document_id, changes in to_reject
+                         if document_id not in stale_ids]
+            if to_update:
+                RequestDocument.objects.bulk_update(
+                    to_update, ['layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at'],
+                )
 
     # 캐시(배지)를 먼저 저장한 뒤 반려한다. 문서마다 별도 트랜잭션이라 한 문서가 실패해도 나머지는 계속된다.
     for document_id, changes in to_reject:
