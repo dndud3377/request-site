@@ -68,6 +68,9 @@ PJO_AGENTS = ('P', 'PV', 'J', 'O')
 # 1·2구역 문서는 변경이 감지돼도 자동 반려하지 않고 배지만 띄운다.
 ZONE3_AGENTS = ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
 
+# 요청 기준(new_or_copy)이 이 값인 J/O-layer 행은 변경 감지 비교에서 뺀다(배지·자동 반려 모두 없음).
+DRIFT_EXCLUDED_NEW_OR_COPY = ('layer삭제', '미진행')
+
 LAYER_KEYS = ('jayer', 'oayer', 'extra')
 LAYER_LABELS = {'jayer': 'J-layer', 'oayer': 'O-layer', 'extra': 'XXXXXX'}
 # 반려 사유(단계 의견)에 나열하는 변경 건수 상한 — 초과분은 '외 N건' 으로 줄인다.
@@ -143,9 +146,19 @@ def _diff_rows(saved_rows, live_rows):
     행 삭제(저장에는 있는데 DB에 없음)·신규 행 추가(DB에는 있는데 저장에 없음)는 각각 그대로
     removed/added 한 건씩이고, 값 변경(sd/pp/layerid)은 변경 현황과 동일하게 옛 값 removed +
     새 값 added 한 쌍으로 표현한다 — PhotoStepChangeLog 도 값이 바뀐 행을 이렇게 남긴다.
+
+    요청 기준(new_or_copy)이 DRIFT_EXCLUDED_NEW_OR_COPY(layer삭제·미진행)인 저장 행의 stepseq 는
+    저장값·마스터 값 양쪽에서 빼고 비교한다 — 저장 행만 빼면 마스터에 남은 같은 stepseq 가
+    '신규 추가'로 잡히기 때문이다.
     """
-    saved_by_seq = {row.get('sp'): row for row in saved_rows if row.get('sp')}
-    live_by_seq = {row['stepseq']: row for row in live_rows if row.get('stepseq')}
+    excluded_seqs = {
+        row.get('sp') for row in saved_rows
+        if row.get('sp') and row.get('new_or_copy') in DRIFT_EXCLUDED_NEW_OR_COPY
+    }
+    saved_by_seq = {row.get('sp'): row for row in saved_rows
+                    if row.get('sp') and row.get('sp') not in excluded_seqs}
+    live_by_seq = {row['stepseq']: row for row in live_rows
+                   if row.get('stepseq') and row['stepseq'] not in excluded_seqs}
 
     removed = []
     added = []
