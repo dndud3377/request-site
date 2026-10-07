@@ -9330,6 +9330,61 @@ class LayerDriftAutoRejectTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'under_review')
 
+    # ----- 요청 기준(new_or_copy) layer삭제·미진행 행 제외 -----
+
+    def _saved_noc(self, noc, **kwargs):
+        return {**self._saved(**kwargs), 'new_or_copy': noc}
+
+    def test_layer_delete_row_change_is_ignored(self):
+        """요청 기준이 layer삭제인 행은 마스터 값이 바뀌어도 배지·반려가 없다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved_noc('layer삭제', pp='ROLD')])
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertFalse(doc.layer_drift_detected)
+
+    def test_not_proceeding_row_change_is_ignored(self):
+        """요청 기준이 미진행인 행은 마스터 값이 바뀌어도 배지·반려가 없다."""
+        self._master(layerid='LNEW')
+        doc = self._doc([self._saved_noc('미진행', layerid='LOLD')])
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertFalse(doc.layer_drift_detected)
+
+    def test_layer_delete_row_removed_from_master_is_ignored(self):
+        """layer삭제 행의 stepseq 가 마스터에서 사라져도 '행 삭제'로 잡지 않는다."""
+        self._master(stepseq='S1')
+        doc = self._doc([self._saved(sp='S1'), self._saved_noc('layer삭제', sp='S2')])
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertFalse(doc.layer_drift_detected)
+
+    def test_registered_row_change_still_rejects(self):
+        """기등록은 제외 대상이 아니다 — 지금처럼 비교해 반려한다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved_noc('기등록', pp='ROLD')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_excluded_row_mixed_with_normal_row_rejects_on_normal_change_only(self):
+        """제외 행과 일반 행이 함께 바뀌면 일반 행 변경으로만 반려되고, 반려 의견에도 일반 행만 나온다."""
+        self._master(stepseq='S1', recipeid='RNEW1')
+        self._master(stepseq='S2', recipeid='RNEW2')
+        doc = self._doc([
+            self._saved_noc('미진행', sp='S1', pp='ROLD1'),
+            self._saved_noc('신규', sp='S2', pp='ROLD2'),
+        ])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.zone3_step.refresh_from_db()
+        self.assertIn('STEP S2', self.zone3_step.comment)
+        self.assertNotIn('STEP S1', self.zone3_step.comment)
+
 
 class AdiCdTargetSearchTest(TestCase):
     """ADI CD 변경 '동일 변경 적용 대상' 전체 검색 + 목록 detail_summary.adi_cd_targets (2026-10).
