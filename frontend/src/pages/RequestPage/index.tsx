@@ -24,7 +24,6 @@ import {
   BbAutoFillAmbiguousRow,
   FilterSet,
   LayerSdException,
-  LayerSdExceptionInput,
   LayerSdMismatch,
   GuideFeatureKey,
   UserWithRole,
@@ -104,7 +103,6 @@ import {
   mapInfoDefaults,
   MERGE_MANUAL_FIELDS,
   TITLE_DEFAULT_LABEL,
-  SD_EXCEPTION_ROLES,
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
@@ -117,7 +115,6 @@ import {
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
-import LayerSdExceptionModal from './components/LayerSdExceptionModal';
 import AdiCdColumnMapModal from './components/AdiCdColumnMapModal';
 import Step1 from './components/Step1';
 import { BaField, BaSide } from './components/BeforeAfterPanel';
@@ -481,9 +478,6 @@ export default function RequestPage(): React.ReactElement {
   const [jayerFilterModalOpen, setJayerFilterModalOpen] = useState(false);
   // J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사 예외 — 서버(팀 공유) 목록. 상신 검증(validate)과 관리 모달이 함께 쓴다.
   const [sdExceptions, setSdExceptions] = useState<Record<'J' | 'O', LayerSdException[]>>({ J: [], O: [] });
-  const [sdExceptionsLoading, setSdExceptionsLoading] = useState(true);
-  const [sdExceptionsLoadFailed, setSdExceptionsLoadFailed] = useState(false);
-  const [sdExceptionModalTable, setSdExceptionModalTable] = useState<'J' | 'O' | null>(null);
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
   const [jayerNewFilter, setJayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [oayerNewFilter, setOayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
@@ -554,20 +548,12 @@ export default function RequestPage(): React.ReactElement {
   useEffect(() => {
     if (isTourMode) return;
     let cancelled = false;
-    setSdExceptionsLoading(true);
     Promise.all([layerSdExceptionsAPI.list('J'), layerSdExceptionsAPI.list('O')])
       .then(([j, o]) => {
-        if (cancelled) return;
-        setSdExceptions({ J: j, O: o });
-        setSdExceptionsLoadFailed(false);
+        if (!cancelled) setSdExceptions({ J: j, O: o });
       })
       .catch(() => {
-        if (cancelled) return;
-        setSdExceptionsLoadFailed(true);
-        addToast(t('request.sd_layer_exc_load_failed'), 'error');
-      })
-      .finally(() => {
-        if (!cancelled) setSdExceptionsLoading(false);
+        if (!cancelled) addToast(t('request.sd_layer_exc_load_failed'), 'error');
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3930,8 +3916,6 @@ export default function RequestPage(): React.ReactElement {
   // J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사 — 불일치 행(예외 제외). 서버 `layer_sd_check.validate_document` 와 같은 규칙.
   const jayerSdMismatches: LayerSdMismatch[] = findLayerSdMismatches(jayerRows, sdExceptions.J);
   const oayerSdMismatches: LayerSdMismatch[] = findLayerSdMismatches(oayerRows, sdExceptions.O);
-  const canManageSdException = (table: 'J' | 'O'): boolean =>
-    SD_EXCEPTION_ROLES[table].includes(currentUser.role ?? '');
 
   const addSdLayerMismatchError = (
     newErrors: Partial<Record<string, string>>,
@@ -3948,30 +3932,6 @@ export default function RequestPage(): React.ReactElement {
       : t('request.oayer_sd_layer_mismatch', { count: mismatches.length })) as string;
     newErrors[`${kind}_sdlayer_required`] = msg;
     errorMessages.push(msg);
-  };
-
-  const handleSdExceptionAdd = async (input: LayerSdExceptionInput): Promise<boolean> => {
-    try {
-      const created = await layerSdExceptionsAPI.create(input);
-      setSdExceptions((prev) => ({ ...prev, [input.table]: [created, ...prev[input.table]] }));
-      // 이미 떠 있는 불일치 오류 표시를 새 예외 기준으로 다시 맞춘다 — 다음 '다음' 클릭에서 재검증된다.
-      setErrors((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.includes('_sdlayer_'))));
-      addToast(t('request.sd_layer_exc_add_success'), 'success');
-      return true;
-    } catch {
-      addToast(t('request.sd_layer_exc_add_failed'), 'error');
-      return false;
-    }
-  };
-
-  const handleSdExceptionDelete = async (exception: LayerSdException): Promise<void> => {
-    try {
-      await layerSdExceptionsAPI.delete(exception.id);
-      setSdExceptions((prev) => ({ ...prev, [exception.table]: prev[exception.table].filter((e) => e.id !== exception.id) }));
-      addToast(t('request.sd_layer_exc_delete_success'), 'success');
-    } catch {
-      addToast(t('request.sd_layer_exc_delete_failed'), 'error');
-    }
   };
 
   const validate = (currentStep: number): { valid: boolean; errors: string[]; redirectStep?: number } => {
@@ -5004,8 +4964,6 @@ export default function RequestPage(): React.ReactElement {
           setJayerSortBySp={setJayerSortBySp}
           jayerFilterSets={jayerFilterSets}
           setJayerFilterModalOpen={setJayerFilterModalOpen}
-          canManageSdException={canManageSdException('J')}
-          onOpenSdExceptionModal={() => setSdExceptionModalTable('J')}
           mappedJayerRowIds={mappedJayerRowIds}
           jayerBarcodeCache={jayerBarcodeCache}
           errors={errors}
@@ -5033,8 +4991,6 @@ export default function RequestPage(): React.ReactElement {
           setOayerSortBySp={setOayerSortBySp}
           oayerFilterSets={oayerFilterSets}
           setOayerFilterModalOpen={setOayerFilterModalOpen}
-          canManageSdException={canManageSdException('O')}
-          onOpenSdExceptionModal={() => setSdExceptionModalTable('O')}
           oayerInfoTab={oayerInfoTab}
           setOayerInfoTab={setOayerInfoTab}
           oayerInfoLocked={isMapOnlyScope}
@@ -5192,21 +5148,6 @@ export default function RequestPage(): React.ReactElement {
           localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
         }}
       />
-
-      {/* J/O-layer SD-Layer 일치 예외 관리 모달 (J: TE_J·TE_P·MASTER / O: TE_O·TE_P·MASTER) */}
-      {sdExceptionModalTable && (
-        <LayerSdExceptionModal
-          isOpen
-          onClose={() => setSdExceptionModalTable(null)}
-          table={sdExceptionModalTable}
-          exceptions={sdExceptions[sdExceptionModalTable]}
-          loading={sdExceptionsLoading}
-          loadFailed={sdExceptionsLoadFailed}
-          mismatches={sdExceptionModalTable === 'J' ? jayerSdMismatches : oayerSdMismatches}
-          onAdd={handleSdExceptionAdd}
-          onDelete={handleSdExceptionDelete}
-        />
-      )}
 
       <Modal
         isOpen={mergeConfirmOpen}
