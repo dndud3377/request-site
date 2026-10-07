@@ -9283,6 +9283,53 @@ class LayerDriftAutoRejectTest(TestCase):
         layer_drift.reset_document_drift(doc)  # 재상신 액션이 하는 초기화
         self.assertFalse(self._list_row(doc)['layer_drift_auto_rejected'])
 
+    # ----- 계산 도중 재상신(경합) -----
+
+    def test_resubmit_during_cycle_is_not_overwritten_or_rejected(self):
+        """주기 계산 도중(문서 목록 조회 후 ~ 저장 전) 재상신되면 그 초기화를 옛 계산 결과로 덮어쓰지 않고,
+        옛 계산 결과로 반려하지도 않는다."""
+        from . import layer_drift
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle()  # 1회차 감지 — 다음 주기에 같은 변경이면 반려 대상
+
+        original_fetch = layer_drift._batch_fetch_layer_rows
+
+        def fetch_then_resubmit(*args, **kwargs):
+            result = original_fetch(*args, **kwargs)
+            layer_drift.reset_document_drift(RequestDocument.objects.get(pk=doc.pk))
+            return result
+
+        with patch.object(layer_drift, '_batch_fetch_layer_rows', side_effect=fetch_then_resubmit):
+            self._cycle()
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertFalse(doc.layer_drift_detected)
+        self.assertEqual(doc.layer_drift_detail, '')
+        self.assertFalse(RejectionSnapshot.objects.filter(document=doc).exists())
+
+        # 다음 주기부터는 다시 정상 감지 대상이다 — 첫 주기는 배지만.
+        self._cycle()
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertTrue(doc.layer_drift_detected)
+
+    def test_auto_reject_skips_when_drift_reset_after_detection(self):
+        """반려 직전(캐시 저장 후)에 재상신으로 감지값이 초기화됐으면 반려하지 않는다."""
+        from . import layer_drift
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle()
+        doc.refresh_from_db()
+        changes = layer_drift._cached_critical_changes(doc)
+        self.assertTrue(changes)
+
+        layer_drift.reset_document_drift(doc)
+        self.assertFalse(layer_drift.auto_reject_document(doc.pk, changes))
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
 
 class AdiCdTargetSearchTest(TestCase):
     """ADI CD 변경 '동일 변경 적용 대상' 전체 검색 + 목록 detail_summary.adi_cd_targets (2026-10).
