@@ -25,9 +25,6 @@ interface Step3Props {
   setOayerSortBySp: React.Dispatch<React.SetStateAction<boolean>>;
   oayerFilterSets: FilterSet[];
   setOayerFilterModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  /** 이 사용자가 O-layer SD-Layer 예외를 관리할 수 있는가 — 버튼 노출 여부 */
-  canManageSdException: boolean;
-  onOpenSdExceptionModal: () => void;
   oayerInfoTab: 'table' | 'info';
   setOayerInfoTab: React.Dispatch<React.SetStateAction<'table' | 'info'>>;
   oayerInfoLocked: boolean;
@@ -57,8 +54,6 @@ const Step3: React.FC<Step3Props> = ({
   setOayerSortBySp,
   oayerFilterSets,
   setOayerFilterModalOpen,
-  canManageSdException,
-  onOpenSdExceptionModal,
   oayerInfoTab,
   setOayerInfoTab,
   oayerInfoLocked,
@@ -210,9 +205,6 @@ const Step3: React.FC<Step3Props> = ({
                   {fs.label}
                 </button>
               ))}
-              {canManageSdException && (
-                <button type="button" className="th-header-btn" data-testid="sd-exc-open-btn" title={t('request.sd_layer_exc_btn_hint')} onClick={onOpenSdExceptionModal}>{t('request.sd_layer_exc_btn')}</button>
-              )}
               <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
             </div>
           </div>
