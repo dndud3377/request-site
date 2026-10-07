@@ -8,6 +8,7 @@ from .models import (
 )
 from . import doc_permissions
 from . import design_rule_stats
+from . import layer_sd_check
 from .mailer import AUTO_REJECT_COMMENT_PREFIX
 
 User = get_user_model()
@@ -525,24 +526,40 @@ class LayerFilterSetSerializer(serializers.ModelSerializer):
 
 
 class LayerSdExceptionSerializer(serializers.ModelSerializer):
-    """J/O-layer SD-Layer 검사 예외. 한 건 = (table, process_id, sp, SD 첫 숫자, layerid)."""
-    SD_NUMBER_RE = re.compile(r'^\d+(?:\.\d+)*$')
+    """J/O-layer SD-Layer 검사 예외. 한 건 = (table, process_id, sp, SD 첫 숫자, layerid).
+
+    입력은 SD 원문 전체(`sd`, 예: "1000.123 월평동 지점")이고, 매칭 키인 `sd_number` 는 그 맨 앞 숫자를
+    `layer_sd_check.extract_sd_number` 로 뽑아 채운다(검사와 같은 추출 규칙 — ASCII 숫자만).
+    """
 
     class Meta:
         model = LayerSdException
-        fields = ['id', 'table', 'process_id', 'sp', 'sd_number', 'layerid',
+        fields = ['id', 'table', 'process_id', 'sp', 'sd', 'sd_number', 'layerid',
                   'created_by', 'created_by_name', 'created_at']
-        read_only_fields = ['id', 'created_by', 'created_by_name', 'created_at']
+        read_only_fields = ['id', 'sd_number', 'created_by', 'created_by_name', 'created_at']
+        extra_kwargs = {'sd': {'required': True, 'allow_blank': False}}
 
     def validate_table(self, value):
         if value not in ('J', 'O'):
             raise serializers.ValidationError("table 은 'J' 또는 'O' 여야 합니다.")
         return value
 
-    def validate_sd_number(self, value):
-        if not self.SD_NUMBER_RE.match(value):
-            raise serializers.ValidationError("sd_number 는 '1000.123' 같은 숫자 형식이어야 합니다.")
+    def validate_sd(self, value):
+        value = value.strip()
+        if not layer_sd_check.extract_sd_number(value):
+            raise serializers.ValidationError("sd 는 '1000.123 월평동 지점' 처럼 숫자로 시작해야 합니다.")
         return value
+
+    def validate(self, attrs):
+        attrs['sd_number'] = layer_sd_check.extract_sd_number(attrs['sd'])
+        # sd_number 가 읽기 전용이라 DRF 의 unique_together 검증이 붙지 않는다 — 같은 조합은 여기서 400 으로 막는다.
+        duplicate = LayerSdException.objects.filter(
+            table=attrs['table'], process_id=attrs.get('process_id', ''), sp=attrs.get('sp', ''),
+            sd_number=attrs['sd_number'], layerid=attrs['layerid'],
+        ).exists()
+        if duplicate:
+            raise serializers.ValidationError('이미 등록된 예외입니다.')
+        return attrs
 
 
 class AdminNoticeSerializer(serializers.ModelSerializer):
