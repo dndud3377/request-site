@@ -2138,6 +2138,9 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 - 결재 현황에서도 자동 반려된 문서는 **반려 후에도 '변경 감지' 배지가 유지**된다(2026-10-04, 응답 필드
   `layer_drift_auto_rejected`). 사람이 누른 반려는 배지가 없고, 재상신하면 사라진다. `docs/REQUEST.md`
   "2026-10-04 — 결재 현황: '변경 감지' 자동 반려 문서는 반려 후에도 배지 유지" 절 참고.
+- 스케줄러 계산 도중 재상신된 문서는 그 주기의 감지값 저장·반려에서 빠지고, 반려 직전에도 저장된 감지값이
+  반려할 변경과 같은지 다시 확인한다(2026-10-07, 재상신 초기화를 옛 결과로 덮어쓰거나 옛 결과로 반려하던 경합 수정).
+  `docs/REQUEST.md` "2026-10-07 — '변경 감지' 주기 계산 도중 재상신" 절 참고.
 - 구현: `backend/api/layer_drift.py` `auto_reject_document` / `auto_reject_if_confirmed`,
   `views.py` `cancel_withdraw`. 테스트: `LayerDriftAutoRejectTest`.
 
