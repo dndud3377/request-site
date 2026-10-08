@@ -27,16 +27,18 @@ import {
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
   LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible,
 } from '../utils/approvalTable';
+import type { TFunction } from 'i18next';
+import { optionLabel } from '../utils/optionLabel';
 import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
-import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
+import { buildTourApprovalSeed } from './approvalTourSeed';
 import StepGuideTour, { StepGuideGroup } from '../components/StepGuideTour';
 
 // "그룹 지정" 하이라이트 가이드 투어 시연용 — 실제 목록(allDocs/docs)은 건드리지 않고
 // 상세 모달(selected)만 이 가짜 임시저장 문서로 띄워서 공유 버튼을 보여준다.
-const makeShareGuideDemoDoc = (loginid: string): RequestDocument => ({
+const makeShareGuideDemoDoc = (loginid: string, t: TFunction): RequestDocument => ({
   id: -1,
-  title: '(가이드 예시) 임시저장 의뢰서',
-  requester_name: '나',
+  title: t('approval.guide_demo_draft_title'),
+  requester_name: t('approval.guide_demo_requester'),
   requester_email: '',
   requester_department: '',
   product_name: 'PART_1234',
@@ -183,6 +185,7 @@ const isPausedOrWithdrawing = (d: RequestDocument): boolean =>
 
 export default function ApprovalPage(): React.ReactElement {
   const { t } = useTranslation();
+  const tourSeed = useMemo(() => buildTourApprovalSeed(), [t]);
   const navigate = useNavigate();
   const location = useLocation();
   const addToast = useToast();
@@ -428,7 +431,7 @@ export default function ApprovalPage(): React.ReactElement {
 
   const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
     // 투어: 실제 API 대신 샘플 팀 인원을 반환(실제 지정 UI와 동일하게 select 채움)
-    if (isTourMode) return TOUR_ASSIGN_MEMBERS;
+    if (isTourMode) return tourSeed.assignMembers;
     const role = AGENT_TO_ROLE[agent];
     if (!role) return [];
     const res = await usersAPI.list(role);
@@ -437,7 +440,7 @@ export default function ApprovalPage(): React.ReactElement {
 
   const applyClientFilter = useCallback((all: RequestDocument[]): RequestDocument[] => {
     if (isTourMode) {
-      if (filter === 'my') return all.filter(d => TOUR_APPROVAL_MY_IDS.has(d.id));
+      if (filter === 'my') return all.filter(d => tourSeed.myIds.has(d.id));
       return all;
     }
     if (filter === 'draft') return all.filter(d => d.status === 'draft');
@@ -455,7 +458,7 @@ export default function ApprovalPage(): React.ReactElement {
   const getTabCount = useCallback((key: string, base: RequestDocument[]): number => {
     if (isTourMode) {
       if (key === '') return base.length;
-      if (key === 'my') return base.filter(d => TOUR_APPROVAL_MY_IDS.has(d.id)).length;
+      if (key === 'my') return base.filter(d => tourSeed.myIds.has(d.id)).length;
       return 0;
     }
     if (key === '') return base.length;
@@ -477,8 +480,8 @@ export default function ApprovalPage(): React.ReactElement {
 
   const fetchDocs = useCallback(() => {
     if (isTourMode) {
-      setAllDocs(TOUR_APPROVAL_DOCS);
-      setDocs(applyClientFilter(TOUR_APPROVAL_DOCS));
+      setAllDocs(tourSeed.docs);
+      setDocs(applyClientFilter(tourSeed.docs));
       setError(false);
       setLoading(false);
       return;
@@ -562,7 +565,7 @@ export default function ApprovalPage(): React.ReactElement {
       await sleep(300); if (tok.cancelled) return;
       setTourClicking(false);
       el?.classList.remove('tour-pressed');
-      setSelected(TOUR_APPROVAL_DETAIL_DOC);
+      setSelected(tourSeed.detailDoc);
       setPageIdx(0);
       setModalOpen(true);
       await sleep(300);
@@ -594,7 +597,7 @@ export default function ApprovalPage(): React.ReactElement {
       setAssigningUserId('');
       setAssignDropdownOpen(false);
       await sleep(300); if (tok.cancelled) return;
-      setSelected(TOUR_APPROVAL_ASSIGN_DOC);
+      setSelected(tourSeed.assignDoc);
       setPageIdx(0);
       setModalOpen(true);
       await sleep(700); if (tok.cancelled) return;
@@ -639,10 +642,10 @@ export default function ApprovalPage(): React.ReactElement {
       setModalOpen(false);
       await sleep(300); if (tok.cancelled) return;
       const resetPause = (d: RequestDocument): RequestDocument =>
-        d.id !== TOUR_APPROVAL_DETAIL_DOC.id ? d : { ...d, can_request_pause: true, pause_request: null, status: 'under_review' };
+        d.id !== tourSeed.detailDoc.id ? d : { ...d, can_request_pause: true, pause_request: null, status: 'under_review' };
       setAllDocs((prev) => prev.map(resetPause));
       setDocs((prev) => prev.map(resetPause));
-      setSelected(resetPause(TOUR_APPROVAL_DETAIL_DOC));
+      setSelected(resetPause(tourSeed.detailDoc));
       setPageIdx(0);
       setModalOpen(true);
       await sleep(500); if (tok.cancelled) return;
@@ -651,9 +654,9 @@ export default function ApprovalPage(): React.ReactElement {
       openBtn?.click();
       await sleep(500); if (tok.cancelled) return;
       // ② 사유 타이핑 연출
-      for (let i = 0; i <= TOUR_PAUSE_REASON.length; i += 1) {
+      for (let i = 0; i <= tourSeed.pauseReason.length; i += 1) {
         if (tok.cancelled) return;
-        setPauseReasonInput(TOUR_PAUSE_REASON.slice(0, i));
+        setPauseReasonInput(tourSeed.pauseReason.slice(0, i));
         await sleep(45);
       }
       await sleep(450); if (tok.cancelled) return;
@@ -1085,7 +1088,7 @@ export default function ApprovalPage(): React.ReactElement {
         canEdit: false,
         canConfirm: false,
         currentLoginid: currentUser.username,
-        candidates: TOUR_REVIEW_ITEM_CANDIDATES,
+        candidates: tourSeed.reviewItemCandidates,
         notice: 'unclaimed',
         claimerName: '',
         onAdd: noop,
@@ -1554,7 +1557,7 @@ export default function ApprovalPage(): React.ReactElement {
       title: t('guide.tour.approvalShare.groups.g1.title'),
       description: t('guide.tour.approvalShare.groups.g1.desc'),
       onEnter: () => {
-        setSelected(makeShareGuideDemoDoc(currentUser.username));
+        setSelected(makeShareGuideDemoDoc(currentUser.username, t));
         setPageIdx(0);
         setModalOpen(true);
       },
@@ -1564,7 +1567,7 @@ export default function ApprovalPage(): React.ReactElement {
       title: t('guide.tour.approvalShare.groups.g2.title'),
       description: t('guide.tour.approvalShare.groups.g2.desc'),
       onEnter: () => {
-        const demoDoc = makeShareGuideDemoDoc(currentUser.username);
+        const demoDoc = makeShareGuideDemoDoc(currentUser.username, t);
         setSelected(demoDoc);
         setPageIdx(0);
         setModalOpen(true);
@@ -1684,6 +1687,9 @@ export default function ApprovalPage(): React.ReactElement {
   const isNone = currentUser.role === 'NONE';
 
   // ===== 필터 바(라인/목적/MAP 목적/요청일) =====
+  const lineFilterLabel = (v: string): string => optionLabel(t, v);
+  const purposeFilterLabel = (v: string): string =>
+    (v === LAYER_DRIFT_FILTER_OPTION ? t('approval.layer_drift_badge') : optionLabel(t, v, 'purpose'));
   const mapPurposeLabel = (v: string): string => (v === MAP_PURPOSE_NA ? t('approval.step_na') : v);
 
   const toggleFilterValue = (setFn: React.Dispatch<React.SetStateAction<Set<string>>>, value: string) => {
@@ -1810,9 +1816,9 @@ export default function ApprovalPage(): React.ReactElement {
             className={`column-filter-btn${lineFilter.size ? ' active' : ''}`}
             onClick={() => setOpenFilterDropdown((k) => (k === 'line' ? null : 'line'))}
           >
-            {renderFilterSummary(t('approval.col_line'), lineFilter)}
+            {renderFilterSummary(t('approval.col_line'), lineFilter, lineFilterLabel)}
           </button>
-          {openFilterDropdown === 'line' && renderCheckboxPopover(OPTION_LINE, lineFilter, setLineFilter)}
+          {openFilterDropdown === 'line' && renderCheckboxPopover(OPTION_LINE, lineFilter, setLineFilter, lineFilterLabel)}
         </div>
 
         <div className="column-filter-anchor">
@@ -1821,9 +1827,9 @@ export default function ApprovalPage(): React.ReactElement {
             className={`column-filter-btn${purposeFilter.size ? ' active' : ''}`}
             onClick={() => setOpenFilterDropdown((k) => (k === 'purpose' ? null : 'purpose'))}
           >
-            {renderFilterSummary(t('approval.col_purpose'), purposeFilter)}
+            {renderFilterSummary(t('approval.col_purpose'), purposeFilter, purposeFilterLabel)}
           </button>
-          {openFilterDropdown === 'purpose' && renderCheckboxPopover([...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION], purposeFilter, setPurposeFilter)}
+          {openFilterDropdown === 'purpose' && renderCheckboxPopover([...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION], purposeFilter, setPurposeFilter, purposeFilterLabel)}
         </div>
 
         <div className="column-filter-anchor">
@@ -2028,15 +2034,15 @@ export default function ApprovalPage(): React.ReactElement {
                 const comboContent = hasAdiTargets
                   ? <AdiCdTargetsCell combo={detail.processSelection} targets={detail.adiTargets} />
                   : comboText;
-                const isTourTitleCell = isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id;
+                const isTourTitleCell = isTourMode && doc.id === tourSeed.detailDoc.id;
                 return (
                   <tr key={doc.id}>
-                    <td><b>{detail.line || '-'}</b></td>
+                    <td><b>{optionLabel(t, detail.line) || '-'}</b></td>
                     <td>
                       <div className="purpose-cell">
-                        <span className="purpose-cell-main">{detail.purpose || '-'}</span>
+                        <span className="purpose-cell-main">{optionLabel(t, detail.purpose, 'purpose') || '-'}</span>
                         {detail.otherPurpose.map((o) => (
-                          <span key={o} className="purpose-cell-sub">{o}</span>
+                          <span key={o} className="purpose-cell-sub">{optionLabel(t, o)}</span>
                         ))}
                         {isLayerDriftVisible(doc) && (
                           <button
@@ -2108,7 +2114,7 @@ export default function ApprovalPage(): React.ReactElement {
                     </td>
                     <td
                       style={{ fontWeight: 500 }}
-                      data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-stage' : undefined}
+                      data-tour={isTourMode && doc.id === tourSeed.detailDoc.id ? 'approval-stage' : undefined}
                     >
                       {row.cells ? (
                         <StageGrid cells={row.cells} columns={row.gridColumns} />
@@ -2161,7 +2167,7 @@ export default function ApprovalPage(): React.ReactElement {
                         {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'draft' || currentUser.role === 'MASTER') && (
                           <button
                             className="btn btn-secondary btn-sm"
-                            data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
+                            data-tour={isTourMode && doc.id === tourSeed.detailDoc.id ? 'approval-withdraw' : undefined}
                             onClick={() => handleWithdrawClick(doc)}
                             disabled={processing}
                           >
