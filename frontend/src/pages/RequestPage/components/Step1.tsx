@@ -5,6 +5,7 @@ import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
 import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected } from '../constants';
 import { PairAfterLookupRow } from '../helpers';
+import { optionLabel } from '../../../utils/optionLabel';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
 import AdiCdTargetsPanel from './AdiCdTargetsPanel';
@@ -259,7 +260,7 @@ const Step1: React.FC<Step1Props> = ({
                 onClick={() => { if (canSelectPurpose) handleRequestPurposeSelect(val); }}
                 disabled={!canSelectPurpose}
               >
-                {val}
+                {optionLabel(t, val, 'purpose')}
               </button>
             ))}
           </div>
@@ -290,7 +291,7 @@ const Step1: React.FC<Step1Props> = ({
                       }}
                       disabled={otherPurposeDisabled(val)}
                     >
-                      {val}
+                      {optionLabel(t, val)}
                     </button>
                   );
                 })}
