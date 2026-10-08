@@ -13,6 +13,7 @@ import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditT
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
+import { optionLabel, mapTypeLabel } from '../utils/optionLabel';
 import {
   exportJayer as exportJayerXlsx,
   exportOayer as exportOayerXlsx,
@@ -795,7 +796,7 @@ const buildProdcItems: GroupBuilder = (d, t) => [
   { label: t('request.py_apply'), value: fmtDiffVal(d?.py_apply) },
   { label: t('request.prodc_scope_label'), value: fmtDiffVal(d?.prodc_scope) },
   { label: t('request.plate_top'), value: fmtPlate(d, 'prodc_top') },
-  { label: t('request.plate_middle'), value: d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle') },
+  { label: t('request.plate_middle'), value: d?.prodc_middle_use === '미사용' ? t('request.opt.unused') : fmtPlate(d, 'prodc_middle') },
   { label: t('request.plate_bottom'), value: fmtPlate(d, 'prodc_bottom') },
 ];
 
@@ -884,7 +885,7 @@ function JayerTable({
                     const spColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sp', r.sp) : undefined;
                     const sdColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sd', r.sd) : undefined;
                     const ppColor = isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : (colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'pp', r.pp) : undefined);
-                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>);
+                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{optionLabel(t, r.new_or_copy, 'noc')}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>);
                   })()}
                 </tr>
               );
@@ -952,7 +953,7 @@ function OayerTable({
                     const spColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sp', r.sp) : undefined;
                     const sdColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sd', r.sd) : undefined;
                     const ppColor = isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : (colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'pp', r.pp) : undefined);
-                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>);
+                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{optionLabel(t, r.new_or_copy, 'noc')}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>);
                   })()}
                 </tr>
               );
@@ -1698,10 +1699,11 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const buildPurposeValue = (d: Partial<DetailFormState>): string => {
     const opRaw = d.other_purpose as unknown as string[] | string | undefined;
     const otherPurposeText = Array.isArray(opRaw)
-      ? opRaw.map((o) => `[${o}]`).join('')
-      : (opRaw || '');
+      ? opRaw.map((o) => `[${optionLabel(t, o)}]`).join('')
+      : optionLabel(t, opRaw || '');
     if (!d.request_purpose) return '-';
-    return otherPurposeText ? `${d.request_purpose}(${otherPurposeText})` : d.request_purpose;
+    const purposeText = optionLabel(t, d.request_purpose, 'purpose');
+    return otherPurposeText ? `${purposeText}(${otherPurposeText})` : purposeText;
   };
 
   /** 지도 편차 — C가문(상/하판 리전별)인지 여부를 스냅샷 자체의 only_prodc 로 판별한다. */
@@ -1783,7 +1785,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
     const middleUse = detail.prodc_middle_use;
     if (middleUse) {
       if (middleUse === '미사용') {
-        lines.push(`[${t('request.plate_middle')}] 미사용`);
+        lines.push(`[${t('request.plate_middle')}] ${t('request.opt.unused')}`);
       } else {
         lines.push(`[${t('request.plate_middle')}] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_process || '-'} / ${detail.prodc_middle_product || '-'}`);
       }
@@ -2096,7 +2098,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
 
           {detail.map_type && (
             <div style={rowStyle}>
-              <Chip label={t('request.map_type')} value={detail.map_type} changed={changedFields.has('map_type')} fieldKey="map_type" />
+              <Chip label={t('request.map_type')} value={mapTypeLabel(t, detail.map_type)} changed={changedFields.has('map_type')} fieldKey="map_type" />
               {isMapRegisteredDetail && detail.source_line && (
                 <Chip label={t('request.source_line')} value={detail.source_line} changed={changedFields.has('source_line')} fieldKey="source_line" />
               )}
