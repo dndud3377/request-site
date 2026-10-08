@@ -86,7 +86,7 @@ import {
   makeTourAdiCdBefore,
   makeTourAdiCdAfter,
   TOUR_MERGE_PURPOSE,
-  TOUR_JAYER_PRODUCT,
+  getTourJayerProduct,
   TOUR_JAYER_STEPS,
   TOUR_JAYER_ITEMS,
   VS_TARGET,
@@ -580,7 +580,7 @@ export default function RequestPage(): React.ReactElement {
       if (oldJayer) {
         try {
           const w = JSON.parse(oldJayer);
-          const migrated: FilterSet[] = [{ id: String(Date.now()), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
+          const migrated: FilterSet[] = [{ id: String(Date.now()), label: t('request.filter_legacy_label'), words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
           setJayerFilterSets(migrated);
           localStorage.setItem('jayerFilterSets', JSON.stringify(migrated));
           localStorage.removeItem('jayerFilterWords');
@@ -595,7 +595,7 @@ export default function RequestPage(): React.ReactElement {
       if (oldOayer) {
         try {
           const w = JSON.parse(oldOayer);
-          const migrated: FilterSet[] = [{ id: String(Date.now() + 1), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
+          const migrated: FilterSet[] = [{ id: String(Date.now() + 1), label: t('request.filter_legacy_label'), words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
           setOayerFilterSets(migrated);
           localStorage.setItem('oayerFilterSets', JSON.stringify(migrated));
           localStorage.removeItem('oayerFilterWords');
@@ -1351,7 +1351,7 @@ export default function RequestPage(): React.ReactElement {
       await sleep(650); if (tok.cancelled) return;
 
       await moveCursor('[data-jtour="product_name-0"]'); if (tok.cancelled) return;
-      setJayerCellById(seed[0].id, 'product_name', TOUR_JAYER_PRODUCT);
+      setJayerCellById(seed[0].id, 'product_name', getTourJayerProduct());
       await sleep(550); if (tok.cancelled) return;
 
       // 복사
@@ -1372,7 +1372,7 @@ export default function RequestPage(): React.ReactElement {
       showChip(`[data-jtour="product_name-${seed.length - 1}"]`, 'paste');
       await sleep(550); if (tok.cancelled) return;
       for (let i = 1; i < seed.length; i += 1) {
-        setJayerCellById(seed[i].id, 'product_name', TOUR_JAYER_PRODUCT);
+        setJayerCellById(seed[i].id, 'product_name', getTourJayerProduct());
         await sleep(200); if (tok.cancelled) return;
       }
       setTourJChip(null);
