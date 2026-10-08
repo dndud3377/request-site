@@ -38,7 +38,14 @@ const USERS: Candidate[] = [
 // 최초 로그인으로 '권한 없음' 목록에 나타나는 사용자 (순서대로 도착)
 const NONE_ARRIVALS = ['김철수', '박민수'];
 const ADDED = ['김철수', '박민수'];
-const GROUP_NAME = '개발팀';
+/** 데모 사용자 이름(고유명사) → 표시용 번역 키. 이름 자체는 선택·ref 식별자로 쓰이므로 값은 그대로 두고 화면에만 번역을 쓴다. */
+const PERSON_KEYS: Readonly<Record<string, string>> = {
+  '김철수': 'kim_cheolsu',
+  '이영희': 'lee_younghee',
+  '박민수': 'park_minsu',
+  '정수진': 'jung_sujin',
+  '한지민': 'han_jimin',
+};
 const MEMBERS = ['정수진', '한지민'];
 const FINAL_MEMBERS = ['정수진'];
 
@@ -50,6 +57,8 @@ const SELF_INFO = { loginid: 'my_pl', mail: 'my.pl@company.com', dept: 'PA1' };
 
 const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = ({ embedded = false, paused = false }) => {
   const { t } = useTranslation();
+  const GROUP_NAME = t('guide.sample.demo_group_name');
+  const displayName = (n: string): string => (PERSON_KEYS[n] ? (t(`guide.sample.person.${PERSON_KEYS[n]}` as never) as string) : n);
   const selfLabel = t('guide.demo.permission_tour.self_member' as never) as string;
 
   const [showIntro, setShowIntro] = useState(true);
@@ -146,7 +155,7 @@ const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = (
       setPhase('search_user');
       await moveTo(refs.current.userSearch);
       await click(refs.current.userSearch);
-      if (!(await typeInto(setUserSearch, '사용자'))) return;
+      if (!(await typeInto(setUserSearch, t('guide.sample.demo_search_user')))) return;
       setResultsShown(true);
       await sleep(450);
 
@@ -192,7 +201,7 @@ const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = (
       await sleep(250);
       await moveTo(refs.current.memberSearch);
       await click(refs.current.memberSearch);
-      if (!(await typeInto(setMemberSearch, '멤버'))) return;
+      if (!(await typeInto(setMemberSearch, t('guide.sample.demo_search_member')))) return;
       await sleep(350);
       for (const m of MEMBERS) {
         if (cancelled()) return;
@@ -224,7 +233,7 @@ const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = (
 
   const chip = (name: string, refKey: string) => (
     <span key={name} className="guide-demo-kwchip">
-      {name}
+      {displayName(name)}
       <span ref={setRef(refKey)} className="chip-x">✕</span>
     </span>
   );
@@ -364,7 +373,7 @@ const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = (
                   return (
                     <motion.tr key={u} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
                       <td>{info.loginid}</td>
-                      <td>👤 {u}</td>
+                      <td>👤 {displayName(u)}</td>
                       <td>{info.mail}</td>
                       <td>{info.dept}</td>
                       <td style={{ textAlign: 'right' }}>
@@ -381,7 +390,7 @@ const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = (
                 {listRows.map((u) => (
                   <motion.tr key={u} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
                     <td>
-                      👤 {u}
+                      👤 {displayName(u)}
                       {onNoneTab && <span className="role"> ({roleLabel('NONE')})</span>}
                     </td>
                   </motion.tr>
@@ -405,7 +414,7 @@ const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = (
                     <motion.div className="guide-demo-userlist" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
                       {USERS.filter((u) => !userSelected.includes(u.name)).map((u) => (
                         <div key={u.name} ref={setRef(`u_${u.name}`)} className="guide-demo-userrow">
-                          👤 {u.name} <span className="role">({roleLabel(u.role)})</span>
+                          👤 {displayName(u.name)} <span className="role">({roleLabel(u.role)})</span>
                         </div>
                       ))}
                     </motion.div>
@@ -452,7 +461,7 @@ const PermissionTourDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = (
                     {memberSearch && (
                       <motion.div className="guide-demo-userlist" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                         {MEMBERS.filter((m) => !memberSelected.includes(m)).map((m) => (
-                          <div key={m} ref={setRef(`m_${m}`)} className="guide-demo-userrow">👤 {m}</div>
+                          <div key={m} ref={setRef(`m_${m}`)} className="guide-demo-userrow">👤 {displayName(m)}</div>
                         ))}
                       </motion.div>
                     )}
