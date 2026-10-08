@@ -75,10 +75,12 @@ class CookieJWTAuthentication(BaseAuthentication):
         except ExpiredSignatureError:
             raise AuthenticationFailed('토큰이 만료되었습니다.')
         except InvalidTokenError as e:
-            raise AuthenticationFailed(f'유효하지 않은 토큰입니다: {str(e)}')
+            # 응답에는 원인(서명·형식 등)을 싣지 않고 서버 로그에만 남긴다.
+            logger.warning(f"[Auth] Invalid token: {e}")
+            raise AuthenticationFailed('유효하지 않은 토큰입니다.')
         except Exception as e:
             logger.error(f"[Auth] Token authentication error: {e}")
-            raise AuthenticationFailed(f'인증 오류가 발생했습니다: {str(e)}')
+            raise AuthenticationFailed('인증 오류가 발생했습니다.')
 
 
 class ExternalApiKeyAuthentication(BaseAuthentication):
