@@ -3,6 +3,7 @@ import type { TFunction } from 'i18next';
 import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo, ColorFilterSet } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
+import { optionLabel, mapTypeLabel } from './optionLabel';
 import { VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
 
@@ -102,7 +103,7 @@ function addJobSheet(
   jayer.forEach((r) => {
     const row = ws.addRow({
       updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
-      layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
+      layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: optionLabel(t, r.new_or_copy, 'noc'),
       product_name: r.product_name, step: r.step, item_id: r.item_id,
     });
     const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
@@ -137,7 +138,7 @@ function addOvlSheet(
   oayer.forEach((r) => {
     const row = ws.addRow({
       updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
-      layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
+      layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: optionLabel(t, r.new_or_copy, 'noc'),
       product_name: r.product_name, step: r.step,
     });
     const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
@@ -225,11 +226,14 @@ function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blo
 }
 
 /** 의뢰 목적 — other_purpose 는 배열(신규)이며, 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다. */
-function buildPurposeValue(d: Partial<DetailFormState>): string {
+function buildPurposeValue(d: Partial<DetailFormState>, t: TFunction): string {
   const opRaw = d.other_purpose as unknown as string[] | string | undefined;
-  const otherPurposeText = Array.isArray(opRaw) ? opRaw.map((o) => `[${o}]`).join('') : (opRaw || '');
+  const otherPurposeText = Array.isArray(opRaw)
+    ? opRaw.map((o) => `[${optionLabel(t, o)}]`).join('')
+    : optionLabel(t, opRaw || '');
   if (!d.request_purpose) return '-';
-  return otherPurposeText ? `${d.request_purpose}(${otherPurposeText})` : d.request_purpose;
+  const purposeText = optionLabel(t, d.request_purpose, 'purpose');
+  return otherPurposeText ? `${purposeText}(${otherPurposeText})` : purposeText;
 }
 
 /** 지도 편차 — C가문(상/하판 리전별)인지 여부를 스냅샷 자체의 only_prodc 로 판별한다. */
@@ -303,7 +307,7 @@ function buildProdcInfo(d: Partial<DetailFormState>, t: TFunction): string {
   const middleUse = d.prodc_middle_use;
   if (middleUse) {
     if (middleUse === '미사용') {
-      lines.push(`[${t('request.plate_middle')}] 미사용`);
+      lines.push(`[${t('request.plate_middle')}] ${t('request.opt.unused')}`);
     } else {
       lines.push(`[${t('request.plate_middle')}] ${d.prodc_middle_line || '-'} / ${d.prodc_middle_process || '-'} / ${d.prodc_middle_product || '-'}`);
     }
@@ -320,7 +324,7 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
   const blocks: InfoBlock[] = [];
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
 
-  blocks.push({ kind: 'kv', label: t('request.request_purpose'), value: buildPurposeValue(detail) });
+  blocks.push({ kind: 'kv', label: t('request.request_purpose'), value: buildPurposeValue(detail, t) });
   blocks.push({ kind: 'kv', label: t('request.line'), value: detail.line || '-' });
   blocks.push({ kind: 'kv', label: t('request.process_selection'), value: detail.process_selection || '-' });
   blocks.push({ kind: 'kv', label: t('request.partid_selection'), value: detail.partid_selection || '-' });
@@ -431,7 +435,7 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
   const isDeleteType = isMapDeleteEditType(detail.map_type);
   const isProdc = detail.only_prodc === PRODC_YES;
 
-  blocks.push({ kind: 'kv', label: t('request.map_type'), value: detail.map_type || '-' });
+  blocks.push({ kind: 'kv', label: t('request.map_type'), value: detail.map_type ? mapTypeLabel(t, detail.map_type) : '-' });
   if (isMapRegisteredDetail && detail.source_line) blocks.push({ kind: 'kv', label: t('request.source_line'), value: detail.source_line });
   if (isMapRegisteredDetail && detail.source_partid) blocks.push({ kind: 'kv', label: t('request.source_partid_selection'), value: detail.source_partid });
 
