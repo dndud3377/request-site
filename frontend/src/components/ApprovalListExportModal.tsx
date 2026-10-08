@@ -4,6 +4,7 @@ import Modal from './Modal';
 import { useToast } from './Toast';
 import { documentsAPI } from '../api/client';
 import { RequestDocument, PersonalMarkCategory } from '../types';
+import { optionLabel } from '../utils/optionLabel';
 import { OPTION_LINE } from '../pages/RequestPage/constants';
 import { EXPORT_TEAMS, ExportTeam, filterDocsForExport, exportApprovalList } from '../utils/approvalListExport';
 
@@ -143,7 +144,7 @@ export default function ApprovalListExportModal({
         {t('approval.export_list_help')}
       </p>
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 14 }}>
-        {renderGroup(t('approval.col_line'), OPTION_LINE, lines, setLines, (v) => v)}
+        {renderGroup(t('approval.col_line'), OPTION_LINE, lines, setLines, (v) => optionLabel(t, v))}
         {renderGroup(t('approval.export_list_team'), EXPORT_TEAMS, teams, setTeams, (v) => t(`approval.filter_agent_${v}` as never))}
       </div>
       <div style={{ fontSize: '0.85rem' }}>{renderStatus()}</div>
