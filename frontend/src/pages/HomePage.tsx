@@ -16,6 +16,7 @@ import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseI
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 import { formatDate, formatDateTime } from '../utils/date';
+import { optionLabel } from '../utils/optionLabel';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey,
   getDocDetailFields, getDocSubmittedDate, isSubmittedByMe, isApprovalTargetForMe,
@@ -800,12 +801,12 @@ export default function HomePage(): React.ReactElement {
                       : comboText;
                     return (
                       <tr key={doc.id}>
-                        <td><b>{detail.line || '-'}</b></td>
+                        <td><b>{optionLabel(t, detail.line) || '-'}</b></td>
                         <td>
                           <div className="purpose-cell">
-                            <span className="purpose-cell-main">{detail.purpose || '-'}</span>
+                            <span className="purpose-cell-main">{optionLabel(t, detail.purpose, 'purpose') || '-'}</span>
                             {detail.otherPurpose.map((o) => (
-                              <span key={o} className="purpose-cell-sub">{o}</span>
+                              <span key={o} className="purpose-cell-sub">{optionLabel(t, o)}</span>
                             ))}
                           </div>
                         </td>
