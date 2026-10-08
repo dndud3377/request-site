@@ -317,7 +317,8 @@ def oidc_callback(request):
             algorithms=['RS256'],
             options={
                 'verify_signature': True,
-                'verify_exp': False,  # 만료 검증은 ADFS가 처리하므로 생략
+                # 만료된 id_token 으로는 로그인할 수 없어야 한다(유출 토큰 재사용 차단).
+                'verify_exp': True,
                 'verify_aud': False,
             }
         )
