@@ -8,6 +8,7 @@ import { UserRole, UserWithRole, UserForAssignment, UserGroup, UserGroupMember, 
 import GuideSlidePanel from '../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../components/guideDemos';
 import StepGuideTour, { StepGuideGroup } from '../components/StepGuideTour';
+import { optionLabel } from '../utils/optionLabel';
 import { OPTION_LINE } from './RequestPage/constants';
 
 const PERMISSION_GUIDE_KEY: GuideFeatureKey = 'permission_user_group';
@@ -151,7 +152,7 @@ function UserTable({
                         disabled={!canEditMailLines(user) || savingMailLinesId === user.id}
                         aria-pressed={on}
                       >
-                        {line}
+                        {optionLabel(t, line)}
                       </button>
                     );
                   })}
