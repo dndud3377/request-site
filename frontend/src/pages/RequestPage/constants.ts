@@ -9,6 +9,7 @@ import {
   AdiCdTarget,
   MergeTable,
 } from '../../types';
+import i18n from '../../i18n';
 
 // ===== Option Constants =====
 export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제', 'ADI CD 변경', 'P 변경', '기타'] as const;
@@ -477,6 +478,10 @@ export const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'process_id',
 ];
 
+/** 투어 샘플 문구 — 시드를 만드는 시점의 언어로 번역한다(모듈 로드 시점에 고정하지 않는다). */
+const tourText = (key: string): string => i18n.t(`guide.sample.${key}` as never) as string;
+const tourBbProduct = (n: number): string => i18n.t('guide.sample.bb_product' as never, { n }) as string;
+
 // ===== 전체 가이드(투어) 샘플 시드 =====
 // /request?embed=tour 진입 시, 위저드 각 단계를 "값이 채워진" 상태로 보여주기 위한 샘플 데이터.
 export const makeTourDetail = (): DetailFormState => ({
@@ -486,14 +491,14 @@ export const makeTourDetail = (): DetailFormState => ({
   process_selection: 'RECIPE_A',
   partid_selection: 'PART_1000',
   process_id: 'PROC_X1',
-  customer_name: '샘플 고객사',
-  customer_requirement: '신규 라인 제품 소개 지도 제작 요청',
-  product_manager: '샘플 담당자',
+  customer_name: tourText('customer_name'),
+  customer_requirement: tourText('customer_requirement'),
+  product_manager: tourText('product_manager'),
   map_type: 'NEW',
   // BB 자동채움/매핑 데모용 — 외부 데이터 탭 2개와 1:1로 대응한다.
   bb_entries: [
-    { ...makeBbEntry(), product: 'BB제품1', process_id: 'BB_R1' },
-    { ...makeBbEntry(), product: 'BB제품2', process_id: 'BB_R2' },
+    { ...makeBbEntry(), product: tourBbProduct(1), process_id: 'BB_R1' },
+    { ...makeBbEntry(), product: tourBbProduct(2), process_id: 'BB_R2' },
   ],
 });
 
@@ -521,46 +526,47 @@ export const makeTourJayerRows = (): JayerRow[] =>
   }));
 
 export const makeTourOayerRows = (): OayerRow[] => [
-  { ...makeOayerRow(), sortOrder: 0, process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '10' },
-  { ...makeOayerRow(), sortOrder: 1, process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '20' },
+  { ...makeOayerRow(), sortOrder: 0, process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'ST1', new_or_copy: '신규', product_name: getTourJayerProduct(), step: '10' },
+  { ...makeOayerRow(), sortOrder: 1, process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'ST1', new_or_copy: '신규', product_name: getTourJayerProduct(), step: '20' },
   // TBV/TLV는 O-ayer에 TBV/TLV 항목이 있어야 '정보' 탭에 노출된다 — 데모용 시드 1행.
-  { ...makeOayerRow(), sortOrder: 2, process_id: 'PROC_X1', sp: 'SP03', sd: 'TBV', pp: 'PP03', layerid: 'L03', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '30' },
+  { ...makeOayerRow(), sortOrder: 2, process_id: 'PROC_X1', sp: 'SP03', sd: 'TBV', pp: 'PP03', layerid: 'L03', st: 'ST1', new_or_copy: '신규', product_name: getTourJayerProduct(), step: '30' },
 ];
 
 export const makeTourBbRows = (): BbTableRow[] => [
-  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP01', sd: 'SD01', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_layer: '10', bb_ss: '110', bb_step: 'BB제품1 STEP', remark: '' },
-  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP02', sd: 'SD02', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_layer: '20', bb_ss: '120', bb_step: 'BB제품1 STEP', remark: '' },
+  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP01', sd: 'SD01', bb_process_id: 'BB_R1', bb_name: tourBbProduct(1), bb_layer: '10', bb_ss: '110', bb_step: `${tourBbProduct(1)} STEP`, remark: '' },
+  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP02', sd: 'SD02', bb_process_id: 'BB_R1', bb_name: tourBbProduct(1), bb_layer: '20', bb_ss: '120', bb_step: `${tourBbProduct(1)} STEP`, remark: '' },
 ];
 
 // BB 자동채움·매핑 데모용 외부 데이터 (PhotoStepOption[][]) — 탭은 bb_entries와 1:1 대응.
 // 탭1(BB제품1)은 Layer 10/20/30, 탭2(BB제품2)는 Layer 40/50을 담당한다.
 export const makeTourBbExternalData = () => [
   [
-    { processid: 'BB_R1', stepseq: '110', descript: 'BB제품1 STEP', layerid: '10' },
-    { processid: 'BB_R1', stepseq: '120', descript: 'BB제품1 STEP', layerid: '20' },
-    { processid: 'BB_R1', stepseq: '130', descript: 'BB제품1 STEP', layerid: '30' },
+    { processid: 'BB_R1', stepseq: '110', descript: `${tourBbProduct(1)} STEP`, layerid: '10' },
+    { processid: 'BB_R1', stepseq: '120', descript: `${tourBbProduct(1)} STEP`, layerid: '20' },
+    { processid: 'BB_R1', stepseq: '130', descript: `${tourBbProduct(1)} STEP`, layerid: '30' },
   ],
   [
-    { processid: 'BB_R2', stepseq: '240', descript: 'BB제품2 STEP', layerid: '40' },
-    { processid: 'BB_R2', stepseq: '250', descript: 'BB제품2 STEP', layerid: '50' },
+    { processid: 'BB_R2', stepseq: '240', descript: `${tourBbProduct(2)} STEP`, layerid: '40' },
+    { processid: 'BB_R2', stepseq: '250', descript: `${tourBbProduct(2)} STEP`, layerid: '50' },
   ],
 ];
 
 // J-ayer 데모에서 채워 넣을 샘플 값
 // ADI CD 변경 시연용 — 변경전 1행을 '미등록'(새로 생기는 STEP)으로 둬 행 단위 미등록 표기를 보여준다.
 export const makeTourAdiCdBefore = (): AdiCdStep[] => [
-  { ...makeAdiCdStep(), step_id: 'STEP_1000', step_desc: 'ADI CD 변경전 STEP' },
+  { ...makeAdiCdStep(), step_id: 'STEP_1000', step_desc: tourText('adi_cd_before_step') },
   { ...makeAdiCdStep(), step_id: '', step_desc: '', unregistered: true },
 ];
 
 export const makeTourAdiCdAfter = (): AdiCdStep[] => [
-  { ...makeAdiCdStep(), step_id: 'STEP_1000', step_desc: 'ADI CD 변경후 STEP' },
-  { ...makeAdiCdStep(), step_id: 'STEP_2000', step_desc: '신규 추가 STEP' },
+  { ...makeAdiCdStep(), step_id: 'STEP_1000', step_desc: tourText('adi_cd_after_step') },
+  { ...makeAdiCdStep(), step_id: 'STEP_2000', step_desc: tourText('adi_cd_added_step') },
 ];
 
 // 참조 요청서 Merge 블록을 여는 기타 목적 — 시연에서만 쓰는 대표값.
 export const TOUR_MERGE_PURPOSE = 'Layer 추가/삭제';
 
-export const TOUR_JAYER_PRODUCT = '샘플제품A';
+/** 투어 J-ayer 샘플 제품명 — 호출 시점의 언어로 번역한다. */
+export const getTourJayerProduct = (): string => tourText('jayer_product');
 export const TOUR_JAYER_STEPS = ['10', '20', '30', '40', '50'];
 export const TOUR_JAYER_ITEMS = ['ITEM_1', 'ITEM_2', 'ITEM_3', 'ITEM_4', 'ITEM_5'];
