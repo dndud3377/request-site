@@ -5,7 +5,7 @@ import datetime
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.http import JsonResponse, StreamingHttpResponse
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET
 from django.views.decorators.csrf import csrf_exempt
 import queue as _queue_module
 from .sse import broadcaster
@@ -16,11 +16,14 @@ from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
-from rest_framework.exceptions import ValidationError, NotAuthenticated
+from rest_framework.exceptions import ValidationError, NotAuthenticated, APIException
+from rest_framework.request import Request
+from rest_framework.views import APIView
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 User = get_user_model()
 from django.db.models import Q, Max, Min, Exists, OuterRef, Prefetch
 from .models import (
@@ -61,6 +64,26 @@ def _is_dev() -> bool:
     return getattr(settings, 'AUTH_MODE', 'sso') == 'dev'
 
 
+# 권한 미부여 역할. 로그인은 됐어도 어떤 데이터도 조회·변경할 수 없다(개발·운영 동일).
+NO_ROLE = 'NONE'
+
+
+def _has_role(user) -> bool:
+    """로그인했고 역할이 부여된(NONE 이 아닌) 사용자인지."""
+    return bool(user and user.is_authenticated and getattr(user, 'role', NO_ROLE) != NO_ROLE)
+
+
+def _can_access(user) -> bool:
+    """데이터 접근 공통 규칙.
+
+    - 로그인 사용자: 역할이 있어야 한다(NONE 은 개발·운영 모두 거부).
+    - 비로그인: 개발(AUTH_MODE=dev)에서만 허용한다(기존 dev 우회 유지).
+    """
+    if user and user.is_authenticated:
+        return _has_role(user)
+    return _is_dev()
+
+
 def _as_aware_datetime(date_value):
     """date → 그 날 12:00(로컬) 의 aware datetime. USE_TZ=True 라 naive 로 두면 경고가 난다.
 
@@ -73,11 +96,11 @@ def _as_aware_datetime(date_value):
 
 
 class IsMasterOrReadOnly(BasePermission):
-    """읽기: 운영=인증 필요, 개발=허용 / 쓰기: MASTER만"""
+    """읽기: 운영=역할 있는 로그인 필요, 개발=비로그인도 허용(NONE 은 거부) / 쓰기: MASTER만"""
 
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
-            return _is_dev() or bool(request.user and request.user.is_authenticated)
+            return _can_access(request.user)
         return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
 
 
@@ -108,7 +131,7 @@ class CanManageLayerFilter(BasePermission):
 
 
 class CanManageLayerSdException(BasePermission):
-    """J/O-layer SD-Layer 검사 예외: 조회는 로그인한 누구나, 등록·삭제는 팀 역할만.
+    """J/O-layer SD-Layer 검사 예외: 조회는 역할 있는 로그인 사용자 누구나, 등록·삭제는 팀 역할만.
 
     조회는 의뢰서 작성자(요청자)의 화면 검증이 같은 목록을 써야 하므로 역할을 묻지 않는다.
     등록·삭제는 J 예외는 TE_J·TE_P, O 예외는 TE_O·TE_P(P 는 J·O 둘 다)이고 MASTER 는 둘 다 가능하다.
@@ -120,7 +143,7 @@ class CanManageLayerSdException(BasePermission):
         return role == 'MASTER' or role in self.TABLE_ROLES.get(table, ())
 
     def has_permission(self, request, view):
-        if not (request.user and request.user.is_authenticated):
+        if not _has_role(request.user):
             return False
         if request.method == 'POST':
             return self._allowed(request.user, request.data.get('table'))
@@ -133,19 +156,26 @@ class CanManageLayerSdException(BasePermission):
 
 
 class IsAuthenticatedInProd(BasePermission):
-    """운영=인증 필요, 개발=허용"""
+    """운영=역할 있는 로그인 필요, 개발=비로그인도 허용 / 역할 NONE 은 개발·운영 모두 거부"""
 
     def has_permission(self, request, view):
-        return _is_dev() or bool(request.user and request.user.is_authenticated)
+        return _can_access(request.user)
+
+
+class IsAuthenticatedWithRole(BasePermission):
+    """개발·운영 모두 역할 있는 로그인 필요(dev 우회 없음)"""
+
+    def has_permission(self, request, view):
+        return _has_role(request.user)
 
 
 class IsAuthenticatedOrMasterDelete(BasePermission):
-    """읽기·쓰기: 운영=인증 필요, 개발=허용 / 삭제: MASTER만 (개발·운영 동일)"""
+    """읽기·쓰기: 운영=역할 있는 로그인 필요, 개발=비로그인도 허용(NONE 은 거부) / 삭제: MASTER만 (개발·운영 동일)"""
 
     def has_permission(self, request, view):
         if request.method == 'DELETE':
             return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
-        return _is_dev() or bool(request.user and request.user.is_authenticated)
+        return _can_access(request.user)
 
 
 class HasExternalApiKey(BasePermission):
@@ -162,8 +192,8 @@ class HasExternalApiKey(BasePermission):
 class GuideWritePermission(BasePermission):
     """가이드 CRUD 인가.
 
-    - 읽기(GET): IsAuthenticatedOrMasterDelete 와 동일(운영=인증 필요, 개발=허용) — 조회는 전원 제한 없음.
-    - 작성/수정(POST·PUT·PATCH): 인증 필요 + 제품 담당자(PL·해외 PL_GL)는 불가
+    - 읽기(GET): IsAuthenticatedOrMasterDelete 와 동일(운영=역할 있는 로그인 필요, 개발=허용, NONE 거부).
+    - 작성/수정(POST·PUT·PATCH): 역할 있는 로그인 필요 + 제품 담당자(PL·해외 PL_GL)는 불가
       (가이드는 PL 이 참고하는 대상이지 작성 주체가 아니며, 이 제한은 국내/해외 구분 없이 동일하다 —
       GuidePage.tsx 의 canWrite=!isPlRole(...) 와 반드시 같은 규칙이어야 한다. role != 'PL' 로만
       검사하면 PL_GL 이 통과해 프론트 가드가 API 직접 호출로 우회됐었다, 2026-09).
@@ -174,11 +204,8 @@ class GuideWritePermission(BasePermission):
         if request.method == 'DELETE':
             return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
         if request.method in ('POST', 'PUT', 'PATCH'):
-            return bool(
-                request.user and request.user.is_authenticated
-                and request.user.role not in User.PL_ROLES
-            )
-        return _is_dev() or bool(request.user and request.user.is_authenticated)
+            return _has_role(request.user) and request.user.role not in User.PL_ROLES
+        return _can_access(request.user)
 
 
 class RequestDocumentViewSet(viewsets.ModelViewSet):
@@ -4099,6 +4126,12 @@ class AdminNoticeViewSet(viewsets.ModelViewSet):
             return Response(None)
         return Response(AdminNoticeSerializer(notice).data)
 
+# 응답에는 예외 원문(DB 호스트·쿼리·파일 경로 등)을 싣지 않는다 — 원문은 서버 로그에만 남긴다.
+FORM_OPTIONS_ERROR_MESSAGE = '옵션 조회에 실패했습니다.'
+UPLOAD_ERROR_MESSAGE = '업로드 실패'
+USER_DELETE_ERROR_MESSAGE = '사용자를 삭제하지 못했습니다.'
+
+
 @require_GET
 def health_check(request):
     """헬스체크 엔드포인트 - DB 연결 상태 확인"""
@@ -4107,10 +4140,12 @@ def health_check(request):
         conn.cursor()
         return JsonResponse({'status': 'healthy', 'db': 'connected'})
     except Exception as e:
-        return JsonResponse({'status': 'unhealthy', 'db': 'disconnected', 'error': str(e)}, status=503)
+        logging.getLogger(__name__).error(f"[HEALTH] DB 연결 실패: {e}")
+        return JsonResponse({'status': 'unhealthy', 'db': 'disconnected'}, status=503)
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_process(request):
     """{{request.line}} → {{request.process_selection}} 목록"""
     from .models import ProcessProduct as CP
@@ -4127,7 +4162,8 @@ def form_options_process(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_products(request):
     """{{request.line}} + {{request.process_selection}} → {{request.partid_selection}} 목록
     (process 는 선택 사항, process_id 도 선택 사항 — {{request.process_id}} 를 먼저 골랐을 때 그에 맞는 제품이름만 좁힌다)
@@ -4157,7 +4193,8 @@ def form_options_products(request):
     )
     return JsonResponse({'options': options})
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_process_id(request):
     """{{request.line}} + {{request.partid_selection}} → {{request.process_id}} 목록
     (product 없이 process(조합법)만 와도 동작 — {{request.line}}+{{request.process_selection}} 범위 전체 조리법 목록)
@@ -4188,7 +4225,8 @@ def form_options_process_id(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_job_file_layer(request):
     """{{request.line}} + {{request.process_id}} → JOB FILE layer 정보 (eqptype='PMAINF')
 
@@ -4215,10 +4253,11 @@ def form_options_job_file_layer(request):
 
     except Exception as e:
         logger.error(f"[JOB_FILE_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': [], 'error': FORM_OPTIONS_ERROR_MESSAGE})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_ovl_layer(request):
     """{{request.line}} + {{request.process_id}} → OVL layer 정보 (eqptype='POVLAY')"""
     import logging
@@ -4241,10 +4280,11 @@ def form_options_ovl_layer(request):
 
     except Exception as e:
         logger.error(f"[OVL_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': [], 'error': FORM_OPTIONS_ERROR_MESSAGE})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_extra_layer(request):
     """{{request.line}} + {{request.process_id}} → XXXXXX layer 정보 (eqptype 임시값).
 
@@ -4272,11 +4312,22 @@ def form_options_extra_layer(request):
 
     except Exception as e:
         logger.error(f"[EXTRA_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': [], 'error': FORM_OPTIONS_ERROR_MESSAGE})
 
 
-@csrf_exempt
-@require_POST
+# 업로드 허용 확장자. 저장 파일의 확장자가 /media/ 서빙 시 Content-Type 을 정하므로
+# html·svg 처럼 브라우저가 문서로 실행할 수 있는 형식은 받지 않는다(Content-Type 헤더는 클라이언트가 위조 가능).
+ALLOWED_IMAGE_EXTENSIONS = ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp')
+ALLOWED_VIDEO_EXTENSIONS = ('mp4', 'webm', 'ogg', 'mov', 'm4v')
+
+
+def _upload_extension(file_name: str, default: str) -> str:
+    """업로드 파일명의 확장자(소문자). 확장자가 없으면 default."""
+    return file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else default
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticatedInProd])
 def upload_image(request):
     """이미지 파일 업로드 API - mshot 이미지용"""
     logger = logging.getLogger(__name__)
@@ -4296,7 +4347,9 @@ def upload_image(request):
         return JsonResponse({'error': '이미지 크기는 2MB 를 초과할 수 없습니다'}, status=400)
     
     # 파일명 생성 (UUID 사용)
-    ext = image.name.split('.')[-1] if '.' in image.name else 'png'
+    ext = _upload_extension(image.name, 'png')
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return JsonResponse({'error': '허용되지 않는 이미지 형식입니다'}, status=400)
     filename = f"mshot_{uuid.uuid4().hex}.{ext}"
     path = f"mshot_images/{filename}"
     
@@ -4315,15 +4368,15 @@ def upload_image(request):
         })
     except Exception as e:
         logger.error(f"[UPLOAD_IMAGE] 이미지 업로드 실패: {e}")
-        return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+        return JsonResponse({'error': UPLOAD_ERROR_MESSAGE}, status=500)
 
 
 # 동영상 업로드 최대 크기 (50MB)
 MAX_VIDEO_UPLOAD_SIZE = 50 * 1024 * 1024
 
 
-@csrf_exempt
-@require_POST
+@api_view(['POST'])
+@permission_classes([IsAuthenticatedInProd])
 def upload_video(request):
     """동영상 파일 업로드 API - 가이드 동영상용"""
     logger = logging.getLogger(__name__)
@@ -4342,7 +4395,9 @@ def upload_video(request):
         return JsonResponse({'error': '동영상 크기는 50MB 를 초과할 수 없습니다'}, status=400)
 
     # 파일명 생성 (UUID 사용)
-    ext = video.name.split('.')[-1] if '.' in video.name else 'mp4'
+    ext = _upload_extension(video.name, 'mp4')
+    if ext not in ALLOWED_VIDEO_EXTENSIONS:
+        return JsonResponse({'error': '허용되지 않는 동영상 형식입니다'}, status=400)
     filename = f"guide_{uuid.uuid4().hex}.{ext}"
     path = f"guide_videos/{filename}"
 
@@ -4361,7 +4416,7 @@ def upload_video(request):
         })
     except Exception as e:
         logger.error(f"[UPLOAD_VIDEO] 동영상 업로드 실패: {e}")
-        return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+        return JsonResponse({'error': UPLOAD_ERROR_MESSAGE}, status=500)
 
 
 
@@ -4388,7 +4443,8 @@ class VocHistoryViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_bb_external(request):
     """bb 외부 데이터 - {{request.line}} + {{request.process_id}} → api_steps (eqptype='PMAINF')"""
     import logging
@@ -4437,7 +4493,7 @@ def form_options_bb_external(request):
 
     except Exception as e:
         logger.error(f"[BB_EXTERNAL] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': [], 'error': FORM_OPTIONS_ERROR_MESSAGE})
 
 
 def _natural_key(s: str) -> list:
@@ -4445,7 +4501,8 @@ def _natural_key(s: str) -> list:
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s or '')]
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_layer_ids(request):
     """line + process → unique layerid list sorted by min stepseq (natural order)"""
     line = request.GET.get('line', '')
@@ -4478,7 +4535,8 @@ def form_options_layer_ids(request):
         return JsonResponse({'options': []})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_barcode(request):
     """product_name → 유효한 바코드 옵션 목록 반환 (n7cancel_date, n7cancel_ok 없는 행만)"""
     product_name = request.GET.get('product_name', '')
@@ -4512,7 +4570,8 @@ def form_options_barcode(request):
         return JsonResponse({'options': []})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_mapname(request):
     """원본 위치(라인명) → partid 목록 반환("_" 앞 8자리 코드만, 중복 제거·정렬)"""
     line = request.GET.get('line', '')
@@ -4530,7 +4589,8 @@ def form_options_mapname(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_map_info(request):
     """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 + CC 참고값(oc) 반환.
     (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용)
@@ -4657,8 +4717,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ('assign_role', 'destroy', 'mail_lines', 'voc_mail', 'submit_mail'):
-            from rest_framework.permissions import IsAuthenticated
-            return [IsAuthenticated()]
+            return [IsAuthenticatedWithRole()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -4909,15 +4968,32 @@ class UserViewSet(viewsets.ModelViewSet):
             broadcaster.broadcast('user_deleted', {'id': user_id})
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
+            logging.getLogger(__name__).error(f"[USER] 사용자 삭제 실패: {e}")
             return Response(
-                {'error': str(e)},
+                {'error': USER_DELETE_ERROR_MESSAGE},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
 
+def _authenticate_plain_request(request):
+    """순수 Django 뷰에서 DRF 기본 인증 클래스(쿠키 JWT·Bearer)로 사용자를 확인한다.
+
+    SSE 는 Accept: text/event-stream 이라 @api_view 로 감싸면 DRF 콘텐츠 협상에서 406 이 나므로
+    인증만 DRF 와 같은 방식으로 수행한다. 토큰이 없거나 잘못됐으면 AnonymousUser.
+    """
+    drf_request = Request(request, authenticators=APIView().get_authenticators())
+    try:
+        return drf_request.user
+    except APIException:
+        return AnonymousUser()
+
+
 @csrf_exempt
 def user_events(request):
-    """SSE endpoint: 사용자 권한 변경 실시간 스트림"""
+    """SSE endpoint: 사용자 권한 변경 실시간 스트림 (이벤트에 사용자 메일·ID 가 실리므로 역할 있는 로그인 필요)"""
+    if not _can_access(_authenticate_plain_request(request)):
+        return JsonResponse({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
     def event_stream():
         q = broadcaster.subscribe()
         try:
