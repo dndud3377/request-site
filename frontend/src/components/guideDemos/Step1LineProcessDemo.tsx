@@ -235,7 +235,7 @@ const Step1LineProcessDemo: React.FC = () => {
             {t('guide.demo.step1_line_process.downstream_title')}
           </div>
           <div className="guide-demo-pill-row">
-            {['신규', '차용', 'Flow Chart', 'BB 조합 구역'].map((p) => (
+            {[t('request.opt.purpose_new'), t('request.opt.purpose_borrow'), 'Flow Chart', t('guide.sample.demo_bb_combo_zone')].map((p) => (
               <span key={p} className="guide-demo-pill">{p}</span>
             ))}
           </div>
