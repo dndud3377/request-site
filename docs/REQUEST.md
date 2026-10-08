@@ -286,6 +286,24 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ---
 
+## 4.0 해외 사용자용 다국어(ko/en) 표시 정리 (2026-10)
+
+저장값·비교 로직은 **그대로** 두고, 화면에 보이는 문구만 현재 언어로 번역한다.
+
+- **`frontend/src/utils/optionLabel.ts`** (신규) — DB 에 한글로 저장되는 선택값을 표시용 문구로 바꾼다.
+  - `optionLabel(t, value, kind)` — `kind`: `'purpose'`(요청 목적) / `'noc'`(요청 기준 new_or_copy) / `'other'`(기타 목적·라인·미사용).
+    '신규'·'차용' 은 요청 목적과 요청 기준 양쪽에 쓰여 `kind` 로 구분한다. **표에 없는 값(마스터 데이터 라인 등)은 원문 그대로** 돌려준다.
+  - `mapTypeLabel(t, value)` — `map_type` 중 한글로 저장되는 `'삭제'` 만 번역(NEW/CLONE/EXISTING 은 영문 코드 그대로).
+  - ⚠️ 표시에만 쓴다. 저장·전송·비교(`=== '기등록'` 등)에는 쓰지 않는다.
+- **i18n 키** (ko/en 동시): `request.opt.*`(요청 목적·기타 목적·요청 기준·라인·미사용), `request.filter_legacy_label`,
+  `approval.guide_demo_*`, `approval.tour_sample.*`(결재 현황 투어 시드), `guide.sample.*`(요청서 투어 시드·권한 데모).
+- **적용 위치**: Step1 요청 목적·기타 목적 버튼, 결재 현황/홈 목록의 라인·요청 목적 셀 및 컬럼 필터, 목록 엑셀 내보내기 모달·셀·시트명,
+  상세(PagedDetailView)·상세 엑셀(detailExport)의 요청 목적·MAP 유형·요청 기준(J/O-ayer 표)·중판 미사용, 권한 페이지 메일 라인 버튼.
+- **투어 시드**: `approvalTourSeed.ts` 는 이제 `buildTourApprovalSeed()` 를 호출해 현재 언어로 시드를 만든다(ApprovalPage 가 `useMemo([t])` 로 보관).
+  `constants.ts` 의 `TOUR_JAYER_PRODUCT` 상수는 `getTourJayerProduct()` 함수로 바뀌었다.
+- **의도적으로 번역하지 않은 것**: 입력칸(AutocompleteInput)에 들어가는 `new_or_copy`·라인 값(입력 텍스트가 곧 저장값),
+  `STEP 설명`(외부 엑셀 헤더 매칭 키), 백엔드가 내려주는 한글 오류/안내 메시지, 날짜 포맷(`ko-KR`), 개발용 목업 사용자(`AuthContext.tsx`).
+
 ## 4.1 기능 변경 이력 (2026-06)
 
 ### 기능 변경 (2026-10-07 — SD-Layer 예외: 버튼 아랫줄 배치 / J·O 탭 상시 표시·상대 탭 조회 전용)
