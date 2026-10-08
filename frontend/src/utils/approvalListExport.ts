@@ -4,6 +4,7 @@ import { RequestDocument, PersonalMarkCategory, Status } from '../types';
 import { getCurrentRound, getDocDetailFields, getDocTableRows, getDocSubmittedDate, hasActiveStageStep } from './approvalTable';
 import { formatDateTime } from './date';
 import { downloadWorkbook, getNowString } from './detailExport';
+import { optionLabel } from './optionLabel';
 
 /**
  * 결재 현황 목록 엑셀 다운로드(docs/APPROVAL.md '결재 현황 목록 다운로드').
@@ -132,8 +133,8 @@ const addListSheet = (
     const category = doc.my_mark_category != null ? categoryById.get(doc.my_mark_category) : undefined;
     const stage = splitStageColumns(doc, t);
     const row = ws.addRow([
-      detail.line || '-',
-      [detail.purpose || '-', ...detail.otherPurpose].join('\n'),
+      optionLabel(t, detail.line) || '-',
+      [optionLabel(t, detail.purpose, 'purpose') || '-', ...detail.otherPurpose.map((o) => optionLabel(t, o))].join('\n'),
       detail.isAdiCd ? t('approval.step_na') : (detail.mapType || '-'),
       [detail.processSelection, detail.partidSelection, detail.processId].filter(Boolean).join(' · ') || '-',
       formatDateTime(getDocSubmittedDate(doc)),
@@ -161,7 +162,7 @@ export const exportApprovalList = async (
   const wb = new ExcelJS.Workbook();
   addListSheet(wb, t('approval.export_sheet_all'), sorted, categories, t);
   lines.forEach((line) => {
-    addListSheet(wb, line, sorted.filter((d) => getDocDetailFields(d).line === line), categories, t);
+    addListSheet(wb, optionLabel(t, line), sorted.filter((d) => getDocDetailFields(d).line === line), categories, t);
   });
   await downloadWorkbook(wb, `${t('approval.export_file_prefix')}_${getNowString()}.xlsx`);
 };
