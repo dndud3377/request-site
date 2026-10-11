@@ -173,13 +173,11 @@ OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get('OIDC_OP_AUTHORIZATION_ENDPOINT'
 OIDC_OP_TOKEN_ENDPOINT = os.environ.get('OIDC_OP_TOKEN_ENDPOINT', '')
 OIDC_OP_USER_ENDPOINT = os.environ.get('OIDC_OP_USER_ENDPOINT', '')
 OIDC_OP_JWKS_ENDPOINT = os.environ.get('OIDC_OP_JWKS_ENDPOINT', '')
+OIDC_OP_ISSUER = os.environ.get('OIDC_OP_ISSUER', '')  # id_token iss 와 정확히 같은 값
 OIDC_OP_LOGOUT_ENDPOINT = os.environ.get('OIDC_OP_LOGOUT_ENDPOINT', '')
 
 OIDC_RP_SIGN_ALGORITHM = os.environ.get('OIDC_RP_SIGN_ALGORITHM', 'RS256')
 OIDC_CALLBACK_BASE_URL = os.environ.get('OIDC_CALLBACK_BASE_URL', 'http://localhost:8000')
-
-OIDC_CERT_FILE_PATH = os.environ.get('OIDC_CERT_FILE_PATH', str(BASE_DIR / 'api' / 'certs'))
-OIDC_CERT_FILE_NAME = os.environ.get('OIDC_CERT_FILE_NAME', 'company-dev.net.cer')
 
 # ============================================
 # 서비스용 JWT 설정

@@ -8,14 +8,12 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from datetime import datetime, timedelta
+import hmac
 import logging
-import os
 import jwt
 import json
 import uuid
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, PyJWKClientError
 
 User = get_user_model()
 
@@ -42,7 +40,8 @@ def create_or_update_user_from_oidc(claims):
     """
     # ADFS 클레임 필드 (대소문자 모두 확인)
     # ADFS가 클레임 필드명을 소문자로 반환하므로 소문자 우선
-    login_id = claims.get('loginid') or claims.get('LoginId') or claims.get('preferred_username') or claims.get('sub')
+    # loginid 만 신뢰한다. preferred_username/sub 로 대체하면 엉뚱한 계정이 조용히 생성된다.
+    login_id = claims.get(OIDC_LOGIN_ID_CLAIM)
     email = claims.get('mail') or claims.get('Mail') or claims.get('email') or claims.get('upn')
     user_name = claims.get('username') or claims.get('Username') or claims.get('name', '')
     dept_name = claims.get('deptname') or claims.get('DeptName', '')
@@ -81,28 +80,44 @@ def create_or_update_user_from_oidc(claims):
     return user
 
 
-def get_adfs_public_key():
+# 로그인 시작 → 콜백 사이에 state·nonce 를 브라우저에 묶어 두는 쿠키.
+# ADFS form_post 는 cross-site POST 라 SameSite=Lax 쿠키가 따라오지 않으므로 None(+Secure) 이어야 한다.
+OIDC_STATE_COOKIE_NAME = 'oidc_auth_state'
+OIDC_STATE_LIFETIME = timedelta(minutes=10)
+OIDC_STATE_COOKIE_SAMESITE = 'None'
+
+# id_token 검증: ADFS 와 서버 간 시계 오차 허용치, 필수 클레임
+OIDC_CLOCK_LEEWAY_SECONDS = 60
+OIDC_ID_TOKEN_ALGORITHMS = ['RS256']
+OIDC_REQUIRED_CLAIMS = ['exp', 'iat', 'iss', 'aud', 'nonce']
+OIDC_LOGIN_ID_CLAIM = 'loginid'
+
+# 모드와 무관하게 콜백이 노출되므로, 하나라도 비면 검증을 건너뛰지 않고 로그인을 차단한다(fail-closed).
+OIDC_REQUIRED_SETTINGS = ['OIDC_OP_ISSUER', 'OIDC_RP_CLIENT_ID', 'OIDC_OP_JWKS_ENDPOINT']
+
+_jwks_clients = {}
+
+
+def get_jwks_client(jwks_uri):
     """
-    ADFS 인증서 파일에서 공개키를 로드합니다.
+    JWKS 엔드포인트별 PyJWKClient 를 재사용한다.
+    클라이언트가 키 목록을 캐시하고, 모르는 kid 가 오면 다시 받아오므로 ADFS 인증서 교체에도 대응한다.
     """
-    cert_path = getattr(settings, 'OIDC_CERT_FILE_PATH', '')
-    cert_file = getattr(settings, 'OIDC_CERT_FILE_NAME', 'company.net.cer')
-    
-    full_path = os.path.join(cert_path, cert_file)
-    
-    if not os.path.exists(full_path):
-        logger.error(f"[OIDC] Certificate file not found: {full_path}")
-        return None
-    
-    try:
-        cert_str = open(full_path, 'rb').read()
-        cert_obj = x509.load_pem_x509_certificate(cert_str, default_backend())
-        public_key = cert_obj.public_key()
-        logger.info(f"[OIDC] Loaded ADFS certificate from {full_path}")
-        return public_key
-    except Exception as e:
-        logger.error(f"[OIDC] Failed to load certificate: {e}")
-        return None
+    client = _jwks_clients.get(jwks_uri)
+    if client is None:
+        client = jwt.PyJWKClient(jwks_uri)
+        _jwks_clients[jwks_uri] = client
+    return client
+
+
+def same_value(received, expected):
+    """타이밍 공격에 안전하게 비교한다. 비ASCII·비문자열 입력도 500 없이 불일치로 처리한다."""
+    return hmac.compare_digest(str(received).encode(), str(expected).encode())
+
+
+def missing_oidc_settings():
+    """비어 있는 필수 OIDC 설정 이름 목록을 반환한다."""
+    return [name for name in OIDC_REQUIRED_SETTINGS if not getattr(settings, name, '')]
 
 
 @api_view(['GET'])
@@ -225,21 +240,23 @@ def oidc_login_init(request):
     """
     GET /api/auth/oidc/login/
     ADFS로 리다이렉트하기 위한 초기화 엔드포인트
-    response_mode=form_post, response_type=code+id_token 사용
-    
-    CSRF 방지를 위해 nonce를 JWT로封装하여 전송
+    response_mode=form_post, response_type=id_token 사용
+
+    state·nonce 를 서명해 HttpOnly 쿠키(OIDC_STATE_COOKIE_NAME)에 담는다.
+    콜백에서 이 쿠키와 form 의 state, id_token 의 nonce 를 비교해 로그인 CSRF·토큰 주입을 막는다.
     """
-    # nonce 생성 (CSRF 방지)
-    nonce_val = uuid.uuid4().urn
-    nonce_val = nonce_val[9:]  # 'urn:uuid:' 제거
-    
-    # nonce를 JWT로封装 (10분 유효)
-    # 이 JWT는 콜백에서 id_token里面的 nonce와 비교하여 검증
-    nonce_payload = {
-        'nonce': nonce_val,
-        'exp': datetime.utcnow() + timedelta(minutes=10),
-    }
-    nonce_jwt = jwt.encode(nonce_payload, settings.SECRET_KEY, algorithm='HS256')
+    state_val = str(uuid.uuid4())
+    nonce_val = str(uuid.uuid4())
+
+    state_cookie = jwt.encode(
+        {
+            'state': state_val,
+            'nonce': nonce_val,
+            'exp': datetime.utcnow() + OIDC_STATE_LIFETIME,
+        },
+        settings.SECRET_KEY,
+        algorithm='HS256',
+    )
     
     # ADFS 인증 URL 생성
     idp_url = getattr(settings, 'OIDC_OP_AUTHORIZATION_ENDPOINT', '')
@@ -253,20 +270,26 @@ def oidc_login_init(request):
     auth_param = f"?client_id={client_id}"
     auth_param += f"&redirect_uri={redirect_uri}"
     auth_param += "&response_mode=form_post"
-    auth_param += "&response_type=code+id_token"
+    auth_param += "&response_type=id_token"
     auth_param += "&scope=openid+profile"
     auth_param += f"&nonce={nonce_val}"
-    # state는 간단한 랜덤 값 (CSRF 방지는 nonce로 함)
-    auth_param += f"&state={str(uuid.uuid4())}"
+    auth_param += f"&state={state_val}"
     
     auth_url_with_params = f"{idp_url}{auth_param}"
     
-    logger.info(f"[OIDC] Login init - redirect_uri: {redirect_uri}, nonce: {nonce_val}, nonce_jwt created")
+    logger.info(f"[OIDC] Login init - redirect_uri: {redirect_uri}, nonce: {nonce_val}")
     
-    return Response({
-        'redirect_url': auth_url_with_params,
-        'nonce_jwt': nonce_jwt,  # 프론트엔드에서 콜백 시 필요
-    })
+    response = Response({'redirect_url': auth_url_with_params})
+    response.set_cookie(
+        key=OIDC_STATE_COOKIE_NAME,
+        value=state_cookie,
+        httponly=True,
+        secure=True,
+        samesite=OIDC_STATE_COOKIE_SAMESITE,
+        max_age=OIDC_STATE_LIFETIME.total_seconds(),
+        path='/',
+    )
+    return response
 
 
 @api_view(['POST'])
@@ -283,12 +306,17 @@ def oidc_callback(request):
     
     User = get_user_model()
     
+    missing = missing_oidc_settings()
+    if missing:
+        logger.error(f"[OIDC] Login blocked - required settings are empty: {', '.join(missing)}")
+        return Response(
+            {'error': 'SSO 설정이 누락되어 로그인할 수 없습니다.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
     # form_post (application/x-www-form-urlencoded) 또는 JSON 형식 지원
     id_token_val = request.POST.get('id_token') or request.data.get('id_token')
-    auth_code = request.POST.get('code') or request.data.get('code')
-    
-    # nonce_jwt 가져오기 (프론트엔드에서 전달)
-    nonce_jwt = request.POST.get('nonce_jwt') or request.data.get('nonce_jwt')
+    state_val = request.POST.get('state') or request.data.get('state') or ''
     
     if not id_token_val:
         logger.error("[OIDC] No id_token received")
@@ -296,30 +324,50 @@ def oidc_callback(request):
             {'error': 'ID 토큰이 없습니다.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
-    # ADFS 인증서로 ID 토큰 서명 검증 (먼저 검증하고 nonce 추출)
-    public_key = get_adfs_public_key()
-    
-    if not public_key:
+
+    # 이 브라우저가 시작한 로그인인지 확인 (state 쿠키 ↔ form state)
+    state_cookie = request.COOKIES.get(OIDC_STATE_COOKIE_NAME)
+    if not state_cookie:
+        logger.error("[OIDC] State cookie missing - login was not started from this browser or expired")
         return Response(
-            {'error': '인증서 로드 실패'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            {'error': '로그인 요청 정보가 없거나 만료되었습니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
         )
-    
-    # ID 토큰 디코딩 및 서명 검증
-    b_token = id_token_val.encode()
-    
     try:
-        decoded_id_token = jwt.decode(
-            jwt=b_token,
-            key=public_key,
-            verify=True,
-            algorithms=['RS256'],
-            options={
-                'verify_signature': True,
-                'verify_exp': False,  # 만료 검증은 ADFS가 처리하므로 생략
-                'verify_aud': False,
-            }
+        saved_state = jwt.decode(state_cookie, settings.SECRET_KEY, algorithms=['HS256'])
+    except InvalidTokenError as e:
+        logger.error(f"[OIDC] State cookie invalid: {e}")
+        return Response(
+            {'error': '로그인 요청 정보가 없거나 만료되었습니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if not same_value(state_val, saved_state.get('state', '')):
+        logger.error("[OIDC] State mismatch")
+        return Response(
+            {'error': '로그인 요청 정보가 일치하지 않습니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ADFS JWKS 에서 id_token 헤더의 kid 에 맞는 서명 키를 찾는다
+    try:
+        signing_key = get_jwks_client(settings.OIDC_OP_JWKS_ENDPOINT).get_signing_key_from_jwt(id_token_val)
+    except (PyJWKClientError, InvalidTokenError) as e:
+        logger.error(f"[OIDC] Signing key lookup failed (JWKS): {e}")
+        return Response(
+            {'error': '인증 토큰이 유효하지 않습니다.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # 서명·만료·발급자(iss)·대상(aud) 검증
+    try:
+        decoded = jwt.decode(
+            id_token_val,
+            key=signing_key.key,
+            algorithms=OIDC_ID_TOKEN_ALGORITHMS,
+            audience=settings.OIDC_RP_CLIENT_ID,
+            issuer=settings.OIDC_OP_ISSUER,
+            leeway=OIDC_CLOCK_LEEWAY_SECONDS,
+            options={'require': OIDC_REQUIRED_CLAIMS},
         )
     except InvalidTokenError as e:
         logger.error(f"[OIDC] Invalid ID token: {e}")
@@ -327,36 +375,21 @@ def oidc_callback(request):
             {'error': '인증 토큰이 유효하지 않습니다.'},
             status=status.HTTP_401_UNAUTHORIZED
         )
-    
-    # id_token에서 nonce 추출
-    id_token_nonce = decoded_id_token.get('nonce')
-    logger.info(f"[OIDC] ID token nonce: {id_token_nonce}")
-    
-    # nonce 검증은 선택적으로 수행 (ADFS가 nonce를 포함하지 않을 수 있음)
-    # 현재는 id_token 서명 검증만으로 충분함 (CSRF 방어는 나중에 별도 처리)
-    if nonce_jwt and id_token_nonce:
-        try:
-            decoded_nonce = jwt.decode(
-                nonce_jwt,
-                settings.SECRET_KEY,
-                algorithms=['HS256']
-            )
-            saved_nonce = decoded_nonce.get('nonce')
-            
-            # nonce 검증
-            if id_token_nonce != saved_nonce:
-                logger.error(f"[OIDC] Invalid nonce: {id_token_nonce} != {saved_nonce}")
-                return Response(
-                    {'error': '잘못된 nonce 값입니다. CSRF 공격 가능성이 있습니다.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            logger.info("[OIDC] nonce validation passed")
-        except Exception as e:
-            logger.warning(f"[OIDC] nonce_jwt validation failed: {e}")
-            # nonce_jwt 검증 실패해도 id_token이 유효하면 진행 (호환성)
-    
-    # id_token의 decoded 내용을 사용 (이미 위에서 검증됨)
-    decoded = decoded_id_token
+
+    # 로그인 시작 때 보낸 nonce 로 발급된 토큰인지 확인 (토큰 재사용·주입 방지)
+    if not same_value(decoded.get('nonce', ''), saved_state.get('nonce', '')):
+        logger.error("[OIDC] Nonce mismatch")
+        return Response(
+            {'error': '로그인 요청 정보가 일치하지 않습니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not decoded.get(OIDC_LOGIN_ID_CLAIM):
+        logger.error(f"[OIDC] Required claim '{OIDC_LOGIN_ID_CLAIM}' missing in id_token")
+        return Response(
+            {'error': '인증 토큰에 로그인 ID가 없습니다.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     
     # ADFS 클레임 필드 매핑 (필드명: 설명) - 소문자 우선
     CLAIM_FIELDS = [
@@ -434,20 +467,8 @@ def oidc_callback(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    # id_token 클레임에서 사용자 정보 추출 (대소문자 구분)
-    # loginid (소문자), LoginId (대문자), preferred_username, sub 순서로 확인
-    username = decoded.get('loginid') or decoded.get('LoginId') or decoded.get('preferred_username') or decoded.get('sub', '')
-    
-    # base64 디코딩이 필요한 경우 (sub가 base64인 경우)
-    import base64
-    try:
-        if username and '=' in username:
-            # base64로 인코딩된 경우 디코딩 시도
-            decoded_username = base64.b64decode(username).decode('utf-8')
-            if decoded_username:
-                username = decoded_username
-    except Exception:
-        pass  # 디코딩 실패 시 원본 사용
+    # 서비스 토큰의 username 은 DB 의 loginid 와 같아야 CookieJWTAuthentication 이 사용자를 찾는다
+    username = user.loginid
     
     token_payload = {
         'sub': decoded.get('sub', ''),
@@ -520,6 +541,9 @@ def oidc_callback(request):
         max_age=refresh_token_lifetime.total_seconds(),
         path='/',
     )
+
+    # state·nonce 는 1회용
+    response.delete_cookie(OIDC_STATE_COOKIE_NAME, path='/', samesite=OIDC_STATE_COOKIE_SAMESITE)
     
     return response
 
