@@ -3,13 +3,18 @@
 외부 DXHUB API 호출은 모두 mock 처리한다.
 """
 import json
+from datetime import datetime, timedelta
 from io import StringIO
 from unittest.mock import patch, MagicMock
+from urllib.parse import parse_qs, urlparse
 
+import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
+from . import auth_views
 from . import mailer
 from . import pop3_mail
 from . import design_rule_stats
@@ -9957,3 +9962,142 @@ class LayerSdCheckTest(TestCase):
         self.assertIn('SD 첫 숫자', r.json().get('error', ''), r.content)
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'draft')
+
+
+OIDC_TEST_ISSUER = 'https://adfs.test/adfs'
+OIDC_TEST_CLIENT_ID = 'request-site-client'
+OIDC_TEST_JWKS = 'https://adfs.test/adfs/discovery/keys'
+OIDC_TEST_KID = 'test-kid'
+_OIDC_TEST_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@override_settings(
+    OIDC_OP_ISSUER=OIDC_TEST_ISSUER,
+    OIDC_RP_CLIENT_ID=OIDC_TEST_CLIENT_ID,
+    OIDC_OP_JWKS_ENDPOINT=OIDC_TEST_JWKS,
+    OIDC_OP_AUTHORIZATION_ENDPOINT='https://adfs.test/adfs/oauth2/authorize/',
+    OIDC_CALLBACK_BASE_URL='https://site.test',
+    SERVICE_JWT_SECRET_KEY='oidc-test-service-secret-0123456789abcdef',
+)
+class OidcCallbackValidationTest(TestCase):
+    """ADFS id_token 콜백 검증: JWKS 서명·exp·iss·aud·nonce·state 쿠키·loginid 필수·설정 fail-closed."""
+
+    LOGIN_URL = '/api/auth/oidc/login/'
+    CALLBACK_URL = '/api/auth/oidc/callback/'
+
+    def setUp(self):
+        auth_views._jwks_clients.clear()
+        jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(_OIDC_TEST_KEY.public_key()))
+        jwk.update({'kid': OIDC_TEST_KID, 'use': 'sig', 'alg': 'RS256'})
+        patcher = patch.object(jwt.PyJWKClient, 'fetch_data', return_value={'keys': [jwk]})
+        self.fetch_data = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _start_login(self, client):
+        r = client.get(self.LOGIN_URL)
+        self.assertEqual(r.status_code, 200, r.content)
+        query = parse_qs(urlparse(r.json()['redirect_url']).query)
+        return query['state'][0], query['nonce'][0]
+
+    def _id_token(self, kid=OIDC_TEST_KID, drop=(), **claims):
+        now = datetime.utcnow()
+        payload = {
+            'loginid': 'sso_user01', 'iss': OIDC_TEST_ISSUER, 'aud': OIDC_TEST_CLIENT_ID,
+            'iat': now, 'exp': now + timedelta(hours=1), 'nonce': 'unset',
+        }
+        payload.update(claims)
+        for key in drop:
+            payload.pop(key)
+        return jwt.encode(payload, _OIDC_TEST_KEY, algorithm='RS256', headers={'kid': kid})
+
+    def _login(self, drop=(), state=None, kid=OIDC_TEST_KID, **claims):
+        """정상적으로 로그인을 시작한 브라우저에서 ADFS form_post 를 흉내 낸다."""
+        client = Client()
+        real_state, real_nonce = self._start_login(client)
+        claims.setdefault('nonce', real_nonce)
+        token = self._id_token(kid=kid, drop=drop, **claims)
+        r = client.post(self.CALLBACK_URL, {'id_token': token, 'state': real_state if state is None else state})
+        return client, r
+
+    def _assert_rejected(self, r, status_code):
+        self.assertEqual(r.status_code, status_code, r.content)
+        self.assertNotIn('access_token', r.cookies)
+
+    def test_login_init_requests_implicit_flow_with_state_cookie(self):
+        r = Client().get(self.LOGIN_URL)
+        query = parse_qs(urlparse(r.json()['redirect_url']).query)
+        self.assertEqual(query['response_type'], ['id_token'])
+        self.assertNotIn('nonce_jwt', r.json())
+        cookie = r.cookies[auth_views.OIDC_STATE_COOKIE_NAME]
+        self.assertEqual(cookie['samesite'], 'None')
+        self.assertTrue(cookie['secure'])
+        self.assertTrue(cookie['httponly'])
+
+    def test_valid_login_issues_service_cookies_and_consumes_state(self):
+        client, r = self._login()
+        self.assertEqual(r.status_code, 302, r.content)
+        self.assertTrue(r.cookies['access_token'].value)
+        self.assertEqual(r.cookies[auth_views.OIDC_STATE_COOKIE_NAME]['max-age'], 0)
+        self.assertEqual(client.get('/api/auth/me/').json()['user']['username'], 'sso_user01')
+
+    def test_expired_token_rejected(self):
+        past = datetime.utcnow() - timedelta(days=30)
+        _, r = self._login(iat=past, exp=past + timedelta(hours=1))
+        self._assert_rejected(r, 401)
+
+    def test_other_audience_rejected(self):
+        _, r = self._login(aud='some-other-app')
+        self._assert_rejected(r, 401)
+
+    def test_other_issuer_rejected(self):
+        _, r = self._login(iss='https://not-our-adfs/adfs')
+        self._assert_rejected(r, 401)
+
+    def test_token_without_nonce_rejected(self):
+        _, r = self._login(drop=('nonce',))
+        self._assert_rejected(r, 401)
+
+    def test_nonce_mismatch_rejected(self):
+        _, r = self._login(nonce='nonce-from-another-login')
+        self._assert_rejected(r, 400)
+
+    def test_state_mismatch_rejected(self):
+        for forged in ['forged-state', '위조된-상태값']:
+            _, r = self._login(state=forged)
+            self._assert_rejected(r, 400)
+
+    def test_cross_site_post_without_state_cookie_rejected(self):
+        """로그인 CSRF: 로그인을 시작하지 않은 피해자 브라우저로 공격자 토큰을 POST."""
+        token = self._id_token(loginid='attacker', nonce='attacker-nonce')
+        r = Client(enforce_csrf_checks=True).post(self.CALLBACK_URL, {'id_token': token, 'state': 'attacker-state'})
+        self._assert_rejected(r, 400)
+
+    def test_unknown_kid_rejected(self):
+        _, r = self._login(kid='rotated-unknown-kid')
+        self._assert_rejected(r, 401)
+
+    def test_jwks_fetch_failure_rejected(self):
+        self.fetch_data.side_effect = jwt.PyJWKClientError('connection failed')
+        _, r = self._login()
+        self._assert_rejected(r, 401)
+
+    def test_missing_loginid_rejected_without_sub_fallback(self):
+        _, r = self._login(drop=('loginid',), sub='opaque-subject', preferred_username='someone')
+        self._assert_rejected(r, 400)
+        self.assertFalse(UserProfile.objects.filter(loginid__in=['opaque-subject', 'someone']).exists())
+
+    def test_loginid_with_equals_sign_kept_verbatim(self):
+        for login_id in ['dGVzdA==', 'ab==']:
+            client, r = self._login(loginid=login_id)
+            self.assertEqual(r.status_code, 302, r.content)
+            me = client.get('/api/auth/me/')
+            self.assertEqual(me.status_code, 200, me.content)
+            self.assertEqual(me.json()['user']['username'], login_id)
+
+    def test_empty_required_setting_blocks_login(self):
+        for name in auth_views.OIDC_REQUIRED_SETTINGS:
+            with self.subTest(setting=name), override_settings(**{name: ''}):
+                with self.assertLogs('api.auth_views', level='ERROR') as logs:
+                    _, r = self._login()
+                self._assert_rejected(r, 500)
+                self.assertIn(name, '\n'.join(logs.output))
