@@ -42,7 +42,7 @@
 **즉시 조치 권고 TOP 5** (전부 재현✅)
 1. **[B-26] 저장형 XSS → MASTER 권한 탈취** — 역할 `NONE` 사용자가 VOC 내용에 임의 HTML/스크립트를 저장할 수 있고,
    그것을 열람한 MASTER의 세션으로 `assign-role` 이 호출되면 **공격자가 MASTER로 승격**된다. sanitizer 의존성 자체가 없다.
-2. **[B-27] OIDC id_token 만료 검증이 꺼져 있다** (`verify_exp: False`) — 한 번 유출된 id_token으로 **기한 없이 로그인** 가능.
+2. ~~**[B-27] OIDC id_token 만료 검증이 꺼져 있다**~~ → ✅ **수정 완료**(2026-10-11) — exp·iss·aud·nonce·state 검증 적용(§5-6).
 3. ~~**[B-01] 의뢰서 삭제 인가 전무**~~ → ✅ **수정 완료**(2026-07-28, `03b2240`) — 인가 적용 + REST DELETE 405 차단.
 4. **[B-06] PAUSE 동결 우회** — 중단(pause) 문서에서 PL 합의/반려가 그대로 동작해 결재가 되살아난다.
 5. **[B-02+B-34] 미인증 업로드 + 무방비 `/media/` 서빙** — 비로그인으로 스크립트 포함 `.svg` 업로드 → 같은 오리진에서 실행.
@@ -954,12 +954,15 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
   → **며칠 뒤(또는 만료 후)** 그 값만으로 `POST /api/auth/oidc/callback/` 재전송
 - ✅ **기대**: 401 (만료된 토큰)
 - ❌ **실제**: 로그인 성공, 새 쿠키 발급 → §5 **B-27** 🔴
+- ✅ **(2026-10-11)** 만료 토큰 → **401**. 게다가 state 쿠키가 없는 요청은 그 전에 **400**으로 막힌다(§5-6)
 
 #### T-Q3 nonce / state 검증
 - 조작: 위 재전송 시 `nonce_jwt` 필드를 **아예 빼고** 전송
 - ✅ **기대**: 400 (nonce 불일치/누락)
 - ❌ **실제**: nonce 검증 블록이 `if nonce_jwt and id_token_nonce:` 라 **통째로 건너뛴다** → §5 **B-28** 🔴
 - ❌ `state` 파라미터는 생성해 ADFS에 보내지만 **콜백에서 비교하지 않는다**(저장조차 안 함)
+- ✅ **(2026-10-11)** 요청 본문의 `nonce_jwt` 는 더 이상 쓰지 않는다. state·nonce 는 `oidc_auth_state` 쿠키와 비교하며
+  쿠키 없음·state 불일치·nonce 불일치 → **400** (§5-6)
 
 #### T-Q4 세션 만료 후 갱신
 - 조작: `access_token` 쿠키를 삭제(또는 12시간 경과)한 뒤 '세션 연장' 또는 `POST /api/auth/refresh/`
@@ -1527,7 +1530,11 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: ① 서버 저장 시 허용 태그 화이트리스트로 sanitize(`bleach` 등) ② 렌더 시 DOMPurify ③ CSP `script-src 'self'` 도입.
   ①만으로도 기존 저장분은 남으니 **마이그레이션 시 기존 레코드도 재-sanitize** 필요.
 
-### 🔴 B-27 OIDC `id_token` 만료·audience 검증이 꺼져 있다 **분석🔍**
+### ✅ B-27 OIDC `id_token` 만료·audience 검증이 꺼져 있다 — **수정완료(2026-10-11)**
+> **수정**: `jwt.decode(..., audience=OIDC_RP_CLIENT_ID, issuer=OIDC_OP_ISSUER, leeway=60,
+> options={'require': ['exp','iat','iss','aud','nonce']})`. 설정이 비면 검증을 건너뛰지 않고 로그인 차단(fail-closed).
+> 회귀 고정: `OidcCallbackValidationTest.test_expired_token_rejected` / `test_other_audience_rejected` /
+> `test_other_issuer_rejected` / `test_empty_required_setting_blocks_login`. 상세는 §5-6. 아래는 1차 기록(원문 보존).
 - 위치: `auth_views.py:316-323` (`verify_exp` `:320` / `verify_aud` `:321`) — **2026-08-04 미수정 확인**
   ```python
   decoded_id_token = jwt.decode(..., options={
@@ -1545,7 +1552,11 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   다른 사내 시스템의 토큰으로도 로그인 가능.
 - 권고: `verify_exp: True`, `verify_aud: True` + `audience=OIDC_RP_CLIENT_ID`, `iss` 검증 추가.
 
-### 🔴 B-28 nonce 검증을 호출자가 생략할 수 있고, `state`는 검증하지 않는다 **분석🔍**
+### ✅ B-28 nonce 검증을 호출자가 생략할 수 있고, `state`는 검증하지 않는다 — **수정완료(2026-10-11)**
+> **수정**: 로그인 시작 시 서명한 state·nonce 를 `oidc_auth_state` 쿠키(HttpOnly·Secure·SameSite=None, 10분)에 넣고,
+> 콜백에서 쿠키 필수 + form `state` + id_token `nonce` 를 모두 비교한다(하나라도 다르면 400). 쿠키는 성공 시 삭제(1회용).
+> 회귀 고정: `test_nonce_mismatch_rejected` / `test_token_without_nonce_rejected` / `test_state_mismatch_rejected` /
+> `test_cross_site_post_without_state_cookie_rejected`. 상세는 §5-6. 아래는 1차 기록(원문 보존).
 - 위치: `auth_views.py:337-356`(nonce — `if nonce_jwt and id_token_nonce:` 는 `:337`, 실패 무시 `:355-356`),
   `auth_views.py:259-260`(state 를 URL 에 붙이기만 함), `:291`(`nonce_jwt` 를 요청 본문에서 받음) — **2026-08-04 미수정 확인**
   ```python
@@ -1733,7 +1744,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   ```
   `production.py`는 SSL/HSTS만 설정하고 `SECRET_KEY`를 손대지 않는다.
 - 내용: `.env`에 `DJANGO_SECRET_KEY`가 없으면 **공개 저장소에 적힌 문자열**이 그대로 쓰인다.
-  이 키는 세션 서명 + **OIDC `nonce_jwt` 서명**에 쓰이므로(B-28), 키가 알려지면 nonce 위조까지 가능하다.
+  이 키는 세션 서명 + **OIDC state 쿠키(`oidc_auth_state`) 서명**에 쓰이므로(B-28, 2026-10-11 이후), 키가 알려지면 state·nonce 위조까지 가능하다.
 - 권고: 미설정 시 기동 실패(`raise ImproperlyConfigured`)로 fail-fast.
 
 ### 🟡 B-42 보안 응답 헤더가 하나도 없다 **분석🔍**
@@ -1746,7 +1757,11 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 ---
 
-### ⚪ B-43 OIDC 콜백의 데드코드·취약한 휴리스틱 **분석🔍**
+### ✅ B-43 OIDC 콜백의 데드코드·취약한 휴리스틱 — **수정완료(2026-10-11)**
+> **수정**: `response_type` 을 `code+id_token`(hybrid) → `id_token`(implicit)으로 바꾸고 `auth_code` 읽기를 제거했다.
+> loginid 는 `loginid` 클레임만 신뢰한다(LoginId/preferred_username/sub 대체 제거, 없으면 400). base64 추측 블록을 제거하고
+> 서비스 토큰 `username` = DB `loginid` 로 고정했다. 회귀 고정: `test_missing_loginid_rejected_without_sub_fallback` /
+> `test_loginid_with_equals_sign_kept_verbatim`. 아래는 1차 기록(원문 보존).
 - `auth_views.py:288` `auth_code = request.POST.get('code') or request.data.get('code')` — **받기만 하고 전혀 사용하지 않는다**.
   authorization code 교환(token endpoint)도, `at_hash`/`c_hash` 검증도 없다.
 - `auth_views.py:444-450` — `if username and '=' in username:` 이면 **base64 디코딩을 시도**한다.
@@ -1781,6 +1796,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - `backend/api/certs/*.cer` 2개가 **추적되고 있으며 .gitignore에 없다**(현재는 36/26바이트 placeholder).
   실제 인증서를 넣는 순간 커밋될 위험이 있다. 참고로 placeholder 상태에서는 `get_adfs_public_key()`가
   파싱에 실패해 `oidc_callback`이 500('인증서 로드 실패')을 반환하므로 **SSO 로그인이 아예 되지 않는다**.
+- **(2026-10-11)** JWKS 전환(B-68)으로 `get_adfs_public_key()`·`OIDC_CERT_FILE_*` 설정이 제거되어 `.cer` 2개는
+  **코드에서 참조되지 않는다**. 파일 삭제는 **운영 배포 후 SSO 로그인 확인을 마친 다음** 진행하기로 했다(§5-6 미결 항목).
 
 ### ⚪ B-48 미적용 마이그레이션 1건 (스키마 영향 없음) — ✅ **해소 확인**(2026-08-04)
 
@@ -2184,6 +2201,68 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - 검증: 브라우저에서 메뉴 `가이드`/`Guide`, 버튼 `+ 가이드 작성`/`+ Write Guide` 확인.
   `tsc --noEmit` 0건, `npm test` 343 tests 통과, 기본 빌드 성공.
 
+## 5-6. 로그인/인증 — OIDC 콜백 검증 강화 (B-68 ~ B-69) — ✅수정완료(2026-10-11)
+
+> 사용자 제보(로그인/인증 문제점 A-1~7)를 재현 테스트로 판정한 뒤, **판정이 맞은 항목만** 수정했다.
+> 수정: `backend/api/auth_views.py` / `backend/config/settings/base.py` / 테스트 `OidcCallbackValidationTest`(14건).
+> 같이 고친 기존 항목: **B-27**(exp·aud·iss) · **B-28**(nonce·state) · **B-43**(code·loginid fallback·base64).
+
+### B-68 🟠 id_token 서명 키를 정적 `.cer` 파일에서 읽었다 — JWKS 미사용
+- 증상: `OIDC_OP_JWKS_ENDPOINT` 는 설정에만 있고 코드에서 쓰지 않았다. ADFS 서명 인증서가 교체되면 **SSO 로그인이 전면 중단**된다.
+  (요청마다 `open()` 하던 부분은 CPython 이 즉시 닫아서 fd 가 쌓이지 않는다. 2000회 호출 전후 fd 4→4, 누수 아님)
+- 수정: `jwt.PyJWKClient(OIDC_OP_JWKS_ENDPOINT)` 로 id_token 헤더의 `kid` 에 맞는 키를 찾는다. 엔드포인트별로 클라이언트를 재사용하고,
+  처음 보는 kid 가 오면 키 목록을 다시 받아온다. 정적 인증서 로직과 `OIDC_CERT_FILE_PATH/NAME` 설정은 제거했다(대체 경로 없음).
+- 근거: 운영 백엔드 컨테이너에서 `PyJWKClient(...).get_jwk_set()` 실행에 성공했다(사내 CA 기반 TLS 검증 통과, 2026-10-11 사용자 실측).
+- 회귀 고정: `test_unknown_kid_rejected` / `test_jwks_fetch_failure_rejected`(JWKS 조회 실패 → 401).
+
+### B-69 🔴 로그인 CSRF — 공격자 계정으로 피해자 브라우저를 강제 로그인시킬 수 있었다
+- 증상: `oidc_callback` 이 `csrf_exempt` 이고(DRF 인증 클래스에 SessionAuthentication 도 없음) nonce 도 선택 사항이었다.
+  그래서 공격자 사이트에서 **공격자 본인의 유효한 id_token** 을 자동 제출 form 으로 POST 하면 302 + 서비스 쿠키가 발급됐다
+  (재현: CSRF 토큰 없는 form POST → `status=302 access_cookie=True`).
+- 수정: B-28 과 같은 장치로 막는다. `oidc_auth_state` 쿠키가 없는 브라우저(=로그인을 시작하지 않은 피해자)는 **400** 이다.
+  ADFS form_post 는 cross-site POST 이므로 이 쿠키는 **SameSite=None + Secure** 여야 따라온다(사내 표준 브라우저 Chromium 계열 기준).
+- 회귀 고정: `test_cross_site_post_without_state_cookie_rejected`.
+
+### 변경 후 로그인 흐름
+1. `GET /api/auth/oidc/login/` → 응답 `{redirect_url}` (**`nonce_jwt` 필드 제거**) + `Set-Cookie: oidc_auth_state=<HS256(SECRET_KEY){state,nonce,exp}>`
+   (HttpOnly, Secure, SameSite=None, Path=/, 10분). ADFS 요청은 `response_type=id_token`, `response_mode=form_post`.
+2. ADFS → `POST {OIDC_CALLBACK_BASE_URL}/oidc-callback` (form: `id_token`, `state`) → 운영 nginx 가 백엔드 `oidc_callback` 으로 전달.
+3. `oidc_callback` 검증 순서와 실패 응답:
+
+| 순서 | 검증 | 실패 시 | 서버 로그(`[OIDC] …`) |
+|---|---|---|---|
+| 1 | `OIDC_OP_ISSUER`·`OIDC_RP_CLIENT_ID`·`OIDC_OP_JWKS_ENDPOINT` 가 비어 있지 않음 (AUTH_MODE 무관) | 500 | `Login blocked - required settings are empty: <이름>` |
+| 2 | `id_token` 존재 | 400 | `No id_token received` |
+| 3 | `oidc_auth_state` 쿠키 존재·서명·만료 | 400 | `State cookie missing…` / `State cookie invalid` |
+| 4 | form `state` = 쿠키 state | 400 | `State mismatch` |
+| 5 | JWKS 에서 `kid` 에 맞는 키 조회 | 401 | `Signing key lookup failed (JWKS)` |
+| 6 | 서명·`exp`(±60초)·`iss`·`aud` + 필수 클레임 exp/iat/iss/aud/nonce | 401 | `Invalid ID token` |
+| 7 | id_token `nonce` = 쿠키 nonce | 400 | `Nonce mismatch` |
+| 8 | `loginid` 클레임 존재 (sub/preferred_username 으로 대체하지 않음) | 400 | `Required claim 'loginid' missing` |
+
+4. 성공 시 사용자 생성/갱신 → 서비스 토큰(`username` = DB `loginid`) 쿠키 발급 → `oidc_auth_state` 삭제 → 302 `/`.
+
+### 설정·환경변수 변경
+- **추가** `OIDC_OP_ISSUER` — id_token 의 `iss` 와 **문자 하나까지 같은 값**(끝 `/` 포함). 운영 `.env` 에 반드시 넣어야 한다(비면 로그인 차단).
+- **필수화** `OIDC_RP_CLIENT_ID`(aud 비교), `OIDC_OP_JWKS_ENDPOINT`(키 조회).
+- **제거** `OIDC_CERT_FILE_PATH`, `OIDC_CERT_FILE_NAME` — `.env` 에 남아 있어도 무시된다.
+
+### 배포 전 체크리스트 (개발환경 `AUTH_MODE=dev`·HTTP 에서는 SSO 를 시험할 수 없다)
+- [ ] 운영 `.env` 에 `OIDC_OP_ISSUER`(실측값), `OIDC_RP_CLIENT_ID`, `OIDC_OP_JWKS_ENDPOINT` 가 들어 있다
+- [ ] ADFS 애플리케이션이 `response_type=id_token`(implicit) 요청을 허용한다 — 허용하지 않으면 ADFS 화면에서 오류가 난다
+- [ ] implicit 전환 후에도 id_token 에 `loginid`·`username`·`mail`·`deptname` 클레임이 그대로 있다(`[OIDC] ===== Token Claims Detail =====` 로그)
+- [ ] 운영 nginx 가 `/oidc-callback` POST 를 백엔드 콜백으로 전달한다(저장소의 `nginx/nginx.conf` 에는 이 location 이 없다 — 미결 항목 참조)
+- [ ] HTTPS 로 실제 로그인 1회 → `[OIDC] Login success` 로그 / 브라우저 쿠키에 `oidc_auth_state` 가 남지 않음
+
+### 미결 항목 (사용자와 토의 예정 — 이번 수정 범위 밖)
+- **제보 A-2 원인**: 저장소에는 `/oidc-callback` 을 백엔드로 보내는 nginx location 이 없고, 프론트 `OIDCCallbackPage` 는
+  존재하지 않는 hidden input(`#id_token`)을 읽는다. 운영 nginx 설정과 저장소가 다른지 확인이 필요하다.
+  이 프론트 경로로 콜백이 오면 이제 state 쿠키 검증 때문에 400 이 될 수 있다(JSON 전송 시 `state` 가 비어 있음).
+- **프론트 잔여 코드**: `AuthContext.tsx`·`client.ts` 가 응답의 `nonce_jwt` 를 localStorage 에 저장하고 `OIDCCallbackPage` 가 그 값을 보낸다.
+  이제 응답에 `nonce_jwt` 가 없으므로 아무 동작도 하지 않는다(오류 없음). 정리 여부는 A-2 와 함께 정한다.
+- **`.cer` 파일 2개 삭제**: 운영 배포 후 로그인 확인을 마친 다음 진행한다(B-47).
+- **code 교환(back-channel)**: implicit 전환으로 선택지에서 빠졌다. 필요하면 hybrid 로 되돌리고 token endpoint 교환을 구현한다.
+
 ---
 
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
@@ -2257,6 +2336,8 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 ### R-13 🟠 인증 계층이 표준 OIDC 검증을 대부분 생략하고 자체 구현으로 대체돼 있다 (2차 추가)
 `mozilla-django-oidc`가 `INSTALLED_APPS`에 들어 있지만 **실제 로그인 흐름은 `auth_views.py`의 수작업 구현**이다.
 그 과정에서 만료(B-27)·audience(B-27)·nonce(B-28)·state(B-28)·code 교환(B-43) 검증이 모두 빠졌다.
+> **2026-10-11**: 만료·aud·iss·nonce·state 검증 추가, code 는 implicit 전환으로 제거, JWKS 전환(§5-6).
+> 인증 테스트 0건 → `OidcCallbackValidationTest` 14건으로 체크리스트를 테스트로 고정했다.
 라이브러리를 쓰지 않기로 했다면 최소한 **검증 항목 체크리스트**를 문서화하고 테스트로 고정해야 한다
 (현재 `tests.py`에 **인증 관련 테스트가 0건**이다).
 
@@ -2321,8 +2402,9 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 *보안 (한 묶음으로)*
 - [ ] B-26 `NONE` 사용자가 VOC에 `<img onerror>` 저장 → 렌더 시 **실행되지 않음**(sanitize) + 기존 저장분도 정화됨
 - [ ] B-42 `curl -sI` 로 **CSP / X-Frame-Options(SAMEORIGIN) / nosniff / Referrer-Policy** 4종 확인
-- [ ] B-27 만료된 `id_token` 재전송 → **401**
-- [ ] B-28 `nonce_jwt` 없이 콜백 → **400** / `state` 불일치 → **400**
+- [x] B-27 만료된 `id_token` 재전송 → **401** ✅ 수정완료(2026-10-11, 자동 테스트)
+- [x] B-28 state 쿠키 없이 콜백 → **400** / `state` 불일치 → **400** / nonce 불일치 → **400** ✅ 수정완료(2026-10-11, 자동 테스트)
+- [ ] B-68/B-69 운영(HTTPS) 실제 ADFS 로그인 1회 성공 + 로그에 `[OIDC] Login success` (§5-6 배포 전 체크리스트)
 - [ ] B-29 `AUTH_MODE` 값 확인 + dev 모드에서도 쓰기·삭제는 **인증 요구**
 - [x] B-01 무관한 사용자로 `DELETE /api/documents/{id}/` → **405** / `POST delete/` → **403** ✅ 수정완료
 - [ ] B-02 비로그인 `POST /api/upload-image/` → **401/403**, `.svg` 업로드 → **400**
