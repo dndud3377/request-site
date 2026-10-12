@@ -687,7 +687,6 @@
     "adi_cd_column_role_none": "Unused",
     "adi_cd_skip_first_row": "Exclude first row as header",
     "jayer_no_layer_data": "No Layer data found in J-ayer information.",
-    "final_yn_label": "Final",
     "final_gds": "GDS version",
     "final_gds_placeholder": "Enter GDS version",
     "final_add": "+ Add",
