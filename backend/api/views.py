@@ -22,7 +22,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from django.db.models import Q, Max, Min, Exists, OuterRef, Prefetch
+from django.db.models import Count, Q, Max, Min, Exists, OuterRef, Prefetch
 from .models import (
     RequestDocument, ApprovalStep, PauseRequest, WithdrawRequest, VOC, VocComment, Line, ProcessProduct,
     ProductProcessId, AdminNotice,
@@ -108,28 +108,42 @@ class CanManageLayerFilter(BasePermission):
 
 
 class CanManageLayerSdException(BasePermission):
-    """J/O-layer SD-Layer 검사 예외: 조회는 로그인한 누구나, 등록·삭제는 팀 역할만.
+    """J/O-layer SD-Layer 검사 예외: 조회·신청은 로그인한 누구나, 합의·반려·삭제는 합의자.
 
-    조회는 의뢰서 작성자(요청자)의 화면 검증이 같은 목록을 써야 하므로 역할을 묻지 않는다.
-    등록·삭제는 J 예외는 TE_J·TE_P, O 예외는 TE_O·TE_P(P 는 J·O 둘 다)이고 MASTER 는 둘 다 가능하다.
+    합의 칸은 두 개다 — 팀 칸(J 예외=TE_J, O 예외=TE_O)과 P 칸(TE_P, J·O 둘 다). MASTER 는 두 칸 모두 채울 수 있다.
+    두 칸이 모두 차야 승인된다(`LayerSdExceptionViewSet.agree`). 신청자가 합의자 역할이면 자기 신청에도 합의할 수 있다.
+    삭제는 합의자 외에 신청자 본인도 승인 전(합의 대기·반려) 신청에 한해 할 수 있다(신청 취소).
     """
-    TABLE_ROLES = {'J': ('TE_J', 'TE_P'), 'O': ('TE_O', 'TE_P')}
+    TEAM_ROLES = {'J': 'TE_J', 'O': 'TE_O'}
+    P_ROLE = 'TE_P'
+    SLOT_TEAM = 'team'
+    SLOT_P = 'p'
 
-    def _allowed(self, user, table):
+    @classmethod
+    def agree_slots(cls, user, table):
+        """이 사용자가 해당 표(J/O) 신청에 채울 수 있는 합의 칸 목록 — 없으면 빈 튜플."""
+        if table not in cls.TEAM_ROLES:
+            return ()
         role = getattr(user, 'role', '')
-        return role == 'MASTER' or role in self.TABLE_ROLES.get(table, ())
+        if role == 'MASTER':
+            return (cls.SLOT_TEAM, cls.SLOT_P)
+        if role == cls.TEAM_ROLES[table]:
+            return (cls.SLOT_TEAM,)
+        if role == cls.P_ROLE:
+            return (cls.SLOT_P,)
+        return ()
 
     def has_permission(self, request, view):
-        if not (request.user and request.user.is_authenticated):
-            return False
-        if request.method == 'POST':
-            return self._allowed(request.user, request.data.get('table'))
-        return True  # 목록 조회는 누구나, destroy 는 has_object_permission 에서 판정
+        return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
         if request.method in SAFE_METHODS:
             return True
-        return self._allowed(request.user, obj.table)
+        if self.agree_slots(request.user, obj.table):
+            return True
+        if request.method == 'DELETE':
+            return obj.created_by == request.user.loginid and obj.status != LayerSdException.STATUS_APPROVED
+        return False
 
 
 class IsAuthenticatedInProd(BasePermission):
@@ -4065,7 +4079,11 @@ class LayerFilterSetViewSet(viewsets.ModelViewSet):
 
 
 class LayerSdExceptionViewSet(viewsets.ModelViewSet):
-    """J/O-layer SD-Layer 검사 예외 목록·등록·삭제. 목록은 ?table=J|O 로 거를 수 있다(수정 API 는 없다 — 삭제 후 재등록)."""
+    """J/O-layer SD-Layer 검사 예외 신청·합의·반려·삭제.
+
+    목록은 ?table=J|O, ?status=PENDING|APPROVED|REJECTED 로 거를 수 있다(수정 API 는 없다 — 삭제 후 재신청).
+    권한은 `CanManageLayerSdException` 참조.
+    """
     queryset = LayerSdException.objects.all()
     serializer_class = LayerSdExceptionSerializer
     permission_classes = [CanManageLayerSdException]
@@ -4073,14 +4091,77 @@ class LayerSdExceptionViewSet(viewsets.ModelViewSet):
     filter_backends = []
     http_method_names = ['get', 'post', 'delete', 'head', 'options']
 
+    # 합의 칸 → 모델 필드 접두어
+    SLOT_FIELD_PREFIX = {CanManageLayerSdException.SLOT_TEAM: 'team', CanManageLayerSdException.SLOT_P: 'p'}
+
     def get_queryset(self):
         qs = super().get_queryset()
         table = self.request.query_params.get('table')
-        return qs.filter(table=table) if table else qs
+        if table:
+            qs = qs.filter(table=table)
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(status=status_param)
+        return qs
 
     def perform_create(self, serializer):
         user = self.request.user
         serializer.save(created_by=user.loginid, created_by_name=user.username or user.loginid)
+
+    @action(detail=False, methods=['get'], url_path='pending-count')
+    def pending_count(self, request):
+        """합의 대기 중인 신청 건수 — 홈 화면 버튼의 (N) 표시용. 로그인한 누구나 조회."""
+        counts = {table: 0 for table, _ in LayerSdException.TABLE_CHOICES}
+        rows = (LayerSdException.objects.filter(status=LayerSdException.STATUS_PENDING)
+                .values('table').annotate(count=Count('id')))
+        for row in rows:
+            counts[row['table']] = row['count']
+        return Response({**counts, 'total': sum(counts.values())})
+
+    @action(detail=True, methods=['post'])
+    def agree(self, request, pk=None):
+        """합의 칸(`slot`: team|p) 하나를 채운다. 두 칸이 모두 차면 승인(APPROVED)된다."""
+        with transaction.atomic():
+            exception = self.get_object()
+            exception = LayerSdException.objects.select_for_update().get(pk=exception.pk)
+            slot = request.data.get('slot')
+            if slot not in CanManageLayerSdException.agree_slots(request.user, exception.table):
+                return Response({'error': '이 칸에 합의할 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+            if exception.status != LayerSdException.STATUS_PENDING:
+                return Response({'error': '합의 대기 중인 신청만 합의할 수 있습니다.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            prefix = self.SLOT_FIELD_PREFIX[slot]
+            if getattr(exception, f'{prefix}_agreed_by'):
+                return Response({'error': '이미 합의된 칸입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            user = request.user
+            setattr(exception, f'{prefix}_agreed_by', user.loginid)
+            setattr(exception, f'{prefix}_agreed_by_name', user.username or user.loginid)
+            setattr(exception, f'{prefix}_agreed_at', timezone.now())
+            if exception.team_agreed_by and exception.p_agreed_by:
+                exception.status = LayerSdException.STATUS_APPROVED
+            exception.save()
+        return Response(self.get_serializer(exception).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """합의자가 사유(`reason`, 필수)를 적어 합의 대기 중인 신청을 반려한다."""
+        with transaction.atomic():
+            exception = self.get_object()
+            exception = LayerSdException.objects.select_for_update().get(pk=exception.pk)
+            reason = (request.data.get('reason') or '').strip()
+            if not reason:
+                return Response({'error': '반려 사유를 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
+            if exception.status != LayerSdException.STATUS_PENDING:
+                return Response({'error': '합의 대기 중인 신청만 반려할 수 있습니다.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            user = request.user
+            exception.status = LayerSdException.STATUS_REJECTED
+            exception.rejected_by = user.loginid
+            exception.rejected_by_name = user.username or user.loginid
+            exception.rejected_at = timezone.now()
+            exception.reject_reason = reason
+            exception.save()
+        return Response(self.get_serializer(exception).data)
 
 
 class AdminNoticeViewSet(viewsets.ModelViewSet):

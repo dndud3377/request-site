@@ -10,7 +10,7 @@ import {
   matchLayerColor, buildFlowStepTitlePart, extractSdNumber, findLayerSdMismatches, normalizeNumber,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
-import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
+import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet, LayerSdException } from '../../types';
 
 describe('buildFlowStepTitlePart', () => {
   const flow = (id: string, location: string, product_name: string, process_id: string, step_from: string, step_to: string): FlowChartRow =>
@@ -1145,7 +1145,12 @@ describe('findLayerSdMismatches', () => {
     id: 'r1', updated: '', sortOrder: 1, process_id: 'P1', sp: '10', sd: '1000.123 월평동 지점', pp: 'PP',
     layerid: '1000.123', st: 'O', new_or_copy: '신규', product_name: '', step: '', item_id: '', ...over,
   });
-  const exc = { id: 1, table: 'J' as const, process_id: 'P1', sp: '10', sd: '1000.123 월평동 지점', sd_number: '1000.123', layerid: '2000', created_by: '', created_by_name: '', created_at: '' };
+  const exc: LayerSdException = {
+    id: 1, table: 'J', process_id: 'P1', sp: '10', sd: '1000.123 월평동 지점', sd_number: '1000.123', layerid: '2000',
+    status: 'APPROVED', reason: '', created_by: '', created_by_name: '', created_at: '',
+    team_agreed_by: '', team_agreed_by_name: '', team_agreed_at: null, p_agreed_by: '', p_agreed_by_name: '', p_agreed_at: null,
+    rejected_by: '', rejected_by_name: '', rejected_at: null, reject_reason: '',
+  };
 
   it('일치하면 통과, 다르면 불일치 행을 돌려준다', () => {
     expect(findLayerSdMismatches([row({})], [])).toEqual([]);

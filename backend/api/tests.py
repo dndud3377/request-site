@@ -9661,7 +9661,7 @@ class BackfillTitleFlowStepTest(TestCase):
 
 
 class LayerSdCheckTest(TestCase):
-    """J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검증 + 예외(LayerSdException) 관리 권한."""
+    """J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검증 + 예외(LayerSdException) 신청·합의·반려·삭제."""
 
     def setUp(self):
         import json
@@ -9767,7 +9767,8 @@ class LayerSdCheckTest(TestCase):
     # ----- 예외 -----
 
     def _add_exception(self, table='J', **kwargs):
-        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd_number': '1000.123', 'layerid': '2000'}
+        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd_number': '1000.123', 'layerid': '2000',
+                'status': LayerSdException.STATUS_APPROVED}
         data.update(kwargs)
         return LayerSdException.objects.create(**data)
 
@@ -9815,82 +9816,210 @@ class LayerSdCheckTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
         self.assertIn('SD 첫 숫자', r.json().get('error', ''), r.content)
 
-    # ----- 예외 관리 권한 -----
+    # ----- 예외 신청·합의·반려·삭제 -----
 
     def _payload(self, table, **kwargs):
-        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd': '1000.123 월평동 지점', 'layerid': '2000'}
+        data = {'table': table, 'process_id': 'P1', 'sp': '10', 'sd': '1000.123 월평동 지점', 'layerid': '2000',
+                'reason': '공정 특성상 SD 와 Layer 가 다름'}
         data.update(kwargs)
         return data
 
-    def test_j_exception_manage_roles(self):
-        for user, expected in ((self.te_j, 201), (self.te_p, 201), (self.master, 201),
-                               (self.te_o, 403), (self.requester, 403)):
+    def _apply(self, user, table='J', **kwargs):
+        self.client.force_authenticate(user=user)
+        return self.client.post('/api/layer-sd-exceptions/', self._payload(table, **kwargs), format='json')
+
+    def _agree(self, user, exc_id, slot):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/layer-sd-exceptions/{exc_id}/agree/', {'slot': slot}, format='json')
+
+    def _reject(self, user, exc_id, reason='사유 부족'):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/layer-sd-exceptions/{exc_id}/reject/', {'reason': reason}, format='json')
+
+    def test_anyone_authenticated_can_apply_as_pending(self):
+        for user in (self.requester, self.pl, self.te_j, self.te_o, self.te_p, self.master):
             LayerSdException.objects.all().delete()
-            self.client.force_authenticate(user=user)
-            r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
-            self.assertEqual(r.status_code, expected, (user.role, r.content))
+            r = self._apply(user, 'J')
+            self.assertEqual(r.status_code, 201, (user.role, r.content))
+            body = r.json()
+            self.assertEqual(body['status'], 'PENDING')
+            self.assertEqual(body['created_by'], user.loginid)
+            self.assertEqual(body['reason'], '공정 특성상 SD 와 Layer 가 다름')
+        self.client.force_authenticate(user=None)
+        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
+        self.assertIn(r.status_code, (401, 403), r.content)
 
-    def test_o_exception_manage_roles(self):
-        for user, expected in ((self.te_o, 201), (self.te_p, 201), (self.master, 201),
-                               (self.te_j, 403), (self.requester, 403)):
+    def test_apply_requires_reason(self):
+        self.assertEqual(self._apply(self.requester, reason='').status_code, 400)
+        self.assertEqual(self._apply(self.requester, reason='   ').status_code, 400)
+        payload = self._payload('J')
+        del payload['reason']
+        self.client.force_authenticate(user=self.requester)
+        self.assertEqual(self.client.post('/api/layer-sd-exceptions/', payload, format='json').status_code, 400)
+
+    def test_pending_exception_does_not_let_submit_pass_until_both_agree(self):
+        exc_id = self._apply(self.requester, 'J').json()['id']
+        doc = self._make_draft(jayer_rows=[self._row(layerid='2000')])
+        self.assertEqual(self._submit(doc).status_code, 400)
+        # 팀(TE_J) 합의만으로는 아직 대기다.
+        r = self._agree(self.te_j, exc_id, 'team')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['status'], 'PENDING')
+        self.assertEqual(r.json()['team_agreed_by'], 'sd_j')
+        self.assertEqual(self._submit(doc).status_code, 400)
+        # P(TE_P) 합의까지 끝나면 승인되고 상신이 통과한다.
+        r = self._agree(self.te_p, exc_id, 'p')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['status'], 'APPROVED')
+        self.assertEqual(r.json()['p_agreed_by'], 'sd_p')
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_agree_slot_roles(self):
+        """J: 팀 칸=TE_J, O: 팀 칸=TE_O, P 칸=TE_P(J·O 둘 다), MASTER 는 두 칸 모두. 그 외 403."""
+        cases = (
+            ('J', self.te_j, 'team', 200), ('J', self.te_j, 'p', 403),
+            ('J', self.te_o, 'team', 403), ('J', self.te_p, 'p', 200), ('J', self.te_p, 'team', 403),
+            ('O', self.te_o, 'team', 200), ('O', self.te_j, 'team', 403), ('O', self.te_p, 'p', 200),
+            ('J', self.master, 'team', 200), ('J', self.master, 'p', 200),
+            ('J', self.requester, 'team', 403), ('J', self.pl, 'p', 403),
+        )
+        for table, user, slot, expected in cases:
             LayerSdException.objects.all().delete()
-            self.client.force_authenticate(user=user)
-            r = self.client.post('/api/layer-sd-exceptions/', self._payload('O'), format='json')
-            self.assertEqual(r.status_code, expected, (user.role, r.content))
+            exc_id = self._apply(self.requester, table).json()['id']
+            r = self._agree(user, exc_id, slot)
+            self.assertEqual(r.status_code, expected, (table, user.role, slot, r.content))
 
-    def test_te_p_manages_both_tables_and_records_creator(self):
-        self.client.force_authenticate(user=self.te_p)
-        for table in ('J', 'O'):
-            r = self.client.post('/api/layer-sd-exceptions/', self._payload(table), format='json')
-            self.assertEqual(r.status_code, 201, r.content)
-            self.assertEqual(r.json()['created_by'], 'sd_p')
+    def test_master_can_fill_both_slots(self):
+        exc_id = self._apply(self.requester, 'O').json()['id']
+        self._agree(self.master, exc_id, 'team')
+        r = self._agree(self.master, exc_id, 'p')
+        self.assertEqual(r.json()['status'], 'APPROVED')
 
-    def test_anyone_authenticated_can_list_but_not_anonymous(self):
+    def test_applicant_with_agreer_role_can_agree_own_request(self):
+        exc_id = self._apply(self.te_j, 'J').json()['id']
+        self.assertEqual(self._agree(self.te_j, exc_id, 'team').status_code, 200)
+
+    def test_agree_twice_or_after_decision_is_400(self):
+        exc_id = self._apply(self.requester, 'J').json()['id']
+        self.assertEqual(self._agree(self.te_j, exc_id, 'team').status_code, 200)
+        self.assertEqual(self._agree(self.master, exc_id, 'team').status_code, 400)
+        self.assertEqual(self._agree(self.te_p, exc_id, 'p').status_code, 200)
+        # 승인 후에는 합의·반려 모두 불가
+        self.assertEqual(self._reject(self.te_p, exc_id).status_code, 400)
+
+    def test_reject_requires_reason_and_agreer(self):
+        exc_id = self._apply(self.requester, 'J').json()['id']
+        self.assertEqual(self._reject(self.requester, exc_id).status_code, 403)
+        self.assertEqual(self._reject(self.te_o, exc_id).status_code, 403)
+        self.assertEqual(self._reject(self.te_j, exc_id, reason=' ').status_code, 400)
+        r = self._reject(self.te_p, exc_id, reason='Layer 값 오기입')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['status'], 'REJECTED')
+        self.assertEqual(r.json()['reject_reason'], 'Layer 값 오기입')
+        self.assertEqual(r.json()['rejected_by'], 'sd_p')
+        # 반려 후에는 합의할 수 없고, 상신 검사에도 쓰이지 않는다.
+        self.assertEqual(self._agree(self.te_j, exc_id, 'team').status_code, 400)
+        doc = self._make_draft(jayer_rows=[self._row(layerid='2000')])
+        self.assertEqual(self._submit(doc).status_code, 400)
+
+    def test_rejected_combination_can_be_applied_again(self):
+        exc_id = self._apply(self.requester, 'J').json()['id']
+        self.assertEqual(self._apply(self.requester, 'J').status_code, 400)
+        self._reject(self.te_j, exc_id)
+        self.assertEqual(self._apply(self.requester, 'J').status_code, 201)
+
+    def test_duplicate_check_uses_numeric_normalization(self):
+        self.assertEqual(self._apply(self.requester, 'J', sd='100.930 a', layerid='200').status_code, 201)
+        r = self._apply(self.requester, 'J', sd='100.93 b', layerid='0200')
+        self.assertEqual(r.status_code, 400, r.content)
+        # 다른 표(O)는 별개다.
+        self.assertEqual(self._apply(self.requester, 'O', sd='100.93 b', layerid='0200').status_code, 201)
+
+    def test_anyone_authenticated_can_list_and_filter_by_status(self):
         self._add_exception('J')
+        self._apply(self.requester, 'J', process_id='P9')
         self.client.force_authenticate(user=self.requester)
         r = self.client.get('/api/layer-sd-exceptions/', {'table': 'J'})
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(len(r.json()), 1)
+        self.assertEqual(len(r.json()), 2)
+        r = self.client.get('/api/layer-sd-exceptions/', {'table': 'J', 'status': 'APPROVED'})
+        self.assertEqual([e['process_id'] for e in r.json()], ['P1'])
         r = self.client.get('/api/layer-sd-exceptions/', {'table': 'O'})
         self.assertEqual(r.json(), [])
         self.client.force_authenticate(user=None)
         r = self.client.get('/api/layer-sd-exceptions/', {'table': 'J'})
         self.assertIn(r.status_code, (401, 403), r.content)
 
-    def test_delete_permission_follows_table(self):
+    def test_pending_count(self):
+        self._add_exception('J')
+        self._apply(self.requester, 'J', process_id='P2')
+        self._apply(self.requester, 'J', process_id='P3')
+        rejected_id = self._apply(self.requester, 'O', process_id='P4').json()['id']
+        self._reject(self.te_o, rejected_id)
+        self._apply(self.requester, 'O', process_id='P5')
+        self.client.force_authenticate(user=self.pl)
+        r = self.client.get('/api/layer-sd-exceptions/pending-count/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json(), {'J': 2, 'O': 1, 'total': 3})
+
+    def test_delete_permissions(self):
+        # 승인된 예외: 해당 표 합의자(TE_J·TE_P·MASTER)만 삭제
         exc_j = self._add_exception('J')
         self.client.force_authenticate(user=self.te_o)
         self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{exc_j.id}/').status_code, 403)
-        self.client.force_authenticate(user=self.te_j)
+        self.client.force_authenticate(user=self.te_p)
         self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{exc_j.id}/').status_code, 204)
-        self.assertFalse(LayerSdException.objects.filter(pk=exc_j.id).exists())
+        # 합의 대기 신청: 신청자 본인은 취소 가능, 다른 일반 사용자는 불가
+        pending_id = self._apply(self.requester, 'J').json()['id']
+        self.client.force_authenticate(user=self.pl)
+        self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{pending_id}/').status_code, 403)
+        self.client.force_authenticate(user=self.requester)
+        self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{pending_id}/').status_code, 204)
+        # 신청자 본인이라도 승인된 뒤에는 지울 수 없다.
+        approved_id = self._apply(self.requester, 'J').json()['id']
+        self._agree(self.master, approved_id, 'team')
+        self._agree(self.master, approved_id, 'p')
+        self.client.force_authenticate(user=self.requester)
+        self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{approved_id}/').status_code, 403)
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self.client.delete(f'/api/layer-sd-exceptions/{approved_id}/').status_code, 204)
 
     def test_create_validation(self):
-        self.client.force_authenticate(user=self.te_j)
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd='abc'), format='json')
+        r = self._apply(self.requester, sd='abc')
         self.assertEqual(r.status_code, 400, r.content)
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd='１０００.１２３ 월평동'), format='json')
+        r = self._apply(self.requester, sd='１０００.１２３ 월평동')
         self.assertEqual(r.status_code, 400, r.content)
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', layerid=''), format='json')
+        r = self._apply(self.requester, layerid='')
         self.assertEqual(r.status_code, 400, r.content)
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
+        r = self._apply(self.requester, table='X')
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self._apply(self.requester)
         self.assertEqual(r.status_code, 201, r.content)
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
-        self.assertEqual(r.status_code, 400, r.content)
+        # 상태·합의 필드는 입력으로 바꿀 수 없다(읽기 전용).
+        r = self._apply(self.requester, process_id='P7', status='APPROVED', team_agreed_by='x', p_agreed_by='y')
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()['status'], 'PENDING')
+        self.assertEqual(r.json()['team_agreed_by'], '')
         self.assertEqual(self.client.patch(f'/api/layer-sd-exceptions/1/', {}, format='json').status_code, 405)
 
     def test_create_stores_full_sd_and_derives_sd_number(self):
-        self.client.force_authenticate(user=self.te_j)
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J'), format='json')
+        r = self._apply(self.requester)
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(r.json()['sd'], '1000.123 월평동 지점')
         self.assertEqual(r.json()['sd_number'], '1000.123')
         # 뒤 글이 달라도 SD 첫 숫자가 같으면 같은 예외 조합이라 중복으로 막는다.
-        r = self.client.post('/api/layer-sd-exceptions/', self._payload('J', sd='1000.123 다른 지점'), format='json')
-        self.assertEqual(r.status_code, 400, r.content)
-        # 등록한 예외는 SD 첫 숫자로 매칭된다(행의 SD 뒤 글은 달라도 된다).
+        r2 = self._apply(self.requester, sd='1000.123 다른 지점')
+        self.assertEqual(r2.status_code, 400, r2.content)
+        # 승인된 예외는 SD 첫 숫자로 매칭된다(행의 SD 뒤 글은 달라도 된다).
+        self._agree(self.master, r.json()['id'], 'team')
+        self._agree(self.master, r.json()['id'], 'p')
         doc = self._make_draft(jayer_rows=[self._row(sd='1000.123 전혀 다른 글', layerid='2000')])
         self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_mismatch_error_guides_to_home_application(self):
+        doc = self._make_draft(jayer_rows=[self._row(layerid='2000')])
+        r = self._submit(doc)
+        self.assertIn('SD-Layer 예외에서 신청', r.json().get('error', ''), r.content)
 
     # ----- 숫자 값 비교 / ASCII 숫자 -----
 

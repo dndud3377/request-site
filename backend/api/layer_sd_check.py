@@ -2,8 +2,8 @@
 
 J-layer/O-layer 행의 `sd`(화면 헤더 "SD")는 보통 "1000.123 월평동 지점" 처럼 맨 앞에 숫자가 오고
 뒤에 글이 이어진다. 그 맨 앞 숫자(`1000.123`)가 같은 행의 `layerid`(헤더 "Layer")와 다르면
-상신할 수 없다. 단, 무조건 막을 수는 없으므로 `LayerSdException` 에 등록된 예외
-(process_id, sp, SD 첫 숫자, layerid 가 모두 같은 행)는 통과시킨다.
+상신할 수 없다. 단, 무조건 막을 수는 없으므로 `LayerSdException` 에서 **승인(APPROVED)된** 예외
+(process_id, sp, SD 첫 숫자, layerid 가 모두 같은 행)는 통과시킨다. 합의 대기·반려된 신청은 쓰지 않는다.
 
 프론트 `RequestPage/helpers.ts` 의 `extractSdNumber`/`findLayerSdMismatches` 와 같은 규칙이어야 한다 —
 화면에서 막히지 않는데 서버에서 막히거나 그 반대가 되면 안 된다.
@@ -59,15 +59,16 @@ def normalize_number(value):
     return f'{integer}.{fraction}' if fraction else integer
 
 
-def _exception_key(process_id, sp, sd_number, layerid):
+def exception_key(process_id, sp, sd_number, layerid):
+    """예외 매칭 키 — (process_id, sp) 는 trim, (SD 첫 숫자, layerid) 는 숫자 정규화한 4개 값."""
     return (_text(process_id), _text(sp), normalize_number(sd_number), normalize_number(layerid))
 
 
 def exception_keys(table):
-    """해당 표(J/O)의 예외 (process_id, sp, sd_number, layerid) 집합 — 숫자 값은 정규화해 둔다."""
+    """해당 표(J/O)의 승인된 예외 (process_id, sp, sd_number, layerid) 집합 — 숫자 값은 정규화해 둔다."""
     return {
-        _exception_key(*values)
-        for values in LayerSdException.objects.filter(table=table)
+        exception_key(*values)
+        for values in LayerSdException.objects.filter(table=table, status=LayerSdException.STATUS_APPROVED)
         .values_list('process_id', 'sp', 'sd_number', 'layerid')
     }
 
@@ -85,7 +86,7 @@ def find_mismatches(rows, exceptions):
         layerid = _text(row.get('layerid'))
         if not sd_number or not layerid or normalize_number(sd_number) == normalize_number(layerid):
             continue
-        if _exception_key(row.get('process_id'), row.get('sp'), sd_number, layerid) in exceptions:
+        if exception_key(row.get('process_id'), row.get('sp'), sd_number, layerid) in exceptions:
             continue
         mismatches.append({
             'id': row.get('id'),
@@ -118,10 +119,10 @@ def validate_document(document):
         )
         extra = len(mismatches) - MAX_LISTED_ROWS
         suffix = f' 외 {extra}건' if extra > 0 else ''
-        owner = 'J(TE_J)/P(TE_P)' if table == 'J' else 'O(TE_O)/P(TE_P)'
+        agreers = 'J(TE_J)·P(TE_P)' if table == 'J' else 'O(TE_O)·P(TE_P)'
         errors.append(
             f'{TABLE_LABELS[table]} {len(mismatches)}행의 SD 첫 숫자가 Layer 와 일치하지 않습니다 '
-            f'({listed}{suffix}). 예외가 필요하면 {owner} 팀에 예외 등록을 요청하세요.'
+            f'({listed}{suffix}). 예외가 필요하면 홈 화면의 SD-Layer 예외에서 신청하세요({agreers} 합의 후 적용).'
         )
     if errors:
         return ' '.join(errors) + ' 일치하지 않는 행이 있어 상신할 수 없습니다.'

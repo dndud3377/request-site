@@ -544,11 +544,12 @@ export default function RequestPage(): React.ReactElement {
   const setAdiCdTargetDraftProcessIdOptionsStable = (opts: string[]) =>
     setAdiCdTargetDraftProcessIdOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
 
-  // SD-Layer 검사 예외 목록(J·O) 로드 — 가이드 투어 미리보기에서는 서버 값이 필요 없다.
+  // SD-Layer 검사 예외 목록(J·O) 로드 — 승인된 예외만 검사에 쓴다(합의 대기·반려 신청은 제외).
+  // 가이드 투어 미리보기에서는 서버 값이 필요 없다.
   useEffect(() => {
     if (isTourMode) return;
     let cancelled = false;
-    Promise.all([layerSdExceptionsAPI.list('J'), layerSdExceptionsAPI.list('O')])
+    Promise.all([layerSdExceptionsAPI.list('J', 'APPROVED'), layerSdExceptionsAPI.list('O', 'APPROVED')])
       .then(([j, o]) => {
         if (!cancelled) setSdExceptions({ J: j, O: o });
       })

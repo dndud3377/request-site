@@ -416,23 +416,50 @@ export interface LayerFilterSet {
  * J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검사의 예외(팀 공유, 서버 저장).
  * (process_id, sp, sd_number, layerid) 4개 값이 모두 같은 행은 SD 첫 숫자와 Layer 가 달라도 통과한다.
  */
+/** SD-Layer 예외 신청 상태 — 합의 대기 / 승인(상신 검사에 적용) / 반려. */
+export type LayerSdExceptionStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+/** SD-Layer 예외 합의 칸 — team: J 표=TE_J·O 표=TE_O, p: TE_P (MASTER 는 둘 다). */
+export type LayerSdExceptionSlot = 'team' | 'p';
+
 export interface LayerSdException {
   id: number;
   table: 'J' | 'O';
   process_id: string;
   sp: string;
-  /** 등록 시 입력한 SD 원문 전체 — `sd` 필드 추가 전에 등록된 예외는 빈 문자열이다. */
+  /** 신청 시 입력한 SD 원문 전체 — `sd` 필드 추가 전에 등록된 예외는 빈 문자열이다. */
   sd: string;
   /** 매칭 키 — 서버가 `sd` 의 맨 앞 숫자를 뽑아 채운다. */
   sd_number: string;
   layerid: string;
+  status: LayerSdExceptionStatus;
+  /** 신청 사유 — 신청 방식 도입 전에 등록된 예외는 빈 문자열이다. */
+  reason: string;
+  /** 신청자 */
   created_by: string;
   created_by_name: string;
   created_at: string;
+  team_agreed_by: string;
+  team_agreed_by_name: string;
+  team_agreed_at: string | null;
+  p_agreed_by: string;
+  p_agreed_by_name: string;
+  p_agreed_at: string | null;
+  rejected_by: string;
+  rejected_by_name: string;
+  rejected_at: string | null;
+  reject_reason: string;
 }
 
-/** 예외 등록 요청 본문 — 서버가 등록자(created_by*)를 채운다. */
-export type LayerSdExceptionInput = Pick<LayerSdException, 'table' | 'process_id' | 'sp' | 'sd' | 'layerid'>;
+/** 예외 신청 입력 — 상태·합의 필드는 서버가 채운다. */
+export type LayerSdExceptionInput = Pick<LayerSdException, 'table' | 'process_id' | 'sp' | 'sd' | 'layerid' | 'reason'>;
+
+/** 합의 대기 중인 예외 신청 건수(`GET /layer-sd-exceptions/pending-count/`). */
+export interface LayerSdExceptionPendingCount {
+  J: number;
+  O: number;
+  total: number;
+}
 
 /** SD 첫 숫자와 Layer 가 다르고 예외도 아닌 J/O-layer 행 한 건. */
 export interface LayerSdMismatch {
