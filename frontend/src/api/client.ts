@@ -42,6 +42,9 @@ import {
   LayerFilterSet,
   LayerSdException,
   LayerSdExceptionInput,
+  LayerSdExceptionPendingCount,
+  LayerSdExceptionSlot,
+  LayerSdExceptionStatus,
   MapInfo,
   PersonalMarkCategory,
   PhotoStepChangeListResponse,
@@ -827,11 +830,18 @@ export const layerFilterSetsAPI = {
 // ===== J/O-layer SD-Layer 검사 예외 API =====
 
 export const layerSdExceptionsAPI = {
-  list: (table: 'J' | 'O'): Promise<LayerSdException[]> =>
-    get<LayerSdException[] | { results: LayerSdException[] }>(`/layer-sd-exceptions/?table=${table}`)
-      .then((data) => (Array.isArray(data) ? data : data.results ?? [])),
+  list: (table: 'J' | 'O', status?: LayerSdExceptionStatus): Promise<LayerSdException[]> =>
+    get<LayerSdException[] | { results: LayerSdException[] }>(
+      `/layer-sd-exceptions/?table=${table}${status ? `&status=${status}` : ''}`
+    ).then((data) => (Array.isArray(data) ? data : data.results ?? [])),
   create: (input: LayerSdExceptionInput): Promise<LayerSdException> =>
     post<LayerSdException>('/layer-sd-exceptions/', input),
+  agree: (id: number, slot: LayerSdExceptionSlot): Promise<LayerSdException> =>
+    post<LayerSdException>(`/layer-sd-exceptions/${id}/agree/`, { slot }),
+  reject: (id: number, reason: string): Promise<LayerSdException> =>
+    post<LayerSdException>(`/layer-sd-exceptions/${id}/reject/`, { reason }),
+  pendingCount: (): Promise<LayerSdExceptionPendingCount> =>
+    get<LayerSdExceptionPendingCount>('/layer-sd-exceptions/pending-count/'),
   delete: (id: number): Promise<void> => request(`/layer-sd-exceptions/${id}/`, { method: 'DELETE' }),
 };
 
