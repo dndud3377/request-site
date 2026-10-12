@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, noticesAPI } from '../api/client';
+import { documentsAPI, noticesAPI, layerSdExceptionsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
 import AdiCdTargetsCell from '../components/AdiCdTargetsCell';
@@ -11,7 +11,6 @@ import GuideTourModal from '../components/GuideTourModal';
 import AnnualDesignRuleChart from '../components/AnnualDesignRuleChart';
 import PagedDetailView from '../components/PagedDetailView';
 import LayerSdExceptionModal from '../components/LayerSdExceptionModal';
-import { SD_EXCEPTION_ROLES } from './RequestPage/constants';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
@@ -503,11 +502,19 @@ export default function HomePage(): React.ReactElement {
   const [showTour, setShowTour] = useState(false);
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
   const [showSdExceptionModal, setShowSdExceptionModal] = useState(false);
-  // SD-Layer 예외를 관리할 수 있는 표(J/O) — 하나라도 있으면 홈 상단에 버튼을 보여준다(모달은 J/O 탭 모두 조회 가능).
-  const sdExceptionTables = useMemo(
-    () => (['J', 'O'] as const).filter((table) => SD_EXCEPTION_ROLES[table].includes(currentUser.role ?? '')),
-    [currentUser.role],
-  );
+  // SD-Layer 예외 합의 대기 건수(J+O) — 홈 버튼의 (N) 표시. 불러오지 못하면 숫자 없이 버튼만 보인다.
+  const [sdPendingCount, setSdPendingCount] = useState(0);
+  const loadSdPendingCount = useCallback(async () => {
+    try {
+      const counts = await layerSdExceptionsAPI.pendingCount();
+      setSdPendingCount(counts.total);
+    } catch {
+      setSdPendingCount(0);
+    }
+  }, []);
+  useEffect(() => {
+    loadSdPendingCount();
+  }, [loadSdPendingCount]);
 
   // 의뢰 상세 모달(읽기 전용) — HistoryPage 와 같은 방식: 결재 액션 없이 상세 내용만 보여준다.
   const [selectedDoc, setSelectedDoc] = useState<RequestDocument | null>(null);
@@ -630,12 +637,13 @@ export default function HomePage(): React.ReactElement {
         </p>
       </Modal>
 
-      {/* J/O-layer SD-Layer 일치 예외 관리 모달 (J: TE_J·TE_P·MASTER / O: TE_O·TE_P·MASTER) */}
+      {/* J/O-layer SD-Layer 일치 예외 신청·합의 모달 (신청: 누구나 / 합의: J=TE_J+TE_P, O=TE_O+TE_P, MASTER 는 둘 다) */}
       {showSdExceptionModal && (
         <LayerSdExceptionModal
           isOpen
-          onClose={() => setShowSdExceptionModal(false)}
-          manageableTables={sdExceptionTables}
+          onClose={() => { setShowSdExceptionModal(false); loadSdPendingCount(); }}
+          role={currentUser.role}
+          loginid={currentUser.username}
         />
       )}
 
@@ -708,20 +716,20 @@ export default function HomePage(): React.ReactElement {
                 ❓ {t('guide.tour.button')}
               </button>
             </div>
-            {/* SD-Layer 예외는 위 버튼 줄의 아랫줄에 따로 둔다. */}
-            {sdExceptionTables.length > 0 && (
-              <div className="hero-actions" style={{ marginTop: 14 }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-lg"
-                  data-testid="sd-exc-open-btn"
-                  title={t('request.sd_layer_exc_btn_hint')}
-                  onClick={() => setShowSdExceptionModal(true)}
-                >
-                  🧩 {t('request.sd_layer_exc_btn')}
-                </button>
-              </div>
-            )}
+            {/* SD-Layer 예외는 위 버튼 줄의 아랫줄에 따로 둔다 — 모든 사용자에게 보인다(합의 대기 건수 표시). */}
+            <div className="hero-actions" style={{ marginTop: 14 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-lg"
+                data-testid="sd-exc-open-btn"
+                title={t('request.sd_layer_exc_btn_hint')}
+                onClick={() => setShowSdExceptionModal(true)}
+              >
+                🧩 {sdPendingCount > 0
+                  ? t('request.sd_layer_exc_btn_count', { count: sdPendingCount })
+                  : t('request.sd_layer_exc_btn')}
+              </button>
+            </div>
           </div>
         </div>
       </div>
