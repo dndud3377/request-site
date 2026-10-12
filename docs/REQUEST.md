@@ -58,7 +58,7 @@ pages/RequestPage/
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
 | 표 컬럼 | `JAYER_EDITABLE_COLS`, `OAYER_EDITABLE_COLS`, `LOADED_LOCK_COLS` |
-| NOC/ST 값 | `NOC_NEW`, `NOC_BORROW`, `NOC_REGISTERED`, `NOC_LAYER_DELETE`, `ST_O`, `ST_X`, `isNocSpecial`, `isRowInactive`(2026-08-25 신설 — 비활성 판정, `st === 'X'`) |
+| NOC/ST 값 | `NOC_NEW`, `NOC_BORROW`, `NOC_REGISTERED`, `NOC_LAYER_DELETE`, `ST_O`, `ST_X`, `isNocSpecial`, `isRowInactive`(2026-08-25 신설 — 비활성 판정, `st === 'X'`), `LAYER_ST_OPTIONS`·`LAYER_NOC_OPTIONS`(2026-10-12 신설 — J/O 표 ST·요청 기준 드롭다운 선택지, Step2·Step3 공용) |
 | C가문 스코프 | `PRODC_SCOPE_OPTIONS`, `inferProdcScope` |
 | 색상(재수출) | `ST_CELL_COLOR` |
 | 공용 타입 | `CRegion` (`'top' \| 'middle' \| 'bottom'`), `ProdcScope` |
@@ -5390,6 +5390,42 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   6. [STEP4(O-layer)에서 1~4 반복] → [기대 결과: J-layer 와 동일. 같은 Layer 의 J 행은 그대로 남는다.]
   7. [임시저장 → 다시 열기] → [기대 결과: 삭제한 행은 돌아오지 않고, 불러온 행에는 여전히 `✕` 가 없다.]
 - ⚠️ **주의**: 삭제한 행을 되돌리는 기능(실행 취소)은 없다. 조리법(process_id)을 다시 선택하면 J/O 가 재조회되어 수동 행도 초기화되는 기존 동작은 그대로다.
+
+### 정리 (2026-10-12 — 작성 화면 한국어 직접 입력 문구 i18n 전환 + J/O 표 선택지 상수 통합)
+
+- **요청**: J/O-layer 표 조사 중 발견한 규칙 G(i18n)·규칙 I(매직 스트링) 위반을 일괄 정리. **동작·저장 형식 변경 없음**
+  — 한국어 화면의 문구는 기존과 글자 하나까지 같다(영어 화면에서만 영어로 바뀐다).
+- **J/O 표 선택지 상수 통합**: `Step2.tsx`·`Step3.tsx` 가 각자 정의하던 `ST_OPTIONS`·`NEW_OR_COPY_OPTIONS` 를 지우고
+  `constants.ts` 의 `LAYER_ST_OPTIONS`(`[ST_O, ST_O_D, ST_X]`)·`LAYER_NOC_OPTIONS`(`[NOC_NEW, NOC_BORROW, NOC_REGISTERED,
+  NOC_LAYER_DELETE, NOC_NOT_PROCEEDING]`)를 import 한다. 값은 DB 저장값이라 번역하지 않는다.
+- **i18n 전환(`index.tsx`)** — `request.*` 키 35개를 ko/en 에 동시 추가:
+  - J/O 필터: 삭제 토스트 `filter_delete_toast`/`filter_all_delete_toast`, 구버전 필터 마이그레이션 이름 `filter_migrated_label`.
+  - STEP4/5 검증: `partial_shot_required`, `jayer_mapping_required`.
+  - STEP1/2 검증 메시지: `field_required_msg`(`{{field}}` = DETAIL_REQUIRED 필드 키 그대로), `map_type_required_msg`,
+    `map_delete_reason_required_msg`, `source_line_required_msg`, `source_partid_required_msg`, `cc_apply_required_msg`,
+    `final_entries_required_msg`, `py_apply_required_msg`, `prodc_scope_required_msg`, `map_value_x/y_region_required_msg`,
+    `map_reason_required_msg`, `map_value_x/y_required_msg`, `ea_value_required_msg`, `in_apply_required_msg`,
+    `inter_select_required_msg`, `prodc_region_line/process/product_required_msg`, `mshot_image_region_required_msg`,
+    `mshot_image_required_msg`. 북쪽/남쪽은 기존 `request.prodc_top`/`prodc_bottom` 을 `{{region}}` 으로 넣는다.
+  - 토스트·제목: `image_upload_success`/`image_upload_failed`, `error_occurred`(`{{message}}`)/`unknown_error`,
+    `edit_resubmit_success`, `resubmit_success`, 수정·재상신 모드 제목/부제 `edit_resubmit_title`/`edit_resubmit_subtitle`.
+- **남겨 둔 한국어 리터럴(의도)**: `'변경 있음'`·`'변경 없음'`·`'추가'`·`'수정'`·`'사용'`·`'기등록'` 등 **저장값 비교**,
+  가이드 투어 시연용 입력값(`'BB제품2'`, `'신규 라인 보정'`, `'예외구역 A'`), `console.error` 개발자 로그.
+- **주의**: `filter_migrated_label` 은 구버전 localStorage 필터(`jayerFilterWords`/`oayerFilterWords`)를 **최초 1회 옮길 때** 저장되는
+  이름이라, 그 시점의 화면 언어로 저장된다. 이미 옮겨진 필터 이름은 바뀌지 않는다.
+- **lint**: 마운트 1회 effect(옵션·필터 로드)가 `t` 를 쓰게 되어 `exhaustive-deps` 경고가 생기므로, 다른 effect 와 같은 방식으로
+  `eslint-disable-next-line` 을 달았다(`t` 를 의존성에 넣으면 언어 전환마다 API 를 다시 부른다). `index.tsx` eslint 경고 3건 → 3건 불변.
+- **검증**: `tsc` 에러 0 → 0(불변). 프론트 전체 27 suites / 435건 통과. 백엔드 변경 없음.
+- **수동 검증 시나리오**:
+  1. [`/request` → STEP3(J-layer) → `+ 필터` 에서 필터 하나 추가 → 목록에서 삭제 → 확인] → [기대 결과: `필터 "이름"이 삭제되었습니다.` 토스트.]
+  2. [같은 모달에서 `전체 삭제` → 확인] → [기대 결과: `모든 필터가 삭제되었습니다.` 토스트.]
+  3. [STEP3/STEP4 표의 ST·요청 기준 셀 클릭] → [기대 결과: 드롭다운이 종전과 같이 `O / O (D) / X`, `신규 / 차용 / 기등록 / layer삭제 / 미진행`.]
+  4. [STEP4(O-layer)에서 Partial Shot 을 고르지 않고 `다음`] → [기대 결과: `Partial Shot 계측 필요: 필수 선택 항목입니다.` 토스트.]
+  5. [STEP2(MAP)에서 MAP 요청 목적을 비우고 `다음`] → [기대 결과: `MAP 요청 목적: 필수 입력 항목입니다.` 토스트.]
+  6. [C가문 Yes + 북·남 '변경 있음'으로 X 값을 비우고 `다음`] → [기대 결과: `MAP 변경 X (북쪽): 필수 입력 항목입니다.` 등.]
+  7. [STEP5 에서 J 행 하나를 매핑하지 않고 상신] → [기대 결과: `모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.`]
+  8. [반려 문서 → 수정·재상신 진입] → [기대 결과: 제목 `의뢰서 수정·재상신`, 부제 `내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.`]
+  9. [상단 언어를 English 로 바꾸고 1·4·5·8 반복] → [기대 결과: 같은 위치에 영어 문구가 나온다. **실패 신호**: 한국어가 그대로 보이거나 `request.xxx` 키 문자열이 보임.]
 
 ## 5. 검증 방법
 ```bash
