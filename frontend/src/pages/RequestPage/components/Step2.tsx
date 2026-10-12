@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, isNocSpecial } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, isNocSpecial, LAYER_ST_OPTIONS, LAYER_NOC_OPTIONS } from '../constants';
 import { isValidationKeywordRow, stripDateBracket, formatMultiItemId } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
@@ -32,9 +32,6 @@ interface Step2Props {
   vsNotApplicable: boolean;
   onValidationSystemChange: (value: ValidationSystemValue) => void;
 }
-
-const ST_OPTIONS = ['O', 'O (D)', 'X'];
-const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제', '미진행'];
 
 const Step2: React.FC<Step2Props> = ({
   jayerRows,
@@ -195,7 +192,7 @@ const Step2: React.FC<Step2Props> = ({
                     <AutocompleteInput
                       value={row.st}
                       onChange={(v) => handleJayerChange(row.id, 'st', v)}
-                      options={ST_OPTIONS}
+                      options={LAYER_ST_OPTIONS}
                       // 기등록/layer삭제/미진행 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
                       disabled={isNocSpecial(row.new_or_copy)}
                       inputStyle={{
@@ -211,7 +208,7 @@ const Step2: React.FC<Step2Props> = ({
                     <AutocompleteInput
                       value={row.new_or_copy}
                       onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
-                      options={NEW_OR_COPY_OPTIONS}
+                      options={LAYER_NOC_OPTIONS}
                       inputStyle={{
                         backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
                         ...(nocError ? { border: '1px solid var(--danger)' } : {}),
