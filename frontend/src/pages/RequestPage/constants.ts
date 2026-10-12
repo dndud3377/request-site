@@ -181,6 +181,12 @@ export const LAYER_ST_OPTIONS = [ST_O, ST_O_D, ST_X];
 /** J/O-layer 표 요청 기준(new_or_copy) 셀 드롭다운 선택지 (Step2·Step3 공용). */
 export const LAYER_NOC_OPTIONS = [NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING];
 
+/**
+ * J-layer 차용 행의 ID(item_id) 필수 예외 키워드 — pp 값에 하나라도 포함되면(대소문자 무관) ID 를 비워도 된다.
+ * 'pppppp' 는 예시 값이다. 실제 키워드로 바꿔 쓴다(여러 개 가능, 빈 문자열은 무시).
+ */
+export const ITEM_ID_EXEMPT_PP_KEYWORDS: readonly string[] = ['pppppp'];
+
 /** st 가 'O 계열'('O' 또는 'O (D)')인가 — Backbone 조합 영역 필수 판정의 근거. */
 export const isStO = (st?: string): boolean => {
   const v = (st ?? '').trim();
