@@ -116,6 +116,8 @@ mkdir -p $SP/stubs && python3 -m venv $SP/venv
 # 1) 의존성 — requirements.txt 를 그대로 쓰지 않는다.
 #    mysqlclient 는 libmysqlclient-dev + gcc 가 필요해 실패하고, sqlite 로 돌리므로 불필요하다.
 #    requirements.txt 에 없는 mozilla-django-oidc / PyJWT 는 INSTALLED_APPS·auth_views 가 쓰므로 반드시 넣는다.
+#    Python 3.13 이상이면 Pillow==10.3.0·pandas==2.2.2 는 3.13용 wheel 이 없어 빌드에 실패한다 —
+#    그 두 개만 "Pillow>=10.3.0" "pandas>=2.2.2" 로 바꿔 설치한다(2026-10-12 확인: sqlalchemy==2.0.30 은 그대로 설치됨, 백엔드 729건 통과).
 $SP/venv/bin/pip install -q \
   Django==4.2.13 djangorestframework==3.15.1 django-cors-headers==4.3.1 \
   djangorestframework-simplejwt==5.3.1 Pillow==10.3.0 python-dotenv==1.0.1 \
