@@ -580,7 +580,7 @@ export default function RequestPage(): React.ReactElement {
       if (oldJayer) {
         try {
           const w = JSON.parse(oldJayer);
-          const migrated: FilterSet[] = [{ id: String(Date.now()), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
+          const migrated: FilterSet[] = [{ id: String(Date.now()), label: t('request.filter_migrated_label'), words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
           setJayerFilterSets(migrated);
           localStorage.setItem('jayerFilterSets', JSON.stringify(migrated));
           localStorage.removeItem('jayerFilterWords');
@@ -595,7 +595,7 @@ export default function RequestPage(): React.ReactElement {
       if (oldOayer) {
         try {
           const w = JSON.parse(oldOayer);
-          const migrated: FilterSet[] = [{ id: String(Date.now() + 1), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
+          const migrated: FilterSet[] = [{ id: String(Date.now() + 1), label: t('request.filter_migrated_label'), words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
           setOayerFilterSets(migrated);
           localStorage.setItem('oayerFilterSets', JSON.stringify(migrated));
           localStorage.removeItem('oayerFilterWords');
@@ -613,6 +613,8 @@ export default function RequestPage(): React.ReactElement {
         setFeatureGuideKeys(new Set(dbKeys));
       })
       .catch(() => { setFeatureGuideKeys(new Set()); });
+    // 마운트 1회 로드 — t(구버전 필터 이름)로 언어 전환 시 API 재조회가 일어나지 않게 의존성에서 뺀다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
@@ -1880,10 +1882,10 @@ export default function RequestPage(): React.ReactElement {
               ...prev,
               [fieldName]: result.path
             }));
-            addToast(`이미지 업로드 완료: ${file.name}`, 'info');
+            addToast(t('request.image_upload_success', { name: file.name }), 'info');
           } catch (err) {
             console.error('이미지 업로드 실패:', err);
-            addToast('이미지 업로드 실패', 'error');
+            addToast(t('request.image_upload_failed'), 'error');
           }
           e.preventDefault();
           break;
@@ -3778,7 +3780,7 @@ export default function RequestPage(): React.ReactElement {
       setOayerFilterSets(updated);
       localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
     }
-    addToast(`필터 "${label}"이 삭제되었습니다.`, 'info');
+    addToast(t('request.filter_delete_toast', { label }), 'info');
   };
 
   const handleFilterAllDeleteConfirm = () => {
@@ -3790,7 +3792,7 @@ export default function RequestPage(): React.ReactElement {
       setOayerFilterSets([]);
       localStorage.removeItem('oayerFilterSets');
     }
-    addToast('모든 필터가 삭제되었습니다.', 'info');
+    addToast(t('request.filter_all_delete_toast'), 'info');
   };
 
   const handleSortBbRows = () => {
@@ -3956,7 +3958,7 @@ export default function RequestPage(): React.ReactElement {
         const val = detail[field] as string;
         if (!val?.trim()) {
           newErrors[field] = t('request.required');
-          errorMessages.push(`${field}: 필수 입력 항목입니다.`);
+          errorMessages.push(t('request.field_required_msg', { field }));
         }
       });
       // 제품 이름(partid_selection)은 목록에 있는 값만 허용 (값은 있으나 목록 밖이면 진행 차단)
@@ -4013,7 +4015,7 @@ export default function RequestPage(): React.ReactElement {
     if (currentStep === 2) {
       if (!detail.map_type?.trim()) {
         newErrors['map_type'] = t('request.required');
-        errorMessages.push('MAP 요청 목적: 필수 입력 항목입니다.');
+        errorMessages.push(t('request.map_type_required_msg'));
       }
       // MAP 삭제('수정'·'삭제')은 이유 입력칸 하나만 화면에 남는다.
       // 나머지 MAP 블록은 렌더 자체를 하지 않으므로 검증도 전부 건너뛴다
@@ -4028,7 +4030,7 @@ export default function RequestPage(): React.ReactElement {
         const hasImage = /<img\b/i.test(detail.map_change_reason || '');
         if (!reasonText && !hasImage) {
           newErrors['map_change_reason'] = t('request.required');
-          errorMessages.push('MAP 삭제 이유: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.map_delete_reason_required_msg'));
         }
         // 정식 종료와 동일한 판정 기준(newErrors 기준)을 쓴다.
         setErrors(newErrors);
@@ -4038,54 +4040,54 @@ export default function RequestPage(): React.ReactElement {
       if (isMapRegisteredType(detail.map_type)) {
         if (!detail.source_line?.trim()) {
           newErrors['source_line'] = t('request.required');
-          errorMessages.push('원본 위치: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.source_line_required_msg'));
         }
         if (!detail.source_partid?.trim()) {
           newErrors['source_partid'] = t('request.required');
-          errorMessages.push('원본 Part ID: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.source_partid_required_msg'));
         }
       }
       // CC 적용/미적용(mshot_change_cc)은 Final/PY 적용 여부와 동일하게 C가문(only_prodc=Yes)
       // 일 때만 노출·필수다 — oc(참고용 자동매칭값)와 달리 사용자가 직접 골라야 상신 데이터에 남는다.
       if (detail.only_prodc === 'Yes' && !detail.mshot_change_cc?.trim()) {
         newErrors['mshot_change_cc'] = t('request.required');
-        errorMessages.push('CC 적용 여부: 필수 선택 항목입니다.');
+        errorMessages.push(t('request.cc_apply_required_msg'));
       }
       // Final 은 map_type 과 무관한 독립 항목이지만, C가문(only_prodc=YES) 일 때는
       // 최소 1건 등록을 강제한다(CLONE/EXISTING 잠금과도 무관 — Final 입력칸 자체가 잠기지 않는다).
       if (detail.only_prodc === 'Yes' && (detail.final_entries ?? []).length === 0) {
         newErrors['final_entries'] = t('request.final_entries_required');
-        errorMessages.push('Final: C가문 Yes 일 때 1개 이상 등록해야 합니다.');
+        errorMessages.push(t('request.final_entries_required_msg'));
       }
       // PY 적용 여부도 Final 과 동일하게 CLONE/EXISTING 잠금과 무관한 독립 필수 항목이다.
       if (detail.only_prodc === 'Yes' && !detail.py_apply) {
         newErrors['py_apply'] = t('request.required');
-        errorMessages.push('PY 적용 여부: 필수 선택 항목입니다.');
+        errorMessages.push(t('request.py_apply_required_msg'));
       }
       if (!isMapRegistered) {
       if (detail.only_prodc === 'Yes') {
         // 제품 해당 위치(prodc_scope)를 먼저 골라야 나머지 C가문 입력이 열린다.
         if (!prodcScopeSet) {
           newErrors['prodc_scope'] = t('request.required');
-          errorMessages.push('제품 해당 위치: 필수 선택 항목입니다.');
+          errorMessages.push(t('request.prodc_scope_required_msg'));
         }
         // C가문 Yes: 살아있는(ONLY 로 죽지 않은) 리전 중 '변경 있음'인 곳만 X/Y 필수.
-        const REGION_LABEL = { top: '북쪽', bottom: '남쪽' } as const;
+        const REGION_LABEL_KEY = { top: 'request.prodc_top', bottom: 'request.prodc_bottom' } as const;
         (['top', 'bottom'] as const).forEach((region) => {
           if (!regionHasMapChange(region)) return;
           if (!detail[`map_value_x_${region}`]?.trim()) {
             newErrors[`map_value_x_${region}`] = t('request.required');
-            errorMessages.push(`MAP 변경 X (${REGION_LABEL[region]}): 필수 입력 항목입니다.`);
+            errorMessages.push(t('request.map_value_x_region_required_msg', { region: t(REGION_LABEL_KEY[region]) }));
           }
           if (!detail[`map_value_y_${region}`]?.trim()) {
             newErrors[`map_value_y_${region}`] = t('request.required');
-            errorMessages.push(`MAP 변경 Y (${REGION_LABEL[region]}): 필수 입력 항목입니다.`);
+            errorMessages.push(t('request.map_value_y_region_required_msg', { region: t(REGION_LABEL_KEY[region]) }));
           }
         });
         // 사유는 한 리전이라도 '변경 있음'일 때만 필수
         if (anyRegionMapChange && !detail.map_reason?.trim()) {
           newErrors['map_reason'] = t('request.required');
-          errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.map_reason_required_msg'));
         }
         // 북·남 상호검증은 두 리전이 모두 살아있고 모두 '변경 있음'일 때만 성립한다
         // (ONLY 스코프이거나 한쪽이 '변경 없음'이면 비교 대상 자체가 없다).
@@ -4114,21 +4116,21 @@ export default function RequestPage(): React.ReactElement {
       } else if (detail.map_change === '변경 있음') {
         if (!detail.map_value_x?.trim()) {
           newErrors['map_value_x'] = t('request.required');
-          errorMessages.push('MAP 변경 X: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.map_value_x_required_msg'));
         }
         if (!detail.map_value_y?.trim()) {
           newErrors['map_value_y'] = t('request.required');
-          errorMessages.push('MAP 변경 Y: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.map_value_y_required_msg'));
         }
         if (!detail.map_reason?.trim()) {
           newErrors['map_reason'] = t('request.required');
-          errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.map_reason_required_msg'));
         }
       }
       if (detail.ea_change === EA_HAS_CHANGE) {
         if (!detail.ea_value?.trim()) {
           newErrors['ea_value'] = t('request.required');
-          errorMessages.push('예외 구역 값: 필수 입력 항목입니다.');
+          errorMessages.push(t('request.ea_value_required_msg'));
         } else if (isEaDefaultValue(detail.ea_value, detail.only_prodc)) {
           // '변경 있음'인데 값이 기본값과 같으면 혼란을 주므로 상신할 수 없다(백엔드도 같은 기준으로 막는다).
           const eaDefaultMessage = t('request.ea_value_same_as_default', { value: eaDefaultValue(detail.only_prodc) });
@@ -4139,11 +4141,11 @@ export default function RequestPage(): React.ReactElement {
       if (detail.inter === 'YES') {
         if (!detail.in_apply?.trim()) {
           newErrors['in_apply'] = t('request.required');
-          errorMessages.push('IN 적용 여부: 필수 선택 항목입니다.');
+          errorMessages.push(t('request.in_apply_required_msg'));
         }
         if (!detail.inter_select?.trim()) {
           newErrors['inter_select'] = t('request.required');
-          errorMessages.push('IN 적용 대상: 필수 선택 항목입니다.');
+          errorMessages.push(t('request.inter_select_required_msg'));
         }
       }
       if (detail.only_prodc === 'Yes') {
@@ -4152,15 +4154,15 @@ export default function RequestPage(): React.ReactElement {
           if (prodcRegionOff(region)) return;
           if (!detail[`prodc_${region}_line` as keyof DetailFormState]?.toString().trim()) {
             newErrors[`prodc_${region}_line`] = t('request.required');
-            errorMessages.push(`C가문 ${region === 'top' ? '북쪽' : '남쪽'} 위치: 필수 입력 항목입니다.`);
+            errorMessages.push(t('request.prodc_region_line_required_msg', { region: t(`request.prodc_${region}`) }));
           }
           if (!detail[`prodc_${region}_process` as keyof DetailFormState]?.toString().trim()) {
             newErrors[`prodc_${region}_process`] = t('request.required');
-            errorMessages.push(`C가문 ${region === 'top' ? '북쪽' : '남쪽'} 조합법: 필수 입력 항목입니다.`);
+            errorMessages.push(t('request.prodc_region_process_required_msg', { region: t(`request.prodc_${region}`) }));
           }
           if (!detail[`prodc_${region}_product` as keyof DetailFormState]?.toString().trim()) {
             newErrors[`prodc_${region}_product`] = t('request.required');
-            errorMessages.push(`C가문 ${region === 'top' ? '북쪽' : '남쪽'} 제품: 필수 입력 항목입니다.`);
+            errorMessages.push(t('request.prodc_region_product_required_msg', { region: t(`request.prodc_${region}`) }));
           }
         });
       }
@@ -4169,16 +4171,16 @@ export default function RequestPage(): React.ReactElement {
           // ONLY 스코프로 죽은 리전의 이미지는 필수가 아니다(값도 비워져 있다).
           if (!prodcRegionOff('top') && !detail.mshot_image_copy_top) {
             newErrors['mshot_image_copy_top'] = t('request.required');
-            errorMessages.push('X표시 이미지 (북쪽): 필수 입력 항목입니다.');
+            errorMessages.push(t('request.mshot_image_region_required_msg', { region: t('request.prodc_top') }));
           }
           if (!prodcRegionOff('bottom') && !detail.mshot_image_copy_bottom) {
             newErrors['mshot_image_copy_bottom'] = t('request.required');
-            errorMessages.push('X표시 이미지 (남쪽): 필수 입력 항목입니다.');
+            errorMessages.push(t('request.mshot_image_region_required_msg', { region: t('request.prodc_bottom') }));
           }
         } else {
           if (!detail.mshot_image_copy) {
             newErrors['mshot_image_copy'] = t('request.required');
-            errorMessages.push('X표시 이미지: 필수 입력 항목입니다.');
+            errorMessages.push(t('request.mshot_image_required_msg'));
           }
         }
       }
@@ -4221,7 +4223,7 @@ export default function RequestPage(): React.ReactElement {
     if (currentStep === 4 && !isMapOnlyScope) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
-        errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
+        errorMessages.push(t('request.partial_shot_required'));
       }
       addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
       const oViolations = findNocBorrowViolations(oayerRows);
@@ -4241,8 +4243,8 @@ export default function RequestPage(): React.ReactElement {
         (row) => !isRowInactive(row.st) && !isNocSpecial(row.new_or_copy) && row.process_id && !mappedJayerRowIds.has(row.id)
       );
       if (unmappedJayerRows.length > 0) {
-        newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
-        errorMessages.push('모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.');
+        newErrors['jayer_mapping'] = t('request.jayer_mapping_required');
+        errorMessages.push(t('request.jayer_mapping_required'));
       }
       // 초안 복원 등으로 step 3/4 검증을 건너뛰었을 경우를 대비한 최종 안전망
       const jViolations = findNocBorrowViolations(jayerRows);
@@ -4667,7 +4669,7 @@ export default function RequestPage(): React.ReactElement {
       addToast(t('request.direct_history_success'), 'success');
       setTimeout(() => navigate('/history'), 1500);
     } catch (err) {
-      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
+      addToast(t('request.error_occurred', { message: err instanceof Error ? err.message : t('request.unknown_error') }), 'error');
     } finally {
       setSubmitting(false);
       isPersistingRef.current = false;
@@ -4710,7 +4712,7 @@ export default function RequestPage(): React.ReactElement {
           await documentsAPI.update(docId, enriched);
         }
         await documentsAPI.peerSubmit(docId!, submitNote || undefined);
-        addToast('수정 후 상신되었습니다.', 'success');
+        addToast(t('request.edit_resubmit_success'), 'success');
       } else {
         // 기존 문서 상태 조회(신규는 draft). update는 경로당 1회.
         const currentStatus = docId ? (await documentsAPI.get(docId)).data.status : 'draft';
@@ -4733,7 +4735,7 @@ export default function RequestPage(): React.ReactElement {
         } else if (isRejected) {
           // R-09: 위에서 enriched(history 포함)로 이미 1회 update했으므로 중복 update 없이 재상신
           await documentsAPI.resubmit(docId!, designees.map(d => d.loginid));
-          addToast('재상신되었습니다.', 'success');
+          addToast(t('request.resubmit_success'), 'success');
         } else if (isUnderReview) {
           // 의뢰자 재상신(중단요청 없이): PL 검토(+SA 합의) 단계에서만 진입 가능(can_requester_resubmit).
           await documentsAPI.requesterResubmit(docId!, designees.map(d => d.loginid));
@@ -4748,7 +4750,7 @@ export default function RequestPage(): React.ReactElement {
       }
       setTimeout(() => navigate('/approval'), 1500);
     } catch (err) {
-      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
+      addToast(t('request.error_occurred', { message: err instanceof Error ? err.message : t('request.unknown_error') }), 'error');
     } finally {
       setSubmitting(false);
       isPersistingRef.current = false;
@@ -4828,8 +4830,8 @@ export default function RequestPage(): React.ReactElement {
   return (
     <div className="container page">
       <div className="page-header">
-        <h1>{isPeerReviewMode ? '의뢰서 수정·재상신' : isEditMode ? '의뢰서 수정·재상신' : t('request.title')}</h1>
-        <p>{isPeerReviewMode || isEditMode ? '내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.' : t('request.subtitle')}</p>
+        <h1>{isPeerReviewMode ? t('request.edit_resubmit_title') : isEditMode ? t('request.edit_resubmit_title') : t('request.title')}</h1>
+        <p>{isPeerReviewMode || isEditMode ? t('request.edit_resubmit_subtitle') : t('request.subtitle')}</p>
       </div>
       {isPeerReviewMode && (
         <div style={{ background: 'var(--warning-light)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', padding: '10px 16px', marginBottom: 16, color: 'var(--warning)', fontSize: '0.9rem', fontWeight: 500 }}>
