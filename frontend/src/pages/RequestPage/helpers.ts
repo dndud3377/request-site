@@ -1,6 +1,6 @@
 import { FlowChartRow, JayerRow, OayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet, LayerSdException, LayerSdMismatch } from '../../types';
 import {
-  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, ITEM_ID_EXEMPT_PP_KEYWORDS, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
 } from './constants';
@@ -120,12 +120,24 @@ export const findNocBorrowViolations = (
     .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
     .map((r) => r.id);
 
-/** new_or_copy='차용' 활성 행 중 item_id 공란인 행 id 목록 (item_id 는 J-ayer 전용 필드라 O-ayer 는 대상 아님) */
+/** pp 값에 ID(item_id) 필수 예외 키워드(`ITEM_ID_EXEMPT_PP_KEYWORDS`)가 하나라도 포함되는가 (대소문자 무관) */
+export const isItemIdExemptPp = (
+  pp: string | undefined,
+  keywords: readonly string[] = ITEM_ID_EXEMPT_PP_KEYWORDS,
+): boolean => {
+  const value = (pp ?? '').toLowerCase();
+  return keywords.some((keyword) => !!keyword && value.includes(keyword.toLowerCase()));
+};
+
+/**
+ * new_or_copy='차용' 활성 행 중 item_id 공란인 행 id 목록 (item_id 는 J-ayer 전용 필드라 O-ayer 는 대상 아님).
+ * pp 에 예외 키워드가 있는 행은 item_id 를 비워도 위반이 아니다(product_name·step 필수는 별도 검사로 유지).
+ */
 export const findNocBorrowItemIdViolations = (
-  rows: { id: string; st: string; new_or_copy: string; item_id: string }[]
+  rows: { id: string; st: string; new_or_copy: string; item_id: string; pp: string }[]
 ): string[] =>
   rows
-    .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim())
+    .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim() && !isItemIdExemptPp(r.pp))
     .map((r) => r.id);
 
 /** item_id 바코드 후보 라벨 끝의 " [날짜]"를 제거한다 (form_options_barcode 가 붙이는 형식과 짝을 맞춤). */
