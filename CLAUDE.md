@@ -83,6 +83,8 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
    # requirements.txt 를 그대로 쓰지 않는다.
    #  - mysqlclient 제외: 빌드에 libmysqlclient-dev+gcc 필요, sqlite 로 돌리므로 불필요
    #  - mozilla-django-oidc / PyJWT 추가: requirements.txt 에 없지만 실제로 필요하다
+   #  - Python 3.13 이상: Pillow==10.3.0·pandas==2.2.2 는 3.13용 wheel 이 없어 빌드에 실패한다
+   #    → 그 두 개만 "Pillow>=10.3.0" "pandas>=2.2.2" 로 바꿔 설치한다(2026-10-12 확인, 백엔드 729건 통과)
    $SP/venv/bin/pip install -q \
      Django==4.2.13 djangorestframework==3.15.1 django-cors-headers==4.3.1 \
      djangorestframework-simplejwt==5.3.1 Pillow==10.3.0 python-dotenv==1.0.1 \
