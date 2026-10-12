@@ -175,6 +175,11 @@ export const ST_O = 'O';
 export const ST_O_D = 'O (D)';
 export const ST_X = 'X';
 
+/** J/O-layer 표 ST 셀 드롭다운 선택지 (Step2·Step3 공용). */
+export const LAYER_ST_OPTIONS = [ST_O, ST_O_D, ST_X];
+/** J/O-layer 표 요청 기준(new_or_copy) 셀 드롭다운 선택지 (Step2·Step3 공용). */
+export const LAYER_NOC_OPTIONS = [NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING];
+
 /** st 가 'O 계열'('O' 또는 'O (D)')인가 — Backbone 조합 영역 필수 판정의 근거. */
 export const isStO = (st?: string): boolean => {
   const v = (st ?? '').trim();
