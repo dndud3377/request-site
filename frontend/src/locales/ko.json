@@ -687,7 +687,6 @@
     "adi_cd_column_role_none": "사용 안 함",
     "adi_cd_skip_first_row": "첫 행을 헤더로 제외",
     "jayer_no_layer_data": "J-ayer 정보에 Layer 데이터가 없습니다.",
-    "final_yn_label": "Final",
     "final_gds": "GDS version",
     "final_gds_placeholder": "GDS version 입력",
     "final_add": "+ 추가",
