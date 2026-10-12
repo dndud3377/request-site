@@ -3830,6 +3830,7 @@ direct-approve)는 그대로다.
   - **검증 시점**: 기존 `product_name`·`step` 검증과 동일하게 J-ayer step3→4 전환 시, 그리고 상신 시 최종 안전망에서 함께 검사한다(`index.tsx`).
   - **에러 표시**: `jayer_noc_${id}_item_id` 키로 ID 셀(`<td>`)에 `field-error-target` 클래스 + `AutocompleteInput`의 `inputStyle`로 빨간 테두리를 표시한다(`st`/`new_or_copy` 드롭다운 셀과 동일 패턴). 토스트 카운트(`jayer_noc_required`)는 product_name/step/item_id 위반을 합쳐 **행 단위 중복 없이** 집계한다.
   - **문구**: `jayer_noc_required`/`jayer_noc_field_error`(ko/en) 문구에 "ID"를 추가해 제품 이름·STEP·ID 셋 중 무엇이든 비어 있으면 안내하도록 갱신했다. `oayer_noc_*` 문구는 변경하지 않았다(item_id 대상 아님).
+  - ※ **2026-10-12 변경**: pp 에 예외 키워드(`ITEM_ID_EXEMPT_PP_KEYWORDS`)가 있는 행은 ID 를 비워도 된다 — §4 "차용 행 ID 필수 예외" 항목 참조.
 
 ### 추가 변경 이력 (2026-07 — MAP/예외구역 숫자 입력 + TBV/TLV 개편)
 
@@ -5506,6 +5507,33 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   7. [STEP5 에서 J 행 하나를 매핑하지 않고 상신] → [기대 결과: `모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.`]
   8. [반려 문서 → 수정·재상신 진입] → [기대 결과: 제목 `의뢰서 수정·재상신`, 부제 `내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.`]
   9. [상단 언어를 English 로 바꾸고 1·4·5·8 반복] → [기대 결과: 같은 위치에 영어 문구가 나온다. **실패 신호**: 한국어가 그대로 보이거나 `request.xxx` 키 문자열이 보임.]
+
+### 기능 추가 (2026-10-12 — J-layer 차용 행 ID 필수 예외: pp 에 예외 키워드가 있으면 면제)
+
+- **요청**: J-layer `요청 기준 = 차용` 활성 행의 ID(`item_id`) 필수 규칙에 예외를 둔다. **PP(`pp`) 값에 지정한 키워드가
+  들어 있으면 ID 를 비워도 다음 단계·상신이 막히지 않는다.**
+- **키워드**: `constants.ts` `ITEM_ID_EXEMPT_PP_KEYWORDS: readonly string[] = ['pppppp']`.
+  ⚠️ **`'pppppp'` 는 예시 값**이다 — 실제 키워드로 바꿔 배포해야 효과가 있다(여러 개 가능, 빈 문자열은 무시).
+  관리 화면·서버 저장은 없다(코드 상수 — `VALIDATION_KEYWORD = 'plel'` 과 같은 방식).
+- **비교 규칙**: 대소문자 무관 **포함** 여부(`helpers.ts` `isItemIdExemptPp(pp, keywords = ITEM_ID_EXEMPT_PP_KEYWORDS)`).
+  키워드 중 하나라도 포함되면 예외.
+- **적용 위치**: `findNocBorrowItemIdViolations` 조건에 `!isItemIdExemptPp(r.pp)` 추가(입력 타입에 `pp` 추가).
+  호출부(`index.tsx` STEP3→4 검증·STEP5 상신 최종 안전망)는 이미 `JayerRow` 전체를 넘기므로 수정하지 않았다.
+  토스트 `jayer_noc_required` 의 행 수도 면제 행을 빼고 센다.
+- **바뀌지 않는 것**:
+  - O-layer — `item_id` 컬럼 자체가 없어 대상 아님.
+  - 차용 행의 **제품 이름·STEP 필수**(`findNocBorrowViolations`, J/O 공통)는 예외 행에도 그대로 적용된다.
+  - 화면 — 예외 행의 ID 셀도 그대로 입력 가능하고 바코드 자동 채움도 기존과 같다(별도 표시 없음).
+  - 백엔드 — 원래 item_id 필수 검사가 없다(프론트 전용 규칙).
+- **테스트**: `helpers.test.ts` — 키워드 포함 시 면제(대소문자·위치 무관), 키워드 없으면 위반, 빈 키워드 무시·다중 키워드,
+  예외 행도 제품 이름·STEP 검사는 위반 유지. 화면 흐름은 임시 재현 테스트(커밋 안 함)로 확인: 예외 행 → STEP4 진입 /
+  키워드 없음 → 막히고 ID 셀 오류 / 예외 행이지만 STEP 공란 → 막히고 STEP 셀만 오류.
+- **수동 검증 시나리오** (`ITEM_ID_EXEMPT_PP_KEYWORDS` 를 실제 키워드로 바꾼 뒤 — 아래는 예시 값 `pppppp` 기준):
+  1. [`/request` → STEP1 입력 → STEP3(J-layer)] → [`+ 행 추가` 후 PP 에 `TEST_PPPPPP_01`, ST `O`, 요청 기준 `차용`, 제품 이름·STEP 입력, ID 는 비움 → `다음`]
+     → [기대 결과: STEP4(O-layer)로 넘어간다. **실패 신호**: "차용 행 1개에 제품 이름, STEP 또는 ID가 비어 있습니다." 토스트 + ID 셀 빨간 테두리.]
+  2. [같은 행의 PP 를 `TEST_01`(키워드 없음)로 바꾸고 `다음`] → [기대 결과: 위 토스트와 함께 막히고 ID 셀에 빨간 테두리.]
+  3. [PP 를 다시 `TEST_PPPPPP_01` 로, STEP 을 비우고 `다음`] → [기대 결과: 막히고 STEP 셀만 빨간 테두리(ID 셀은 정상).]
+  4. [1의 상태로 STEP5 까지 진행해 상신] → [기대 결과: ID 관련 오류 없이 상신 모달까지 진행(Backbone 매핑 등 다른 검증은 기존대로).]
 
 ## 5. 검증 방법
 ```bash
