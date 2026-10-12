@@ -3,13 +3,13 @@ import {
   computeBeforeAfter, BaComparableRow,
   parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows,
   validateAdiCdTargets,
-  requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
+  requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations, findNocBorrowViolations, isItemIdExemptPp,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
   matchLayerColor, buildFlowStepTitlePart, extractSdNumber, findLayerSdMismatches, normalizeNumber,
 } from './helpers';
-import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
+import { ITEM_ID_EXEMPT_PP_KEYWORDS, VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet, LayerSdException } from '../../types';
 
 describe('buildFlowStepTitlePart', () => {
@@ -191,16 +191,47 @@ describe('findEmptyStNocViolations', () => {
 describe('findNocBorrowItemIdViolations', () => {
   it("new_or_copy='차용' 활성 행 중 item_id 가 비면 위반", () => {
     expect(findNocBorrowItemIdViolations([
-      { id: 'a', st: 'O', new_or_copy: '차용', item_id: 'IT-1' },
-      { id: 'b', st: 'O', new_or_copy: '차용', item_id: '' },
-      { id: 'c', st: 'O', new_or_copy: '신규', item_id: '' },
+      { id: 'a', st: 'O', new_or_copy: '차용', item_id: 'IT-1', pp: 'PP01' },
+      { id: 'b', st: 'O', new_or_copy: '차용', item_id: '', pp: 'PP01' },
+      { id: 'c', st: 'O', new_or_copy: '신규', item_id: '', pp: 'PP01' },
     ])).toEqual(['b']);
   });
 
   it('비활성(st===X) 행은 제외한다', () => {
     expect(findNocBorrowItemIdViolations([
-      { id: 'a', st: 'X', new_or_copy: '차용', item_id: '' },
+      { id: 'a', st: 'X', new_or_copy: '차용', item_id: '', pp: 'PP01' },
     ])).toEqual([]);
+  });
+
+  it('pp 에 예외 키워드가 있으면 item_id 를 비워도 위반이 아니다(대소문자·위치 무관)', () => {
+    const [keyword] = ITEM_ID_EXEMPT_PP_KEYWORDS;
+    expect(findNocBorrowItemIdViolations([
+      { id: 'a', st: 'O', new_or_copy: '차용', item_id: '', pp: keyword },
+      { id: 'b', st: 'O', new_or_copy: '차용', item_id: '', pp: `PP_${keyword.toUpperCase()}_01` },
+      { id: 'c', st: 'O', new_or_copy: '차용', item_id: '', pp: 'PP01' },
+    ])).toEqual(['c']);
+  });
+
+  it('예외 행이라도 product_name·step 필수 검사(findNocBorrowViolations)는 그대로다', () => {
+    const [keyword] = ITEM_ID_EXEMPT_PP_KEYWORDS;
+    const row = { id: 'a', st: 'O', new_or_copy: '차용', item_id: '', pp: keyword, product_name: '', step: '' };
+    expect(findNocBorrowItemIdViolations([row])).toEqual([]);
+    expect(findNocBorrowViolations([row])).toEqual(['a']);
+  });
+});
+
+describe('isItemIdExemptPp', () => {
+  it('예외 키워드 포함 여부를 대소문자 무관하게 판정한다', () => {
+    const [keyword] = ITEM_ID_EXEMPT_PP_KEYWORDS;
+    expect(isItemIdExemptPp(keyword.toUpperCase())).toBe(true);
+    expect(isItemIdExemptPp('PP01')).toBe(false);
+    expect(isItemIdExemptPp('')).toBe(false);
+    expect(isItemIdExemptPp(undefined)).toBe(false);
+  });
+
+  it('빈 키워드는 무시하고, 키워드가 여러 개면 하나만 포함돼도 예외다', () => {
+    expect(isItemIdExemptPp('PP01', [''])).toBe(false);
+    expect(isItemIdExemptPp('PP_BBB_01', ['', 'aaa', 'bbb'])).toBe(true);
   });
 });
 
