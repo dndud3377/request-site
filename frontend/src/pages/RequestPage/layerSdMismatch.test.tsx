@@ -3,7 +3,7 @@
  *
  * 규칙: SD 맨 앞 숫자(예: "1000.123 월평동 지점" → 1000.123)가 Layer 와 다른 행이 있으면 J-layer(STEP3)·
  * O-layer(STEP4)에서 '다음'으로 못 넘어간다. (process_id, sp, SD 첫 숫자, layerid) 가 모두 같은 예외가
- * 등록돼 있으면 통과한다. 숫자는 값으로 비교한다(100.930 = 100.93).
+ * 승인돼 있으면 통과한다. 숫자는 값으로 비교한다(100.930 = 100.93).
  * 예외 관리 화면은 홈으로 옮겼다(HomePage.sdException.test.tsx / LayerSdExceptionModal.test.tsx) —
  * 작성 화면에는 어떤 역할에게도 관리 버튼이 없다.
  */
@@ -22,7 +22,8 @@ const mockState: {
   role: string;
   exceptions: { J: unknown[]; O: unknown[] };
   created: unknown[];
-} = { captured: null, doc: null, optionsFor: () => [], role: 'PL', exceptions: { J: [], O: [] }, created: [] };
+  listStatuses: (string | undefined)[];
+} = { captured: null, doc: null, optionsFor: () => [], role: 'PL', exceptions: { J: [], O: [] }, created: [], listStatuses: [] };
 
 // RichTextEditor 는 tiptap(ESM) 을 끌어와 jest 가 파싱하지 못한다. 값 전달만 되면 충분하므로 대체한다.
 jest.mock('../../components/RichTextEditor', () => ({
@@ -63,7 +64,10 @@ jest.mock('../../api/client', () => ({
   addressBooksAPI: { list: () => Promise.resolve([]) },
   userGroupsAPI: { list: () => Promise.resolve([]) },
   layerSdExceptionsAPI: {
-    list: (table: 'J' | 'O') => Promise.resolve(mockState.exceptions[table]),
+    list: (table: 'J' | 'O', status?: string) => {
+      mockState.listStatuses.push(status);
+      return Promise.resolve(mockState.exceptions[table]);
+    },
     create: (input: { table: 'J' | 'O' }) => {
       mockState.created.push(input);
       const created = { id: 900 + mockState.created.length, created_by: 'x', created_by_name: '등록자', created_at: '', ...input };
@@ -259,7 +263,7 @@ const J_MATCH = { ...J_MISMATCH, layerid: '1000.123' };
 const O_MISMATCH = { id: 'o1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID_FX, sp: 'SP01', sd: '1000.123 월평동 지점', pp: 'PP01', layerid: '2000', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' };
 const O_MATCH = { ...O_MISMATCH, layerid: '1000.123' };
 
-const J_EXCEPTION = { id: 1, table: 'J', process_id: PROCESS_ID_FX, sp: 'SP01', sd: '1000.123 월평동 지점', sd_number: '1000.123', layerid: '2000', created_by: 'tej', created_by_name: 'TE_J 담당', created_at: '' };
+const J_EXCEPTION = { id: 1, table: 'J', process_id: PROCESS_ID_FX, sp: 'SP01', sd: '1000.123 월평동 지점', sd_number: '1000.123', layerid: '2000', status: 'APPROVED', created_by: 'tej', created_by_name: 'TE_J 담당', created_at: '' };
 
 const setDoc = (jayerRows: unknown[], oayerRows: unknown[]) => {
   mockState.doc = { ...fixtureDoc, additional_notes: JSON.stringify({ ...fixtureNotes, jayerRows, oayerRows, bbRows: [] }) };
@@ -281,6 +285,7 @@ beforeEach(() => {
   mockState.role = 'PL';
   mockState.exceptions = { J: [], O: [] };
   mockState.created = [];
+  mockState.listStatuses = [];
   mockState.optionsFor = optionsFor;
   mockState.captured = null;
   localStorage.clear();
@@ -319,6 +324,13 @@ describe('J-layer SD 첫 숫자 ↔ Layer 검증', () => {
     const { container } = await renderAtStep(J_TABLE);
     await clickNext(container);
     expect(container.querySelector(O_TABLE)).not.toBeNull();
+  });
+
+  it('작성 화면은 승인된(APPROVED) 예외만 불러온다 — 합의 대기·반려 신청은 검사에 쓰지 않는다', async () => {
+    setDoc([J_MATCH], [O_MATCH]);
+    await renderAtStep(J_TABLE);
+    expect(mockState.listStatuses.length).toBeGreaterThanOrEqual(2);
+    expect(mockState.listStatuses.every((st) => st === 'APPROVED')).toBe(true);
   });
 
   it('예외의 sp 가 다르면 통과하지 못한다', async () => {
