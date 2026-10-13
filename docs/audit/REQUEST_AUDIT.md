@@ -74,10 +74,10 @@
 
 #### [F-1.4] 기타 목적 버튼군
 - 위치: `Step1.tsx:166-183`
-- 동작: `Layer 추가/삭제 / STEPSEQ 변경 / 공법 추가/변경 / Overlay,ADI CD 추가/삭제/변경 / Short loop` 토글(재클릭 해제).
+- 동작: `Layer 추가/삭제 / STEPSEQ 변경 / 공법 추가/변경 / Overlay 변경 / FirstA 변경 / B 변경 / 연구소 제품` 토글(재클릭 해제). (2026-10-13 현행화 — 원본 `constants.ts` `OPTION_OTHER_PURPOSE`)
 - 상태: `detail.other_purpose`.
 
-#### [F-1.5] 참조 요청서 선택 + Merge (기타목적=Layer 추가/삭제 시)
+#### [F-1.5] 참조 요청서 선택 + Merge (기타목적=Layer 추가/삭제·STEPSEQ 변경·Overlay 변경 중 하나 이상 선택 시)
 - 위치: `Step1.tsx:186-212`; `index.tsx:1549-1628`
 - 동작: 승인 문서 중 선택 → 해당 문서 J/O 행 로드 → Merge 클릭 시 매칭/미매칭 통계 모달 → 확인 시 활성 매칭행 `기등록·st=X` 처리 + 미매칭 ref행 추가(loaded:true).
 - 상태/핸들러: `approvedDocs`, `refDocId/refDocLabel/refJayerRows/refOayerRows`, `mergeStats`; `handleRefDocSelect/handleMergeClick/handleMergeConfirm`.
