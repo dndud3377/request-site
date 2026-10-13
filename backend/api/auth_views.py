@@ -141,7 +141,7 @@ def refresh_token_view(request):
     응답: 새로운 access_token (Cookie에 저장)
     """
     # Cookie에서 refresh_token 가져오기
-    refresh_token = request.COOKIES.get('refresh_token')
+    refresh_token = request.COOKIES.get('approval_system_refresh')
     
     if not refresh_token:
         return Response(
@@ -181,6 +181,9 @@ def refresh_token_view(request):
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
+        # Refresh Token 유효기간 가져오기 (슬라이딩 갱신)
+        refresh_token_lifetime = getattr(settings, 'SERVICE_JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=30))
+        
         # 새로운 access_token 생성
         token_payload = {
             'sub': payload.get('sub', ''),
@@ -198,6 +201,16 @@ def refresh_token_view(request):
         
         new_access_token = jwt.encode(token_payload, service_jwt_secret, algorithm=service_jwt_algorithm)
         
+        # 새로운 refresh_token 생성 (슬라이딩 갱신: 마지막 접속 시점부터 30 일)
+        new_refresh_payload = {
+            'sub': payload.get('sub', ''),
+            'username': username,
+            'type': 'refresh',
+            'iat': datetime.utcnow(),
+            'exp': datetime.utcnow() + refresh_token_lifetime,
+        }
+        new_refresh_token = jwt.encode(new_refresh_payload, service_jwt_secret, algorithm=service_jwt_algorithm)
+        
         # 응답 생성 및 Cookie 설정
         response = Response({
             'success': True,
@@ -205,12 +218,23 @@ def refresh_token_view(request):
         })
         
         response.set_cookie(
-            key='access_token',
+            key='approval_system_token',
             value=new_access_token,
             httponly=True,
             secure=True,
             samesite='Lax',
             max_age=access_token_lifetime.total_seconds(),
+            path='/',
+        )
+        
+        # Refresh Token 도 함께 갱신 (30 일로)
+        response.set_cookie(
+            key='approval_system_refresh',
+            value=new_refresh_token,
+            httponly=True,
+            secure=True,
+            samesite='Lax',
+            max_age=refresh_token_lifetime.total_seconds(),
             path='/',
         )
         
@@ -523,7 +547,7 @@ def oidc_callback(request):
     
     # Cookie 설정 (공통)
     response.set_cookie(
-        key='access_token',
+        key='approval_system_token',
         value=service_access_token,
         httponly=True,
         secure=True,
@@ -533,7 +557,7 @@ def oidc_callback(request):
     )
     
     response.set_cookie(
-        key='refresh_token',
+        key='approval_system_refresh',
         value=service_refresh_token,
         httponly=True,
         secure=True,
@@ -568,7 +592,7 @@ def oidc_logout(request):
     
     # Cookie 삭제 (max_age=0으로 설정)
     response.set_cookie(
-        key='access_token',
+        key='approval_system_token',
         value='',
         httponly=True,
         secure=True,
@@ -578,7 +602,7 @@ def oidc_logout(request):
     )
     
     response.set_cookie(
-        key='refresh_token',
+        key='approval_system_refresh',
         value='',
         httponly=True,
         secure=True,
@@ -586,7 +610,7 @@ def oidc_logout(request):
         max_age=0,
         path='/',
     )
-
+    
     return response
 
 
