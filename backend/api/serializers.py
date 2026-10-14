@@ -4,11 +4,10 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, LayerSdException, PersonalMarkCategory,
+    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory,
 )
 from . import doc_permissions
 from . import design_rule_stats
-from . import layer_sd_check
 from .mailer import AUTO_REJECT_COMMENT_PREFIX
 
 User = get_user_model()
@@ -523,56 +522,6 @@ class LayerFilterSetSerializer(serializers.ModelSerializer):
             if k in value and not isinstance(value[k], list):
                 raise serializers.ValidationError(f"words.{k} 는 배열이어야 합니다.")
         return value
-
-
-class LayerSdExceptionSerializer(serializers.ModelSerializer):
-    """J/O-layer SD-Layer 검사 예외 신청. 한 건 = (table, process_id, sp, SD 첫 숫자, layerid) + 신청 사유.
-
-    입력은 SD 원문 전체(`sd`, 예: "1000.123 월평동 지점")와 사유(`reason`)이고, 매칭 키인 `sd_number` 는
-    그 맨 앞 숫자를 `layer_sd_check.extract_sd_number` 로 뽑아 채운다(검사와 같은 추출 규칙 — ASCII 숫자만).
-    상태·합의·반려 필드는 읽기 전용이다 — 합의/반려 액션(`LayerSdExceptionViewSet.agree/reject`)만 바꾼다.
-    """
-
-    class Meta:
-        model = LayerSdException
-        fields = ['id', 'table', 'process_id', 'sp', 'sd', 'sd_number', 'layerid', 'status', 'reason',
-                  'created_by', 'created_by_name', 'created_at',
-                  'team_agreed_by', 'team_agreed_by_name', 'team_agreed_at',
-                  'p_agreed_by', 'p_agreed_by_name', 'p_agreed_at',
-                  'rejected_by', 'rejected_by_name', 'rejected_at', 'reject_reason']
-        read_only_fields = ['id', 'sd_number', 'status', 'created_by', 'created_by_name', 'created_at',
-                            'team_agreed_by', 'team_agreed_by_name', 'team_agreed_at',
-                            'p_agreed_by', 'p_agreed_by_name', 'p_agreed_at',
-                            'rejected_by', 'rejected_by_name', 'rejected_at', 'reject_reason']
-        extra_kwargs = {
-            'sd': {'required': True, 'allow_blank': False},
-            'reason': {'required': True, 'allow_blank': False},
-        }
-
-    def validate_table(self, value):
-        if value not in ('J', 'O'):
-            raise serializers.ValidationError("table 은 'J' 또는 'O' 여야 합니다.")
-        return value
-
-    def validate_sd(self, value):
-        value = value.strip()
-        if not layer_sd_check.extract_sd_number(value):
-            raise serializers.ValidationError("sd 는 '1000.123 월평동 지점' 처럼 숫자로 시작해야 합니다.")
-        return value
-
-    def validate(self, attrs):
-        attrs['sd_number'] = layer_sd_check.extract_sd_number(attrs['sd'])
-        # 합의 대기·승인 상태에 같은 조합이 있으면 400 — 반려된 조합은 다시 신청할 수 있다.
-        # 매칭과 같은 기준(숫자 값 정규화)으로 비교한다 — `100.930/0200` 과 `100.93/200` 은 같은 조합이다.
-        key = layer_sd_check.exception_key(
-            attrs.get('process_id', ''), attrs.get('sp', ''), attrs['sd_number'], attrs['layerid'])
-        candidates = LayerSdException.objects.filter(
-            table=attrs['table'], process_id=attrs.get('process_id', ''), sp=attrs.get('sp', ''),
-            status__in=LayerSdException.ACTIVE_STATUSES,
-        ).values_list('process_id', 'sp', 'sd_number', 'layerid')
-        if any(layer_sd_check.exception_key(*values) == key for values in candidates):
-            raise serializers.ValidationError('이미 신청되었거나 승인된 예외입니다.')
-        return attrs
 
 
 class AdminNoticeSerializer(serializers.ModelSerializer):
