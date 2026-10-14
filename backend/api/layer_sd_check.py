@@ -3,7 +3,7 @@
 J-layer/O-layer 행의 `sd`(화면 헤더 "SD")는 보통 "1000.123 월평동 지점" 처럼 맨 앞에 숫자가 오고
 뒤에 글이 이어진다. 그 맨 앞 숫자(`1000.123`)가 같은 행의 `layerid`(헤더 "Layer")와 다르면
 상신할 수 없다. 단, 무조건 막을 수는 없으므로 `LayerSdException` 에서 **승인(APPROVED)된** 예외
-(process_id, sp, SD 첫 숫자, layerid 가 모두 같은 행)는 통과시킨다. 합의 대기·반려된 신청은 쓰지 않는다.
+(process_id, sp, SD 첫 숫자, layerid 가 모두 같은 행 — 영문 대소문자는 구분하지 않음)는 통과시킨다. 합의 대기·반려된 신청은 쓰지 않는다.
 
 프론트 `RequestPage/helpers.ts` 의 `extractSdNumber`/`findLayerSdMismatches` 와 같은 규칙이어야 한다 —
 화면에서 막히지 않는데 서버에서 막히거나 그 반대가 되면 안 된다.
@@ -59,9 +59,15 @@ def normalize_number(value):
     return f'{integer}.{fraction}' if fraction else integer
 
 
+# claude 수정 (2026-10-14): 소문자로 신청·승인된 예외가 대문자 마스터 행과 매칭되지 않아, 영문 값은 대문자로 맞춰 비교
 def exception_key(process_id, sp, sd_number, layerid):
-    """예외 매칭 키 — (process_id, sp) 는 trim, (SD 첫 숫자, layerid) 는 숫자 정규화한 4개 값."""
-    return (_text(process_id), _text(sp), normalize_number(sd_number), normalize_number(layerid))
+    """예외 매칭 키 — (process_id, sp) 는 trim, (SD 첫 숫자, layerid) 는 숫자 정규화한 4개 값.
+
+    process_id·sp·layerid 는 대소문자를 구분하지 않는다(대문자로 맞춤) — 마스터 데이터는 대문자인데
+    예외는 소문자로 입력될 수 있다. 프론트 `helpers.ts` 의 `sdExceptionKey` 와 같은 규칙이어야 한다.
+    """
+    return (_text(process_id).upper(), _text(sp).upper(), normalize_number(sd_number),
+            normalize_number(layerid).upper())
 
 
 def exception_keys(table):
