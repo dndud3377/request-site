@@ -945,7 +945,8 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
 
 #### T-Q1 OIDC 로그인 정상 경로
 - 조작: 비로그인 상태로 `/` 접속 → 자동으로 `/api/auth/oidc/login/` → ADFS 리다이렉트 → 로그인 → `/oidc-callback`
-- ✅ `access_token`·`refresh_token`이 **HttpOnly + Secure + SameSite=Lax** 쿠키로 설정
+- ✅ `approval_system_token`·`approval_system_refresh`가 **HttpOnly + Secure + SameSite=Lax** 쿠키로 설정
+  (2026-10-13 쿠키 이름 변경 — 예전 이름 `access_token`·`refresh_token`. 회귀 테스트 `OidcCallbackValidationTest` 도 2026-10-14 에 새 이름으로 맞춤)
 - ✅ 최초 로그인 사용자는 `role='NONE'`으로 자동 생성되고 권한관리 화면에 실시간(SSE)으로 뜬다
 - ❌ `secure=True` 고정이라 **HTTP(개발 10011)에서는 쿠키가 저장되지 않는다** — dev는 `AUTH_MODE=dev`(Bearer) 경로를 쓰므로 우회되지만, dev에서 SSO를 시험하면 무한 리다이렉트처럼 보인다
 
@@ -965,8 +966,8 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
   쿠키 없음·state 불일치·nonce 불일치 → **400** (§5-6)
 
 #### T-Q4 세션 만료 후 갱신
-- 조작: `access_token` 쿠키를 삭제(또는 12시간 경과)한 뒤 '세션 연장' 또는 `POST /api/auth/refresh/`
-- ✅ **기대**: `refresh_token`(7일)으로 재발급
+- 조작: `approval_system_token` 쿠키(예전 이름 `access_token`)를 삭제(또는 12시간 경과)한 뒤 '세션 연장' 또는 `POST /api/auth/refresh/`
+- ✅ **기대**: `approval_system_refresh`(예전 이름 `refresh_token`, 7일)로 재발급
 - ❌ **실제**: `refresh_token_view`에 `@permission_classes([IsAuthenticated])`가 붙어 있어 **access_token이 살아 있어야만** 호출된다 → 만료 후에는 항상 401, 재로그인 강제. **refresh 7일 설정이 사실상 무의미** → §5 **B-36**
 - 성공 판정: 만료 상태에서 연장 버튼을 눌러 **재로그인 없이** 세션이 이어져야 정상
 
