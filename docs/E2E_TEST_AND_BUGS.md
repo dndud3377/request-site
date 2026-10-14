@@ -2240,7 +2240,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 | 7 | id_token `nonce` = 쿠키 nonce | 400 | `Nonce mismatch` |
 | 8 | `loginid` 클레임 존재 (sub/preferred_username 으로 대체하지 않음) | 400 | `Required claim 'loginid' missing` |
 
-4. 성공 시 사용자 생성/갱신 → 서비스 토큰(`username` = DB `loginid`) 쿠키 발급 → `oidc_auth_state` 삭제 → 302 `/`.
+4. 성공 시 사용자 생성/갱신 → 서비스 토큰(`username` = DB `loginid`) 쿠키 발급 → `oidc_auth_state` 삭제 → 302 `/` (요청 형식과 무관하게 항상 302 — 2026-10-14 JSON 응답 분기 삭제).
 
 ### 설정·환경변수 변경
 - **추가** `OIDC_OP_ISSUER` — id_token 의 `iss` 와 **문자 하나까지 같은 값**(끝 `/` 포함). 운영 `.env` 에 반드시 넣어야 한다(비면 로그인 차단).
@@ -2257,9 +2257,14 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 ### 미결 항목 (사용자와 토의 예정 — 이번 수정 범위 밖)
 - **제보 A-2 원인**: 저장소에는 `/oidc-callback` 을 백엔드로 보내는 nginx location 이 없고, 프론트 `OIDCCallbackPage` 는
   존재하지 않는 hidden input(`#id_token`)을 읽는다. 운영 nginx 설정과 저장소가 다른지 확인이 필요하다.
-  이 프론트 경로로 콜백이 오면 이제 state 쿠키 검증 때문에 400 이 될 수 있다(JSON 전송 시 `state` 가 비어 있음).
-- **프론트 잔여 코드**: `AuthContext.tsx`·`client.ts` 가 응답의 `nonce_jwt` 를 localStorage 에 저장하고 `OIDCCallbackPage` 가 그 값을 보낸다.
-  이제 응답에 `nonce_jwt` 가 없으므로 아무 동작도 하지 않는다(오류 없음). 정리 여부는 A-2 와 함께 정한다.
+  - (2026-10-14) 사용자 확인: 가동 중인 운영 컨테이너 `request_nginx` 의 `/etc/nginx/nginx.conf:76` 에 `location /oidc-callback` 블록이 있다.
+    같은 날 저장소 확인 결과: `nginx/nginx.conf`(main·전 원격 브랜치·git 이력)에는 `oidc` 문자열이 **없다** — 저장소 반영 여부는 미결.
+  - (2026-10-14) `OIDCCallbackPage` 와 `App.tsx` 의 `/oidc-callback` 분기는 **삭제됐다**(아래 항목).
+- ✅ **(2026-10-14) 프론트 잔여 코드 정리 완료**: `AuthContext.tsx`·`client.ts` 의 `nonce_jwt` localStorage 저장,
+  `OIDCCallbackPage.tsx`, `authAPI.oidcCallback`, 그 페이지 전용 i18n 키(`login.error_no_id_token`·`error_processing`·
+  `processing`·`back_to_main`)를 삭제했다. 백엔드 `oidc_callback` 의 JSON 응답 분기(`Content-Type: application/json` 이면
+  `{success, redirect_url, user}` 를 돌려주던 것)도 삭제해 **항상 302 리다이렉트**로 응답한다.
+  호출하던 곳은 `OIDCCallbackPage` 뿐이었고 테스트는 모두 form POST 라 영향이 없다.
 - **`.cer` 파일 2개 삭제**: 운영 배포 후 로그인 확인을 마친 다음 진행한다(B-47).
 - **code 교환(back-channel)**: implicit 전환으로 선택지에서 빠졌다. 필요하면 hybrid 로 되돌리고 token endpoint 교환을 구현한다.
 
