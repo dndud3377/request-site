@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI, layerSdExceptionsAPI } from '../../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import { useCellSelection } from '../../hooks/useCellSelection';
@@ -23,8 +23,6 @@ import {
   BbAutoFillRange,
   BbAutoFillAmbiguousRow,
   FilterSet,
-  LayerSdException,
-  LayerSdMismatch,
   GuideFeatureKey,
   UserWithRole,
   AddressBook,
@@ -111,7 +109,7 @@ import {
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
-  layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput, findLayerSdMismatches,
+  layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -476,8 +474,6 @@ export default function RequestPage(): React.ReactElement {
   const [jayerFilterSets, setJayerFilterSets] = useState<FilterSet[]>([]);
   const [oayerFilterSets, setOayerFilterSets] = useState<FilterSet[]>([]);
   const [jayerFilterModalOpen, setJayerFilterModalOpen] = useState(false);
-  // J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사 예외 — 서버(팀 공유) 목록. 상신 검증(validate)과 관리 모달이 함께 쓴다.
-  const [sdExceptions, setSdExceptions] = useState<Record<'J' | 'O', LayerSdException[]>>({ J: [], O: [] });
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
   const [jayerNewFilter, setJayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [oayerNewFilter, setOayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
@@ -543,22 +539,6 @@ export default function RequestPage(): React.ReactElement {
     setAdiCdTargetDraftProductOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
   const setAdiCdTargetDraftProcessIdOptionsStable = (opts: string[]) =>
     setAdiCdTargetDraftProcessIdOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
-
-  // SD-Layer 검사 예외 목록(J·O) 로드 — 승인된 예외만 검사에 쓴다(합의 대기·반려 신청은 제외).
-  // 가이드 투어 미리보기에서는 서버 값이 필요 없다.
-  useEffect(() => {
-    if (isTourMode) return;
-    let cancelled = false;
-    Promise.all([layerSdExceptionsAPI.list('J', 'APPROVED'), layerSdExceptionsAPI.list('O', 'APPROVED')])
-      .then(([j, o]) => {
-        if (!cancelled) setSdExceptions({ J: j, O: o });
-      })
-      .catch(() => {
-        if (!cancelled) addToast(t('request.sd_layer_exc_load_failed'), 'error');
-      });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     linesAPI.list()
@@ -3927,27 +3907,6 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // redirectStep: 오류를 고칠 수 있는 단계가 currentStep 이 아닐 때만 채워진다(현재는 Backbone 조합 영역 → STEP1).
-  // J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사 — 불일치 행(예외 제외). 서버 `layer_sd_check.validate_document` 와 같은 규칙.
-  const jayerSdMismatches: LayerSdMismatch[] = findLayerSdMismatches(jayerRows, sdExceptions.J);
-  const oayerSdMismatches: LayerSdMismatch[] = findLayerSdMismatches(oayerRows, sdExceptions.O);
-
-  const addSdLayerMismatchError = (
-    newErrors: Partial<Record<string, string>>,
-    errorMessages: string[],
-    kind: 'jayer' | 'oayer',
-    mismatches: LayerSdMismatch[],
-  ) => {
-    if (mismatches.length === 0) return;
-    mismatches.forEach((m) => {
-      newErrors[`${kind}_sdlayer_${m.rowId}`] = t('request.sd_layer_cell_hint', { sd: m.sdNumber, layer: m.layerid }) as string;
-    });
-    const msg = (kind === 'jayer'
-      ? t('request.jayer_sd_layer_mismatch', { count: mismatches.length })
-      : t('request.oayer_sd_layer_mismatch', { count: mismatches.length })) as string;
-    newErrors[`${kind}_sdlayer_required`] = msg;
-    errorMessages.push(msg);
-  };
-
   const validate = (currentStep: number): { valid: boolean; errors: string[]; redirectStep?: number } => {
     const newErrors: Partial<Record<string, string>> = {};
     const errorMessages: string[] = [];
@@ -4206,7 +4165,6 @@ export default function RequestPage(): React.ReactElement {
         newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: nocRowCount });
         errorMessages.push(t('request.jayer_noc_required' as never, { count: nocRowCount }) as string);
       }
-      addSdLayerMismatchError(newErrors, errorMessages, 'jayer', jayerSdMismatches);
       // J-layer 에 st='O 계열' 활성 행이 있으면 Backbone 조합 영역(STEP1)이 필수가 된다.
       // 여기서 처음 판정되므로, 막히면 goToStep 이 STEP1 로 되돌려 보낸다.
       if (requiresBbEntries(jayerRows)) addBbEntryError(newErrors, errorMessages, true);
@@ -4234,7 +4192,6 @@ export default function RequestPage(): React.ReactElement {
         newErrors['oayer_noc_required'] = t('request.oayer_noc_required' as never, { count: oViolations.length });
         errorMessages.push(t('request.oayer_noc_required' as never, { count: oViolations.length }) as string);
       }
-      addSdLayerMismatchError(newErrors, errorMessages, 'oayer', oayerSdMismatches);
     }
 
     if (currentStep === 5) {
@@ -4269,9 +4226,6 @@ export default function RequestPage(): React.ReactElement {
         newErrors['oayer_noc_required'] = t('request.oayer_noc_required' as never, { count: oViolations.length });
         errorMessages.push(t('request.oayer_noc_required' as never, { count: oViolations.length }) as string);
       }
-      // 초안 복원 등으로 STEP 3·4 검증을 건너뛴 경우를 대비한 SD-Layer 불일치 최종 안전망(상신은 이 단계 검증만 돈다)
-      addSdLayerMismatchError(newErrors, errorMessages, 'jayer', jayerSdMismatches);
-      addSdLayerMismatchError(newErrors, errorMessages, 'oayer', oayerSdMismatches);
       // 초안 복원 등으로 STEP 1 검증을 건너뛴 경우를 대비한 최종 안전망
       addStNocError(newErrors, errorMessages, 'jayer', jayerRows);
       addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
@@ -4439,7 +4393,7 @@ export default function RequestPage(): React.ReactElement {
       const oViolations = findNocBorrowViolations(oayerRows);
       // validate(4) 의 우회 조건과 반드시 같은 판정이어야 한다 — 어긋나면 없는 오류로 탭이 전환된다.
       const partialShotMissing = !isMapOnlyScope && !detail.partial_shot?.trim();
-      if (partialShotMissing && oViolations.length === 0 && oayerSdMismatches.length === 0) setOayerInfoTab('info');
+      if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
     setTimeout(() => {

@@ -8,7 +8,6 @@ import {
   AdiCdStep,
   AdiCdTarget,
   MergeTable,
-  LayerSdExceptionSlot,
 } from '../../types';
 
 // ===== Option Constants =====
@@ -194,21 +193,6 @@ export const isNocSpecial = (noc?: string): boolean =>
  */
 export const isRowInactive = (st?: string): boolean => (st ?? '').trim() === ST_X;
 
-/**
- * J/O-layer SD-Layer 검사 예외 신청에 합의할 수 있는 칸 — 백엔드 `CanManageLayerSdException.agree_slots` 와
- * 같아야 한다. 팀 칸(team)은 J 표=TE_J·O 표=TE_O, P 칸(p)은 TE_P(J·O 둘 다), MASTER 는 두 칸 모두.
- * 합의 칸이 하나라도 있는 사용자는 그 표의 신청을 반려하고 예외를 삭제할 수도 있다.
- */
-const SD_EXCEPTION_TEAM_ROLES: Record<'J' | 'O', string> = { J: 'TE_J', O: 'TE_O' };
-const SD_EXCEPTION_P_ROLE = 'TE_P';
-const SD_EXCEPTION_ALL_SLOTS_ROLE = 'MASTER';
-
-export const sdExceptionAgreeSlots = (role: string | null | undefined, table: 'J' | 'O'): LayerSdExceptionSlot[] => {
-  if (role === SD_EXCEPTION_ALL_SLOTS_ROLE) return ['team', 'p'];
-  if (role === SD_EXCEPTION_TEAM_ROLES[table]) return ['team'];
-  if (role === SD_EXCEPTION_P_ROLE) return ['p'];
-  return [];
-};
 
 // ===== Shared Types =====
 export type CRegion = 'top' | 'middle' | 'bottom';
