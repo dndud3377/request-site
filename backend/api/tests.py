@@ -10164,9 +10164,10 @@ class OidcCallbackValidationTest(TestCase):
         r = client.post(self.CALLBACK_URL, {'id_token': token, 'state': real_state if state is None else state})
         return client, r
 
+    # claude 수정 (2026-10-14): 서비스 쿠키 이름 변경(access_token → approval_system_token, e0283f7)에 테스트를 맞춤
     def _assert_rejected(self, r, status_code):
         self.assertEqual(r.status_code, status_code, r.content)
-        self.assertNotIn('access_token', r.cookies)
+        self.assertNotIn('approval_system_token', r.cookies)
 
     def test_login_init_requests_implicit_flow_with_state_cookie(self):
         r = Client().get(self.LOGIN_URL)
@@ -10178,10 +10179,11 @@ class OidcCallbackValidationTest(TestCase):
         self.assertTrue(cookie['secure'])
         self.assertTrue(cookie['httponly'])
 
+    # claude 수정 (2026-10-14): 서비스 쿠키 이름 변경(access_token → approval_system_token, e0283f7)에 테스트를 맞춤
     def test_valid_login_issues_service_cookies_and_consumes_state(self):
         client, r = self._login()
         self.assertEqual(r.status_code, 302, r.content)
-        self.assertTrue(r.cookies['access_token'].value)
+        self.assertTrue(r.cookies['approval_system_token'].value)
         self.assertEqual(r.cookies[auth_views.OIDC_STATE_COOKIE_NAME]['max-age'], 0)
         self.assertEqual(client.get('/api/auth/me/').json()['user']['username'], 'sso_user01')
 
