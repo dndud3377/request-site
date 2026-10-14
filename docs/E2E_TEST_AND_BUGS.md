@@ -141,6 +141,15 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 ```
 - 소요: pip 설치 **약 20초**, 테스트 실행 **약 4초**.
 - `staticfiles.W004`(static 디렉터리 없음) 경고 1건은 무해하다.
+- **Python 3.13 이면(2026-10-14 확인)** 위 1) 에서 `Pillow`·`pandas`·`sqlalchemy` 세 개는 **버전 고정 없이** 설치한다.
+  - `Pillow==10.3.0` 은 3.13용 wheel 이 없어 소스 빌드로 가다가 실패한다
+    (`ERROR: Failed to build 'Pillow' when getting requirements to build wheel`).
+  - `pandas==2.2.2` 도 3.13용 wheel 이 없어 소스 빌드가 필요하다(`pip download --only-binary=:all:` 로 확인).
+    빌드까지 실패하는지는 확인하지 못했다 — Pillow 에서 설치가 먼저 멈췄다.
+  - `sqlalchemy==2.0.30` 은 설치는 되지만 import 할 때 죽는다
+    (`TypeError: Can't replace canonical symbol for '__firstlineno__' with new int value …`).
+  - 고정을 풀면 당시 Pillow 12.3.0 / pandas 3.0.6 / SQLAlchemy 2.1.4 가 깔렸고 `manage.py test api` 693건이 통과했다.
+    운영 `requirements.txt`(Docker) 는 그대로다 — 이 레시피에서만 바꾼다.
 - **임시 재현 테스트를 붙이려면** `$SP/stubs/` 에 `verify_xxx.py` 를 두고
   `manage.py test verify_xxx` 로 부르면 된다 — 프로젝트의 `api/tests.py` 를 오염시키지 않는다.
   (§5-4 의 B-06·B-32·B-57·B-63 재현이 이 방식으로 확인됐다.)
