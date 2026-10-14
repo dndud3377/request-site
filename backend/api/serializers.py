@@ -564,10 +564,11 @@ class LayerSdExceptionSerializer(serializers.ModelSerializer):
         attrs['sd_number'] = layer_sd_check.extract_sd_number(attrs['sd'])
         # 합의 대기·승인 상태에 같은 조합이 있으면 400 — 반려된 조합은 다시 신청할 수 있다.
         # 매칭과 같은 기준(숫자 값 정규화)으로 비교한다 — `100.930/0200` 과 `100.93/200` 은 같은 조합이다.
+        # claude 수정 (2026-10-14): 매칭이 대소문자를 구분하지 않게 바뀌어, 후보도 iexact 로 모아 `abc1` 과 `ABC1` 을 같은 조합으로 막는다
         key = layer_sd_check.exception_key(
             attrs.get('process_id', ''), attrs.get('sp', ''), attrs['sd_number'], attrs['layerid'])
         candidates = LayerSdException.objects.filter(
-            table=attrs['table'], process_id=attrs.get('process_id', ''), sp=attrs.get('sp', ''),
+            table=attrs['table'], process_id__iexact=attrs.get('process_id', ''), sp__iexact=attrs.get('sp', ''),
             status__in=LayerSdException.ACTIVE_STATUSES,
         ).values_list('process_id', 'sp', 'sd_number', 'layerid')
         if any(layer_sd_check.exception_key(*values) == key for values in candidates):

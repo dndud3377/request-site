@@ -82,7 +82,9 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
 
    ```bash
    SP=/tmp/e2e                                   # 프로젝트 밖 작업 디렉터리
-   mkdir -p $SP/stubs && python3 -m venv $SP/venv
+   # python3.11 로 venv 를 만든다(운영 Dockerfile 과 같은 버전). 기본 python3 가 3.13 이면 Pillow==10.3.0·pandas==2.2.2
+   # 설치 파일이 없어 빌드에 실패하고 sqlalchemy==2.0.30 은 import 에서 죽는다(2026-10-14 확인). 3.11 이 없으면 3.12 도 된다.
+   mkdir -p $SP/stubs && python3.11 -m venv $SP/venv
 
    # requirements.txt 를 그대로 쓰지 않는다.
    #  - mysqlclient 제외: 빌드에 libmysqlclient-dev+gcc 필요, sqlite 로 돌리므로 불필요
