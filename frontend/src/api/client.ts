@@ -54,7 +54,7 @@ import {
 
 // ===== JWT 토큰 관리 =====
 
-const TOKEN_KEY = 'access_token';
+const TOKEN_KEY = 'approval_system_token';
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -130,7 +130,8 @@ async function request<T>(
     let errMsg = `HTTP ${res.status}`;
     try {
       const body = await res.json();
-      errMsg = body.error || body.detail || JSON.stringify(body);
+      const detail = body.error || body.detail;
+      errMsg = detail ? `HTTP ${res.status}: ${detail}` : errMsg;
     } catch {
       //
     }
