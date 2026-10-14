@@ -198,14 +198,11 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   상신할 수 있다(그 외 403). draft 를 **볼 수 있는 사람**과 **상신할 수 있는 사람**을 분리하기 위해
   조회 스코프와 별개로 검사한다. `resubmit` 도 같은 규칙이다(반려 문서는 의뢰자·지정 PL·공유 그룹 멤버·MASTER).
 - **검증 순서**(하나라도 걸리면 400, 이 시점까지 DB 변경 없음): 지정 PL 파싱·검증 →
-  `_validate_bb_mapping` → **`layer_sd_check.validate_document`**(J/O-layer SD 첫 숫자 ↔ Layer 일치, 2026-10 —
-  `docs/REQUEST.md` §4.1 2026-10-05 항목) → `_validate_post_approvers` → `_resolve_sales_agreers` →
+  `_validate_bb_mapping` → `_validate_post_approvers` → `_resolve_sales_agreers` →
   `_validate_sales_agreers`. 통과 후 한 트랜잭션에서 상태 전이 + step 생성이 이뤄진다.
-  `resubmit`·`requester_resubmit` 도 같은 두 검증(`_validate_bb_mapping` 직후 `layer_sd_check`)을 한다.
-  **(2026-10-07)** `direct-approve`(`_validate_bb_mapping` 직후)·`peer-submit`(본인 PL 단계 확인 직후, 단계 진행 전)도
-  `layer_sd_check` 를 검사해 불일치면 400 으로 막는다(`docs/REQUEST.md` §4.1 2026-10-07 항목).
-  **(2026-10-12)** 검사는 **승인(APPROVED)된 예외만** 인정한다 — 합의 대기·반려 신청은 쓰지 않는다
-  (`docs/REQUEST.md` §4.1 2026-10-12 항목).
+  **(2026-10-14 삭제)** `_validate_bb_mapping` 직후에 있던 J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사
+  (`layer_sd_check.validate_document`)를 submit·resubmit·requester-resubmit·direct-approve·peer-submit
+  모두에서 없앴다 — SD 와 Layer 가 달라도 상신된다(`docs/REQUEST.md` §4.1 2026-10-14 SD-Layer 삭제 항목).
 - ✅ **다중 지정 PL(2026-07)**: payload `designated_pl_loginids: [...]`(배열, 단일 `designated_pl_loginid` 도 호환). 지정 PL **전원**에 대해 `agent='PL', round=1` pending step을 각각 생성한다(`_resolve_designated_pls`로 파싱·검증). `document.designated_pl` FK 에는 **대표(첫 번째)** 만 기록(표시/하위호환용).
 - 동작: `status → under_review`, `submitted_at` 기록, 기존 step 전체 삭제 후 PL step N개 생성. 통보처(있으면) 상신 메일 발송.
 - ✅ **영업/기술지원 합의자(SA, 2026-08)**: `detail.sales_agreers` 에 지정된 PL 권한자마다 `agent='SA', is_parallel=True` step 을 **PL 과 같은 회차에 함께** 생성한다(`_create_sales_agreer_steps`). 지정이 없으면 step 자체를 만들지 않는다(화면·메일 모두 '해당없음'). 자세한 규칙은 **Case P** 참조.
@@ -227,8 +224,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case D — PL 수정 후 상신 (`peer_submit`)
 - 권한: MASTER 또는 (현재 회차 pending PL step) assignee 본인. 문서 내용은 사전에 `/request` 화면에서 수정·update됨(`can_edit` under_review 분기가 pending PL 담당자 전원 허용).
 - 동작: 본인 PL step `approved`(comment 앞 `[수정 후 상신]` 태그) → Case B와 동일하게 **전원 합의 시에만** R 생성.
-- ✅ **(2026-10-07) SD-Layer 일치 검사**: 단계를 진행하기 전에 `layer_sd_check.validate_document()` 를 돌려
-  J/O-layer SD 첫 숫자 ↔ Layer 불일치(예외 제외)면 400 — PL step 은 pending 그대로 남는다.
+- **(2026-10-14 삭제)** 단계 진행 전에 돌던 SD-Layer 일치 검사(2026-10-07 추가)는 없어졌다.
 
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), J(due: 6영업일, 병렬), O(due: 6영업일, 병렬)** 동시 생성.
@@ -1966,13 +1962,8 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
   저장. 이미 `st==='X'`인 행은 다시 매칭하지 않는다(재적용해도 중복 집계 없음). **매칭 1건
   이상일 때만** baseline 도 함께 저장한다(매칭 0건이면 `additional_notes` 자체를 건드리지 않음).
 
-- (참고, 2026-10) 같은 TE_J/TE_O/MASTER 권한 관례를 쓰는 별도 목록으로 **J/O-layer SD-Layer 검사 예외**
-  `GET/POST /api/layer-sd-exceptions/?table=J|O[&status=…]`, `POST /api/layer-sd-exceptions/{id}/agree/`·`/reject/`,
-  `GET /api/layer-sd-exceptions/pending-count/`, `DELETE /api/layer-sd-exceptions/{id}/` 가 있다.
-  **(2026-10-12 변경)** 조회·**신청은 로그인한 누구나**(사유 필수)이고, 신청은 팀 칸(J 예외=TE_J, O 예외=TE_O)과
-  P 칸(TE_P) **두 합의가 모두** 끝나야 승인된다(MASTER 는 두 칸 모두 가능). 합의자는 사유를 적어 반려·삭제할 수 있고,
-  신청자 본인은 승인 전 신청을 취소할 수 있다. 화면은 **홈 상단 버튼 줄 아랫줄의 `SD-Layer 예외 (N)` 버튼**(모든 사용자,
-  N = 합의 대기 건수). 상세는 `docs/REQUEST.md` §4.1 2026-10-12 항목(이전 2026-10-05·2026-10-07 항목은 이력).
+- (참고) 2026-10 에 있던 **J/O-layer SD-Layer 검사 예외** API(`/api/layer-sd-exceptions/`)와 홈 `SD-Layer 예외`
+  버튼은 **2026-10-14 에 삭제**됐다(`docs/REQUEST.md` §4.1 2026-10-14 SD-Layer 삭제 항목).
 
 #### 12-3-1. 초기화 (`reset-layer-filter`, 2026-09)
 
