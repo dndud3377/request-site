@@ -110,6 +110,9 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
    ```
    - 소요: pip 약 20초 / 백엔드 테스트 약 4초 / `npm ci` 약 30초.
    - `staticfiles.W004` 경고 1건은 무해하다.
+   - **Python 3.13 이면** `Pillow`·`pandas`·`sqlalchemy` 는 **버전 고정 없이** 설치한다
+     (Pillow 10.3.0 은 3.13 wheel 이 없어 빌드 실패, pandas 2.2.2 도 3.13 wheel 없음, sqlalchemy 2.0.30 은 import 시 TypeError — 2026-10-14 확인).
+     운영 `requirements.txt` 는 바꾸지 않는다. 상세는 `docs/E2E_TEST_AND_BUGS.md` §1.4.1.
    - 상세·배경은 `docs/E2E_TEST_AND_BUGS.md` **§1.4.1** 참조(이 절차의 원본).
 
    **1-2. 버그를 발견하면 "재현 테스트"로 사실을 고정한다 [필수].**
