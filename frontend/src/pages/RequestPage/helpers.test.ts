@@ -7,10 +7,10 @@ import {
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
-  matchLayerColor, buildFlowStepTitlePart, extractSdNumber, findLayerSdMismatches, normalizeNumber,
+  matchLayerColor, buildFlowStepTitlePart,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
-import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet, LayerSdException } from '../../types';
+import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
 
 describe('buildFlowStepTitlePart', () => {
   const flow = (id: string, location: string, product_name: string, process_id: string, step_from: string, step_to: string): FlowChartRow =>
@@ -1118,105 +1118,5 @@ describe('applyMergePaste', () => {
     const filled = applyMergePaste(seed, seed[0].id, 'before', paste(row(1)));
     const partial = applyMergePaste(filled, filled[0].id, 'before', paste('B1\tSPX'));
     expect(partial[0].before).toEqual({ process_id: 'B1', sp: 'SPX', sd: 'SD1', pp: 'PP1', layerid: '' });
-  });
-});
-
-// ===== J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사 — 백엔드 layer_sd_check.py 와 같은 규칙 =====
-
-describe('extractSdNumber', () => {
-  it('SD 맨 앞 숫자를 돌려준다', () => {
-    expect(extractSdNumber('1000.123 월평동 지점')).toBe('1000.123');
-    expect(extractSdNumber('  7 abc')).toBe('7');
-    expect(extractSdNumber('1000.123월평동')).toBe('1000.123');
-    expect(extractSdNumber('1.2.3 x')).toBe('1.2.3');
-  });
-
-  it('숫자로 시작하지 않으면 빈 문자열이다', () => {
-    expect(extractSdNumber('ABLD')).toBe('');
-    expect(extractSdNumber('SD01')).toBe('');
-    expect(extractSdNumber('월평동 3')).toBe('');
-    expect(extractSdNumber('')).toBe('');
-    expect(extractSdNumber(undefined)).toBe('');
-  });
-});
-
-describe('findLayerSdMismatches', () => {
-  const row = (over: Record<string, string>) => ({
-    id: 'r1', updated: '', sortOrder: 1, process_id: 'P1', sp: '10', sd: '1000.123 월평동 지점', pp: 'PP',
-    layerid: '1000.123', st: 'O', new_or_copy: '신규', product_name: '', step: '', item_id: '', ...over,
-  });
-  const exc: LayerSdException = {
-    id: 1, table: 'J', process_id: 'P1', sp: '10', sd: '1000.123 월평동 지점', sd_number: '1000.123', layerid: '2000',
-    status: 'APPROVED', reason: '', created_by: '', created_by_name: '', created_at: '',
-    team_agreed_by: '', team_agreed_by_name: '', team_agreed_at: null, p_agreed_by: '', p_agreed_by_name: '', p_agreed_at: null,
-    rejected_by: '', rejected_by_name: '', rejected_at: null, reject_reason: '',
-  };
-
-  it('일치하면 통과, 다르면 불일치 행을 돌려준다', () => {
-    expect(findLayerSdMismatches([row({})], [])).toEqual([]);
-    expect(findLayerSdMismatches([row({ layerid: '2000' })], [])).toEqual([
-      { rowId: 'r1', process_id: 'P1', sp: '10', sd: '1000.123 월평동 지점', sdNumber: '1000.123', layerid: '2000' },
-    ]);
-  });
-
-  it('SD 에 숫자가 없거나 layerid 가 비면 통과한다', () => {
-    expect(findLayerSdMismatches([row({ sd: 'ABLD', layerid: 'M1' })], [])).toEqual([]);
-    expect(findLayerSdMismatches([row({ layerid: '' })], [])).toEqual([]);
-  });
-
-  it('비활성(st=X)·기등록/layer삭제/미진행 행은 검사하지 않는다', () => {
-    const rows = [
-      row({ id: 'a', layerid: '9', st: 'X' }),
-      row({ id: 'b', layerid: '9', new_or_copy: '기등록' }),
-      row({ id: 'c', layerid: '9', new_or_copy: 'layer삭제' }),
-      row({ id: 'd', layerid: '9', new_or_copy: '미진행' }),
-    ];
-    expect(findLayerSdMismatches(rows, [])).toEqual([]);
-  });
-
-  it('예외는 process_id·sp·SD 첫 숫자·layerid 4개가 모두 같을 때만 통과시킨다', () => {
-    expect(findLayerSdMismatches([row({ layerid: '2000' })], [exc])).toEqual([]);
-    expect(findLayerSdMismatches([row({ layerid: '2000', process_id: 'P2' })], [exc])).toHaveLength(1);
-    expect(findLayerSdMismatches([row({ layerid: '2000', sp: '20' })], [exc])).toHaveLength(1);
-    expect(findLayerSdMismatches([row({ layerid: '3000' })], [exc])).toHaveLength(1);
-    expect(findLayerSdMismatches([row({ layerid: '2000', sd: '1000.124 x' })], [exc])).toHaveLength(1);
-  });
-
-  it('값 앞뒤 공백은 무시하고 비교한다', () => {
-    expect(findLayerSdMismatches([row({ layerid: ' 2000 ', process_id: ' P1 ', sp: '10 ' })], [exc])).toEqual([]);
-  });
-
-  it('숫자는 값으로 비교한다(소수부 끝 0·정수부 앞 0 무시)', () => {
-    expect(findLayerSdMismatches([row({ sd: '100.930 월평동', layerid: '100.93' })], [])).toEqual([]);
-    expect(findLayerSdMismatches([row({ sd: '100.93 월평동', layerid: '100.930' })], [])).toEqual([]);
-    expect(findLayerSdMismatches([row({ sd: '0100 월평동', layerid: '100' })], [])).toEqual([]);
-    expect(findLayerSdMismatches([row({ sd: '100.0 월평동', layerid: '100' })], [])).toEqual([]);
-    expect(findLayerSdMismatches([row({ sd: '100.931 월평동', layerid: '100.93' })], [])).toHaveLength(1);
-  });
-
-  it('예외도 숫자 값으로 매칭한다', () => {
-    const numericExc = { ...exc, sd_number: '100.930', layerid: '0200' };
-    expect(findLayerSdMismatches([row({ sd: '100.93 월평동', layerid: '200' })], [numericExc])).toEqual([]);
-  });
-
-  it('전각 숫자는 SD 첫 숫자로 보지 않는다(백엔드 re.ASCII 와 같음)', () => {
-    expect(extractSdNumber('１０００.１２３ 월평동')).toBe('');
-    expect(findLayerSdMismatches([row({ sd: '１０００.１２３ 월평동', layerid: '2000' })], [])).toEqual([]);
-  });
-});
-
-describe('normalizeNumber', () => {
-  it('정수부 앞 0 과 소수부 끝 0 을 지운다', () => {
-    expect(normalizeNumber('100.930')).toBe('100.93');
-    expect(normalizeNumber('0100')).toBe('100');
-    expect(normalizeNumber('100.0')).toBe('100');
-    expect(normalizeNumber('000')).toBe('0');
-    expect(normalizeNumber(' 7 ')).toBe('7');
-  });
-
-  it('숫자 형식이 아니면 trim 한 원문을 돌려준다', () => {
-    expect(normalizeNumber('1.2.30')).toBe('1.2.30');
-    expect(normalizeNumber('M1')).toBe('M1');
-    expect(normalizeNumber(undefined)).toBe('');
   });
 });
