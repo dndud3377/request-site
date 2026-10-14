@@ -1194,6 +1194,15 @@ describe('findLayerSdMismatches', () => {
     expect(findLayerSdMismatches([row({ sd: '100.931 월평동', layerid: '100.93' })], [])).toHaveLength(1);
   });
 
+  // claude 수정 (2026-10-14): 예외 매칭이 영문 대소문자를 구분하지 않는지 회귀 테스트
+  it('예외는 process_id·sp·layerid 의 영문 대소문자를 구분하지 않고 매칭한다', () => {
+    const lowerExc = { ...exc, process_id: 'abc1', sp: 'sp01', layerid: 'm1' };
+    expect(findLayerSdMismatches([row({ process_id: 'ABC1', sp: 'SP01', layerid: 'M1' })], [lowerExc])).toEqual([]);
+    const upperExc = { ...exc, process_id: 'ABC1', sp: 'SP01', layerid: 'M1' };
+    expect(findLayerSdMismatches([row({ process_id: 'abc1', sp: 'sp01', layerid: 'm1' })], [upperExc])).toEqual([]);
+    expect(findLayerSdMismatches([row({ process_id: 'ABC2', sp: 'SP01', layerid: 'M1' })], [lowerExc])).toHaveLength(1);
+  });
+
   it('예외도 숫자 값으로 매칭한다', () => {
     const numericExc = { ...exc, sd_number: '100.930', layerid: '0200' };
     expect(findLayerSdMismatches([row({ sd: '100.93 월평동', layerid: '200' })], [numericExc])).toEqual([]);
