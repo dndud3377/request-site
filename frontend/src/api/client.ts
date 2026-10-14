@@ -84,7 +84,6 @@ async function redirectToSSO(): Promise<void> {
     const res = await fetch(`${BASE_URL}/auth/oidc/login/`, { credentials: 'include' });
     if (res.ok) {
       const data = await res.json();
-      if (data.nonce_jwt) localStorage.setItem('oidc_state_jwt', data.nonce_jwt);
       window.location.href = data.redirect_url;
     } else {
       isRedirectingToSSO = false;
@@ -161,10 +160,9 @@ export const authAPI = {
     get<{ user: UserInfo }>('/auth/me/'),
   refresh: () =>
     post<{ success: boolean; user: UserInfo }>('/auth/refresh/'),
+  // claude 수정 (2026-10-14): 백엔드가 주지 않는 nonce_jwt 타입과 미사용 oidcCallback 제거
   oidcLogin: () =>
-    get<{ redirect_url: string; nonce_jwt?: string }>('/auth/oidc/login/'),
-  oidcCallback: (data: { id_token: string; state?: string; nonce_jwt?: string }) =>
-    post<{ success?: boolean; redirect_url?: string; user?: unknown }>('/auth/oidc/callback/', data),
+    get<{ redirect_url: string }>('/auth/oidc/login/'),
   oidcLogout: () =>
     post<{ message: string; logout_url: string }>('/auth/oidc/logout/'),
   devLogin: (username: string) =>
