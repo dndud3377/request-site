@@ -1,4 +1,4 @@
-import { FlowChartRow, JayerRow, OayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet, LayerSdException, LayerSdMismatch } from '../../types';
+import { FlowChartRow, JayerRow, OayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -883,66 +883,4 @@ export const validateAdiCdTargets = (
     else seen.add(key);
   });
   return { hasIncomplete, hasDuplicate };
-};
-
-// ===== J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사 (백엔드 layer_sd_check.py 와 같은 규칙) =====
-
-/** SD 맨 앞 숫자 — "1000.123 월평동 지점" → "1000.123". 숫자로 시작하지 않으면 매치되지 않는다. */
-const SD_NUMBER_PATTERN = /^\s*(\d+(?:\.\d+)*)/;
-
-/** SD 값의 맨 앞 숫자 문자열. 숫자로 시작하지 않으면 ''. */
-export const extractSdNumber = (sd: string | undefined | null): string => {
-  const match = SD_NUMBER_PATTERN.exec(sd ?? '');
-  return match ? match[1] : '';
-};
-
-/** 숫자 값으로 비교할 수 있는 형식 — 정수부와 (있으면) 소수부 하나. 점이 2개 이상이면 문자열로 비교한다. */
-const NUMERIC_PATTERN = /^(\d+)(?:\.(\d+))?$/;
-
-/**
- * 숫자 비교용 정규화 — 정수부 앞 0 과 소수부 끝 0 을 지운다("0100.930" → "100.93", "100.0" → "100").
- * 숫자 형식이 아니면 trim 한 원문. 백엔드 `layer_sd_check.normalize_number` 와 같은 규칙이어야 한다.
- */
-export const normalizeNumber = (value: string | undefined | null): string => {
-  const text = (value ?? '').trim();
-  const match = NUMERIC_PATTERN.exec(text);
-  if (!match) return text;
-  const integer = match[1].replace(/^0+/, '') || '0';
-  const fraction = (match[2] ?? '').replace(/0+$/, '');
-  return fraction ? `${integer}.${fraction}` : integer;
-};
-
-/** 예외 일치 키 — (process_id, sp) 는 trim, (SD 첫 숫자, layerid) 는 숫자 정규화한 4개 값. */
-const sdExceptionKey = (processId: string, sp: string, sdNumber: string, layerid: string): string =>
-  [(processId ?? '').trim(), (sp ?? '').trim(), normalizeNumber(sdNumber), normalizeNumber(layerid)].join('\u0001');
-
-/**
- * 행 목록에서 SD 첫 숫자와 layerid 가 다르고 예외도 아닌 행을 골라 돌려준다.
- * 비활성(st='X')·기등록/layer삭제/미진행 행, SD 가 숫자로 시작하지 않는 행, layerid 가 빈 행은 비교할
- * 값이 없거나 검사 대상이 아니므로 통과한다.
- */
-export const findLayerSdMismatches = (
-  rows: Array<JayerRow | OayerRow>,
-  exceptions: LayerSdException[]
-): LayerSdMismatch[] => {
-  const allowed = new Set(
-    exceptions.map((e) => sdExceptionKey(e.process_id, e.sp, e.sd_number, e.layerid))
-  );
-  const mismatches: LayerSdMismatch[] = [];
-  rows.forEach((row) => {
-    if (isRowInactive(row.st) || isNocSpecial(row.new_or_copy)) return;
-    const sdNumber = extractSdNumber(row.sd);
-    const layerid = (row.layerid ?? '').trim();
-    if (!sdNumber || !layerid || normalizeNumber(sdNumber) === normalizeNumber(layerid)) return;
-    if (allowed.has(sdExceptionKey(row.process_id, row.sp, sdNumber, layerid))) return;
-    mismatches.push({
-      rowId: row.id,
-      process_id: (row.process_id ?? '').trim(),
-      sp: (row.sp ?? '').trim(),
-      sd: (row.sd ?? '').trim(),
-      sdNumber,
-      layerid,
-    });
-  });
-  return mismatches;
 };
