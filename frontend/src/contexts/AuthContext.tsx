@@ -169,7 +169,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginSSO = async () => {
     const res = await authAPI.oidcLogin();
-    if (res.nonce_jwt) localStorage.setItem('oidc_state_jwt', res.nonce_jwt);
     window.location.href = res.redirect_url;
   };
 
