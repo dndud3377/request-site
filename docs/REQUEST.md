@@ -288,6 +288,36 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 삭제 (2026-10-14 — SD-Layer 검사·예외 전부 삭제)
+
+아래 2026-10-12·2026-10-07·2026-10-05 SD-Layer 항목의 기능을 **모두 없앴다**(이 항목이 우선, 아래 항목은 이력).
+설계를 바꿔 다시 만들 예정이라 우선 전부 걷어낸다.
+
+- **동작**: J/O-layer 행의 SD 첫 숫자와 Layer 가 달라도 STEP3·STEP4 `다음`과 STEP5 상신이 막히지 않는다(SD-Layer 기능 추가 전과 같다).
+  서버도 submit·resubmit·requester-resubmit·peer-submit·direct-approve 에서 이 검사를 하지 않는다.
+- **삭제한 것**:
+  - 백엔드: `api/layer_sd_check.py`, `LayerSdException` 모델·`LayerSdExceptionSerializer`·`LayerSdExceptionViewSet`·
+    `CanManageLayerSdException`, 라우트 `/api/layer-sd-exceptions/`(이제 404), 테스트 `LayerSdCheckTest`.
+  - 프론트: 홈 `🧩 SD-Layer 예외` 버튼·대기 건수, `components/LayerSdExceptionModal.tsx`, 작성 화면의 승인 예외 로드·
+    불일치 검증·SD/Layer 셀 빨간 테두리(Step2·Step3), `helpers.ts` 의 `extractSdNumber`·`normalizeNumber`·`findLayerSdMismatches`,
+    `constants.ts` 의 `sdExceptionAgreeSlots`, `layerSdExceptionsAPI`, 관련 타입, 테스트 4개 파일.
+  - i18n: `request.sd_layer_exc_*`(48개), `request.jayer_sd_layer_mismatch`·`oayer_sd_layer_mismatch`·`sd_layer_cell_hint` (ko/en 동시, 각 51개).
+- **DB — 테이블은 남긴다**: 마이그레이션 `0055_delete_layersdexception.py` 는 `SeparateDatabaseAndState` 로 Django 상태에서만
+  모델을 지운다. `api_layersdexception` 테이블과 기존 신청·승인 데이터는 **그대로** 남는다(`sqlmigrate api 0055` = no-op).
+  새 설계에서 참고·이관한 뒤 필요 없으면 별도 결정으로 DROP 한다. 기존 마이그레이션 0052~0054 는 손대지 않았다.
+- **테스트**: 백엔드 729 → 693건(−36, `LayerSdCheckTest`). 프론트 28 → 24 스위트, 393건 통과. `tsc --noEmit` 오류 0.
+- **수동 검증 시나리오** (개발환경 `http://localhost:10011`, `AUTH_MODE=dev`):
+  1. [아무 사용자 — 예: `pl_user`] 홈 진입 → `의뢰서 작성하기 / 결재 현황 보기 / 전체 가이드` 줄 **아래에 `🧩 SD-Layer 예외` 버튼이 없어야** 정상.
+     `agent_j1`(TE_J)·`agent_p1`(TE_P)·MASTER 로 바꿔도 없어야 한다.
+  2. [`pl_user`] 의뢰서 작성 → STEP3(J-layer) `+ 행 추가` → SD `1000.123 월평동 지점`, Layer `2000` 입력(나머지 필수값 채움) → `다음`
+     → STEP4 로 **넘어가면** 정상. SD·Layer 칸에 빨간 테두리·툴팁이 **없어야** 한다.
+  3. [같은 문서] STEP4(O-layer)에도 SD `1000.123 x`, Layer `2000` 행을 넣고 `다음` → STEP5 → `상신` → 상신 완료 토스트,
+     결재 현황에서 상태 `검토중` 이면 정상.
+  4. [반려 후 재상신] 위 문서를 지정 PL 로 반려 → 의뢰자로 재상신 → 통과하면 정상(예전엔 400 "SD 첫 숫자가 Layer 와 일치하지 않습니다").
+  5. [브라우저 주소창] `http://localhost:10011/api/layer-sd-exceptions/` → 404 면 정상.
+- **실패로 보이는 신호**: 홈에 `SD-Layer 예외` 버튼이 남아 있음 / STEP3·4 에서 "SD 첫 숫자가 Layer 와 일치하지 않습니다" 오류 /
+  화면에 `request.sd_layer_…` 같은 키 문자열이 그대로 보임 / 배포 시 마이그레이션 0055 에서 테이블 삭제 SQL 이 실행됨.
+
 ### 기능 변경 (2026-10-14 — Step1 '기타 목적' → '상세 목적' 명칭 변경 + 'FirstA 변경' 첫 항목으로)
 
 - **의도(사용자)**: '기타'라는 느낌보다 요청 목적의 **세부 목적**이라는 의미를 분명히 주기 위함.
@@ -325,6 +355,8 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   7. [홈 화면 → 전체 가이드 투어(GuideTourModal) 재생 → 참조 요청서 Merge 장면] → [기대 결과: 자막이 "**상세 목적**에서 'Layer 추가/삭제'… ".]
 
 ### 기능 변경 (2026-10-12 — SD-Layer 예외: 누구나 사유와 함께 신청 → 팀·P 합의 / 반려, 홈 버튼 전체 노출·대기 건수)
+
+> ⛔ **2026-10-14 삭제됨** — 이 항목의 기능은 모두 없어졌다(위 '기능 삭제 (2026-10-14 — SD-Layer 검사·예외 전부 삭제)' 항목). 아래는 이력이다.
 
 아래 2026-10-07·2026-10-05 항목의 **등록 권한·관리 화면** 내용을 다음과 같이 바꾼다(이 항목이 우선). 비교 규칙
 (SD 첫 숫자 ↔ Layer, 숫자 값 비교, 검사 제외 행)과 상신 차단 경로(submit·resubmit·requester-resubmit·peer-submit·
@@ -406,6 +438,8 @@ direct-approve)는 그대로다.
 
 ### 기능 변경 (2026-10-07 — SD-Layer 예외: 버튼 아랫줄 배치 / J·O 탭 상시 표시·상대 탭 조회 전용)
 
+> ⛔ **2026-10-14 삭제됨** — 이 항목의 기능은 모두 없어졌다(위 '기능 삭제 (2026-10-14 — SD-Layer 검사·예외 전부 삭제)' 항목). 아래는 이력이다.
+
 바로 아래 2026-10-07 항목의 '예외 관리 화면 이동' 내용을 다음과 같이 바꾼다(이 항목이 우선).
 
 - **버튼 위치**: `🧩 SD-Layer 예외` 버튼을 `의뢰서 작성하기 / 결재 현황 보기 / 전체 가이드` 버튼 줄 **옆이 아니라 아랫줄**
@@ -433,6 +467,8 @@ direct-approve)는 그대로다.
   4. [`pl_user`] 홈에 버튼이 없어야 한다. 화면 폭을 좁혔을 때(모바일) 버튼 줄이 세로로 쌓여도 예외 버튼이 맨 아래에 있으면 정상.
 
 ### 기능 변경 (2026-10-07 — SD-Layer 검사: 숫자 값 비교 / ASCII 숫자 / peer-submit·direct-approve 검사 / 예외 관리 홈 이동·엑셀 붙여넣기)
+
+> ⛔ **2026-10-14 삭제됨** — 이 항목의 기능은 모두 없어졌다(위 '기능 삭제 (2026-10-14 — SD-Layer 검사·예외 전부 삭제)' 항목). 아래는 이력이다.
 
 2026-10-05 항목(아래)을 다음과 같이 바꾼다. 아래 항목과 다르면 **이 항목이 우선**한다.
 
@@ -481,6 +517,8 @@ direct-approve)는 그대로다.
      400 `J-layer 1행의 SD 첫 숫자가 Layer 와 일치하지 않습니다 (…)`.
 
 ### 기능 추가 (2026-10-05 — J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 상신 검증 + 팀 공유 예외 목록)
+
+> ⛔ **2026-10-14 삭제됨** — 이 항목의 기능은 모두 없어졌다(위 '기능 삭제 (2026-10-14 — SD-Layer 검사·예외 전부 삭제)' 항목). 아래는 이력이다.
 
 > ⚠️ 2026-10-07 항목(위)으로 일부 바뀌었다 — 숫자 값 비교, `peer-submit`·`direct-approve` 검사, 예외 `sd` 저장·홈 관리 화면.
 
