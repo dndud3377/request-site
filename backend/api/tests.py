@@ -9935,6 +9935,22 @@ class LayerSdCheckTest(TestCase):
         # 다른 표(O)는 별개다.
         self.assertEqual(self._apply(self.requester, 'O', sd='100.93 b', layerid='0200').status_code, 201)
 
+    # claude 수정 (2026-10-14): 예외 매칭·중복 신청 검사가 영문 대소문자를 구분하지 않는지 회귀 테스트
+    def test_duplicate_check_ignores_letter_case(self):
+        self.assertEqual(self._apply(self.requester, 'J', process_id='abc1', sp='sp01', layerid='m1').status_code, 201)
+        r = self._apply(self.requester, 'J', process_id='ABC1', sp='SP01', layerid='M1')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_lowercase_exception_matches_uppercase_row(self):
+        self._add_exception('J', process_id='abc1', sp='sp01', layerid='m1')
+        doc = self._make_draft(jayer_rows=[self._row(process_id='ABC1', sp='SP01', layerid='M1')])
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_uppercase_exception_matches_lowercase_row(self):
+        self._add_exception('J', process_id='ABC1', sp='SP01', layerid='M1')
+        doc = self._make_draft(jayer_rows=[self._row(process_id='abc1', sp='sp01', layerid='m1')])
+        self.assertEqual(self._submit(doc).status_code, 200)
+
     def test_anyone_authenticated_can_list_and_filter_by_status(self):
         self._add_exception('J')
         self._apply(self.requester, 'J', process_id='P9')
