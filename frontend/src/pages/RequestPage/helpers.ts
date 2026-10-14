@@ -912,9 +912,18 @@ export const normalizeNumber = (value: string | undefined | null): string => {
   return fraction ? `${integer}.${fraction}` : integer;
 };
 
-/** 예외 일치 키 — (process_id, sp) 는 trim, (SD 첫 숫자, layerid) 는 숫자 정규화한 4개 값. */
+// claude 수정 (2026-10-14): 소문자로 신청·승인된 예외가 대문자 마스터 행과 매칭되지 않아, 영문 값은 대문자로 맞춰 비교
+/**
+ * 예외 일치 키 — (process_id, sp) 는 trim, (SD 첫 숫자, layerid) 는 숫자 정규화한 4개 값.
+ * process_id·sp·layerid 는 대소문자를 구분하지 않는다(대문자로 맞춤). 백엔드 `layer_sd_check.exception_key` 와 같은 규칙.
+ */
 const sdExceptionKey = (processId: string, sp: string, sdNumber: string, layerid: string): string =>
-  [(processId ?? '').trim(), (sp ?? '').trim(), normalizeNumber(sdNumber), normalizeNumber(layerid)].join('\u0001');
+  [
+    (processId ?? '').trim().toUpperCase(),
+    (sp ?? '').trim().toUpperCase(),
+    normalizeNumber(sdNumber),
+    normalizeNumber(layerid).toUpperCase(),
+  ].join('\u0001');
 
 /**
  * 행 목록에서 SD 첫 숫자와 layerid 가 다르고 예외도 아닌 행을 골라 돌려준다.
