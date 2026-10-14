@@ -988,6 +988,19 @@ docker logs <backend> 2>&1 | grep "\[OIDC\]" | head -20
 ```
 - ❌ 로그인 1회마다 **메일·부서·성·이름·UPN·sub**가 평문으로 남는다 → §5 **B-35**
 
+#### T-Q8 로그아웃 후 SSO 재진입 — **의도된 동작 (버그 아님, 2026-10-14 사용자 확인)**
+- 조작: 우측 상단 사용자 메뉴 → '로그아웃' (또는 12시간 유휴 자동 로그아웃) → 로그인 화면에서 'SSO 로그인' 클릭
+- ✅ **기대·실제**: 비밀번호 입력 없이 같은 계정으로 바로 재로그인된다
+- 동작 근거:
+  - `oidc_logout`(`backend/api/auth_views.py`)은 서비스 쿠키(`approval_system_token`/`approval_system_refresh`)만 삭제한다.
+    응답의 `logout_url`(`OIDC_OP_LOGOUT_ENDPOINT`)은 프론트(`Navbar.tsx` `handleLogout`, `AuthContext.tsx` `autoLogout`)에서
+    **사용하지 않으며**, 브라우저를 ADFS 로그아웃으로 보내지 않는다 → **ADFS 세션은 유지된다**.
+  - 로그인 요청(`oidc_login_init`)에 `prompt=login` 이 없으므로 ADFS 세션이 살아 있으면 로그인 화면 없이 id_token 이 발급된다.
+- **결정**: "로그아웃 후 버튼 클릭으로 바로 돌아올 수 있는 것"이 의도이므로 **ADFS 세션을 끊도록 바꾸지 않는다.**
+  같은 내용을 버그로 다시 보고하지 않는다.
+- 감수하는 점: 공용 PC에서는 브라우저를 닫기 전까지(ADFS 세션 유효 시간 내) 다음 사람이 SSO 버튼만으로 이전 사용자 계정에 들어올 수 있다.
+- 참고: 로그아웃 후 이동 주소 `/?logged_out=true` 의 `logged_out` 파라미터를 읽는 코드는 없다(표시용).
+
 ---
 
 ### 3.R 파일 업로드 / 미디어 서빙 (T-R) — 2차 추가
