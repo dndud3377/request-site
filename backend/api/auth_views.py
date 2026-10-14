@@ -528,23 +528,10 @@ def oidc_callback(request):
     # ============================================
     callback_base_url = getattr(settings, 'OIDC_CALLBACK_BASE_URL', '')
     frontend_url = f"{callback_base_url}/"
-    
-    # JSON 요청인지 form_post 요청인지 확인
-    # JSON 요청인 경우 (프론트엔드에서 전송), JSON 응답 반환
-    # form_post인 경우 (ADFS에서 직접 전송), 리다이렉트 응답 반환
-    is_json_request = request.content_type and 'application/json' in request.content_type
-    
-    if is_json_request:
-        # JSON 응답 (프론트엔드에서 호출한 경우)
-        response = Response({
-            'success': True,
-            'redirect_url': frontend_url,
-            'user': user_to_dict(user),
-        })
-    else:
-        # 리다이렉트 응답 (ADFS에서 직접 호출한 경우)
-        response = HttpResponseRedirect(frontend_url)
-    
+
+    # claude 수정 (2026-10-14): JSON 응답 분기 제거 — 호출하던 프론트 OIDCCallbackPage 삭제로 ADFS form_post 리다이렉트만 남김
+    response = HttpResponseRedirect(frontend_url)
+
     # Cookie 설정 (공통)
     response.set_cookie(
         key='approval_system_token',
