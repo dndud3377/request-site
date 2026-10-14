@@ -142,6 +142,7 @@ docker ps --format "{{.Names}}"     # <backend>/<frontend> 컨테이너명 확�
 - 프론트: `RequestPage/{index,constants}.tsx`, `components/{Step2,Step3}.tsx`,
   `hooks/useCellSelection.ts`, `utils/{date,stCellColor}.ts`,
   `pages/{ApprovalPage,HistoryPage,HomePage,VOCPage,OIDCCallbackPage}.tsx`, `components/Navbar.tsx`
+  (※ `OIDCCallbackPage.tsx` 는 2026-10-14 삭제 — `docs/E2E_TEST_AND_BUGS.md` 미결 항목 참조)
 - 백엔드: `api/views.py`
 - 문서: `docs/{APPROVAL,FIX_PROGRESS,VERIFICATION}.md`
 
