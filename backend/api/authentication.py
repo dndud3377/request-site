@@ -21,8 +21,8 @@ class CookieJWTAuthentication(BaseAuthentication):
     keyword = 'Bearer'
     
     def authenticate(self, request):
-        # Cookie 에서 토큰 가져오기
-        token = request.COOKIES.get('access_token')
+        # Cookie에서 토큰 가져오기
+        token = request.COOKIES.get('approval_system_token')
         
         logger.info(f"[Auth] Cookie token exists: {bool(token)}")
         
@@ -65,8 +65,8 @@ class CookieJWTAuthentication(BaseAuthentication):
                 # 사용자가 없으면 Cookie를 삭제하고 None 반환 (SSO 로그인 시도)
                 from django.http import HttpResponse
                 response = HttpResponse(status=401)
-                response.delete_cookie('access_token')
-                response.delete_cookie('refresh_token')
+                response.delete_cookie('approval_system_token')
+                response.delete_cookie('approval_system_refresh')
                 # 인증 실패를 나타내는 special return
                 return None
             
