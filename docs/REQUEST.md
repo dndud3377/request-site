@@ -288,6 +288,42 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-10-14 — Step1 '기타 목적' → '상세 목적' 명칭 변경 + 'FirstA 변경' 첫 항목으로)
+
+- **의도(사용자)**: '기타'라는 느낌보다 요청 목적의 **세부 목적**이라는 의미를 분명히 주기 위함.
+- **명칭 변경(화면 표시 문구만, 사용자 결정: 범위 b)** — ko `상세 목적` / en `Detailed Purpose`.
+  - `request.other_purpose` (Step1 라벨), `guide.feat.step1_other_purpose` (가이드 배지 패널 제목)
+  - 요청 목적 전환 확인 모달 3종: `request.only_map_confirm_msg` / `map_delete_edit_confirm_msg` /
+    `adi_cd_request_purpose_confirm_msg`
+  - 가이드 투어 설명: `guide.tour.step.groups.s1g3.desc`, `guide.tour.steps.request.flow.ref_doc_merge`
+  - ⚠️ ko.json 의 `map_delete_edit_confirm_msg`·`adi_cd_request_purpose_confirm_msg` 는 `\uXXXX` 이스케이프로
+    저장돼 있다 — "기타 목적"으로 grep 하면 안 걸린다. 이번에도 이스케이프 형태를 유지했다.
+- **가이드 문구 오류 수정(발견 보고 → 사용자 결정 1번)**: `guide.tour.step.groups.s1g4.desc` 가
+  "기타 목적에서 'ADI CD 변경'을 고르면"이었으나 ADI CD 변경은 2026-08-20 에 요청 목적으로 승격됐으므로
+  "요청 목적에서 …"(en: `under Request Purpose`)로 고쳤다.
+- **버튼 순서**: `RequestPage/constants.ts` `OPTION_OTHER_PURPOSE` 에서 `'FirstA 변경'` 을 맨 앞으로 이동 →
+  `FirstA 변경 · Layer 추가/삭제 · STEPSEQ 변경 · 공법 추가/변경 · Overlay 변경 · B 변경 · 연구소 제품`.
+  이 배열은 Step1 버튼 렌더에만 쓰인다. `other_purpose[]` 는 **클릭한 순서대로** 저장되므로 저장값·기존 문서·
+  결재 경로 판정(`OTHER_PURPOSE_OVERLAY` 등 값 비교)에는 영향이 없다.
+- **변경 없음(의도)**: 필드명 `other_purpose`, DB/백엔드, 결재 로직, 코드 주석·변수명, 정적 목업
+  `frontend/public/guide-mockup.html`(범위 b 제외).
+- **검증**: `tsc --noEmit` 에러 0(변경 전과 동일) / 프론트 `npm test` 27 suites·450 tests 통과 /
+  백엔드 `manage.py test api` 729건 중 1건 error — `OidcCallbackValidationTest.test_valid_login_issues_service_cookies_and_consumes_state`
+  (`KeyError: 'access_token'`), `git stash` 로 변경 전 코드에서도 동일하게 실패함을 확인한 **기존 실패**(이번 변경 무관).
+  결재 흐름을 건드리지 않아 케이스 러너는 대상 아님.
+  - 참고: 원격 세션 기본 `python3` 이 3.13 이면 §1.4.1 절차의 `Pillow==10.3.0` 빌드가 실패한다 → `python3.12 -m venv` 로 대체해 실행.
+- **수동 시나리오**:
+  1. [`/request` 의뢰서 작성 → STEP 1 의뢰 상세] → [기대 결과: 요청 목적 아래 라벨이 **상세 목적**이고, 첫 버튼이
+     **FirstA 변경**, 이어서 Layer 추가/삭제 … 연구소 제품 순. '기타 목적'이 보이면 실패.]
+  2. [라인·조합법·제품 이름·조리법 입력 → 상세 목적 'FirstA 변경' + 'Overlay 변경' 클릭 → 임시저장 → 다시 열기]
+     → [기대 결과: 두 버튼이 선택 상태로 복원된다.]
+  3. [상세 목적 라벨 옆 '가이드' 배지 클릭] → [기대 결과: 슬라이드 패널 제목이 **상세 목적**.]
+  4. [요청 목적 `Only MAP` / `MAP 삭제` / `ADI CD 변경` 각각 클릭] → [기대 결과: 확인 모달 문구가 "… **상세 목적**, …".]
+  5. [상단 네비게이션 사용자 메뉴(드롭다운) → 언어 English 선택 후 1·3·4 반복] → [기대 결과: `Detailed Purpose` 로 표시.]
+  6. [STEP 1 제목 '📋 의뢰 상세' 옆 가이드 투어 배지 클릭 → '다음'으로 '참조 요청서 Merge' / 'ADI CD 변경' 단계까지 이동]
+     → [기대 결과: 각각 "**상세 목적**에서 …", "**요청 목적**에서 'ADI CD 변경'을 고르면 …".]
+  7. [홈 화면 → 전체 가이드 투어(GuideTourModal) 재생 → 참조 요청서 Merge 장면] → [기대 결과: 자막이 "**상세 목적**에서 'Layer 추가/삭제'… ".]
+
 ### 기능 변경 (2026-10-12 — SD-Layer 예외: 누구나 사유와 함께 신청 → 팀·P 합의 / 반려, 홈 버튼 전체 노출·대기 건수)
 
 아래 2026-10-07·2026-10-05 항목의 **등록 권한·관리 화면** 내용을 다음과 같이 바꾼다(이 항목이 우선). 비교 규칙
