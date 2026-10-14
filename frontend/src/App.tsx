@@ -7,7 +7,6 @@ import Navbar from './components/Navbar';
 import SessionWarningModal from './components/SessionWarningModal';
 import { ToastProvider } from './components/Toast';
 import LoginPage from './pages/LoginPage';
-import OIDCCallbackPage from './pages/OIDCCallbackPage';
 import HomePage from './pages/HomePage';
 import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
@@ -48,7 +47,6 @@ function AppContent(): React.ReactElement {
   const { isLoggedIn, isLoading, showWarning, extendSession, autoLogout } = useAuth();
   const location = useLocation();
 
-  if (location.pathname === '/oidc-callback') return <OIDCCallbackPage />;
   if (location.pathname === '/logout') return <LoginPage />;
   if (isLoading) return <LoadingSpinner />;
   if (!isLoggedIn) return <LoginPage />;
