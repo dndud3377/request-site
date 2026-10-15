@@ -59,6 +59,8 @@ import {
   OTHER_PURPOSE_LAB,
   MAP_TYPE_DELETE_REQ,
   isMapDeleteEditType,
+  FLOW_LOCATION_DEPENDENT_FIELDS,
+  FLOW_NOT_IN_LIST_MSG_KEY,
   EA_NO_CHANGE,
   EA_HAS_CHANGE,
   isEaDefaultValue,
@@ -2346,14 +2348,38 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({ ...prev, [name]: value }));
   };
 
+  // claude 수정 (2026-10-15): 위치(라인)를 바꾸면 같은 행의 하위 칸을 모두 비우고, 입력한 칸의 에러는 칸 종류와 관계없이 바로 지운다.
   const handleFlowChange = (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => {
+    const isLocation = field === 'location';
     setDetail((prev) => ({
       ...prev,
-      flow_chart: prev.flow_chart.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
+      flow_chart: prev.flow_chart.map((r) => {
+        if (r.id !== id) return r;
+        if (isLocation && r.location !== value) {
+          return { ...r, location: value, ...FLOW_LOCATION_DEPENDENT_FIELDS.reduce((acc, f) => ({ ...acc, [f]: '' }), {}) };
+        }
+        return { ...r, [field]: value };
+      }),
     }));
-    if (field === 'step_from' || field === 'step_to') {
-      const key = `flow_step_${id}_${field}`;
-      if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
+    const clearFields: (keyof Omit<FlowChartRow, 'id'>)[] = isLocation ? ['location', ...FLOW_LOCATION_DEPENDENT_FIELDS] : [field];
+    const keys = clearFields.map((f) => `flow_step_${id}_${f}`).filter((k) => errors[k]);
+    if (keys.length > 0) {
+      setErrors((prev) => ({ ...prev, ...keys.reduce((acc, k) => ({ ...acc, [k]: '' }), {}) }));
+    }
+  };
+
+  // claude 수정 (2026-10-15): 흐름도 제품 이름·조리법도 Step 처럼 목록에 없는 값이면 에러 표시 + 빨간 에러 토스트(목록이 비어 있으면 직접 입력 인정).
+  const handleFlowOptionBlur = (rowId: string, field: 'product_name' | 'process_id') => {
+    const row = detail.flow_chart.find((r) => r.id === rowId);
+    const value = (row?.[field] || '').trim();
+    const opts = (field === 'product_name' ? FlowProductOptions : FlowProcessIdOptions)[rowId] || [];
+    const key = `flow_step_${rowId}_${field}`;
+    const msgKey = FLOW_NOT_IN_LIST_MSG_KEY[field];
+    if (value && opts.length > 0 && !opts.includes(value)) {
+      setErrors((prev) => ({ ...prev, [key]: t(msgKey) }));
+      addToast(t(msgKey), 'error');
+    } else if (errors[key]) {
+      setErrors((prev) => ({ ...prev, [key]: '' }));
     }
   };
 
@@ -3995,6 +4021,19 @@ export default function RequestPage(): React.ReactElement {
       if (flowStepInvalid) {
         errorMessages.push(t('request.flow_step_not_in_list'));
       }
+      // claude 수정 (2026-10-15): 흐름도 제품 이름·조리법도 목록이 있으면 목록에 있는 값만 허용한다(목록이 비어 있으면 직접 입력 인정 — Step 과 같은 규칙).
+      (['product_name', 'process_id'] as const).forEach((f) => {
+        let invalid = false;
+        detail.flow_chart.forEach((row) => {
+          const opts = (f === 'product_name' ? FlowProductOptions : FlowProcessIdOptions)[row.id] || [];
+          const v = (row[f] || '').trim();
+          if (v && opts.length > 0 && !opts.includes(v)) {
+            newErrors[`flow_step_${row.id}_${f}`] = t(FLOW_NOT_IN_LIST_MSG_KEY[f]);
+            invalid = true;
+          }
+        });
+        if (invalid) errorMessages.push(t(FLOW_NOT_IN_LIST_MSG_KEY[f]));
+      });
       // 흐름도 행 중 위치/제품이름/조리법/Step 중 하나라도 값이 있으면 나머지 전부를 채워야 상신 가능
       let flowRowIncomplete = false;
       detail.flow_chart.forEach((row) => {
@@ -4923,6 +4962,7 @@ export default function RequestPage(): React.ReactElement {
           handleBaResetRow={handleBaResetRow}
           handleFlowChange={handleFlowChange}
           handleFlowStepBlur={handleFlowStepBlur}
+          handleFlowOptionBlur={handleFlowOptionBlur}
           handleFlowDeleteRow={handleFlowDeleteRow}
           handleFlowAddRow={handleFlowAddRow}
           handleBbEntryChange={handleBbEntryChange}
