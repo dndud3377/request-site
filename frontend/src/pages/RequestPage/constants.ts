@@ -69,6 +69,8 @@ export const isMapDeleteEditType = (mapType?: string): boolean =>
   mapType === MAP_TYPE_DELETE_REQ;
 
 // MAP 목적(map_type) 값 — StepMap 버튼 값이자 그대로 저장되는 값이다.
+// claude 수정 (2026-10-15): 3번(inter) 자동 YES 판정이 NEW 에서만 동작하므로 NEW 값을 상수로 분리
+export const MAP_TYPE_NEW = 'NEW';
 export const MAP_TYPE_CLONE = 'CLONE';
 export const MAP_TYPE_EXISTING = 'EXISTING';
 
@@ -81,6 +83,18 @@ export const MAP_TYPE_EXISTING = 'EXISTING';
  */
 export const isMapRegisteredType = (mapType?: string): boolean =>
   mapType === MAP_TYPE_CLONE || mapType === MAP_TYPE_EXISTING;
+
+// claude 수정 (2026-10-15): Step1 조합법에 따라 StepMap 3번(inter)을 YES 로 고정하는 기준 단어 목록 신설
+// 3번(detail.inter) 선택값.
+export const INTER_YES = 'YES';
+export const INTER_NO = 'NO';
+
+/**
+ * Step1 조합법(process_selection)이 이 목록의 단어 중 하나로 **시작**하면(대소문자 무시)
+ * StepMap 3번(inter)을 YES 로 고정한다. MAP 목적이 NEW 일 때만 적용된다(CLONE/EXISTING 은 손대지 않음).
+ * 기준 단어를 추가하려면 이 배열에 문자열을 한 줄 추가하면 된다. 예: ['test', 'abc']
+ */
+export const INTER_AUTO_YES_PROCESS_PREFIXES: readonly string[] = ['test'];
 
 // 지도 편차(map_change / map_change_top / map_change_bottom) 선택값.
 export const MAP_NO_CHANGE = '변경 없음';
