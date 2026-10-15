@@ -179,6 +179,9 @@ const Step1: React.FC<Step1Props> = ({
   const isMergeDone = detail.merge_ref_doc_id !== null || detail.merge_applied;
   // '없음' 으로 확정 — 짝지을 참조가 없어 BEFORE/AFTER 매핑 표를 감추고 변경전/변경후만 쓴다.
   const isMergeNone = detail.merge_ref_mode === 'none';
+  // claude 수정 (2026-10-15): '없음' 확정 상태에서는 라디오를 열어 둔다 — '있음'을 누르면 index.tsx 가
+  // 모드 변경 확인 모달을 띄우고, 확인해야 바뀐다('재선택'을 거치지 않아도 된다). '있음' Merge 확정은 기존대로 잠근다.
+  const mergeModeLocked = disableOptional || (isMergeDone && !isMergeNone);
   // Merge 사용 목적(Layer 추가/삭제·STEPSEQ 변경·Overlay 변경)을 하나라도 골랐으면 블록을 1개만 노출한다.
   const showMergeBlock = isMergePurposeSelected(detail.other_purpose);
 
@@ -330,13 +333,15 @@ const Step1: React.FC<Step1Props> = ({
                         name="merge_ref_mode"
                         value={opt.value}
                         checked={detail.merge_ref_mode === opt.value}
-                        disabled={disableOptional || isMergeDone}
+                        disabled={mergeModeLocked}
                         onChange={() => handleMergeModeSelect(opt.value)}
                       />
                       {opt.label}
                     </label>
                   ))}
                 </div>
+                {/* claude 수정 (2026-10-15): 'Overlay만 변경'은 참조 요청서 Merge('있음') 또는 '없음' 확정이 필수 — 미확정 오류 표시 */}
+                {errors.merge_ref_doc && !isMergeDone && <span className="form-error">{errors.merge_ref_doc}</span>}
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
                   <div style={{ flex: 1 }}>
                     <AutocompleteInput
