@@ -209,7 +209,8 @@ beforeAll(async () => {
   window.scrollTo = () => {};
 });
 
-const optionsFor = (): string[] => [PROCESS, PRODUCT, PROCESS_ID, BB_PRODUCT, BB_PROCESS_ID];
+// claude 수정 (2026-10-15): 흐름도 제품 이름·조리법도 목록 검증 대상이 되어 픽스처 흐름도 값을 옵션 목록에 포함한다.
+const optionsFor = (): string[] => [PROCESS, PRODUCT, PROCESS_ID, BB_PRODUCT, BB_PROCESS_ID, FLOW_PRODUCT, FLOW_PROCESS_ID];
 
 async function flush(times = 20) {
   for (let i = 0; i < times; i += 1) {
