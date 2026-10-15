@@ -601,8 +601,9 @@ const StepMap: React.FC<StepMapProps> = ({
               </div>
             )}
           </div>
+          {/* claude 수정 (2026-10-15): 하드코딩된 '특정 제품 삭제 필요' 문구를 i18n(request.mshot_delete_desc)으로 교체 */}
           {mshotDeleteMode && (
-            <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
+            <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>{t('request.mshot_delete_desc')}</p>
           )}
           {mshotEditAddMode && !isProdc && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
