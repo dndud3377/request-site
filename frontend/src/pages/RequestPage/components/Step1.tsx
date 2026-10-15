@@ -525,7 +525,8 @@ const Step1: React.FC<Step1Props> = ({
                   </div>
                 ))}
                 <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow} disabled={disableOptional}>
-                  + {t('request.flow_add_row')}
+                  {/* claude 수정 (2026-10-15): i18n 값에 이미 "+ " 가 있어 "+ + 행 추가" 로 중복 표시되던 앞의 "+" 제거 */}
+                  {t('request.flow_add_row')}
                 </button>
               </div>
             </div>
