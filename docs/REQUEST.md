@@ -5675,6 +5675,20 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   - 이 기능 이전 문서는 흐름도 행에 stepseq 필드가 없다. 재상신 시 Step 칸을 건드려 stepseq 가 채워지면 Layer 를 안 바꿔도
     결재 상세 '변경 감지'(`computeDetailDiff`, flow_chart JSON 전체 비교)가 흐름도를 변경으로 표시할 수 있다 — 사용자 확인(2026-10-15): 문제없음, 그대로 둔다.
 
+### 버그 수정 (2026-10-15 — 단계 이동 버튼 '이전/다음' 하드코딩 제거 + 흐름도 '+ + 행 추가' 중복 표시)
+
+- **증상**: ① 의뢰서 하단 단계 이동 버튼이 `← 이전` / `다음 →` 로 하드코딩돼 영어 화면에서도 한국어로 보였다(규칙 G 위반).
+  ② 흐름도 행 추가 버튼이 JSX 의 `+ ` 와 i18n 값(`request.flow_add_row` = "+ 행 추가")의 `+ ` 가 겹쳐 "+ + 행 추가" 로 보였다.
+- **수정**: ① `RequestPage/index.tsx` 하단 버튼을 기존 키 `common.prev` / `common.next` 로 교체(화살표 기호는 유지 — 💾·📋 와 같은 장식 기호).
+  ② `components/Step1.tsx` 에서 앞의 `+ ` 를 제거(i18n 값은 그대로). 새 i18n 키 없음.
+- **테스트**: '다음' 글자로 버튼을 찾으면서 언어를 지정하지 않던 테스트 4개(`draftRoundTrip`/`salesAgreerAutoClear`/
+  `requesterResubmitHistory`/`pauseResumeDisabledRows`)가 jsdom 기본 언어(en)에서 "Next" 로 렌더돼 실패 → 다른 테스트처럼
+  `i18n.changeLanguage('ko')` 를 추가했다. 프론트 28 suites / 426건 통과, `tsc --noEmit` 에러 0.
+- **수동 검증 시나리오**:
+  1. [`/request` → STEP1 하단] → [기대 결과: `다음 →` 버튼. STEP2 이상에서는 왼쪽에 `← 이전`.]
+  2. [상단 언어를 English 로 변경] → [기대 결과: `Next →` / `← Previous` 로 바뀐다.]
+  3. [STEP1 흐름도 영역 하단 버튼] → [기대 결과: "+ 행 추가"(영어: "+ Add Row") — `+` 가 한 번만 보인다.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
