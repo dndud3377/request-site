@@ -288,6 +288,36 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-10-15 — Step1 조합법 기준 단어 → STEP2 3번(inter) YES 고정)
+
+- **의도(사용자)**: 특정 조합법은 3번(`map_opt_inter`)이 항상 YES 인데 작성자가 빠뜨리는 일이 생긴다 → 자동으로 YES 고정.
+- **기준 단어 관리**: `RequestPage/constants.ts` `INTER_AUTO_YES_PROCESS_PREFIXES` 배열(현재 `['test']`).
+  **단어 추가 = 배열에 문자열 한 줄 추가**(배포 필요). 판정은 `helpers.ts` `isInterAutoYesProcess` —
+  조합법(`process_selection`)이 단어 중 하나로 **시작**하면 참(대소문자·앞뒤 공백 무시, 빈 단어는 무시, 중간 포함은 해당 없음).
+- **동작 규칙** (`index.tsx` 의 3번 자동 YES effect, deps: `process_selection`·`map_type`·`inter`):
+  | 상황 | 결과 |
+  |---|---|
+  | 조합법이 기준 단어로 시작 + MAP 목적 **NEW** | 3번 `YES` + 드롭다운 잠금 + 안내 문구 `request.inter_auto_locked_hint`. 2번(`eds_backside`)은 미적용(기존 YES 선택과 동일). IN 적용 O/X·Xs/Ys/XYs/없음은 **사용자가 직접 선택**(필수 검증 그대로) |
+  | MAP 목적 미선택 / CLONE / EXISTING / 삭제 | **판정하지 않는다**(값을 건드리지 않음) |
+  | 기준에 해당하다가 해당하지 않게 됨 | 3번 `NO` + `in_apply`·`inter_select`·`inter_xs/ys` 초기화(StepMap NO 선택과 동일) |
+  | 제품 이름 변경 등으로 MAP 정보가 초기화돼 3번이 NO 가 됨 | 다시 NEW 를 고르면 YES 로 다시 맞춘다(`inter` 도 deps) |
+  | 저장 문서 다시 열기(편집·재상신·지정 PL) | 저장된 3번 값·잠금 해제 유지. 사용자가 **조합법 또는 MAP 목적을 직접 바꾼 뒤부터** 적용(`interAutoArmedRef`) |
+- ⚠️ 조합법을 바꾸면 **기존 동작대로** 제품 이름이 비워지고 → MAP 정보(MAP 목적 포함)가 초기화된다(`mapInfoDefaults`).
+  그래서 "해당하지 않는 조합법으로 바꾸면 NO" 는 대부분 이 초기화로 이미 이뤄지고, 이 기능의 되돌리기는 안전망이다.
+- **변경 없음**: 백엔드·DB·저장 형식(`inter` 값만 바뀜)·결재 흐름. 케이스 러너 대상 아님.
+- **테스트**: `helpers.test.ts` `isInterAutoYesProcess` 6건, `interAutoYes.test.tsx` 5건(신규 NEW/일반 조합법/CLONE/조합법 변경/재열기).
+  프론트 25 suites·404 tests 통과, `tsc --noEmit` 오류 0, 백엔드 693건 OK.
+- **수동 검증 시나리오** (개발환경 `http://localhost:10011`, `pl_user`):
+  1. 의뢰서 작성 → 라인 선택 → 조합법에 `test` 로 시작하는 값(예: `TEST_...`, 대소문자 무관) → 제품 이름·조리법 → 요청 목적 `신규` → `다음`
+     → STEP2 `NEW` 클릭 → **3번이 YES·회색 잠금, 아래 "🔒 조합법에 따라 YES로 고정됩니다." 문구, IN 적용 O/X·Xs/Ys/XYs/없음 버튼 노출,
+     Map Option `2번` 비활성**이면 정상. IN 적용·Xs 를 고르지 않고 `다음` → 필수 오류가 나야 정상.
+  2. 같은 화면에서 `CLONE` 클릭 → 확인 → 3번 `NO`, 문구 없음이면 정상.
+  3. 새 의뢰서에서 `test` 로 시작하지 않는 조합법 → STEP2 `NEW` → 3번 `NO`, 직접 YES/NO 변경 가능하면 정상.
+  4. 1번 상태로 임시저장 → 결재 현황/내 문서에서 다시 열기 → STEP2 3번이 저장값 그대로이고 잠겨 있지 않으면 정상
+     (조합법이나 MAP 목적을 바꾸면 그때부터 규칙 적용).
+- **실패로 보이는 신호**: `request.inter_auto_locked_hint` 키 문자열이 그대로 보임 / NEW 인데 3번이 NO 로 남음 /
+  CLONE·EXISTING 에서 3번이 YES 로 바뀜 / 다시 연 문서에서 3번이 바로 잠김.
+
 ### 기능 삭제 (2026-10-14 — SD-Layer 검사·예외 전부 삭제)
 
 아래 2026-10-12·2026-10-07·2026-10-05 SD-Layer 항목의 기능을 **모두 없앴다**(이 항목이 우선, 아래 항목은 이력).
