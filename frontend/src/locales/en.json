@@ -337,6 +337,7 @@
     "flow_step_prefix_mismatch": "The Step start and end of a row must belong to the same stepseq series (prefix).",
     "flow_step_reversed": "The Step end stepseq comes before the start. Please select in start ~ end order.",
     "flow_step_overlap": "Overlaps the Step range of row {{row}} ({{range}}). Within the same stepseq series, a row must start after the previous row's range.",
+    "mshot_delete_desc": "Specific product deletion required",
     "flow_row_incomplete": "For a flow chart row, Location, Product Name, Cooking Method, and Step must all be filled in.",
     "partid_not_in_list": "Product name must be selected from the list. Please correct the field.",
     "process_id": "Cooking Method",
