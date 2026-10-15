@@ -468,7 +468,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | 액션(엔드포인트) | 발송 | 내용 |
 |---|:---:|---|
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원 **+ '상신 받기'를 켠 TE_P 전원**(2026-08 신설, §3.3)에게 notify_submitted |
-| `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중 문서는 확인 대상 단계에 `withdraw_requested`(개인 1통 + 팀별 각 1통). 임시저장·반려·(MASTER)완료 문서는 즉시 삭제되며 `withdraw_completed`(개인 1통 + 팀별 각 1통). §3.2 참고 |
+| `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중 문서는 확인 대상 단계에 `withdraw_requested`(개인 1통 + 팀별 각 1통). 임시저장 문서는 즉시 삭제되며 `withdraw_completed`(개인 1통 + 팀별 각 1통). 반려 문서는 철회할 수 없다(400). MASTER 철회는 상태와 무관하게 즉시 삭제하며 메일을 보내지 않는다(서버 로그만). §3.2 참고 |
 | `confirm-withdraw` (철회 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 삭제될 때만** `withdraw_completed`(개인 1통 + 팀별 각 1통). 아직 남은 단계가 있으면 무메일 |
 | `reject-withdraw` (철회 거부) | ✅ | 철회 요청자 + 작성자에게 `withdraw_rejected`(1통, 분리 대상 아님) |
 | `cancel-withdraw` (철회 요청 취소) | ✅ | 확인 대상 단계 담당자(개인 1통)/팀(팀별 각 1통)에게 `withdraw_cancelled` |
