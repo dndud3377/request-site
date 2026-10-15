@@ -9,7 +9,7 @@ import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
 import { buildAdiCdTargets } from '../utils/approvalTable';
 import AdiCdTargetsCell from './AdiCdTargetsCell';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, isOverlayOnlyPurpose, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -2823,15 +2823,16 @@ type Page = { label: string; content: React.ReactNode; key?: string };
   // Jayer 가 비어 있어 판정 키워드가 없고, other_purpose 가 비어 있어 후결자 조건도 성립하지 않는다).
   // (isAdiCdChange 는 위에서 detail.request_purpose 로 이미 선언했다 — 재선언하지 않는다)
 
-  // 기타 목적이 'Overlay 변경' 하나뿐이면 결재 경로에서 J 를 뺀다(백엔드 skip_j_stage 와 동일 기준).
+  // 기타 목적이 'Overlay만 변경' 하나뿐이면 결재 경로에서 J 를 뺀다(백엔드 skip_j_stage 와 동일 기준).
   // 'MAP 삭제' 은 J 가 병렬 묶음의 구성원이라 제외 대상이 아니다.
+  // claude 수정 (2026-10-15): 저장값 'Overlay만 변경' 변경 — 구 값 'Overlay 변경' 문서도 같은 판정(isOverlayOnlyPurpose)
   const skipJStage = (() => {
     if (isMapDeleteEdit) return false;
     try {
       const parsed = JSON.parse(doc.additional_notes ?? '{}');
       const raw = parsed?.detail?.other_purpose;
       const list: string[] = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
-      return list.length === 1 && list[0] === OTHER_PURPOSE_OVERLAY;
+      return isOverlayOnlyPurpose(list);
     } catch { return false; }
   })();
 

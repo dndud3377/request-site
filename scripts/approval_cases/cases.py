@@ -406,7 +406,8 @@ def r09(ctx):
     return f'doc={doc_id}'
 
 
-@case('R-10', 'R', "기타목적 'Overlay 변경' 단독 → J 단계 미생성")
+# claude 수정 (2026-10-15): 저장값 'Overlay만 변경' 변경에 맞춰 케이스 이름 갱신. R-11 조합은 화면에서 막혔고 API 로만 만들 수 있다
+@case('R-10', 'R', "기타목적 'Overlay만 변경' 단독 → J 단계 미생성")
 def r10(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(ctx, other_purpose=[P.OTHER_PURPOSE_OVERLAY])
@@ -416,7 +417,7 @@ def r10(ctx):
     return f'doc={doc_id} agents={F.agents_in_round(doc)}'
 
 
-@case('R-11', 'R', "'Overlay 변경' + 다른 기타목적 → J 생성")
+@case('R-11', 'R', "'Overlay만 변경' + 다른 기타목적(API 직접) → J 생성")
 def r11(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(
@@ -471,14 +472,16 @@ def r15(ctx):
     return f'doc={doc_id}'
 
 
-@case('R-16', 'R', "'MAP 삭제': PL 합의 직후 P·R·J·O 병렬, E·RA 없음")
+# claude 수정 (2026-10-15): 2026-09 R 분리(APPROVAL.md Case O) 기준으로 기대값 갱신 — PL 합의 직후엔 P·J·O 만, R 은 그 셋이 끝난 뒤
+@case('R-16', 'R', "'MAP 삭제': PL 합의 직후 P·J·O 병렬(R 은 아직 없음), E·RA 없음")
 def r16(ctx):
     ctx.need(PL=2)
     doc_id, author, pls = F.submitted_doc(ctx, request_purpose=P.MAP_DELETE_EDIT_PURPOSE)
     F.pass_pl_stage(ctx, doc_id, pls)
     doc = F.fetch(author, doc_id)
-    for agent in ('P', 'R', 'J', 'O'):
+    for agent in ('P', 'J', 'O'):
         F.expect_steps(doc, agent, count=1, action='pending')
+    F.expect_no_step(doc, 'R', '(R 은 P·J·O 완료 후 3구역에서 생성돼야 한다)')
     F.expect_no_step(doc, 'E')
     F.expect_no_step(doc, 'RA')
     return f'doc={doc_id} agents={F.agents_in_round(doc)}'
@@ -799,16 +802,20 @@ def f10(ctx):
     return f'doc={doc_id}'
 
 
-@case('F-11', 'F', "'MAP 삭제': P 가 마지막 → approved")
+# claude 수정 (2026-10-15): R 분리 후 'P 가 마지막'은 만들 수 없다(R 이 항상 마지막) — P 가 2구역의 마지막일 때 R 이 열리는지로 교체
+@case('F-11', 'F', "'MAP 삭제': P 가 2구역 마지막 → R 생성 → R 합의로 approved")
 def f11(ctx):
     ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
     doc_id, author, pls = F.submitted_doc(ctx, request_purpose=P.MAP_DELETE_EDIT_PURPOSE)
     F.pass_pl_stage(ctx, doc_id, pls)
-    F.assign_step(ctx.actor('TE_R', 0), doc_id, 'R', ctx.user('TE_R', 0))
-    F.approve_step(ctx.actor('TE_R', 0), doc_id, 'R')
     F.complete_j(ctx, doc_id)
     F.complete_o(ctx, doc_id)
+    F.expect_no_step(F.fetch(author, doc_id), 'R', '(P 가 남았는데 R 이 열렸다)')
     F.complete_p(ctx, doc_id)
+    F.expect_steps(F.fetch(author, doc_id), 'R', count=1, action='pending')
+    F.expect_doc_status(author, doc_id, 'under_review', '(R 이 남았는데 승인됐다)')
+    F.assign_step(ctx.actor('TE_R', 0), doc_id, 'R', ctx.user('TE_R', 0))
+    F.approve_step(ctx.actor('TE_R', 0), doc_id, 'R')
     F.expect_doc_status(author, doc_id, 'approved')
     return f'doc={doc_id}'
 
@@ -828,9 +835,10 @@ def f12(ctx):
     return f'doc={doc_id}'
 
 
-@case('F-13', 'F', "'MAP 삭제': P 검토자 미합의면 승인 안 됨")
+# claude 수정 (2026-10-15): R 분리 후엔 PV 가 남으면 2구역이 끝나지 않아 R 자체가 생기지 않는다 — 그 상태를 확인하고, PV 합의 후 R 이 열리는지까지 본다
+@case('F-13', 'F', "'MAP 삭제': P 검토자 미합의면 R 미생성·승인 안 됨")
 def f13(ctx):
-    ctx.need(PL=2, TE_R=1, TE_P=2, TE_J=1, TE_O=1)
+    ctx.need(PL=2, TE_P=2, TE_J=1, TE_O=1)
     doc_id, author, pls = F.submitted_doc(ctx, request_purpose=P.MAP_DELETE_EDIT_PURPOSE)
     F.pass_pl_stage(ctx, doc_id, pls)
     F.claim_step(ctx.actor('TE_P', 0), doc_id, 'P')
@@ -838,9 +846,10 @@ def f13(ctx):
                    reviewer_loginids=[ctx.user('TE_P', 1)['loginid']])
     F.complete_j(ctx, doc_id)
     F.complete_o(ctx, doc_id)
-    F.assign_step(ctx.actor('TE_R', 0), doc_id, 'R', ctx.user('TE_R', 0))
-    F.approve_step(ctx.actor('TE_R', 0), doc_id, 'R')
+    F.expect_no_step(F.fetch(author, doc_id), 'R', '(PV 가 남았는데 R 이 열렸다)')
     F.expect_doc_status(author, doc_id, 'under_review', '(PV 가 남았는데 승인됐다)')
+    F.approve_step(ctx.actor('TE_P', 1), doc_id, 'PV')
+    F.expect_steps(F.fetch(author, doc_id), 'R', count=1, action='pending')
     return f'doc={doc_id}'
 
 
@@ -931,7 +940,7 @@ def x07(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.submitted_doc(ctx)
     F.peer_reject(ctx.actor('PL', 1), doc_id)
-    # 재상신 전에 목적을 'Overlay 변경' 단독으로 바꾼다 → 새 회차부터 J 가 빠져야 한다.
+    # 재상신 전에 목적을 'Overlay만 변경' 단독으로 바꾼다 → 새 회차부터 J 가 빠져야 한다.
     doc = F.fetch(author, doc_id)
     import json
     notes = json.loads(doc['additional_notes'])
@@ -1043,16 +1052,19 @@ def m07(ctx):
                    '— 날짜를 벌리려면 DB 조작이 필요하다(백엔드 테스트 영역).')
 
 
-@case('M-08', 'M', '중단 요청중에 결재가 진행되면 요청 자동 취소')
+# claude 수정 (2026-10-15): 2026-08 동결 확장(APPROVAL.md Case M) 기준 — 확인 대기 중엔 결재 진행이 400 으로 막히고 요청은 그대로 남는다
+@case('M-08', 'M', '중단 요청 확인 대기 중 결재 진행 → 400(동결), 요청 유지')
 def m08(ctx):
     ctx.need(PL=2, TE_R=1, TE_J=1)
     doc_id, author, pls = F.to_parallel(ctx)
     F.request_pause(author, doc_id)
-    F.complete_j(ctx, doc_id)
+    F.claim_step(ctx.actor('TE_J', 0), doc_id, 'J', expect=400)
+    F.approve_step(ctx.actor('TE_J', 0), doc_id, 'J', expect=400)
     doc = F.fetch(author, doc_id)
     pr = doc.get('pause_request') or {}
-    if pr and pr.get('state') == 'requested':
-        raise CaseFailure('결재가 진행됐는데 중단 요청이 살아 있다.')
+    if pr.get('state') != 'requested':
+        raise CaseFailure(f'중단 요청이 requested 로 남아 있어야 한다: {pr.get("state")}')
+    F.expect_steps(doc, 'J', count=1, action='pending', note='(동결 중인데 J 가 진행됐다)')
     return f'doc={doc_id} pause_request={pr.get("state")}'
 
 
@@ -1090,14 +1102,15 @@ def w01(ctx):
     return f'doc={doc["id"]} 삭제됨'
 
 
-@case('W-02', 'W', 'rejected 철회 → 즉시 삭제')
+# claude 수정 (2026-10-15): 2026-08 정책(APPROVAL.md 철회 표) 기준 — 반려 문서는 철회 불가(400), 수정 후 재상신해야 한다
+@case('W-02', 'W', 'rejected 철회 → 400(철회 불가), 문서 유지')
 def w02(ctx):
     ctx.need(PL=2)
     doc_id, author, pls = F.submitted_doc(ctx)
     F.peer_reject(ctx.actor('PL', 1), doc_id)
-    F.withdraw(author, doc_id)
-    F.expect_gone(author, doc_id)
-    return f'doc={doc_id} 삭제됨'
+    F.withdraw(author, doc_id, expect=400)
+    F.expect_doc_status(author, doc_id, 'rejected', '(철회 거절 후에도 반려 문서가 남아 있어야 한다)')
+    return f'doc={doc_id} 유지'
 
 
 @case('W-03', 'W', 'approved 철회는 MASTER 만')
@@ -1376,6 +1389,7 @@ def n02(ctx):
     return f'doc={doc_id}'
 
 
+# claude 수정 (2026-10-15): 2026-09 R 분리 기준으로 2구역(P·J·O)만 확인하도록 갱신
 @case('N-03', 'N', "'MAP 삭제' 병렬 생성 중복 방지")
 def n03(ctx):
     ctx.need(PL=3)
@@ -1386,8 +1400,9 @@ def n03(ctx):
         futures = [ex.submit(F.peer_approve, a1, doc_id), ex.submit(F.peer_approve, a2, doc_id)]
         [f.result() for f in futures]
     doc = F.fetch(author, doc_id)
-    for agent in ('P', 'R', 'J', 'O'):
+    for agent in ('P', 'J', 'O'):
         F.expect_steps(doc, agent, count=1, note='(병렬 단계가 중복 생성됐다)')
+    F.expect_no_step(doc, 'R', '(R 은 P·J·O 완료 후 생성돼야 한다)')
     return f'doc={doc_id}'
 
 

@@ -97,6 +97,7 @@ import {
   VS_NA,
   VS_UNSELECTED,
   isMergePurposeSelected,
+  isOverlayPurpose,
   MERGE_UNREGISTERED_ID,
   ADI_CD_CHANGE_PURPOSE,
   ADI_CD_TEMPLATE_ROWS,
@@ -361,6 +362,8 @@ export default function RequestPage(): React.ReactElement {
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
   // Only MAP / MAP 삭제 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
   const [onlyMapConfirm, setOnlyMapConfirm] = useState<{ targetPurpose: string } | null>(null);
+  // claude 수정 (2026-10-15): 'Overlay만 변경' 단독 선택 확인 모달 — 누른 항목과 해제될 기존 항목
+  const [overlayExclusiveConfirm, setOverlayExclusiveConfirm] = useState<{ clicked: string; conflicts: string[] } | null>(null);
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
   const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null; startIndex: number } | null>(null);
   const [adiCdPendingApply, setAdiCdPendingApply] = useState<{ side: 'before' | 'after'; rows: AdiCdStep[]; startIndex: number } | null>(null); // 붙여넣기 범위에 값이 있을 때 겹쳐쓰기 확인
@@ -1931,6 +1934,19 @@ export default function RequestPage(): React.ReactElement {
     if (name === 'process_selection') interAutoArmedRef.current = true;
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  // claude 수정 (2026-10-15): 'Overlay만 변경' 단독 규칙 — 확인하면 Overlay만 남기거나, Overlay(구 값 포함)를 빼고 누른 항목을 더한다
+  const handleOverlayExclusiveConfirm = () => {
+    if (!overlayExclusiveConfirm) return;
+    const { clicked } = overlayExclusiveConfirm;
+    handleDetailSet(
+      'other_purpose',
+      isOverlayPurpose(clicked)
+        ? [clicked]
+        : [...detail.other_purpose.filter((v) => !isOverlayPurpose(v)), clicked]
+    );
+    setOverlayExclusiveConfirm(null);
   };
 
   /** 'Only MAP'/'MAP 삭제'/'ADI CD 변경' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
@@ -3969,9 +3985,19 @@ export default function RequestPage(): React.ReactElement {
     // 표를 직접 채울 수 있으므로 확정한 짝도 검사한다 —
     // 미등록이 아닌 쪽은 4칸 필수, 양쪽 미등록인 빈 행은 남길 수 없다.
     // '없음' 으로 확정했으면 유효 행이 1건 이상이어야 한다.
-    if (!detail.merge_applied && detail.merge_ref_doc_id === null) return;
+    // claude 수정 (2026-10-15): 'Overlay만 변경'(구 값 포함)은 변경 내용 누락 방지를 위해 참조 요청서가 필수다 —
+    // '있음'이면 참조 요청서를 골라 Merge 해야 하고, '있음'·'없음' 모두 변경전/변경후 유효 행이 1건 이상이어야 한다.
+    const overlayRequired = detail.other_purpose.some(isOverlayPurpose);
+    if (!detail.merge_applied && detail.merge_ref_doc_id === null) {
+      if (overlayRequired) {
+        const msg = t('request.ba_gate_overlay_merge_required');
+        newErrors['merge_ref_doc'] = msg;
+        errorMessages.push(msg);
+      }
+      return;
+    }
     const { incompleteCells, blankRows, validCount } = validateMergePairs(detail.merge_pairs ?? []);
-    if (detail.merge_ref_mode === 'none' && validCount === 0) {
+    if ((detail.merge_ref_mode === 'none' || overlayRequired) && validCount === 0) {
       const msg = t('request.ba_gate_manual_empty');
       newErrors['merge_pairs'] = msg;
       errorMessages.push(msg);
@@ -5013,6 +5039,7 @@ export default function RequestPage(): React.ReactElement {
           handleDetailSet={handleDetailSet}
           handlePartidSelectionBlur={handlePartidSelectionBlur}
           handleRequestPurposeSelect={handleRequestPurposeSelect}
+          requestOverlayExclusive={(clicked, conflicts) => setOverlayExclusiveConfirm({ clicked, conflicts })}
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
           handleMergeReselect={() => setMergeReselectConfirm(true)}
@@ -6004,6 +6031,20 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={() => { if (prodcScopeConfirm !== null) applyProdcScope(prodcScopeConfirm); }}
         title={t('request.prodc_scope_change_title')}
         message={t('request.prodc_scope_change_msg')}
+        danger
+      />
+
+      {/* claude 수정 (2026-10-15): 'Overlay만 변경' 단독 선택 확인 모달 */}
+      <ConfirmModal
+        isOpen={overlayExclusiveConfirm !== null}
+        onClose={() => setOverlayExclusiveConfirm(null)}
+        onConfirm={handleOverlayExclusiveConfirm}
+        title={t('request.overlay_exclusive_confirm_title')}
+        message={
+          overlayExclusiveConfirm && isOverlayPurpose(overlayExclusiveConfirm.clicked)
+            ? t('request.overlay_exclusive_to_overlay_msg', { list: overlayExclusiveConfirm.conflicts.join(', ') })
+            : t('request.overlay_exclusive_from_overlay_msg', { target: overlayExclusiveConfirm?.clicked ?? '' })
+        }
         danger
       />
 

@@ -288,6 +288,41 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-10-15 — 'Overlay만 변경': 참조 요청서 필수 + '없음'→'있음' 라디오 전환)
+
+- **의도(사용자)**: 'Overlay만 변경' 의뢰서가 변경전/변경후 정보 없이 상신돼 **무엇이 바뀌는지 누락**되는 것을 막는다.
+  지금까지 참조 요청서 블록은 Merge 하지 않아도 진행할 수 있는 선택사항이었다.
+- **필수 규칙(STEP1 '다음' 관문, `index.tsx` `addBaGateError`)** — 상세 목적에 'Overlay만 변경'(구 값 'Overlay 변경' 포함, `isOverlayPurpose`)이 있을 때만:
+  - '참조 요청서 있음'(기본 선택, 사용자 결정: 기본값 유지)인데 참조 요청서를 골라 **Merge 하지 않았으면** 차단
+    → `request.ba_gate_overlay_merge_required` (토스트 + 라디오 아래 인라인 `.form-error`, 오류 키 `merge_ref_doc`).
+  - Merge 했거나 '없음'으로 확정했어도 변경전/변경후 **유효 행이 0건이면** 차단 → 기존 `request.ba_gate_manual_empty`
+    (사용자 결정: '있음'·'없음' 모두 1건 이상 — 기존에는 '없음'만 검사). Merge 결과 비교 행이 0건이면 '행 추가'로 직접 채운다.
+  - 기존 관문(AFTER 미매핑·미입력 칸·양쪽 미등록 행)은 그대로.
+  - **Layer 추가/삭제·STEPSEQ 변경은 지금처럼 선택사항**(사용자 결정: 범위는 Overlay만 변경만).
+- **'없음' → '있음' 전환(`Step1.tsx` `mergeModeLocked`)**: 기존에는 '없음'으로 확정하면(`merge_applied=true`) 라디오가 잠겨
+  '재선택'을 눌러야만 '있음'으로 바꿀 수 있었다. 이제 '없음' 확정 상태에서는 라디오가 열려 있고, '있음'을 누르면 기존
+  '참조 요청서 모드 변경' 확인 모달(`request.merge_mode_change_confirm`)이 뜬다 → 확인 시 변경전/변경후 내용을 비우고 '있음'(미Merge)으로,
+  취소 시 그대로. 모든 Merge 사용 목적에 공통이다(블록 공용).
+  - '있음'으로 **Merge 확정한 뒤**에는 기존대로 라디오가 잠기고 '재선택'으로만 해제한다(요청 범위 밖이라 변경 없음).
+- **알려진 한계(기존 동작, 변경 없음)**: 최종 상신 버튼은 마지막 STEP 만 검증하고 STEP1 관문은 '다음'으로 넘어갈 때 검사한다
+  (기존 참조 요청서 관문과 동일). 이번 변경 전에 Overlay 문서를 STEP5까지 진행해 임시저장한 경우 STEP1 을 다시 지나지 않으면 이 관문에 걸리지 않는다.
+  백엔드에는 참조 요청서 검증이 없다(API 직접 호출은 막지 않음).
+- **i18n**: `request.ba_gate_overlay_merge_required` ko/en 동시 추가.
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 28 suites·431 tests 통과 — 신규 `overlayRefDocRequired.test.tsx` 11건
+  (변경 전 코드에서는 이 중 5건이 실패함을 `git stash` 로 확인). 결재 흐름·백엔드 무변경이라 백엔드 테스트·케이스 러너는 대상 아님.
+- **수동 시나리오**:
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → 상세 목적 **Overlay만 변경** 클릭
+     → [기대: 참조 요청서 Merge 블록이 열리고 '참조 요청서 있음'이 선택돼 있다.]
+  2. [아무것도 하지 않고 '다음 →'] → [기대: STEP1 에 머물고, 토스트와 라디오 아래 빨간 문구
+     "Overlay만 변경은 참조 요청서가 필수입니다 — …". 실패 신호: STEP2 로 넘어감.]
+  3. [참조 요청서 검색 → 선택 → Merge → 확인] → 변경전/변경후 표가 열림 → [표가 비어 있으면 '다음 →'] → [기대: "변경전/변경후 항목을 1건 이상 입력하세요."
+     → '행 추가'로 process_id·SP·SD·PP 를 채운 뒤 '다음 →' → STEP2 로 이동.]
+  4. ['재선택' → '참조 요청서 없음' 선택 → 모달 확인] → 빈 행 1개 표 → ['다음 →'] → [기대: "1건 이상 입력" 오류. 행을 채우면 통과.]
+  5. ['없음' 확정 상태에서 '참조 요청서 있음' 라디오 클릭] → [기대: '참조 요청서 모드 변경' 모달 "참조 요청서 모드를 바꾸면 입력한 변경전/변경후 내용이 모두 사라집니다. 진행하시겠습니까?".
+     취소 → '없음'·표 그대로 / 확인 → '있음' 선택, 표 사라짐, 참조 요청서 검색칸 활성. 실패 신호: 라디오가 회색으로 잠겨 클릭되지 않음.]
+  6. [상세 목적을 **Layer 추가/삭제**로 바꾸고 Merge 없이 '다음 →'] → [기대: 막히지 않고 STEP2 로 이동(선택사항 유지).]
+  7. [언어 English 로 2 반복] → [기대: "A reference request is required for Overlay-only Change — …". 키 문자열이 보이면 실패.]
+
 ### 버그 수정 (2026-10-15 — STEP2 지도 편차 X/Y·예외 구역 값에 '.'/'-' 만 있어도 통과)
 
 - **증상(사용자 보고)**: C가문 No · 요청 목적 `신규` · MAP 목적 `NEW` · 지도 편차 `변경 있음` 에서 X/Y 에 `.` 만 들어간 채 상신됐다.
@@ -370,6 +405,52 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   5. [브라우저 주소창] `http://localhost:10011/api/layer-sd-exceptions/` → 404 면 정상.
 - **실패로 보이는 신호**: 홈에 `SD-Layer 예외` 버튼이 남아 있음 / STEP3·4 에서 "SD 첫 숫자가 Layer 와 일치하지 않습니다" 오류 /
   화면에 `request.sd_layer_…` 같은 키 문자열이 그대로 보임 / 배포 시 마이그레이션 0055 에서 테이블 삭제 SQL 이 실행됨.
+
+### 기능 변경 (2026-10-15 — 상세 목적 'Overlay 변경' → 'Overlay만 변경' 이름·저장값 변경 + 단독 선택만 허용)
+
+- **의도(사용자)**: 지금까지는 'Overlay 변경'을 다른 상세 목적과 함께 고를 수 있었다. 이제 이 항목은 **단독으로만** 고르게 해
+  'Overlay만 변경' 문서는 항상 J 를 뺀 결재 경로(`PL → R → P ∥ O ∥ [E] ∥ RA`)를 타게 한다. 이름도 의미에 맞게 'Overlay만 변경'으로 바꾼다.
+  **이미 저장·진행 중인 문서는 바꾸지 않는다**(사용자 결정).
+- **이름·저장값 변경(사용자 결정: 저장값까지)**: `OPTION_OTHER_PURPOSE` 의 `'Overlay 변경'` → **`'Overlay만 변경'`**.
+  버튼 문구가 곧 저장값이므로 새 문서의 `other_purpose`·자동 제목(`신규-[Overlay만 변경]`)·결재 현황 목적 칸에 새 이름이 들어간다.
+  - **구 값 호환**: 2026-10-15 이전 문서는 `'Overlay 변경'`으로 저장돼 있다. 저장값은 건드리지 않고(마이그레이션 없음) 아래처럼 **두 값을 같은 항목으로 본다**.
+    - 백엔드 `RequestDocument.OTHER_PURPOSE_OVERLAY_VALUES`(신·구 값) — `skip_j_stage()` 가 둘 중 하나 **단독**이면 참.
+    - 프론트 `constants.ts` `OTHER_PURPOSE_OVERLAY`/`OTHER_PURPOSE_OVERLAY_LEGACY`, `isOverlayPurpose()`, `isOverlayOnlyPurpose()`
+      (상세 페이지 결재 경로 탭 JOB `해당없음` 판정 — `PagedDetailView` skipJStage).
+    - `MERGE_ENABLED_PURPOSES` 에 구 값도 남겼다 — 빼면 구 값 임시저장 문서를 열 때 Merge 사용 목적이 없다고 보고 참조·비교 상태를 비워 버린다.
+    - STEP 1 'Overlay만 변경' 버튼은 구 값이 들어 있어도 **선택 상태로 보이고**, 누르면 신·구 값을 모두 해제한다.
+- **단독 선택 강제(화면만, 사용자 결정)** — `Step1.tsx` 상세 목적 버튼 클릭:
+  - 이미 선택된 버튼 클릭(해제)·충돌 없는 선택은 지금과 같다(모달 없음).
+  - 다른 목적이 선택된 상태에서 **'Overlay만 변경'** 클릭 → 확인 모달 `request.overlay_exclusive_to_overlay_msg`
+    ("선택된 상세 목적({{list}})이 해제됩니다") → 확인 시 `['Overlay만 변경']` 만 남김 / 취소 시 그대로.
+  - 'Overlay만 변경'(구 값 포함)이 선택된 상태에서 **다른 목적** 클릭 → `request.overlay_exclusive_from_overlay_msg`
+    → 확인 시 Overlay 를 빼고 누른 항목 추가 / 취소 시 그대로.
+  - 판정은 `overlayExclusiveConflicts(current, clicked)`(해제될 항목 목록, 비면 충돌 없음), 모달 상태는 `index.tsx` `overlayExclusiveConfirm`.
+  - Merge: Layer 추가/삭제·STEPSEQ 변경 ↔ Overlay만 변경 전환은 셋 다 Merge 사용 목적이라 참조·비교 상태가 유지된다.
+    Overlay만 변경 → FirstA·공법·B 변경으로 바꾸면 기존 규칙대로 참조·비교 상태가 비워진다(J/O 표는 유지).
+  - '연구소 제품'은 Only MAP 전용이고 Only MAP 에서는 Overlay만 변경 버튼이 잠겨 있어 서로 충돌하지 않는다.
+- **변경 없음(의도)**: 백엔드 상신/재상신 검증(조합 거부 없음 — API 직접 호출로는 조합 저장 가능, 이때 J 유지),
+  기존·임시저장·반려 문서의 저장값(불러올 때 정리하지 않음 — 버튼을 다시 누를 때부터 새 규칙), 정적 목업 HTML
+  (`frontend/public/guide-mockup.html`, `docs/*mockup*.html`·`merge_manual_input_plan.html` 의 'Overlay 변경' 문구).
+- **i18n**: `request.overlay_exclusive_confirm_title` / `overlay_exclusive_to_overlay_msg` / `overlay_exclusive_from_overlay_msg` 를 ko/en 동시 추가.
+  가이드 투어 `guide.tour.step.groups.s1g3.desc`, `guide.tour.steps.request.flow.ref_doc_merge` 의 항목명을 'Overlay만 변경'(en `Overlay-only Change`)으로 갱신.
+- **케이스 러너**: `payload.OTHER_PURPOSE_OVERLAY` 를 새 값으로, R-10/R-11 이름 갱신(R-11 은 API 로만 만들 수 있는 조합).
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 25 suites·403 tests 통과(신규 `overlayExclusivePurpose.test.tsx` 10건) /
+  백엔드 `manage.py test api` 697건 OK(신규: 구 값 단독 J 미생성·구 값 조합 J 생성) /
+  케이스 러너(로컬 sqlite 개발 서버 + 시드 마스터 데이터) PASS 103 · FAIL 6 · SKIP 15 — R-10·R-11·F-08·X-07 PASS,
+  FAIL 6건(R-16·F-11·F-13·N-03 'MAP 삭제', M-08, W-02)은 **변경 전 코드에서도 동일하게 FAIL**(이번 변경 무관).
+- **수동 시나리오**:
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → [기대: 상세 목적에 **Overlay만 변경** 버튼, 'Overlay 변경'은 없음.]
+  2. [FirstA 변경 + STEPSEQ 변경 클릭 → Overlay만 변경 클릭] → [기대: 'Overlay만 변경 단독 선택' 모달, 문구에 "FirstA 변경, STEPSEQ 변경".
+     확인 → Overlay만 변경만 선택 / 취소 → 원래 두 개 유지.]
+  3. [Overlay만 변경만 선택된 상태 → B 변경 클릭] → [기대: "'B 변경'을(를) 선택하면 Overlay만 변경이 해제됩니다" 모달. 확인 → B 변경만 선택.]
+  4. [Overlay만 변경 단독으로 상신 → 지정 PL 합의 → R 합의] → 결재 현황 → 행 클릭 → '결재 경로' 탭 → [기대: JOB 칸 `해당없음`, 제목에 `[Overlay만 변경]`.]
+  5. [2026-10-15 이전에 'Overlay 변경'으로 상신된 진행 중 문서 열기] → [기대: 결재 경로가 이전과 같다(단독이면 JOB `해당없음`, 조합이면 JOB 진행).]
+  6. [이전에 'Overlay 변경'+다른 목적으로 임시저장한 문서 수정 열기] → [기대: Overlay만 변경 버튼과 다른 버튼이 둘 다 선택 상태로 보인다(값 그대로).
+     다른 버튼을 하나 더 누르면 모달이 뜬다.]
+  7. [언어 English 로 2·3 반복] → [기대: 모달 제목 `Overlay-only Change: Select Alone`. 버튼 문구는 저장값이라 한글 그대로.]
+- **실패 신호**: 두 버튼이 동시에 선택됨(모달 없이) / 취소했는데 선택이 바뀜 / 화면에 `request.overlay_exclusive_…` 키 문자열 노출 /
+  구 값 문서에서 JOB 칸이 '대기'로 영원히 남음.
 
 ### 기능 변경 (2026-10-14 — Step1 '기타 목적' → '상세 목적' 명칭 변경 + 'FirstA 변경' 첫 항목으로)
 

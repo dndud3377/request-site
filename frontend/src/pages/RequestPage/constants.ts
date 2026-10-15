@@ -13,8 +13,8 @@ import {
 // ===== Option Constants =====
 export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제', 'ADI CD 변경', 'P 변경', '기타'] as const;
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5', 'nv'] as const;
-// claude 수정 (2026-10-14): 화면 표시명 '상세 목적'의 버튼 순서 — 'FirstA 변경'을 첫 항목으로 이동(저장값 불변)
-export const OPTION_OTHER_PURPOSE = ['FirstA 변경', 'Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'B 변경', '연구소 제품'] as const;
+// claude 수정 (2026-10-15): 'Overlay 변경' → 'Overlay만 변경' 이름·저장값 변경(2026-10-14: 'FirstA 변경'을 첫 항목으로 이동)
+export const OPTION_OTHER_PURPOSE = ['FirstA 변경', 'Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay만 변경', 'B 변경', '연구소 제품'] as const;
 
 // 의뢰서 자동 제목의 `_{라벨}_YYMMDD` 구간. 기준 키와 일치하는 흐름도 행이 없으면 이 라벨을 쓴다
 // (일치 행이 있으면 그 행들의 Step 이 `[10~20][90~100]` 형태로 대신 들어간다 — buildFlowStepTitlePart).
@@ -42,7 +42,8 @@ export const FLOW_STEP_ORDER_MSG_KEY = {
 
 // 참조 요청서 Merge(+ BEFORE/AFTER 비교)를 쓸 수 있는 기타 목적.
 // 여러 개를 함께 골라도 참조 요청서는 의뢰서당 1건이므로 블록은 하나만 노출한다.
-export const MERGE_ENABLED_PURPOSES = ['Layer 추가/삭제', 'STEPSEQ 변경', 'Overlay 변경'] as const;
+// claude 수정 (2026-10-15): 'Overlay만 변경' 저장값 변경 — 구 값 'Overlay 변경'으로 저장된 임시저장·반려 문서도 Merge 상태가 비워지지 않도록 함께 둔다
+export const MERGE_ENABLED_PURPOSES = ['Layer 추가/삭제', 'STEPSEQ 변경', 'Overlay만 변경', 'Overlay 변경'] as const;
 
 /** 기타 목적에 Merge 사용 항목이 하나라도 포함됐는가 */
 export const isMergePurposeSelected = (otherPurpose: string[]): boolean =>
@@ -71,9 +72,31 @@ export const MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제';
 // (C가문 only_prodc='Yes' 와 동일한 기존 후결자 기능을 그대로 쓴다 — 결재 경로는 바뀌지 않는다).
 export const OTHER_PURPOSE_LAB = '연구소 제품';
 
-// '기타 목적 > Overlay 변경': 이것 **하나만** 선택된 의뢰서는 일반 결재 경로에서 J 단계가 빠진다
+// '기타 목적 > Overlay만 변경': 이것 **하나만** 선택된 의뢰서는 일반 결재 경로에서 J 단계가 빠진다
 // (backend RequestDocument.OTHER_PURPOSE_OVERLAY / skip_j_stage 와 동일 값·기준).
-export const OTHER_PURPOSE_OVERLAY = 'Overlay 변경';
+// claude 수정 (2026-10-15): 저장값을 'Overlay만 변경'으로 바꾸고 2026-10-15 이전 값('Overlay 변경')도 같은 항목으로 인정한다.
+// 화면에서는 이 항목을 다른 상세 목적과 함께 고를 수 없다(Step1 → 확인 모달 후 반대쪽 해제).
+export const OTHER_PURPOSE_OVERLAY = 'Overlay만 변경';
+export const OTHER_PURPOSE_OVERLAY_LEGACY = 'Overlay 변경';
+
+/** 상세 목적 값이 'Overlay만 변경'(구 값 'Overlay 변경' 포함)인가 */
+export const isOverlayPurpose = (val: string): boolean =>
+  val === OTHER_PURPOSE_OVERLAY || val === OTHER_PURPOSE_OVERLAY_LEGACY;
+
+/** 상세 목적이 'Overlay만 변경' 하나뿐인가 — backend skip_j_stage 와 같은 기준(J 단계 제외) */
+export const isOverlayOnlyPurpose = (otherPurpose: string[]): boolean =>
+  otherPurpose.length === 1 && isOverlayPurpose(otherPurpose[0]);
+
+/**
+ * 상세 목적 버튼 `clicked` 를 새로 선택하면 'Overlay만 변경' 단독 규칙과 충돌하는가.
+ * 충돌하면 해제될 기존 항목들을 돌려주고, 아니면 빈 배열을 돌려준다.
+ * - Overlay만 변경을 누름 → 이미 선택된 다른 항목 전부
+ * - 다른 항목을 누름 → 이미 선택된 Overlay만 변경(구 값 포함)
+ */
+export const overlayExclusiveConflicts = (current: string[], clicked: string): string[] =>
+  isOverlayPurpose(clicked)
+    ? current.filter((v) => !isOverlayPurpose(v))
+    : current.filter((v) => isOverlayPurpose(v));
 
 // MAP 삭제 전용 map_type 값. 한글 그대로 저장한다 — 다른 요청 목적 값들(신규/차용/기타 등)과
 // 동일한 관례이고, 문서 제목(`MAP(${map_type})`)·상세 Chip 처럼 i18n 을 거치지 않고 원문이 그대로
