@@ -9799,3 +9799,34 @@ class OidcCallbackValidationTest(TestCase):
                     _, r = self._login()
                 self._assert_rejected(r, 500)
                 self.assertIn(name, '\n'.join(logs.output))
+
+
+# claude 수정 (2026-10-15): 흐름도 Step 목록 API 가 (layerid, stepseq) 쌍을 stepseq 자연 정렬로 돌려주는지 검증.
+class FormOptionsLayerIdsStepseqTest(TestCase):
+    """흐름도 Step 목록(/form-options/layer-ids/) — layerid 와 stepseq 를 함께, stepseq 순서로 준다."""
+
+    def setUp(self):
+        from .models import PhotoStepS1
+        base = dict(processid='PRC1', descript='d', recipeid='r', areaname='a', eqptype='PMAINF')
+        # 같은 layerid(L01)가 두 stepseq 에 존재 / 자릿수가 다른 stepseq(AAAA9 vs AAAA10) / 다른 공정·장비·빈 layerid 는 제외 대상
+        PhotoStepS1.objects.create(stepseq='AAAA10', layerid='L02', **base)
+        PhotoStepS1.objects.create(stepseq='AAAA9', layerid='L01', **base)
+        PhotoStepS1.objects.create(stepseq='AAAA12', layerid='L01', **base)
+        PhotoStepS1.objects.create(stepseq='AAAA12', layerid='L01', **base)
+        PhotoStepS1.objects.create(stepseq='AAAA11', layerid='', **base)
+        PhotoStepS1.objects.create(stepseq='AAAA1', layerid='LX', **{**base, 'processid': 'OTHER'})
+        PhotoStepS1.objects.create(stepseq='AAAA2', layerid='LY', **{**base, 'eqptype': 'POVLAY'})
+
+    def test_returns_layerid_stepseq_pairs_in_stepseq_natural_order(self):
+        res = self.client.get('/api/form-options/layer-ids/?line=line1&process=PRC1')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(json.loads(res.content)['options'], [
+            {'layerid': 'L01', 'stepseq': 'AAAA9'},
+            {'layerid': 'L02', 'stepseq': 'AAAA10'},
+            {'layerid': 'L01', 'stepseq': 'AAAA12'},
+        ])
+
+    def test_unknown_line_or_missing_process_is_empty(self):
+        for url in ('/api/form-options/layer-ids/?line=line2&process=PRC1', '/api/form-options/layer-ids/?line=line1'):
+            res = self.client.get(url)
+            self.assertEqual(json.loads(res.content)['options'], [])
