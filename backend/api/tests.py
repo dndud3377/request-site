@@ -1926,6 +1926,23 @@ class PEStageReviewerFlowTest(TestCase):
             '기타 목적이 2개 이상이면 J 를 빼지 않는다',
         )
 
+    # claude 수정 (2026-10-15): 저장값 'Overlay만 변경' 변경 후에도 구 값 'Overlay 변경' 문서가 같은 판정을 받는지 고정
+    def test_j_step_not_created_for_legacy_overlay_value(self):
+        """2026-10-15 이전 저장값 'Overlay 변경' 단독 문서도 J 단계를 만들지 않는다."""
+        self.assertEqual(RequestDocument.OTHER_PURPOSE_OVERLAY, 'Overlay만 변경')
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY_LEGACY])
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
+            "구 값 'Overlay 변경' 단독 문서에도 J 단계가 생성되지 않아야 한다",
+        )
+
+    def test_j_step_created_for_legacy_overlay_value_with_others(self):
+        """구 값 'Overlay 변경' + 다른 기타 목적 조합 문서는 지금처럼 J 단계를 만든다."""
+        doc = self._advance_to_parallel(
+            other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY_LEGACY, 'STEPSEQ 변경']
+        )
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+
     def test_overlay_only_document_approved_without_j(self):
         """J 없는 문서도 P·O 합의만으로 최종 승인된다(under_review 영구 정지 회귀 방지).
 

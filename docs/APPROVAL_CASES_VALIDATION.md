@@ -35,7 +35,7 @@
 | # | 축 | 값 | 판정 위치 | 결재선에 미치는 영향 |
 |---|---|---|---|---|
 | A1 | 요청 목적 | 일반(신규/차용/신규+차용/기타) / `Only MAP` / `MAP 삭제` | `models.py:158` `is_only_map()`, `models.py:167` `is_map_delete_edit()` | 경로 자체가 갈린다 |
-| A2 | 기타 목적 `Overlay 변경` **단독** | 예 / 아니오 | `models.py` `skip_j_stage()` | 일반 경로에서 **J 미생성** |
+| A2 | 기타 목적 `Overlay만 변경`(구 값 `Overlay 변경` 포함) **단독** | 예 / 아니오 | `models.py` `skip_j_stage()` | 일반 경로에서 **J 미생성** |
 | A3 | J-layer `pp` 에 `plel` | 있음 / 없음 | `has_ppid_plel()` (`VALIDATION_KEYWORD='plel'`) | **E(MASK) 생성 여부** |
 | A4 | 지정 PL 수 | 1명 / 2명 이상 | `views.py:1684` `_resolve_designated_pls` | PL step N개, **전원 합의** |
 | A5 | 영업/기술지원 합의자(SA) | 0명 / N명 (+필수 여부) | `requires_sales_agreer()`, `views.py:350` | PL 과 **병렬**, 전원 합의해야 다음 |
@@ -58,10 +58,10 @@
 |---|---|---|---|
 | **RT-1** | 일반 + J 있음 + E 있음(plel) | `PL(+SA) → R(+RV) → P(+PV) ∥ J ∥ O ∥ E(+EV) ∥ RA` | P·J·O·E·RA 전부 |
 | **RT-2** | 일반 + J 있음 + E 없음 | `PL(+SA) → R(+RV) → P(+PV) ∥ J ∥ O ∥ RA` | P·J·O·RA |
-| **RT-3** | 일반 + `Overlay 변경` 단독 + E 있음 | `PL(+SA) → R(+RV) → P(+PV) ∥ O ∥ E(+EV) ∥ RA` | P·O·E·RA (`j_approved` 고정 True) |
-| **RT-4** | 일반 + `Overlay 변경` 단독 + E 없음 | `PL(+SA) → R(+RV) → P(+PV) ∥ O ∥ RA` | P·O·RA |
+| **RT-3** | 일반 + `Overlay만 변경` 단독 + E 있음 | `PL(+SA) → R(+RV) → P(+PV) ∥ O ∥ E(+EV) ∥ RA` | P·O·E·RA (`j_approved` 고정 True) |
+| **RT-4** | 일반 + `Overlay만 변경` 단독 + E 없음 | `PL(+SA) → R(+RV) → P(+PV) ∥ O ∥ RA` | P·O·RA |
 | **RT-5** | `Only MAP` | `PL(+SA) → R(+RV) → RA` | RA 전원(**0명이면 R 합의 즉시 approved**) |
-| **RT-6** | `MAP 삭제` | `PL(+SA) → P(+PV) ∥ R(+RV) ∥ J ∥ O` | 네 단계 전부. **E·RA 없음** |
+| **RT-6** | `MAP 삭제` | `PL(+SA) → P(+PV) ∥ J ∥ O → R(+RV)` (2026-09 R 분리 — P·J·O 셋 다 끝나야 R 생성) | 네 단계 전부(R 이 항상 마지막). **E·RA 없음** |
 
 근거: `views.py:1625` `_advance_to_parallel`, `views.py:1582` `_create_map_delete_edit_parallel`,
 `views.py:1715` `_open_stage_after_pl`.
@@ -84,7 +84,7 @@
 > 러너는 조합 24개를 전부 돌리지 않고 **골격 6종 × PL 단계 조합(§3.2 L 그룹)** 으로 나눠 검증한다.
 > 조합을 개별로 보고 싶으면 `--case` 로 해당 케이스를 조합해 실행한다.
 
-### 2.3 종단(최종 승인) 순열 — "누가 마지막이냐" 21가지
+### 2.3 종단(최종 승인) 순열 — "누가 마지막이냐" 18가지
 
 병렬 단계는 순서가 없으므로, **마지막 합의자가 누구인지**가 판정 트리거를 결정한다.
 
@@ -95,11 +95,11 @@
 | RT-3 | P·O·E·RA | P / O / E / RA | 4 | F-08 |
 | RT-4 | P·O·RA | P / O / RA | 3 | F-08(E 제외형) |
 | RT-5 | RA | RA | 1 | F-10 |
-| RT-6 | P·R·J·O | P / R / J / O | 4 | F-11, F-12 |
-| | | **합계** | **21** | |
+| RT-6 | P·J·O → R | R(+RV) — 2구역 P·J·O 중 마지막 합의는 R 생성 트리거일 뿐 최종 승인이 아니다 | 1 | F-12 (F-11: P 가 2구역 마지막 → R 생성 → 승인) |
+| | | **합계** | **18** | |
 
 **미완료 상태에서 승인되면 안 되는 조합**(음성 케이스): 각 골격마다 "한 단계만 남겨 두고 전부 합의"
-→ `under_review` 유지여야 한다. 러너 F-06(P 미완료)·PE-03(PV 미완료)·F-13(MAP 삭제 PV)·F-14(RA 일부).
+→ `under_review` 유지여야 한다. 러너 F-06(P 미완료)·PE-03(PV 미완료)·F-13(MAP 삭제 PV 미완료 → R 미생성)·F-14(RA 일부).
 
 ### 2.4 반려 지점 열거 — 8가지 + 예외 1
 
@@ -124,8 +124,9 @@
 | 중단 요청 → 일부 확인 | `under_review` 유지 | M-03 |
 | 중단 요청 → target 전원 확인 | `pause`, 결재 동결 | M-04, M-05 |
 | 중단 → 재개 | `under_review`, 멈춘 단계 유지 + 기한 연장 | M-06, M-07 |
-| 중단 요청중 결재 진행 | 요청 자동 취소 | M-08 |
-| 철회(draft/rejected) | 즉시 삭제 | W-01, W-02 |
+| 중단 요청 확인 대기 중 결재 진행 | **400 동결**(요청 유지, 2026-08) | M-08 |
+| 철회(draft) | 즉시 삭제 | W-01 |
+| 철회(rejected) | **400 철회 불가**(수정 후 재상신, 2026-08) | W-02 |
 | 철회(approved) | MASTER 만 삭제 | W-03 |
 | 철회(진행 중) → 전원 확인 | **문서 삭제**(복구 불가) | W-08 |
 | 철회 요청 → 거부/취소 | 결재 재개 | W-11, W-12, W-15 |
@@ -135,7 +136,7 @@
 
 ```
 상신 조합 24 (§2.2)
- + 종단 순열 21 (§2.3)
+ + 종단 순열 18 (§2.3)
  + 반려 지점 9 (§2.4)
  + 진행 중 이벤트 9 (§2.5)
  + 권한·인가·동시성 분기 (§3.10, §3.11)
@@ -174,7 +175,7 @@
 
 | ID | 전제 | 트리거 | 기대 결과 | 근거 |
 |---|---|---|---|---|
-| L-01 | PL 1명 | `peer-approve/` | 다음 단계 생성(일반=R, `MAP 삭제`=P·R·J·O) | `views.py:1728`, `1715` |
+| L-01 | PL 1명 | `peer-approve/` | 다음 단계 생성(일반=R, `MAP 삭제`=P·J·O — R 은 그 셋 완료 후) | `views.py:1728`, `1715` |
 | L-02 | PL 2명 중 1명 | 〃 | `under_review` 유지, R 미생성 | `views.py:1742` |
 | L-03 | PL 2명 전원 | 〃 | R 생성 | 〃 |
 | L-04 | PL 2명 중 1명 반려 | `peer-reject/` | 즉시 `rejected` | `views.py:1769` |
@@ -200,13 +201,13 @@
 | R-07 | RV 합의 | 병렬 생성 | `views.py:957` |
 | R-08 | plel 없음 | **E 미생성** | `views.py:1667` |
 | R-09 | plel 있음 | E 생성 | 〃 |
-| R-10 | `Overlay 변경` 단독 | **J 미생성**(검토항목 채우기도 건너뜀) | `views.py:1657` |
-| R-11 | `Overlay 변경` + 다른 목적 | J 생성 | 〃 |
+| R-10 | `Overlay만 변경` 단독 | **J 미생성**(검토항목 채우기도 건너뜀) | `views.py:2624` |
+| R-11 | `Overlay만 변경` + 다른 목적 (2026-10-15부터 화면에서는 불가 — API 직접·이전 문서만) | J 생성 | 〃 |
 | R-12 | 일반 경로 | P=4영업일 < J=O=6영업일 | `views.py:1639~1671` |
 | R-13 | 일반 경로 | J 도착 메일이 R 합의 시점, 미배정이면 TE_J 전원 | `views.py:1661` |
 | R-14 | `Only MAP` + RA 있음 | P/J/O/E 없음, RA 만, `under_review` | `views.py:1642` |
 | R-15 | `Only MAP` + RA 0명 | **즉시 approved** | `views.py:1643` |
-| R-16 | `MAP 삭제` | PL 합의 직후 P·R·J·O 병렬, E·RA 없음 | `views.py:1582` |
+| R-16 | `MAP 삭제` | PL 합의 직후 **P·J·O** 병렬(R 은 아직 없음), E·RA 없음 | `views.py:2490` `_create_map_delete_edit_parallel` |
 
 ### 3.4 그룹 C — 검토중(claim) 6건
 
@@ -252,9 +253,9 @@
 | F-08 | RT-3/4 | O | approved(`j_approved` 고정) | `views.py:987` |
 | F-09 | RT-2 | J | approved(`e_ok = not e_exists`) | `views.py:997` |
 | F-10 | RT-5 | RA | approved(**RA 0개면 판정 자체가 False**) | `views.py:980` |
-| F-11 | RT-6 | P | approved | `views.py:933`, `1609` |
+| F-11 | RT-6 | P(2구역 마지막) | R 생성 → R 합의 시 approved | `views.py:2518` `_map_delete_edit_zone2_complete`, `2534` `_create_map_delete_edit_r_stage` |
 | F-12 | RT-6 | R | approved | 〃 |
-| F-13 | RT-6 | PV 미합의 | approved 아님 | `views.py:1621` |
+| F-13 | RT-6 | PV 미합의 | R 미생성·approved 아님(PV 합의 후 R 생성) | `views.py:2518` |
 | F-14 | 추가 후결자 | 일부만 합의 | approved 아님 | `views.py:978` |
 | F-15 | 승인 시 | approved·notify_approved 메일 | `views.py:1005` |
 
@@ -283,10 +284,10 @@
 | M-05 | pause 중 결재 | 400 |
 | M-06 | 재개 | `under_review`, 멈춘 단계 그대로 |
 | M-07 | 재개 | 기한이 멈춘 달력일수만큼 연장 |
-| M-08 | 요청중 결재 진행 | 요청 자동 `cancelled` |
+| M-08 | 요청 확인 대기 중 결재 진행 | 선점·합의 **400**(`_blocked_progress_response`), 요청 `requested` 유지 |
 | M-09 | pause 문서 철회 | 400 |
 | W-01 | draft 철회 | 즉시 삭제(`deleted=true`) |
-| W-02 | rejected 철회 | 즉시 삭제 |
+| W-02 | rejected 철회 | **400**(철회 불가), 문서 `rejected` 유지 — MASTER 는 상태 무관 즉시 삭제 |
 | W-03 | approved 철회 | MASTER 만, 그 외 403 |
 | W-04 | 진행 중 철회 | 요청만 생성 |
 | W-05 | 사유 없음 | 400 |
@@ -322,7 +323,7 @@
 |---|---|---|---|
 | N-01 | 마지막 병렬 합의 2건 동시 | approved 전이 누락 없음 | `views.py:816` |
 | N-02 | PL 2명 동시 합의 | R 중복/누락 없음 | `views.py:1735`, `1722` |
-| N-03 | `MAP 삭제` 병렬 생성 경합 | 단계 중복 생성 없음 | `views.py:1593` |
+| N-03 | `MAP 삭제` 병렬 생성 경합 | P·J·O 중복 생성 없음, R 없음 | `views.py:2490` |
 | N-04 | 합의·반려 동시 | 직렬화되어 한쪽만 반영 | `views.py:1026` |
 
 ---
@@ -447,7 +448,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
    → **기대**: 1열 2줄(1줄=지정 PL, 2줄=영업·기술지원 합의자). SA 미지정 문서는 2줄이 `해당없음`.
 3. **병렬 그리드 6칸** — R 합의 후
    → **기대**: `PHPSI / 후결자 / JOB / MASK / OVL / 추가후결자` 6칸이 각자 뱃지(`대기중`/`검토중`/`완료`/`해당없음`).
-   plel 없는 문서는 MASK 가 `해당없음`, `Overlay 변경` 단독은 JOB 이 `해당없음`, `MAP 삭제` 는
+   plel 없는 문서는 MASK 가 `해당없음`, `Overlay만 변경` 단독은 JOB 이 `해당없음`, `MAP 삭제` 는
    MASK·추가후결자가 `해당없음` 이고 2열 1행이 `RFG`.
 4. **E 검토자 필수(PE-08)** — TE_E 로그인 → MASK '검토중' → 검토자 비운 채 '합의'
    → **기대**: `2차 검토자를 1명 이상 지정해야 합니다.` 오류. 새로고침해도 MASK 는 여전히 검토중.

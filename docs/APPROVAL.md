@@ -169,12 +169,20 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > `P·PV·J·O·R·RV`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
-> **예외 — 기타 목적 'Overlay 변경' 단독 (2026-08)**: `RequestDocument.skip_j_stage()`가 참이면
+> **예외 — 기타 목적 'Overlay만 변경' 단독 (2026-08, 2026-10-15 이름·저장값 변경)**: `RequestDocument.skip_j_stage()`가 참이면
 > **일반 경로에서 J 단계를 아예 만들지 않는다**(`PL → R → P ∥ O ∥ [E] ∥ RA`). 판정은
-> `detail.other_purpose` 가 **정확히 `['Overlay 변경']` 한 개**일 때만 참이다 — 다른 기타 목적을
+> `detail.other_purpose` 가 **이 항목 한 개뿐**일 때만 참이다 — 다른 기타 목적을
 > 함께 골랐으면(예: `Overlay 변경 + STEPSEQ 변경`) 그 목적의 검토가 남아 있으므로 J 를 유지한다
 > (상수 `RequestDocument.OTHER_PURPOSE_OVERLAY`, 프론트 `RequestPage/constants.ts` 의
 > `OTHER_PURPOSE_OVERLAY` 와 같은 값). 구버전 문서의 문자열 저장도 배열로 정규화해 처리한다.
+> - **(2026-10-15) 이름·저장값 변경**: `'Overlay 변경'` → **`'Overlay만 변경'`**. 그 이전 문서는 구 값
+>   `'Overlay 변경'`으로 저장돼 있으므로 **두 값 모두 같은 항목으로 인정**한다
+>   (`OTHER_PURPOSE_OVERLAY_VALUES` = 신·구 값, 프론트 `isOverlayPurpose`/`isOverlayOnlyPurpose`).
+>   기존 문서의 저장값은 바꾸지 않았다(마이그레이션 없음) — 진행 중 문서의 결재 판정은 그대로다.
+> - **(2026-10-15) 단독 선택 강제(화면)**: STEP 1 에서 'Overlay만 변경'은 다른 상세 목적과 함께 고를 수 없다
+>   (충돌 클릭 → 확인 모달 → 반대쪽 해제, `docs/REQUEST.md` 참조). 따라서 새로 작성하는 문서는 이 항목을
+>   고르면 항상 J 가 빠진다. **백엔드 검증은 추가하지 않았다**(사용자 결정) — 조합 판정(J 유지)은
+>   그 이전에 저장된 조합 문서와 API 직접 호출을 위해 그대로 둔다.
 > - **적용 범위는 일반 경로만**이다. `MAP 삭제`은 P·R·J·O 가 한 묶음의 병렬이라 제외하고
 >   (`skip_j_stage()`가 `is_map_delete_edit()`이면 곧바로 거짓), `Only MAP`은 원래 J 가 없다.
 > - **최종 승인 판정**: `j_approved` 는 원래 `len(j_steps) > 0` 을 요구해, J 를 만들지 않으면
@@ -229,7 +237,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), J(due: 6영업일, 병렬), O(due: 6영업일, 병렬)** 동시 생성.
   추가로 **E**(due: 6영업일, 병렬)는 `plel` 인 의뢰서에만 생성한다.
-- ✅ **(2026-08) 기타 목적 'Overlay 변경' 단독이면 J 를 생성하지 않는다**(`document.skip_j_stage()`).
+- ✅ **(2026-08) 기타 목적 'Overlay만 변경'(구 값 'Overlay 변경') 단독이면 J 를 생성하지 않는다**(`document.skip_j_stage()`).
   J 도착 메일과 검토 항목 채우기(`fill_from_master`)도 함께 건너뛴다 — 위 예외 항목 참조.
 - ✅ **(2026-08) J 도 이 시점에 생성**된다(예전엔 P 완료 후 생성). J 도착 메일(`stage_arrival(J)`)도
   여기서 발송되며, 수신자도 **미배정 시 TE_J 팀 전원**으로 바뀌었다(예전엔 고정 주소 1곳).

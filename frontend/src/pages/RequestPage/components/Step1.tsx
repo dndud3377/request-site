@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
 import { PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
@@ -39,6 +39,8 @@ interface Step1Props {
   handleDetailSet: (name: string, value: string | string[]) => void;
   handlePartidSelectionBlur: () => void;
   handleRequestPurposeSelect: (val: string) => void;
+  /** 'Overlay만 변경' 단독 규칙과 충돌하는 상세 목적 클릭 — 확인 모달을 띄운다(conflicts = 해제될 기존 항목) */
+  requestOverlayExclusive: (clicked: string, conflicts: string[]) => void;
   handleRefDocSelect: (label: string) => void;
   handleMergeClick: () => void;
   handleMergeReselect: () => void;
@@ -112,6 +114,7 @@ const Step1: React.FC<Step1Props> = ({
   handleDetailSet,
   handlePartidSelectionBlur,
   handleRequestPurposeSelect,
+  requestOverlayExclusive,
   handleRefDocSelect,
   handleMergeClick,
   handleMergeReselect,
@@ -272,8 +275,12 @@ const Step1: React.FC<Step1Props> = ({
             <div className="flex-col">
               <label className="form-label">{t('request.other_purpose')}<GuideBadge fk="step1_other_purpose" tk={t('guide.feat.step1_other_purpose' as never)} /></label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 4 }}>
+                {/* claude 수정 (2026-10-15): 'Overlay만 변경'은 단독 선택만 허용 — 충돌하면 확인 모달을 거친다. 구 값 'Overlay 변경'도 같은 버튼으로 표시·해제 */}
                 {OPTION_OTHER_PURPOSE.map((val) => {
-                  const selected = detail.other_purpose.includes(val);
+                  const isOverlayBtn = isOverlayPurpose(val);
+                  const selected = isOverlayBtn
+                    ? detail.other_purpose.some(isOverlayPurpose)
+                    : detail.other_purpose.includes(val);
                   return (
                     <button
                       key={val}
@@ -281,12 +288,19 @@ const Step1: React.FC<Step1Props> = ({
                       className={`map-type-btn${selected ? ' active' : ''}`}
                       onClick={() => {
                         if (otherPurposeDisabled(val)) return;
-                        handleDetailSet(
-                          'other_purpose',
-                          selected
-                            ? detail.other_purpose.filter((v) => v !== val)
-                            : [...detail.other_purpose, val]
-                        );
+                        if (selected) {
+                          handleDetailSet(
+                            'other_purpose',
+                            detail.other_purpose.filter((v) => (isOverlayBtn ? !isOverlayPurpose(v) : v !== val))
+                          );
+                          return;
+                        }
+                        const conflicts = overlayExclusiveConflicts(detail.other_purpose, val);
+                        if (conflicts.length > 0) {
+                          requestOverlayExclusive(val, conflicts);
+                          return;
+                        }
+                        handleDetailSet('other_purpose', [...detail.other_purpose, val]);
                       }}
                       disabled={otherPurposeDisabled(val)}
                     >

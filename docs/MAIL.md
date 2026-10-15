@@ -362,7 +362,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | 판정 시점 | `approve-step` 에서 `agent`가 `J` 또는 `O`일 때만 확인한다(`views.py approve_step`, 일반 경로 `else` 분기). R 은 J·O 보다 먼저 병렬 진입의 관문 역할을 하므로(J·O 는 R 합의 시점에 이미 병렬로 생성됨) 이 조합에서 R 이 가장 나중에 끝나는 경우는 없다 |
 | 완료 판정 | R 완료 = R 담당자 합의 + (RV 지정됐으면 RV 도 합의, `views._is_r_zone_complete`). J·O 완료 = 기존 `all_approved` 판정에 이미 쓰이던 `j_approved`/`o_approved`(회차 스코프) 그대로 재사용 |
 | 회차 기준 | **반드시 현재(최신) 회차만** 본다 — `j_approved`/`o_approved`/`_is_r_zone_complete` 모두 `round=current_round` 로 조회한다. 반려로 새 회차가 열리면 이전 회차의 J·O 합의 이력은 새 회차 판정에 전혀 섞이지 않는다(재상신 시 J·O 단계 자체가 새 회차에 다시 생성되므로 구조적으로도 섞일 수 없다) |
-| J 가 없는 문서 | '기타 목적이 Overlay 변경뿐'인 문서(`skip_j_stage()`)는 J 단계 자체가 없다 — 이 경우 **R+O 완료만으로 충족**한다(기존 `all_approved`의 `j_approved` 판정과 동일 취급) |
+| J 가 없는 문서 | '기타 목적이 Overlay만 변경(구 값 Overlay 변경)뿐'인 문서(`skip_j_stage()`)는 J 단계 자체가 없다 — 이 경우 **R+O 완료만으로 충족**한다(기존 `all_approved`의 `j_approved` 판정과 동일 취급) |
 | 대상 외 문서 유형 | Only MAP(P·J·O 없음)·MAP 삭제(R 이 3구역으로 이동, 별도 판정 분기)·ADI CD 변경(R·O 없음)은 이 R/J/O 조합이 성립하지 않는 경로라 통보 자체가 발생하지 않는다(별도 가드 불필요 — 해당 분기에 도달하지 않음) |
 | 수신자 | **TE_P 팀 전원**(`_team_emails('P')`). 단일 팀이라 팀별 분리 없이 즉시 발송(`mailer.enqueue_notify_rjo_completed`) |
 | 라인 필터(§3.0) | 다른 결재 알림과 동일하게 적용됨(`_apply_redirect(recipients, document)`) |
@@ -468,7 +468,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | 액션(엔드포인트) | 발송 | 내용 |
 |---|:---:|---|
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원 **+ '상신 받기'를 켠 TE_P 전원**(2026-08 신설, §3.3)에게 notify_submitted |
-| `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중 문서는 확인 대상 단계에 `withdraw_requested`(개인 1통 + 팀별 각 1통). 임시저장·반려·(MASTER)완료 문서는 즉시 삭제되며 `withdraw_completed`(개인 1통 + 팀별 각 1통). §3.2 참고 |
+| `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중 문서는 확인 대상 단계에 `withdraw_requested`(개인 1통 + 팀별 각 1통). 임시저장 문서는 즉시 삭제되며 `withdraw_completed`(개인 1통 + 팀별 각 1통). 반려 문서는 철회할 수 없다(400). MASTER 철회는 상태와 무관하게 즉시 삭제하며 메일을 보내지 않는다(서버 로그만). §3.2 참고 |
 | `confirm-withdraw` (철회 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 삭제될 때만** `withdraw_completed`(개인 1통 + 팀별 각 1통). 아직 남은 단계가 있으면 무메일 |
 | `reject-withdraw` (철회 거부) | ✅ | 철회 요청자 + 작성자에게 `withdraw_rejected`(1통, 분리 대상 아님) |
 | `cancel-withdraw` (철회 요청 취소) | ✅ | 확인 대상 단계 담당자(개인 1통)/팀(팀별 각 1통)에게 `withdraw_cancelled` |

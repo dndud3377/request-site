@@ -18,7 +18,8 @@ from .masterdata import DEV_MAIL_DOMAIN
 PURPOSE_NEW = '신규'
 ONLY_MAP_PURPOSE = 'Only MAP'
 MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제'
-OTHER_PURPOSE_OVERLAY = 'Overlay 변경'
+# claude 수정 (2026-10-15): 상세 목적 'Overlay 변경' → 'Overlay만 변경' 저장값 변경 (구 값은 백엔드가 계속 인정)
+OTHER_PURPOSE_OVERLAY = 'Overlay만 변경'
 OTHER_PURPOSE_LAB = '연구소 제품'
 EA_NO_CHANGE = '변경 없음'
 EA_HAS_CHANGE = '변경 있음'

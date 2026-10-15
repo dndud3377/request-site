@@ -129,9 +129,12 @@ class RequestDocument(models.Model):
     EA_DEFAULT_NORMAL = '300'
     EA_DEFAULT_PRODC = '500'
 
-    # 기타 목적 'Overlay 변경' — 이것 **하나만** 선택되면 결재 경로에서 J 단계를 뺀다.
+    # 기타 목적 'Overlay만 변경' — 이것 **하나만** 선택되면 결재 경로에서 J 단계를 뺀다.
     # 프론트엔드 `RequestPage/constants.ts` 의 OPTION_OTHER_PURPOSE 항목과 같은 값이어야 한다.
-    OTHER_PURPOSE_OVERLAY = 'Overlay 변경'
+    # claude 수정 (2026-10-15): 'Overlay 변경' → 'Overlay만 변경' 저장값 변경 — 기존 문서의 구 값도 같은 항목으로 인정한다
+    OTHER_PURPOSE_OVERLAY = 'Overlay만 변경'
+    OTHER_PURPOSE_OVERLAY_LEGACY = 'Overlay 변경'
+    OTHER_PURPOSE_OVERLAY_VALUES = (OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY)
 
     # J-layer 행의 pp 에 이 키워드가 있으면 E(MASK) 단계가 결재 경로에 포함된다(대소문자 무관).
     # 프론트엔드 `RequestPage/constants.ts` 의 VALIDATION_KEYWORD 와 같은 값이어야 한다.
@@ -343,10 +346,13 @@ class RequestDocument(models.Model):
         """
         return self._ea_value_state() is False
 
+    # claude 수정 (2026-10-15): 저장값 변경('Overlay만 변경')에 맞춰 구 값 'Overlay 변경' 단독 문서도 계속 J 를 뺀다
     def skip_j_stage(self):
-        """결재 경로에서 J(JOB) 단계를 빼는 의뢰서인가 — 기타 목적이 'Overlay 변경' **하나뿐**일 때.
+        """결재 경로에서 J(JOB) 단계를 빼는 의뢰서인가 — 기타 목적이 'Overlay만 변경' **하나뿐**일 때.
 
-        여러 개를 함께 골랐으면(예: Overlay 변경 + STEPSEQ 변경) 다른 목적의 검토가 남아 있으므로
+        2026-10-15 이전 문서는 같은 항목이 'Overlay 변경'으로 저장돼 있으므로 두 값 모두 인정한다
+        (OTHER_PURPOSE_OVERLAY_VALUES). 화면에서는 2026-10-15 부터 이 항목을 단독으로만 고를 수 있다.
+        여러 개를 함께 골랐으면(예: Overlay 변경 + STEPSEQ 변경 — 그 이전 문서·API 직접 호출) 다른 목적의 검토가 남아 있으므로
         J 를 그대로 둔다. 적용 범위는 **일반 경로만**이다 — 'MAP 삭제' 은 P·R·J·O 네 단계가
         하나의 병렬 묶음이라 제외하고, 'Only MAP' 은 원래부터 J 를 만들지 않아 판정 대상이 아니다.
         other_purpose 는 배열이지만 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다
@@ -358,7 +364,7 @@ class RequestDocument(models.Model):
         other = inner_detail.get('other_purpose') or []
         if isinstance(other, str):
             other = [other]
-        return list(other) == [self.OTHER_PURPOSE_OVERLAY]
+        return len(other) == 1 and other[0] in self.OTHER_PURPOSE_OVERLAY_VALUES
 
     def has_ppid_plel(self):
         """J-layer 행의 pp 중 하나라도 판정 키워드(plel)를 포함하는지 여부.
