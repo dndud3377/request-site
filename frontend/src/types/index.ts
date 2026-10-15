@@ -394,6 +394,15 @@ export interface FlowChartRow {
   process_id: string;
   step_from: string;
   step_to: string;
+  // claude 수정 (2026-10-15): Step 으로 고른 Layer 의 stepseq(행 사이 순서 검증용). 이 필드 도입 전 문서에는 없다.
+  step_from_seq?: string;
+  step_to_seq?: string;
+}
+
+// claude 수정 (2026-10-15): /form-options/layer-ids/ 응답 항목 — 같은 layerid 가 stepseq 마다 한 항목씩 온다.
+export interface LayerStepOption {
+  layerid: string;
+  stepseq: string;
 }
 
 export interface FilterSet {
