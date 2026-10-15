@@ -2,7 +2,7 @@ import { FlowChartRow, JayerRow, OayerRow, ValidationSystemValue, MergePair, Mer
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
-  MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
+  MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, INTER_AUTO_YES_PROCESS_PREFIXES,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -26,6 +26,23 @@ export const shouldDisableRow = (
   if (sd.some(keyword => keyword && row.sd.toLowerCase().includes(keyword.toLowerCase()))) return true;
   if (pp.some(keyword => keyword && row.pp.toLowerCase().includes(keyword.toLowerCase()))) return true;
   return false;
+};
+
+// claude 수정 (2026-10-15): 조합법이 3번(inter) 자동 YES 기준 단어로 시작하는지 판정하는 함수 추가
+/**
+ * 조합법(process_selection)이 기준 단어 중 하나로 시작하는가 — 대소문자 무시, 앞뒤 공백 무시.
+ * 빈 기준 단어는 무시한다(빈 문자열은 모든 값의 접두어라 전부 YES 가 되는 것을 막는다).
+ */
+export const isInterAutoYesProcess = (
+  processSelection: string,
+  prefixes: readonly string[] = INTER_AUTO_YES_PROCESS_PREFIXES,
+): boolean => {
+  const value = (processSelection || '').trim().toLowerCase();
+  if (!value) return false;
+  return prefixes.some((p) => {
+    const prefix = p.trim().toLowerCase();
+    return prefix !== '' && value.startsWith(prefix);
+  });
 };
 
 /** 필터 키워드 초안 빈 값 */
