@@ -101,6 +101,9 @@ import {
   mapInfoDefaults,
   MERGE_MANUAL_FIELDS,
   TITLE_DEFAULT_LABEL,
+  MAP_TYPE_NEW,
+  INTER_YES,
+  INTER_NO,
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
@@ -110,6 +113,7 @@ import {
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
+  isInterAutoYesProcess,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -458,6 +462,14 @@ export default function RequestPage(): React.ReactElement {
   const originalRequesterRef = useRef<{ name: string; email: string; department: string } | null>(null);
   // 투어 모드에선 시드한 값이 라인/조합법 변경 reset 효과로 지워지지 않도록 로드 가드를 켠 채 시작
   const isLoadingEditRef = useRef(isTourMode);
+  // claude 수정 (2026-10-15): 조합법 기준 단어 → StepMap 3번(inter) YES 고정 기능의 상태
+  // 3번이 조합법 기준 단어로 YES 고정됐는가 — true 면 StepMap 3번 드롭다운을 잠근다.
+  const [interAutoLocked, setInterAutoLocked] = useState(false);
+  // 사용자가 조합법 또는 MAP 목적을 직접 바꿨는가 — 저장 문서를 다시 열었을 때는 저장값을 그대로
+  // 두고, 사용자가 이 둘 중 하나를 바꾼 뒤부터 자동 YES 를 적용한다.
+  const interAutoArmedRef = useRef(false);
+  // 직전 판정 결과 — 기준에 해당하다가 해당하지 않게 된 순간에만 NO 로 되돌리기 위해 쓴다.
+  const interAutoMatchedRef = useRef(false);
   // 자동 MAP 매칭이 source_line 을 세팅한 직후 1틱 — "원본 위치 변경 → 원본 제품 초기화" 효과가
   // 방금 채운 source_partid 를 지우지 않도록 이번 한 번만 건너뛰게 하는 플래그.
   const autoMapMatchRef = useRef(false);
@@ -738,6 +750,35 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [detail.line, detail.partid_selection, detail.request_purpose]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // claude 수정 (2026-10-15): 조합법이 기준 단어(INTER_AUTO_YES_PROCESS_PREFIXES)로 시작하고 MAP 목적이 NEW 면 3번을 YES 로 고정
+  // - 3번 값도 deps 에 둔다: 제품 이름 변경 등으로 MAP 정보가 초기화돼 NO 가 되면 다시 YES 로 맞춘다.
+  // - 기준에 해당하다가 해당하지 않게 되면 NO 로 되돌리고 하위 값(IN 적용·Xs/Ys)을 비운다(StepMap NO 선택과 동일).
+  // - CLONE/EXISTING·MAP 목적 미선택은 판정 대상이 아니다(값을 건드리지 않는다).
+  useEffect(() => {
+    const matched = detail.map_type === MAP_TYPE_NEW && isInterAutoYesProcess(detail.process_selection);
+    const wasMatched = interAutoMatchedRef.current;
+    interAutoMatchedRef.current = matched;
+    if (!interAutoArmedRef.current) return;
+    setInterAutoLocked(matched);
+    if (matched) {
+      if (detail.inter !== INTER_YES) {
+        // INTER YES 에서는 EDS Backside 를 쓸 수 없다 — StepMap 의 YES 선택 동작과 같게 미적용으로 되돌린다.
+        setDetail((prev) => ({ ...prev, inter: INTER_YES, eds_backside: INITIAL_DETAIL.eds_backside }));
+      }
+      return;
+    }
+    if (wasMatched && detail.inter === INTER_YES) {
+      setDetail((prev) => ({
+        ...prev,
+        inter: INTER_NO,
+        inter_xs: INITIAL_DETAIL.inter_xs,
+        inter_ys: INITIAL_DETAIL.inter_ys,
+        in_apply: INITIAL_DETAIL.in_apply,
+        inter_select: INITIAL_DETAIL.inter_select,
+      }));
+    }
+  }, [detail.process_selection, detail.map_type, detail.inter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
@@ -1123,6 +1164,9 @@ export default function RequestPage(): React.ReactElement {
     const targetDocId = editDocId ?? peerReviewDocId;
     if (!targetDocId) return;
     isLoadingEditRef.current = true;
+    // claude 수정 (2026-10-15): 다시 연 문서는 저장된 3번 값을 그대로 둔다(자동 YES 고정 해제)
+    interAutoArmedRef.current = false;
+    setInterAutoLocked(false);
     documentsAPI.get(targetDocId).then((res) => {
       const doc = res.data;
       setEditDocStatus(doc.status);
@@ -1875,6 +1919,8 @@ export default function RequestPage(): React.ReactElement {
 
   const handleDetailSet = (name: string, value: string | string[]) => {
     isLoadingEditRef.current = false; // 사용자 상호작용 시 로드 가드 해제
+    // claude 수정 (2026-10-15): 사용자가 조합법을 바꾸면 3번 자동 YES 판정을 시작한다
+    if (name === 'process_selection') interAutoArmedRef.current = true;
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
@@ -2013,6 +2059,8 @@ export default function RequestPage(): React.ReactElement {
 
   const handleMapTypeSelect = (val: string) => {
     if (val === detail.map_type) return;
+    // claude 수정 (2026-10-15): 사용자가 MAP 목적을 바꾸면 3번 자동 YES 판정을 시작한다
+    interAutoArmedRef.current = true;
     // 이미 선택된 map_type이 있으면 "어느 값으로 바꾸든" 초기화 모달을 띄운다(R-13).
     // (기존엔 CLONE/EXISTING 전환만 초기화해 NEW로 바꿀 때 원본 등 StepMap 값이 잔존하던 버그 수정)
     if (detail.map_type) {
@@ -4885,6 +4933,7 @@ export default function RequestPage(): React.ReactElement {
           isMapDeleteEdit={isMapDeleteEdit}
           isMapReasonMode={isMapReasonMode}
           mapInfoLocked={mapInfoLocked}
+          interAutoLocked={interAutoLocked}
           lineOptions={lineOptions}
           sourcePartIdOptions={sourcePartIdOptions}
           mapInfo={mapInfo}
