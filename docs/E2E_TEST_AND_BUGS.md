@@ -337,7 +337,7 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
                                        └── 경로3: RA(후결자, 병렬)┘
   어느 단계든 반려 ──▶ rejected ──재상신(round+1)──▶ under_review
   under_review ──중단요청→전원확인──▶ pause ──재개──▶ under_review (멈춘 단계부터)
-  under_review/rejected ──철회──▶ draft (모든 단계 삭제)
+  draft ──철회──▶ 즉시 삭제 / under_review ──철회 요청→전원확인──▶ 삭제 / rejected 는 철회 불가(2026-08)
   [Only MAP] draft ▶ PL ▶ R ▶ (P/O/E 없이) RA 전원 합의 ▶ approved
 ```
 
