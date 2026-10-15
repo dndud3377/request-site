@@ -318,6 +318,52 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **실패로 보이는 신호**: 홈에 `SD-Layer 예외` 버튼이 남아 있음 / STEP3·4 에서 "SD 첫 숫자가 Layer 와 일치하지 않습니다" 오류 /
   화면에 `request.sd_layer_…` 같은 키 문자열이 그대로 보임 / 배포 시 마이그레이션 0055 에서 테이블 삭제 SQL 이 실행됨.
 
+### 기능 변경 (2026-10-15 — 상세 목적 'Overlay 변경' → 'Overlay만 변경' 이름·저장값 변경 + 단독 선택만 허용)
+
+- **의도(사용자)**: 지금까지는 'Overlay 변경'을 다른 상세 목적과 함께 고를 수 있었다. 이제 이 항목은 **단독으로만** 고르게 해
+  'Overlay만 변경' 문서는 항상 J 를 뺀 결재 경로(`PL → R → P ∥ O ∥ [E] ∥ RA`)를 타게 한다. 이름도 의미에 맞게 'Overlay만 변경'으로 바꾼다.
+  **이미 저장·진행 중인 문서는 바꾸지 않는다**(사용자 결정).
+- **이름·저장값 변경(사용자 결정: 저장값까지)**: `OPTION_OTHER_PURPOSE` 의 `'Overlay 변경'` → **`'Overlay만 변경'`**.
+  버튼 문구가 곧 저장값이므로 새 문서의 `other_purpose`·자동 제목(`신규-[Overlay만 변경]`)·결재 현황 목적 칸에 새 이름이 들어간다.
+  - **구 값 호환**: 2026-10-15 이전 문서는 `'Overlay 변경'`으로 저장돼 있다. 저장값은 건드리지 않고(마이그레이션 없음) 아래처럼 **두 값을 같은 항목으로 본다**.
+    - 백엔드 `RequestDocument.OTHER_PURPOSE_OVERLAY_VALUES`(신·구 값) — `skip_j_stage()` 가 둘 중 하나 **단독**이면 참.
+    - 프론트 `constants.ts` `OTHER_PURPOSE_OVERLAY`/`OTHER_PURPOSE_OVERLAY_LEGACY`, `isOverlayPurpose()`, `isOverlayOnlyPurpose()`
+      (상세 페이지 결재 경로 탭 JOB `해당없음` 판정 — `PagedDetailView` skipJStage).
+    - `MERGE_ENABLED_PURPOSES` 에 구 값도 남겼다 — 빼면 구 값 임시저장 문서를 열 때 Merge 사용 목적이 없다고 보고 참조·비교 상태를 비워 버린다.
+    - STEP 1 'Overlay만 변경' 버튼은 구 값이 들어 있어도 **선택 상태로 보이고**, 누르면 신·구 값을 모두 해제한다.
+- **단독 선택 강제(화면만, 사용자 결정)** — `Step1.tsx` 상세 목적 버튼 클릭:
+  - 이미 선택된 버튼 클릭(해제)·충돌 없는 선택은 지금과 같다(모달 없음).
+  - 다른 목적이 선택된 상태에서 **'Overlay만 변경'** 클릭 → 확인 모달 `request.overlay_exclusive_to_overlay_msg`
+    ("선택된 상세 목적({{list}})이 해제됩니다") → 확인 시 `['Overlay만 변경']` 만 남김 / 취소 시 그대로.
+  - 'Overlay만 변경'(구 값 포함)이 선택된 상태에서 **다른 목적** 클릭 → `request.overlay_exclusive_from_overlay_msg`
+    → 확인 시 Overlay 를 빼고 누른 항목 추가 / 취소 시 그대로.
+  - 판정은 `overlayExclusiveConflicts(current, clicked)`(해제될 항목 목록, 비면 충돌 없음), 모달 상태는 `index.tsx` `overlayExclusiveConfirm`.
+  - Merge: Layer 추가/삭제·STEPSEQ 변경 ↔ Overlay만 변경 전환은 셋 다 Merge 사용 목적이라 참조·비교 상태가 유지된다.
+    Overlay만 변경 → FirstA·공법·B 변경으로 바꾸면 기존 규칙대로 참조·비교 상태가 비워진다(J/O 표는 유지).
+  - '연구소 제품'은 Only MAP 전용이고 Only MAP 에서는 Overlay만 변경 버튼이 잠겨 있어 서로 충돌하지 않는다.
+- **변경 없음(의도)**: 백엔드 상신/재상신 검증(조합 거부 없음 — API 직접 호출로는 조합 저장 가능, 이때 J 유지),
+  기존·임시저장·반려 문서의 저장값(불러올 때 정리하지 않음 — 버튼을 다시 누를 때부터 새 규칙), 정적 목업 HTML
+  (`frontend/public/guide-mockup.html`, `docs/*mockup*.html`·`merge_manual_input_plan.html` 의 'Overlay 변경' 문구).
+- **i18n**: `request.overlay_exclusive_confirm_title` / `overlay_exclusive_to_overlay_msg` / `overlay_exclusive_from_overlay_msg` 를 ko/en 동시 추가.
+  가이드 투어 `guide.tour.step.groups.s1g3.desc`, `guide.tour.steps.request.flow.ref_doc_merge` 의 항목명을 'Overlay만 변경'(en `Overlay-only Change`)으로 갱신.
+- **케이스 러너**: `payload.OTHER_PURPOSE_OVERLAY` 를 새 값으로, R-10/R-11 이름 갱신(R-11 은 API 로만 만들 수 있는 조합).
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 25 suites·403 tests 통과(신규 `overlayExclusivePurpose.test.tsx` 10건) /
+  백엔드 `manage.py test api` 697건 OK(신규: 구 값 단독 J 미생성·구 값 조합 J 생성) /
+  케이스 러너(로컬 sqlite 개발 서버 + 시드 마스터 데이터) PASS 103 · FAIL 6 · SKIP 15 — R-10·R-11·F-08·X-07 PASS,
+  FAIL 6건(R-16·F-11·F-13·N-03 'MAP 삭제', M-08, W-02)은 **변경 전 코드에서도 동일하게 FAIL**(이번 변경 무관).
+- **수동 시나리오**:
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → [기대: 상세 목적에 **Overlay만 변경** 버튼, 'Overlay 변경'은 없음.]
+  2. [FirstA 변경 + STEPSEQ 변경 클릭 → Overlay만 변경 클릭] → [기대: 'Overlay만 변경 단독 선택' 모달, 문구에 "FirstA 변경, STEPSEQ 변경".
+     확인 → Overlay만 변경만 선택 / 취소 → 원래 두 개 유지.]
+  3. [Overlay만 변경만 선택된 상태 → B 변경 클릭] → [기대: "'B 변경'을(를) 선택하면 Overlay만 변경이 해제됩니다" 모달. 확인 → B 변경만 선택.]
+  4. [Overlay만 변경 단독으로 상신 → 지정 PL 합의 → R 합의] → 결재 현황 → 행 클릭 → '결재 경로' 탭 → [기대: JOB 칸 `해당없음`, 제목에 `[Overlay만 변경]`.]
+  5. [2026-10-15 이전에 'Overlay 변경'으로 상신된 진행 중 문서 열기] → [기대: 결재 경로가 이전과 같다(단독이면 JOB `해당없음`, 조합이면 JOB 진행).]
+  6. [이전에 'Overlay 변경'+다른 목적으로 임시저장한 문서 수정 열기] → [기대: Overlay만 변경 버튼과 다른 버튼이 둘 다 선택 상태로 보인다(값 그대로).
+     다른 버튼을 하나 더 누르면 모달이 뜬다.]
+  7. [언어 English 로 2·3 반복] → [기대: 모달 제목 `Overlay-only Change: Select Alone`. 버튼 문구는 저장값이라 한글 그대로.]
+- **실패 신호**: 두 버튼이 동시에 선택됨(모달 없이) / 취소했는데 선택이 바뀜 / 화면에 `request.overlay_exclusive_…` 키 문자열 노출 /
+  구 값 문서에서 JOB 칸이 '대기'로 영원히 남음.
+
 ### 기능 변경 (2026-10-14 — Step1 '기타 목적' → '상세 목적' 명칭 변경 + 'FirstA 변경' 첫 항목으로)
 
 - **의도(사용자)**: '기타'라는 느낌보다 요청 목적의 **세부 목적**이라는 의미를 분명히 주기 위함.
