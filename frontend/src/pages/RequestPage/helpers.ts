@@ -87,6 +87,17 @@ export const sanitizeSignedDecimal = (raw: string): string => {
   return (neg ? '-' : '') + v;
 };
 
+// claude 수정 (2026-10-15): STEP2 X/Y·예외 구역 값에 '.'/'-' 처럼 숫자로 읽히지 않는 값이 통과하던 문제 — 숫자 판정 함수 추가
+/**
+ * 입력값이 숫자로 읽히는가 — 앞뒤 공백 제거 후 Number() 결과가 유한하면 참.
+ * sanitizeSignedDecimal 은 글자만 걸러 '.'·'-'·'-.' 같은 값을 남기므로, 검증 단계에서 이 함수로 막는다.
+ * 통과: '1.5' '-0.8' '0' '.5' '1.' / 막힘: '' '.' '-' '-.'
+ */
+export const isNumericValue = (value: string | null | undefined): boolean => {
+  const v = (value ?? '').trim();
+  return v !== '' && Number.isFinite(Number(v));
+};
+
 /**
  * Backbone 조합 영역(STEP1) 입력이 **필수**인가.
  * J-layer 활성 행에 st 가 'O 계열'인 행이 하나라도 있으면 그 요청서는 BB 조합이 반드시 필요하다.
