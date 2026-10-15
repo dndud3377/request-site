@@ -7,10 +7,23 @@ import {
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
-  matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess,
+  matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
+
+// claude 수정 (2026-10-15): STEP2 X/Y·예외 구역 값 숫자 판정 테스트 추가
+describe('isNumericValue', () => {
+  it('숫자로 읽히는 값은 true — 음수·소수·0·앞뒤 점·공백 허용', () => {
+    ['1.5', '-0.8', '0', '-0', '.5', '1.', '  2 ', '300'].forEach((v) => expect(isNumericValue(v)).toBe(true));
+  });
+
+  it("숫자로 읽히지 않는 값은 false — '.' '-' '-.' 빈 값", () => {
+    ['', '   ', '.', '-', '-.', '1-2', 'abc'].forEach((v) => expect(isNumericValue(v)).toBe(false));
+    expect(isNumericValue(null)).toBe(false);
+    expect(isNumericValue(undefined)).toBe(false);
+  });
+});
 
 // claude 수정 (2026-10-15): 조합법 기준 단어 → 3번(inter) 자동 YES 판정 테스트 추가
 describe('isInterAutoYesProcess', () => {
