@@ -10,7 +10,10 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
-import '../../i18n';
+import i18n from '../../i18n';
+
+// claude 수정 (2026-10-15): '다음'/'이전' 버튼 문구가 i18n 으로 바뀌어, jsdom 기본 언어(en)가 아닌 한국어로 고정한다.
+beforeAll(async () => { await i18n.changeLanguage('ko'); });
 
 // jest.mock 팩토리는 호이스팅되어 `mock` 접두사 변수만 참조할 수 있다.
 const mockState: {
