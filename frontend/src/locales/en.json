@@ -570,6 +570,7 @@
     "ba_cell_edit_hint": "Click to enter values directly.",
     "ba_paste_hint": "Copy 4 columns (process_id, SP, SD, PP) from Excel and paste to fill multiple rows at once. Layer is not editable.",
     "ba_gate_manual_empty": "Enter at least one before/after item.",
+    "ba_gate_overlay_merge_required": "A reference request is required for Overlay-only Change — with a reference, select it and click Merge; otherwise choose 'No reference request' and enter the before/after items.",
     "ba_gate_manual_incomplete": "{{count}} cell(s) are empty — fill in process_id, SP, SD and PP.",
     "ba_gate_manual_blank_row": "{{count}} row(s) are unregistered on both sides.",
     "ba_empty": "Nothing to map.",

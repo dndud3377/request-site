@@ -3903,9 +3903,19 @@ export default function RequestPage(): React.ReactElement {
     // 표를 직접 채울 수 있으므로 확정한 짝도 검사한다 —
     // 미등록이 아닌 쪽은 4칸 필수, 양쪽 미등록인 빈 행은 남길 수 없다.
     // '없음' 으로 확정했으면 유효 행이 1건 이상이어야 한다.
-    if (!detail.merge_applied && detail.merge_ref_doc_id === null) return;
+    // claude 수정 (2026-10-15): 'Overlay만 변경'(구 값 포함)은 변경 내용 누락 방지를 위해 참조 요청서가 필수다 —
+    // '있음'이면 참조 요청서를 골라 Merge 해야 하고, '있음'·'없음' 모두 변경전/변경후 유효 행이 1건 이상이어야 한다.
+    const overlayRequired = detail.other_purpose.some(isOverlayPurpose);
+    if (!detail.merge_applied && detail.merge_ref_doc_id === null) {
+      if (overlayRequired) {
+        const msg = t('request.ba_gate_overlay_merge_required');
+        newErrors['merge_ref_doc'] = msg;
+        errorMessages.push(msg);
+      }
+      return;
+    }
     const { incompleteCells, blankRows, validCount } = validateMergePairs(detail.merge_pairs ?? []);
-    if (detail.merge_ref_mode === 'none' && validCount === 0) {
+    if ((detail.merge_ref_mode === 'none' || overlayRequired) && validCount === 0) {
       const msg = t('request.ba_gate_manual_empty');
       newErrors['merge_pairs'] = msg;
       errorMessages.push(msg);
