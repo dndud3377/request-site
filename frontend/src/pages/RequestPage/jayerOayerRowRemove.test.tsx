@@ -43,7 +43,8 @@ jest.mock('../../api/client', () => ({
     getProcesses: (line: string) => Promise.resolve(mockState.optionsFor(line)),
     getProducts: (line: string) => Promise.resolve(mockState.optionsFor(line)),
     getProcessId: (line: string) => Promise.resolve(mockState.optionsFor(line)),
-    getLayerIds: () => Promise.resolve(['10', '20', 'L01', 'L02']),
+    // claude 수정 (2026-10-15): Step 목록 API 응답이 {layerid, stepseq} 목록으로 바뀌었다.
+    getLayerIds: () => Promise.resolve(['10', '20', 'L01', 'L02'].map((layerid, i) => ({ layerid, stepseq: `S${i + 1}` }))),
     getMapNames: (line: string) => Promise.resolve(mockState.optionsFor(line)),
     getMapInfo: () => Promise.resolve({ AAA1: null, AAA2: null, AAA3: null }),
     getJobFileLayer: () => Promise.resolve([]),
