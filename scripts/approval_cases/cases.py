@@ -406,7 +406,8 @@ def r09(ctx):
     return f'doc={doc_id}'
 
 
-@case('R-10', 'R', "기타목적 'Overlay 변경' 단독 → J 단계 미생성")
+# claude 수정 (2026-10-15): 저장값 'Overlay만 변경' 변경에 맞춰 케이스 이름 갱신. R-11 조합은 화면에서 막혔고 API 로만 만들 수 있다
+@case('R-10', 'R', "기타목적 'Overlay만 변경' 단독 → J 단계 미생성")
 def r10(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(ctx, other_purpose=[P.OTHER_PURPOSE_OVERLAY])
@@ -416,7 +417,7 @@ def r10(ctx):
     return f'doc={doc_id} agents={F.agents_in_round(doc)}'
 
 
-@case('R-11', 'R', "'Overlay 변경' + 다른 기타목적 → J 생성")
+@case('R-11', 'R', "'Overlay만 변경' + 다른 기타목적(API 직접) → J 생성")
 def r11(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(
@@ -931,7 +932,7 @@ def x07(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.submitted_doc(ctx)
     F.peer_reject(ctx.actor('PL', 1), doc_id)
-    # 재상신 전에 목적을 'Overlay 변경' 단독으로 바꾼다 → 새 회차부터 J 가 빠져야 한다.
+    # 재상신 전에 목적을 'Overlay만 변경' 단독으로 바꾼다 → 새 회차부터 J 가 빠져야 한다.
     doc = F.fetch(author, doc_id)
     import json
     notes = json.loads(doc['additional_notes'])
