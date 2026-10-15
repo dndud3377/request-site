@@ -22,10 +22,22 @@ export const OPTION_OTHER_PURPOSE = ['FirstA 변경', 'Layer 추가/삭제', 'ST
 export const TITLE_DEFAULT_LABEL = '요청서';
 
 // claude 수정 (2026-10-15): 흐름도 행에서 위치(라인)를 바꾸면 함께 비우는 칸 / 목록 밖 값일 때의 안내 i18n 키.
-export const FLOW_LOCATION_DEPENDENT_FIELDS: readonly (keyof Omit<FlowChartRow, 'id' | 'location'>)[] = ['product_name', 'process_id', 'step_from', 'step_to'];
+export const FLOW_LOCATION_DEPENDENT_FIELDS: readonly (keyof Omit<FlowChartRow, 'id' | 'location'>)[] = ['product_name', 'process_id', 'step_from', 'step_to', 'step_from_seq', 'step_to_seq'];
 export const FLOW_NOT_IN_LIST_MSG_KEY = {
   product_name: 'request.flow_partid_not_in_list',
   process_id: 'request.flow_process_id_not_in_list',
+} as const;
+
+// claude 수정 (2026-10-15): 흐름도 Step(layerid) 칸 ↔ 그 칸에서 고른 stepseq 를 담는 필드 / stepseq 순서 검증 오류 종류별 i18n 키.
+export const FLOW_STEP_SEQ_FIELD = {
+  step_from: 'step_from_seq',
+  step_to: 'step_to_seq',
+} as const;
+export const FLOW_STEP_ORDER_MSG_KEY = {
+  ambiguous: 'request.flow_step_ambiguous',
+  prefix_mismatch: 'request.flow_step_prefix_mismatch',
+  reversed: 'request.flow_step_reversed',
+  overlap: 'request.flow_step_overlap',
 } as const;
 
 // 참조 요청서 Merge(+ BEFORE/AFTER 비교)를 쓸 수 있는 기타 목적.
@@ -263,6 +275,8 @@ export const makeRow = (): FlowChartRow => ({
   process_id: '',
   step_from: '',
   step_to: '',
+  step_from_seq: '',
+  step_to_seq: '',
 });
 
 export const makeJayerRow = (): JayerRow => ({
