@@ -22,7 +22,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from django.db.models import Q, Max, Min, Exists, OuterRef, Prefetch
+from django.db.models import Q, Max, Exists, OuterRef, Prefetch
 from .models import (
     RequestDocument, ApprovalStep, PauseRequest, WithdrawRequest, VOC, VocComment, Line, ProcessProduct,
     ProductProcessId, AdminNotice,
@@ -4379,9 +4379,13 @@ def _natural_key(s: str) -> list:
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s or '')]
 
 
+# claude 수정 (2026-10-15): 흐름도 Step 을 stepseq 순서로 검증하려고 layerid 만이 아니라 (layerid, stepseq) 쌍을 stepseq 자연 정렬로 돌려준다.
 @require_GET
 def form_options_layer_ids(request):
-    """line + process → unique layerid list sorted by min stepseq (natural order)"""
+    """line + process → 중복 없는 {layerid, stepseq} 목록 (stepseq 자연 정렬).
+
+    같은 layerid 가 여러 stepseq 에 있으면 stepseq 마다 한 항목씩 나온다.
+    """
     line = request.GET.get('line', '')
     process = request.GET.get('process', '')
 
@@ -4403,11 +4407,11 @@ def form_options_layer_ids(request):
         rows = (
             model.objects.filter(eqptype='PMAINF', processid=process)
             .exclude(layerid='').exclude(layerid=None)
-            .values('layerid')
-            .annotate(min_seq=Min('stepseq'))
+            .values('layerid', 'stepseq')
+            .distinct()
         )
-        sorted_rows = sorted(rows, key=lambda r: _natural_key(r['min_seq']))
-        return JsonResponse({'options': [r['layerid'] for r in sorted_rows]})
+        sorted_rows = sorted(rows, key=lambda r: (_natural_key(r['stepseq']), r['layerid']))
+        return JsonResponse({'options': [{'layerid': r['layerid'], 'stepseq': r['stepseq']} for r in sorted_rows]})
     except Exception as e:
         return JsonResponse({'options': []})
 

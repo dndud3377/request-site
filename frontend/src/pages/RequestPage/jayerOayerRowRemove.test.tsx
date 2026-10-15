@@ -43,7 +43,8 @@ jest.mock('../../api/client', () => ({
     getProcesses: (line: string) => Promise.resolve(mockState.optionsFor(line)),
     getProducts: (line: string) => Promise.resolve(mockState.optionsFor(line)),
     getProcessId: (line: string) => Promise.resolve(mockState.optionsFor(line)),
-    getLayerIds: () => Promise.resolve(['10', '20', 'L01', 'L02']),
+    // claude 수정 (2026-10-15): Step 목록 API 응답이 {layerid, stepseq} 목록으로 바뀌었다.
+    getLayerIds: () => Promise.resolve(['10', '20', 'L01', 'L02'].map((layerid, i) => ({ layerid, stepseq: `S${i + 1}` }))),
     getMapNames: (line: string) => Promise.resolve(mockState.optionsFor(line)),
     getMapInfo: () => Promise.resolve({ AAA1: null, AAA2: null, AAA3: null }),
     getJobFileLayer: () => Promise.resolve([]),
@@ -209,7 +210,8 @@ beforeAll(async () => {
   window.scrollTo = () => {};
 });
 
-const optionsFor = (): string[] => [PROCESS, PRODUCT, PROCESS_ID, BB_PRODUCT, BB_PROCESS_ID];
+// claude 수정 (2026-10-15): 흐름도 제품 이름·조리법도 목록 검증 대상이 되어 픽스처 흐름도 값을 옵션 목록에 포함한다.
+const optionsFor = (): string[] => [PROCESS, PRODUCT, PROCESS_ID, BB_PRODUCT, BB_PROCESS_ID, FLOW_PRODUCT, FLOW_PROCESS_ID];
 
 async function flush(times = 20) {
   for (let i = 0; i < times; i += 1) {

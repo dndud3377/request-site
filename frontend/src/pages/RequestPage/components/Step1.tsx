@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
+import { DetailFormState, FlowChartRow, LayerStepOption, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
 import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
 import { PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
@@ -25,7 +25,7 @@ interface Step1Props {
   processIdOptions: string[];
   FlowProductOptions: Record<string, string[]>;
   FlowProcessIdOptions: Record<string, string[]>;
-  FlowLayerIdOptions: Record<string, string[]>;
+  FlowLayerIdOptions: Record<string, LayerStepOption[]>;
   BbProductOptions: Record<string, string[]>;
   BbProductidOptions: Record<string, string[]>;
   refDocLabel: string;
@@ -63,6 +63,8 @@ interface Step1Props {
   handleBaResetRow: (pairId: string) => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
+  handleFlowStepSelect: (rowId: string, field: 'step_from' | 'step_to', index: number) => void;
+  handleFlowOptionBlur: (rowId: string, field: 'product_name' | 'process_id') => void;
   handleFlowDeleteRow: (id: string) => void;
   handleFlowAddRow: () => void;
   handleBbEntryChange: (idx: number, field: 'location' | 'product' | 'process_id', value: string) => void;
@@ -136,6 +138,8 @@ const Step1: React.FC<Step1Props> = ({
   handleBaResetRow,
   handleFlowChange,
   handleFlowStepBlur,
+  handleFlowStepSelect,
+  handleFlowOptionBlur,
   handleFlowDeleteRow,
   handleFlowAddRow,
   handleBbEntryChange,
@@ -462,11 +466,13 @@ const Step1: React.FC<Step1Props> = ({
                         {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
+                    {/* claude 수정 (2026-10-15): 제품 이름·조리법 칸에 목록 밖 값 blur 검사 연결 */}
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                       <label className="form-label">{t('request.flow_partid')}</label>
                       <AutocompleteInput
                         value={row.product_name}
                         onChange={(v) => handleFlowChange(row.id, 'product_name', v)}
+                        onBlur={() => handleFlowOptionBlur(row.id, 'product_name')}
                         options={FlowProductOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
@@ -480,6 +486,7 @@ const Step1: React.FC<Step1Props> = ({
                       <AutocompleteInput
                         value={row.process_id}
                         onChange={(v) => handleFlowChange(row.id, 'process_id', v)}
+                        onBlur={() => handleFlowOptionBlur(row.id, 'process_id')}
                         options={FlowProcessIdOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
@@ -489,13 +496,17 @@ const Step1: React.FC<Step1Props> = ({
                       />
                     </div>
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                      {/* claude 수정 (2026-10-15): Step 목록에 layerid 와 함께 stepseq 를 작게 표시하고, 고른 항목의 stepseq 를 저장 */}
                       <label className="form-label">{t('request.flow_progress_layer')}</label>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                         <AutocompleteInput
                           value={row.step_from}
                           onChange={(v) => handleFlowChange(row.id, 'step_from', v)}
                           onBlur={() => handleFlowStepBlur(row.id, 'step_from')}
-                          options={FlowLayerIdOptions[row.id] || []}
+                          options={(FlowLayerIdOptions[row.id] || []).map((o) => o.layerid)}
+                          optionHints={(FlowLayerIdOptions[row.id] || []).map((o) => o.stepseq)}
+                          selectedHint={row.step_from_seq || ''}
+                          onSelectIndex={(i) => handleFlowStepSelect(row.id, 'step_from', i)}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_from`]}
@@ -507,7 +518,10 @@ const Step1: React.FC<Step1Props> = ({
                           value={row.step_to}
                           onChange={(v) => handleFlowChange(row.id, 'step_to', v)}
                           onBlur={() => handleFlowStepBlur(row.id, 'step_to')}
-                          options={FlowLayerIdOptions[row.id] || []}
+                          options={(FlowLayerIdOptions[row.id] || []).map((o) => o.layerid)}
+                          optionHints={(FlowLayerIdOptions[row.id] || []).map((o) => o.stepseq)}
+                          selectedHint={row.step_to_seq || ''}
+                          onSelectIndex={(i) => handleFlowStepSelect(row.id, 'step_to', i)}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_to`]}
@@ -530,7 +544,8 @@ const Step1: React.FC<Step1Props> = ({
                   </div>
                 ))}
                 <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow} disabled={disableOptional}>
-                  + {t('request.flow_add_row')}
+                  {/* claude 수정 (2026-10-15): i18n 값에 이미 "+ " 가 있어 "+ + 행 추가" 로 중복 표시되던 앞의 "+" 제거 */}
+                  {t('request.flow_add_row')}
                 </button>
               </div>
             </div>
