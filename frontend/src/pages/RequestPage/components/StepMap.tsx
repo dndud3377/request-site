@@ -91,6 +91,8 @@ interface StepMapProps {
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
   /** R(+RV) 합의 완료 후 중단(pause)된 문서 — true면 MAP 정보 전체를 read-only로 막는다(2026-09) */
   mapInfoLocked: boolean;
+  /** 조합법이 기준 단어로 시작해 3번(inter)이 YES 로 고정됐는가 — true 면 3번 드롭다운을 잠근다(2026-10) */
+  interAutoLocked: boolean;
 }
 
 const StepMap: React.FC<StepMapProps> = ({
@@ -137,6 +139,7 @@ const StepMap: React.FC<StepMapProps> = ({
   GuideTourBadge,
   GuideBadge,
   mapInfoLocked,
+  interAutoLocked,
 }) => {
   const { t } = useTranslation();
 
@@ -643,10 +646,11 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="full-width" data-tour="map-inter" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.map_opt_inter')}<GuideBadge fk="step2_inter" tk={t('guide.feat.step2_inter' as never)} /></label>
+            {/* claude 수정 (2026-10-15): 조합법 기준 단어로 YES 고정(interAutoLocked)이면 드롭다운을 잠그고 안내 문구를 띄운다 */}
             <select
               className="form-control"
               value={detail.inter}
-              disabled={isMapRegistered}
+              disabled={isMapRegistered || interAutoLocked}
               onChange={(e) => {
                 const next = e.target.value;
                 handleDetailSet('inter', next);
@@ -663,6 +667,11 @@ const StepMap: React.FC<StepMapProps> = ({
               <option value="NO">NO</option>
               <option value="YES">YES</option>
             </select>
+            {interAutoLocked && (
+              <span style={{ display: 'block', marginTop: 4, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {t('request.inter_auto_locked_hint')}
+              </span>
+            )}
           </div>
           {detail.inter === 'YES' && (
             <>
