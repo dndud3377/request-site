@@ -61,6 +61,7 @@ interface Step1Props {
   handleBaResetRow: (pairId: string) => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
+  handleFlowOptionBlur: (rowId: string, field: 'product_name' | 'process_id') => void;
   handleFlowDeleteRow: (id: string) => void;
   handleFlowAddRow: () => void;
   handleBbEntryChange: (idx: number, field: 'location' | 'product' | 'process_id', value: string) => void;
@@ -133,6 +134,7 @@ const Step1: React.FC<Step1Props> = ({
   handleBaResetRow,
   handleFlowChange,
   handleFlowStepBlur,
+  handleFlowOptionBlur,
   handleFlowDeleteRow,
   handleFlowAddRow,
   handleBbEntryChange,
@@ -443,11 +445,13 @@ const Step1: React.FC<Step1Props> = ({
                         {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
+                    {/* claude 수정 (2026-10-15): 제품 이름·조리법 칸에 목록 밖 값 blur 검사 연결 */}
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                       <label className="form-label">{t('request.flow_partid')}</label>
                       <AutocompleteInput
                         value={row.product_name}
                         onChange={(v) => handleFlowChange(row.id, 'product_name', v)}
+                        onBlur={() => handleFlowOptionBlur(row.id, 'product_name')}
                         options={FlowProductOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
@@ -461,6 +465,7 @@ const Step1: React.FC<Step1Props> = ({
                       <AutocompleteInput
                         value={row.process_id}
                         onChange={(v) => handleFlowChange(row.id, 'process_id', v)}
+                        onBlur={() => handleFlowOptionBlur(row.id, 'process_id')}
                         options={FlowProcessIdOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
