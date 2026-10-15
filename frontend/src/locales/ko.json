@@ -466,6 +466,7 @@
     "map_opt_photo_backside": "1번",
     "map_opt_eds_backside": "2번",
     "map_opt_inter": "3번",
+    "inter_auto_locked_hint": "🔒 조합법에 따라 YES로 고정됩니다.",
     "map_opt_inter_xs": "Xs",
     "map_opt_inter_ys": "Ys",
     "map_opt_inter_xys": "XYs",
