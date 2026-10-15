@@ -5630,6 +5630,51 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   5. [흐름도 값이 있는 임시저장 문서를 다시 열기] → [기대 결과: 흐름도 값이 지워지지 않고 그대로 보인다.]
 - ⚠️ **주의**: 이미 저장된 임시저장·반려 문서 중 흐름도 제품 이름·조리법이 현재 목록에 없는 값이면, 다시 열어 "다음"을 누를 때 이번 검증에 막힌다(의도된 동작).
 
+### 기능 추가 (2026-10-15 — 흐름도 Step: 목록에 stepseq 표시 + stepseq 순서대로 작성 검증)
+
+- **의도**: 흐름도를 stepseq 번호 순서대로 작성하게 한다. 같은 stepseq 계열(접두어, 예: `AAAA`)은 위 행 → 아래 행으로
+  반드시 오름차순이고 겹칠 수 없다. 계열이 다르면(`BBBB`) 서로 상관없다.
+- **API 변경 — `GET /api/form-options/layer-ids/?line=&process=`** (`views.py` `form_options_layer_ids`)
+  - 응답 `options` 가 layerid 문자열 목록 → **`{layerid, stepseq}` 목록**으로 바뀌었다. 중복 제거 단위는 (layerid, stepseq) —
+    같은 layerid 가 여러 stepseq 에 있으면 stepseq 마다 한 항목. 정렬은 각 항목 stepseq 의 자연 정렬(`_natural_key`).
+  - 이전의 `Min(stepseq)`(CharField 문자열 비교) 정렬은 없어졌다. 이 API 의 소비처는 흐름도 Step 하나뿐이다.
+  - 프론트 타입 `LayerStepOption` (`types/index.ts`), `formOptionsAPI.getLayerIds` 반환형 변경.
+- **저장 형식**: 흐름도 행(`FlowChartRow`)에 `step_from_seq` / `step_to_seq`(선택 필드) 추가 — `additional_notes.detail.flow_chart` JSON 안이라
+  DB 마이그레이션 없음. `step_from`/`step_to` 는 여전히 layerid 이므로 제목·상세보기·이력·내보내기 표시는 그대로다.
+- **화면**: Step 드롭다운에 `L01  AAAA1234` 처럼 layerid 옆에 stepseq 가 작게(회색) 보인다. 검색어는 layerid·stepseq 둘 다에서 찾는다.
+  공용 `AutocompleteInput` 에 선택 prop `optionHints`/`selectedHint`/`onSelectIndex` 를 추가했다(다른 화면은 미사용 → 영향 없음).
+  - 목록에서 고르면 layerid + 그 항목의 stepseq 를 함께 저장(`handleFlowStepSelect`). 직접 타이핑하면 그 칸의 stepseq 를 비운다.
+  - 칸을 벗어날 때(`handleFlowStepBlur`): layerid 가 목록에 한 번만 있으면 stepseq 를 자동으로 채운다. 여러 번 있는데 어느 것인지 모르면
+    `request.flow_step_ambiguous` 오류. 목록에 없으면 기존 `flow_step_not_in_list`. 목록이 비어 있으면(마스터 DB 정보 없음) 직접 입력 인정.
+- **순서 검증** (`helpers.ts` `findFlowStepOrderErrors`, 칸을 벗어날 때 + "다음" `validate(1)`):
+  - stepseq 를 "접두어 + 끝 숫자"로 나눈다(`splitStepseq`: `AAAA1234` → `AAAA`/1234). 끝이 숫자가 아니면 비교하지 않는다.
+  - 한 행: 시작·끝 접두어가 같아야 하고(`flow_step_prefix_mismatch`), 시작 ≤ 끝(`flow_step_reversed`). 오류는 Step 끝 칸에 표시.
+  - 행 사이(화면 순서): 접두어가 같은 위쪽 행이 하나라도 있으면 아래 행 시작 > 그 행 끝이어야 한다 — 같은 번호(경계)·구간 안·더 앞 번호 모두 불가
+    (`flow_step_overlap`, `{{row}}`행 `{{range}}` 보간). 위치·조리법은 비교 범위에 넣지 않는다(접두어만 비교).
+    예) 1행 `AAAA1234~AAAA1238` → 2행 `AAAA1237`/`AAAA1238`/`AAAA1230` 시작 ✕, `AAAA1239`·`BBBB1237` 시작 ○.
+  - stepseq 가 없는 칸(목록이 비어 직접 입력, 또는 이 기능 이전 문서에서 layerid 가 여러 stepseq 라 정할 수 없는 칸)은 순서 비교에서 빠진다.
+    이전 문서의 칸은 layerid 가 목록에 한 번만 있으면 검증 때 그 stepseq 로 판정한다.
+- **i18n**: `request.flow_step_ambiguous` / `flow_step_prefix_mismatch` / `flow_step_reversed` / `flow_step_overlap` 를 ko/en 동시 추가.
+- **테스트**: `helpers.test.ts` stepseq 검증 8건, `RequestPage/flowChartStepseq.test.tsx`(신규 4건 — 목록 표시, 같은 layerid 중 고른 stepseq 저장,
+  AAAA 겹침 차단·BBBB 허용, 모호한 직접 입력 차단), `backend/api/tests.py` `FormOptionsLayerIdsStepseqTest`(2건).
+  `getLayerIds` 를 문자열로 모의하던 `draftRoundTrip`/`jayerOayerRowRemove`/`flowChartRowInput` 테스트는 새 응답 형태로 바꿨다.
+  프론트 28 suites / 426건, 백엔드 `manage.py test api` 695건 통과, `tsc --noEmit` 에러 0.
+- **수동 검증 시나리오** (`/request` → 새 의뢰서 → STEP1, 상단 라인·조합법·제품 이름·조리법을 먼저 선택):
+  1. [흐름도 1행 위치·제품 이름·조리법 입력 → Step 시작 칸 클릭] → [기대 결과: 목록 각 줄에 Layer ID 와 그 옆 작은 회색 stepseq 가 보이고 stepseq 순서로 정렬돼 있다.
+     같은 Layer ID 가 두 stepseq 에 있으면 두 줄로 따로 보인다.]
+  2. [Step 시작 칸에 stepseq 일부(예: `1236`)를 입력] → [기대 결과: stepseq 로도 목록이 걸러진다.]
+  3. [1행 Step 을 `AAAA1234 ~ AAAA1238` 에 해당하는 Layer 로 선택 → "+ 행 추가" → 2행도 같은 위치·제품·조리법 → 2행 Step 시작을 `AAAA1237`(또는 `AAAA1238`) Layer 로 선택하고 다른 칸 클릭]
+     → [기대 결과: 2행 Step 시작 칸 빨간 테두리 + "1행 Step 구간(AAAA1234~AAAA1238)과 겹칩니다…" 토스트. "다음" 을 눌러도 넘어가지 않는다.]
+  4. [2행 Step 시작을 `BBBB` 계열 Layer 로 바꿈] → [기대 결과: 오류 없이 통과.] [`AAAA1239` 이후 Layer 로 바꿔도 통과.]
+  5. [한 행에서 Step 끝을 시작보다 앞선 stepseq 로 선택] → [기대 결과: Step 끝 칸 빨간 테두리 + "Step 끝의 stepseq가 시작보다 앞섭니다…".]
+  6. [Step 칸에 여러 stepseq 에 있는 Layer ID 를 목록 선택 없이 직접 타이핑 후 다른 칸 클릭] → [기대 결과: "같은 Layer가 여러 stepseq에 있습니다…" 오류.]
+  7. [임시저장 → 다시 열기 → Step 칸 클릭] → [기대 결과: 저장한 Layer 와 같은 stepseq 줄이 강조(굵게)돼 있다.]
+- ⚠️ **주의**:
+  - 같은 위치·조리법이라도 접두어만 다르면 겹침을 보지 않는다(요청대로). 접두어 판정은 "끝 숫자 앞 전체 문자열" 이므로 실제 stepseq 형식이
+    `AAAA1234` 꼴이 아니면(예: 숫자만) 접두어가 빈 문자열로 같은 계열로 취급된다.
+  - 이 기능 이전 문서는 흐름도 행에 stepseq 필드가 없다. 재상신 시 Step 칸을 건드려 stepseq 가 채워지면 Layer 를 안 바꿔도
+    결재 상세 '변경 감지'(`computeDetailDiff`, flow_chart JSON 전체 비교)가 흐름도를 변경으로 표시할 수 있다(보고만 함, 미수정).
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
