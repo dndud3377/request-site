@@ -113,7 +113,7 @@ import {
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
-  isInterAutoYesProcess,
+  isInterAutoYesProcess, isNumericValue,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -4079,15 +4079,22 @@ export default function RequestPage(): React.ReactElement {
         }
         // C가문 Yes: 살아있는(ONLY 로 죽지 않은) 리전 중 '변경 있음'인 곳만 X/Y 필수.
         const REGION_LABEL = { top: '북쪽', bottom: '남쪽' } as const;
+        // claude 수정 (2026-10-15): 값이 있어도 숫자로 읽히지 않으면('.'·'-' 등) 막는다
         (['top', 'bottom'] as const).forEach((region) => {
           if (!regionHasMapChange(region)) return;
           if (!detail[`map_value_x_${region}`]?.trim()) {
             newErrors[`map_value_x_${region}`] = t('request.required');
             errorMessages.push(`MAP 변경 X (${REGION_LABEL[region]}): 필수 입력 항목입니다.`);
+          } else if (!isNumericValue(detail[`map_value_x_${region}`])) {
+            newErrors[`map_value_x_${region}`] = t('request.invalid_number');
+            errorMessages.push(`${t('request.map_value_x')} (${t(`request.prodc_${region}`)}): ${t('request.invalid_number')}`);
           }
           if (!detail[`map_value_y_${region}`]?.trim()) {
             newErrors[`map_value_y_${region}`] = t('request.required');
             errorMessages.push(`MAP 변경 Y (${REGION_LABEL[region]}): 필수 입력 항목입니다.`);
+          } else if (!isNumericValue(detail[`map_value_y_${region}`])) {
+            newErrors[`map_value_y_${region}`] = t('request.invalid_number');
+            errorMessages.push(`${t('request.map_value_y')} (${t(`request.prodc_${region}`)}): ${t('request.invalid_number')}`);
           }
         });
         // 사유는 한 리전이라도 '변경 있음'일 때만 필수
@@ -4120,23 +4127,34 @@ export default function RequestPage(): React.ReactElement {
           }
         }
       } else if (detail.map_change === '변경 있음') {
+        // claude 수정 (2026-10-15): 값이 있어도 숫자로 읽히지 않으면('.'·'-' 등) 막는다
         if (!detail.map_value_x?.trim()) {
           newErrors['map_value_x'] = t('request.required');
           errorMessages.push('MAP 변경 X: 필수 입력 항목입니다.');
+        } else if (!isNumericValue(detail.map_value_x)) {
+          newErrors['map_value_x'] = t('request.invalid_number');
+          errorMessages.push(`${t('request.map_value_x')}: ${t('request.invalid_number')}`);
         }
         if (!detail.map_value_y?.trim()) {
           newErrors['map_value_y'] = t('request.required');
           errorMessages.push('MAP 변경 Y: 필수 입력 항목입니다.');
+        } else if (!isNumericValue(detail.map_value_y)) {
+          newErrors['map_value_y'] = t('request.invalid_number');
+          errorMessages.push(`${t('request.map_value_y')}: ${t('request.invalid_number')}`);
         }
         if (!detail.map_reason?.trim()) {
           newErrors['map_reason'] = t('request.required');
           errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
         }
       }
+      // claude 수정 (2026-10-15): 예외 구역 값도 숫자로 읽히지 않으면 막는다(기본값 비교보다 먼저)
       if (detail.ea_change === EA_HAS_CHANGE) {
         if (!detail.ea_value?.trim()) {
           newErrors['ea_value'] = t('request.required');
           errorMessages.push('예외 구역 값: 필수 입력 항목입니다.');
+        } else if (!isNumericValue(detail.ea_value)) {
+          newErrors['ea_value'] = t('request.invalid_number');
+          errorMessages.push(`${t('request.ea_value')}: ${t('request.invalid_number')}`);
         } else if (isEaDefaultValue(detail.ea_value, detail.only_prodc)) {
           // '변경 있음'인데 값이 기본값과 같으면 혼란을 주므로 상신할 수 없다(백엔드도 같은 기준으로 막는다).
           const eaDefaultMessage = t('request.ea_value_same_as_default', { value: eaDefaultValue(detail.only_prodc) });
