@@ -7,10 +7,47 @@ import {
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
-  matchLayerColor, buildFlowStepTitlePart,
+  matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
+
+// claude 수정 (2026-10-15): 조합법 기준 단어 → 3번(inter) 자동 YES 판정 테스트 추가
+describe('isInterAutoYesProcess', () => {
+  const prefixes = ['test', 'Abc'];
+
+  it('기준 단어로 시작하면 true — 대소문자 무시', () => {
+    expect(isInterAutoYesProcess('test_recipe', prefixes)).toBe(true);
+    expect(isInterAutoYesProcess('TEST-01', prefixes)).toBe(true);
+    expect(isInterAutoYesProcess('abcdef', prefixes)).toBe(true);
+  });
+
+  it('여러 기준 단어 중 하나만 맞아도 true', () => {
+    expect(isInterAutoYesProcess('ABC_1', prefixes)).toBe(true);
+  });
+
+  it('중간이나 끝에만 포함되면 false', () => {
+    expect(isInterAutoYesProcess('my_test', prefixes)).toBe(false);
+    expect(isInterAutoYesProcess('xabc', prefixes)).toBe(false);
+  });
+
+  it('앞뒤 공백은 무시한다', () => {
+    expect(isInterAutoYesProcess('  Test1 ', prefixes)).toBe(true);
+    expect(isInterAutoYesProcess('t', [' T '])).toBe(true);
+  });
+
+  it('조합법이 비었거나 기준 단어가 빈 문자열이면 false', () => {
+    expect(isInterAutoYesProcess('', prefixes)).toBe(false);
+    expect(isInterAutoYesProcess('   ', prefixes)).toBe(false);
+    expect(isInterAutoYesProcess('anything', ['', '  '])).toBe(false);
+    expect(isInterAutoYesProcess('anything', [])).toBe(false);
+  });
+
+  it('기본 기준 단어 목록(INTER_AUTO_YES_PROCESS_PREFIXES)에는 test 가 들어 있다', () => {
+    expect(isInterAutoYesProcess('Test_recipe')).toBe(true);
+    expect(isInterAutoYesProcess('RECIPE_A')).toBe(false);
+  });
+});
 
 describe('buildFlowStepTitlePart', () => {
   const flow = (id: string, location: string, product_name: string, process_id: string, step_from: string, step_to: string): FlowChartRow =>
