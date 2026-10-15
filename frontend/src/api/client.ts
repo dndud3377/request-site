@@ -13,6 +13,7 @@ import {
   CreateVocInput,
   AgentType,
   StepInfo,
+  LayerStepOption,
   ExternalBbDataItem,
   PhotoStepOption,
   AdminNotice,
@@ -1116,8 +1117,10 @@ export const formOptionsAPI = {
   getOvlLayer: (line: string, process: string): Promise<StepInfo[]> =>
     getStepOptions(`/form-options/ovl-layer/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
 
-  getLayerIds: (line: string, process: string): Promise<string[]> =>
-    getOptions(`/form-options/layer-ids/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
+  // claude 수정 (2026-10-15): 응답이 layerid 문자열 목록 → {layerid, stepseq} 목록으로 바뀌었다.
+  getLayerIds: (line: string, process: string): Promise<LayerStepOption[]> =>
+    get<{ options: LayerStepOption[] }>(`/form-options/layer-ids/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`)
+      .then((r) => r.options || []),
 
   getMapNames: (line: string): Promise<string[]> =>
     getOptions(`/form-options/map-names/?line=${encodeURIComponent(line)}`),
