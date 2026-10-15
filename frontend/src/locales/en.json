@@ -466,6 +466,7 @@
     "map_opt_photo_backside": "1",
     "map_opt_eds_backside": "2",
     "map_opt_inter": "3",
+    "inter_auto_locked_hint": "🔒 Fixed to YES by the selected process.",
     "map_opt_inter_xs": "Xs",
     "map_opt_inter_ys": "Ys",
     "map_opt_inter_xys": "XYs",
