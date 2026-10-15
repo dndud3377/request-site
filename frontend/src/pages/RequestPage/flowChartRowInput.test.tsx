@@ -44,7 +44,8 @@ jest.mock('../../api/client', () => ({
     getProducts: (line: string) => Promise.resolve(line === '라인1' ? ['FP1', 'FP2'] : []),
     getProcessId: (line: string, product?: string) =>
       Promise.resolve(line === '라인1' && (!product || product === 'FP1') ? ['FPID1'] : []),
-    getLayerIds: () => Promise.resolve(['10', '20']),
+    // claude 수정 (2026-10-15): Step 목록 API 응답이 {layerid, stepseq} 목록으로 바뀌었다.
+    getLayerIds: () => Promise.resolve(['10', '20'].map((layerid, i) => ({ layerid, stepseq: `S${i + 1}` }))),
     getMapNames: () => Promise.resolve([]),
     getMapInfo: () => Promise.resolve({ AAA1: null, AAA2: null, AAA3: null }),
     getJobFileLayer: () => Promise.resolve([]),
