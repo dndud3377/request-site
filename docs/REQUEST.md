@@ -5765,6 +5765,8 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
 - **테스트**: '다음' 글자로 버튼을 찾으면서 언어를 지정하지 않던 테스트 4개(`draftRoundTrip`/`salesAgreerAutoClear`/
   `requesterResubmitHistory`/`pauseResumeDisabledRows`)가 jsdom 기본 언어(en)에서 "Next" 로 렌더돼 실패 → 다른 테스트처럼
   `i18n.changeLanguage('ko')` 를 추가했다. 프론트 28 suites / 426건 통과, `tsc --noEmit` 에러 0.
+  main 병합(2026-10-15) 때 main 에서 새로 들어온 `overlayRefDocRequired.test.tsx` 도 같은 이유(`'다음 →'` 로 버튼 검색)로 실패해
+  같은 방식으로 고쳤다. 병합 후 프론트 30 suites / 447건, 백엔드 699건 통과.
 - **수동 검증 시나리오**:
   1. [`/request` → STEP1 하단] → [기대 결과: `다음 →` 버튼. STEP2 이상에서는 왼쪽에 `← 이전`.]
   2. [상단 언어를 English 로 변경] → [기대 결과: `Next →` / `← Previous` 로 바뀐다.]
