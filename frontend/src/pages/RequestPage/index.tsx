@@ -13,6 +13,7 @@ import {
   CreateDocumentInput,
   DetailFormState,
   FlowChartRow,
+  LayerStepOption,
   JayerRow,
   OayerRow,
   BbTableRow,
@@ -61,6 +62,8 @@ import {
   isMapDeleteEditType,
   FLOW_LOCATION_DEPENDENT_FIELDS,
   FLOW_NOT_IN_LIST_MSG_KEY,
+  FLOW_STEP_SEQ_FIELD,
+  FLOW_STEP_ORDER_MSG_KEY,
   EA_NO_CHANGE,
   EA_HAS_CHANGE,
   isEaDefaultValue,
@@ -114,6 +117,7 @@ import {
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
+  resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
   isInterAutoYesProcess, isNumericValue,
 } from './helpers';
@@ -226,7 +230,8 @@ export default function RequestPage(): React.ReactElement {
   // flow_chart 옵션 캐시도 위치(index)가 아니라 행 id로 키한다(중간 행 삭제 시 시프트/깜빡임 방지 — R-12).
   const [FlowProductOptions, setFlowProductOptions] = useState<Record<string, string[]>>({});
   const [FlowProcessIdOptions, setFlowProcessIdOptions] = useState<Record<string, string[]>>({});
-  const [FlowLayerIdOptions, setFlowLayerIdOptions] = useState<Record<string, string[]>>({});
+  // claude 수정 (2026-10-15): Step 목록은 layerid 와 stepseq 쌍(같은 layerid 가 stepseq 마다 한 항목)이다.
+  const [FlowLayerIdOptions, setFlowLayerIdOptions] = useState<Record<string, LayerStepOption[]>>({});
 
   // ADI CD 변경 '동일 변경 적용 대상' — 표 안 행은 읽기 전용이고, 아직 표에 반영하지 않은
   // "입력 중인 값"만 이 draft 로 관리한다("추가" 버튼을 눌러야 표(adi_cd_extra_targets)로 옮겨간다).
@@ -530,7 +535,8 @@ export default function RequestPage(): React.ReactElement {
   // - fetchOptions: 키별 시퀀스 토큰으로 stale 응답을 버리고 최신 요청 결과만 반영.
   const matchedOrLoading = (opts: string[], value: string): boolean =>
     isLoadingEditRef.current || (!!value && opts.includes(value));
-  const fetchOptions = (key: string, fetcher: () => Promise<string[]>, apply: (opts: string[]) => void) => {
+  // claude 수정 (2026-10-15): 흐름도 Step 목록({layerid, stepseq})도 같은 헬퍼로 조회하도록 항목 타입을 제네릭으로 바꿨다.
+  const fetchOptions = <T,>(key: string, fetcher: () => Promise<T[]>, apply: (opts: T[]) => void) => {
     const seq = (optionReqSeq.current[key] ?? 0) + 1;
     optionReqSeq.current[key] = seq;
     fetcher()
@@ -2349,6 +2355,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // claude 수정 (2026-10-15): 위치(라인)를 바꾸면 같은 행의 하위 칸을 모두 비우고, 입력한 칸의 에러는 칸 종류와 관계없이 바로 지운다.
+  //   Step 칸을 직접 타이핑하면 그 칸의 stepseq 도 비운다(목록에서 고르면 handleFlowStepSelect 가 다시 채운다).
   const handleFlowChange = (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => {
     const isLocation = field === 'location';
     setDetail((prev) => ({
@@ -2357,6 +2364,9 @@ export default function RequestPage(): React.ReactElement {
         if (r.id !== id) return r;
         if (isLocation && r.location !== value) {
           return { ...r, location: value, ...FLOW_LOCATION_DEPENDENT_FIELDS.reduce((acc, f) => ({ ...acc, [f]: '' }), {}) };
+        }
+        if (field === 'step_from' || field === 'step_to') {
+          return { ...r, [field]: value, [FLOW_STEP_SEQ_FIELD[field]]: '' };
         }
         return { ...r, [field]: value };
       }),
@@ -2383,19 +2393,65 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
+  // claude 수정 (2026-10-15): Step 검증을 stepseq 기준으로 확장 — 목록 밖 값 / 같은 Layer 가 여러 stepseq 라 모호함 / stepseq 순서(행 내·행 사이) 위반.
+  /** 화면 순서대로 각 행의 실효 stepseq(저장값이 목록과 맞지 않으면 layerid 로 다시 찾은 값)를 만든다. */
+  const buildFlowSeqRows = (rows: FlowChartRow[]) =>
+    rows.map((r) => {
+      const opts = FlowLayerIdOptions[r.id] || [];
+      const seqOf = (f: 'step_from' | 'step_to') => {
+        const res = resolveFlowStepSeq(r[f], r[FLOW_STEP_SEQ_FIELD[f]], opts);
+        return res.kind === 'ok' || res.kind === 'skip' ? res.seq : '';
+      };
+      return { id: r.id, fromSeq: seqOf('step_from'), toSeq: seqOf('step_to') };
+    });
+  const flowStepOrderMessage = (e: FlowStepOrderError): string =>
+    t(FLOW_STEP_ORDER_MSG_KEY[e.kind], { row: e.refRowNo, range: e.refRange });
+
   // 흐름도 Step(step_from/step_to): 목록에 없는 값이면 해당 필드를 에러로 표시 + 빨간 에러 토스트
   const handleFlowStepBlur = (rowId: string, field: 'step_from' | 'step_to') => {
     const row = detail.flow_chart.find((r) => r.id === rowId);
-    const value = (row?.[field] || '').trim();
+    if (!row) return;
+    const value = (row[field] || '').trim();
     const opts = FlowLayerIdOptions[rowId] || [];
     const key = `flow_step_${rowId}_${field}`;
+    const seqField = FLOW_STEP_SEQ_FIELD[field];
+    const res = resolveFlowStepSeq(value, row[seqField], opts);
     // 마스터 DB에 해당 조합의 Layer ID 정보가 없으면(목록이 비어 있으면) 목록 검증 없이 직접 입력값을 그대로 인정한다.
-    if (value && opts.length > 0 && !opts.includes(value)) {
-      setErrors((prev) => ({ ...prev, [key]: t('request.flow_step_not_in_list') }));
-      addToast(t('request.flow_step_not_in_list'), 'error');
+    if (res.kind === 'not_in_list' || res.kind === 'ambiguous') {
+      const msg = res.kind === 'not_in_list' ? t('request.flow_step_not_in_list') : t(FLOW_STEP_ORDER_MSG_KEY.ambiguous);
+      setErrors((prev) => ({ ...prev, [key]: msg }));
+      addToast(msg, 'error');
+      return;
+    }
+    if (res.seq !== (row[seqField] || '')) {
+      setDetail((prev) => ({
+        ...prev,
+        flow_chart: prev.flow_chart.map((r) => (r.id === rowId ? { ...r, [seqField]: res.seq } : r)),
+      }));
+    }
+    const rowsNow = detail.flow_chart.map((r) => (r.id === rowId ? { ...r, [seqField]: res.seq } : r));
+    const orderErr = findFlowStepOrderErrors(buildFlowSeqRows(rowsNow)).find((e) => e.rowId === rowId && e.field === field);
+    if (orderErr) {
+      const msg = flowStepOrderMessage(orderErr);
+      setErrors((prev) => ({ ...prev, [key]: msg }));
+      addToast(msg, 'error');
     } else if (errors[key]) {
       setErrors((prev) => ({ ...prev, [key]: '' }));
     }
+  };
+
+  // claude 수정 (2026-10-15): Step 목록에서 고르면 layerid 와 그 항목의 stepseq 를 함께 저장한다(같은 layerid 가 여러 stepseq 에 있을 수 있다).
+  const handleFlowStepSelect = (rowId: string, field: 'step_from' | 'step_to', index: number) => {
+    const opt = (FlowLayerIdOptions[rowId] || [])[index];
+    if (!opt) return;
+    setDetail((prev) => ({
+      ...prev,
+      flow_chart: prev.flow_chart.map((r) => (
+        r.id === rowId ? { ...r, [field]: opt.layerid, [FLOW_STEP_SEQ_FIELD[field]]: opt.stepseq } : r
+      )),
+    }));
+    const key = `flow_step_${rowId}_${field}`;
+    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
   };
 
   // 제품 이름(partid_selection): 목록에 없는 값이면 에러 표시(문구는 Step1에서 값 존재 시 숨김) + 빨간 에러 토스트
@@ -4007,20 +4063,36 @@ export default function RequestPage(): React.ReactElement {
       addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
       // 흐름도 Step(step_from/step_to)은 목록이 있으면 목록에 있는 값만 허용한다 (목록 밖 값이면 해당 필드를 표시하고 진행 차단).
       // 마스터 DB에 해당 조합의 정보 자체가 없어 목록이 비어 있는 경우는 직접 입력값을 그대로 인정한다.
+      // claude 수정 (2026-10-15): 목록은 {layerid, stepseq} 쌍이 됐다 — layerid 기준 존재 검사 + 같은 Layer 가 여러 stepseq 라 모호한 경우 차단
+      //   + stepseq 순서 검증(한 행: 같은 접두어·시작 ≤ 끝 / 행 사이: 같은 접두어면 아래 행 시작 > 위 행 끝).
       let flowStepInvalid = false;
+      let flowStepAmbiguous = false;
       detail.flow_chart.forEach((row) => {
         const opts = FlowLayerIdOptions[row.id] || [];
         (['step_from', 'step_to'] as const).forEach((f) => {
-          const v = (row[f] || '').trim();
-          if (v && opts.length > 0 && !opts.includes(v)) {
+          const res = resolveFlowStepSeq(row[f], row[FLOW_STEP_SEQ_FIELD[f]], opts);
+          if (res.kind === 'not_in_list') {
             newErrors[`flow_step_${row.id}_${f}`] = t('request.flow_step_not_in_list');
             flowStepInvalid = true;
+          } else if (res.kind === 'ambiguous') {
+            newErrors[`flow_step_${row.id}_${f}`] = t(FLOW_STEP_ORDER_MSG_KEY.ambiguous);
+            flowStepAmbiguous = true;
           }
         });
       });
       if (flowStepInvalid) {
         errorMessages.push(t('request.flow_step_not_in_list'));
       }
+      if (flowStepAmbiguous) {
+        errorMessages.push(t(FLOW_STEP_ORDER_MSG_KEY.ambiguous));
+      }
+      const flowOrderMessages = new Set<string>();
+      findFlowStepOrderErrors(buildFlowSeqRows(detail.flow_chart)).forEach((e) => {
+        const msg = flowStepOrderMessage(e);
+        newErrors[`flow_step_${e.rowId}_${e.field}`] = msg;
+        flowOrderMessages.add(msg);
+      });
+      flowOrderMessages.forEach((msg) => errorMessages.push(msg));
       // claude 수정 (2026-10-15): 흐름도 제품 이름·조리법도 목록이 있으면 목록에 있는 값만 허용한다(목록이 비어 있으면 직접 입력 인정 — Step 과 같은 규칙).
       (['product_name', 'process_id'] as const).forEach((f) => {
         let invalid = false;
@@ -4962,6 +5034,7 @@ export default function RequestPage(): React.ReactElement {
           handleBaResetRow={handleBaResetRow}
           handleFlowChange={handleFlowChange}
           handleFlowStepBlur={handleFlowStepBlur}
+          handleFlowStepSelect={handleFlowStepSelect}
           handleFlowOptionBlur={handleFlowOptionBlur}
           handleFlowDeleteRow={handleFlowDeleteRow}
           handleFlowAddRow={handleFlowAddRow}
