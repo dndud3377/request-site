@@ -1,4 +1,4 @@
-import { FlowChartRow, JayerRow, OayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
+import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -74,6 +74,96 @@ export const buildFlowStepTitlePart = (
     .filter((step) => step !== '')
     .map((step) => `[${step}]`)
     .join('');
+
+// claude 수정 (2026-10-15): 흐름도 Step 을 stepseq 순서대로 작성하도록 검증하는 순수 함수들.
+
+/** Step(layerid) 입력값에 대응하는 stepseq 를 목록에서 찾은 결과 */
+export type FlowStepSeqResolution =
+  | { kind: 'skip'; seq: string }   // 값이 비었거나 목록 자체가 없음(직접 입력 인정) → 저장된 seq 를 그대로 쓴다
+  | { kind: 'ok'; seq: string }
+  | { kind: 'not_in_list' }
+  | { kind: 'ambiguous' };          // 같은 layerid 가 여러 stepseq 에 있어 어느 것인지 정할 수 없음
+
+/**
+ * 저장된 seq 가 목록의 (layerid, stepseq) 와 맞으면 그대로, 아니면 layerid 가 목록에 한 번만 있을 때 그 stepseq 로 정한다.
+ */
+export const resolveFlowStepSeq = (
+  layerid: string,
+  storedSeq: string | undefined,
+  opts: readonly LayerStepOption[],
+): FlowStepSeqResolution => {
+  const value = (layerid || '').trim();
+  if (!value || opts.length === 0) return { kind: 'skip', seq: storedSeq || '' };
+  const matches = opts.filter((o) => o.layerid === value);
+  if (matches.length === 0) return { kind: 'not_in_list' };
+  if (storedSeq && matches.some((o) => o.stepseq === storedSeq)) return { kind: 'ok', seq: storedSeq };
+  if (matches.length === 1) return { kind: 'ok', seq: matches[0].stepseq };
+  return { kind: 'ambiguous' };
+};
+
+/** stepseq 를 '접두어 + 끝 숫자'로 나눈다(AAAA1234 → AAAA / 1234). 끝이 숫자가 아니면 비교 불가(null). */
+export const splitStepseq = (seq: string | undefined): { prefix: string; num: number } | null => {
+  const m = /^(.*?)(\d+)$/.exec((seq || '').trim());
+  return m ? { prefix: m[1], num: parseInt(m[2], 10) } : null;
+};
+
+export interface FlowStepSeqRow {
+  id: string;
+  fromSeq: string;
+  toSeq: string;
+}
+
+export interface FlowStepOrderError {
+  rowId: string;
+  field: 'step_from' | 'step_to';
+  kind: 'prefix_mismatch' | 'reversed' | 'overlap';
+  /** overlap 일 때 겹친 위쪽 행 번호(1부터)와 그 행의 stepseq 구간 */
+  refRowNo?: number;
+  refRange?: string;
+}
+
+/**
+ * 흐름도 행(화면 순서)의 stepseq 구간 검증.
+ *  - 한 행: 시작·끝 접두어가 같고 시작 ≤ 끝.
+ *  - 행 사이: 접두어가 같은 위쪽 행이 있으면 아래 행 시작은 그 행 끝보다 반드시 커야 한다(같은 번호도 불가).
+ *    접두어가 다르면 비교하지 않는다. stepseq 가 없는(비교 불가) 칸은 건너뛴다.
+ */
+export const findFlowStepOrderErrors = (rows: readonly FlowStepSeqRow[]): FlowStepOrderError[] => {
+  const errors: FlowStepOrderError[] = [];
+  const ranges: ({ prefix: string; start: number; end: number; label: string } | null)[] = [];
+  rows.forEach((r) => {
+    const from = splitStepseq(r.fromSeq);
+    const to = splitStepseq(r.toSeq);
+    let range: { prefix: string; start: number; end: number; label: string } | null = null;
+    if (from && to) {
+      if (from.prefix !== to.prefix) {
+        errors.push({ rowId: r.id, field: 'step_to', kind: 'prefix_mismatch' });
+      } else if (from.num > to.num) {
+        errors.push({ rowId: r.id, field: 'step_to', kind: 'reversed' });
+      } else {
+        range = { prefix: from.prefix, start: from.num, end: to.num, label: `${r.fromSeq}~${r.toSeq}` };
+      }
+    } else if (from || to) {
+      const only = (from || to) as { prefix: string; num: number };
+      range = { prefix: only.prefix, start: only.num, end: only.num, label: from ? r.fromSeq : r.toSeq };
+    }
+    if (range) {
+      const cur = range;
+      const refIdx = ranges.findIndex((x) => !!x && x.prefix === cur.prefix && cur.start <= x.end);
+      if (refIdx >= 0) {
+        errors.push({
+          rowId: r.id,
+          field: from ? 'step_from' : 'step_to',
+          kind: 'overlap',
+          refRowNo: refIdx + 1,
+          refRange: (ranges[refIdx] as { label: string }).label,
+        });
+      }
+    }
+    ranges.push(range);
+  });
+  return errors;
+};
 
 /** 숫자 전용 입력 필터: 부호(-, 맨 앞 1개만)·소수점(1개만) 외 문자는 제거 (MAP X/Y, 예외구역 값 등) */
 export const sanitizeSignedDecimal = (raw: string): string => {
