@@ -281,7 +281,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   | `MshotImageUpload.tsx` | "Ctrl+V 로 이미지를 붙여넣으세요" |
   | `Step2.tsx` / `Step3.tsx` | `활성 N / 전체 N`, "STEP 정렬", "+ 행 추가", "선택 비활성화" |
   | `Step4.tsx` | "+ 행 추가", "범위 추가" |
-  | `StepMap.tsx` | "특정 제품 삭제 필요" |
+  | `StepMap.tsx` | ~~"특정 제품 삭제 필요"~~ → 2026-10-15 `request.mshot_delete_desc` 로 이관 완료 |
   | `FilterManageModal.tsx` | "저장된 필터", "저장된 필터가 없습니다.", "새 필터 만들기", "필터 수정", "수정 적용", "+ 추가", "수정", "삭제", "전체 삭제", "닫기", "키워드 입력 후 Enter", "🔵 STEPSEQ / 🟢 STEP 설명 / 🟠 PPID" |
 
 ---
@@ -5688,6 +5688,15 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   1. [`/request` → STEP1 하단] → [기대 결과: `다음 →` 버튼. STEP2 이상에서는 왼쪽에 `← 이전`.]
   2. [상단 언어를 English 로 변경] → [기대 결과: `Next →` / `← Previous` 로 바뀐다.]
   3. [STEP1 흐름도 영역 하단 버튼] → [기대 결과: "+ 행 추가"(영어: "+ Add Row") — `+` 가 한 번만 보인다.]
+
+### 버그 수정 (2026-10-15 — MAP 정보 'M-shot 삭제' 안내 문구 하드코딩 제거)
+
+- **증상**: MAP 정보 단계(`StepMap.tsx`)에서 M-shot 변경을 '삭제'로 고르면 나오는 빨간 안내 "특정 제품 삭제 필요" 가 하드코딩돼
+  영어 화면에서도 한국어로 보였다(규칙 G 위반).
+- **수정**: 새 키 `request.mshot_delete_desc`(ko "특정 제품 삭제 필요" / en "Specific product deletion required")를 ko/en 에 동시 추가하고
+  `t()` 로 교체. 문구는 결재 상세(`PagedDetailView`)의 기존 `approval.mshot_delete_desc` 와 같다. 동작 변경 없음.
+- **수동 검증 시나리오**: [`/request` → MAP 정보 단계 → M-shot 변경에서 '삭제' 선택] → [기대 결과: 빨간 "특정 제품 삭제 필요"]
+  → [언어를 English 로 변경] → [기대 결과: "Specific product deletion required"].
 
 ## 5. 검증 방법
 ```bash
