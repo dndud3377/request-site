@@ -5203,10 +5203,11 @@ export default function RequestPage(): React.ReactElement {
         />
       )}
 
+      {/* claude 수정 (2026-10-15): 하드코딩된 '이전'/'다음' 문구를 i18n(common.prev/common.next)으로 교체. */}
       <div className="form-actions" style={step > 1 ? { justifyContent: 'space-between' } : {}}>
         {step > 1 && (
           <button className="btn btn-secondary" onClick={handlePrevStep}>
-            ← 이전
+            ← {t('common.prev')}
           </button>
         )}
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -5216,7 +5217,7 @@ export default function RequestPage(): React.ReactElement {
           {/* Only MAP·MAP 삭제 는 MAP 정보(2단계)가 마지막이라 여기서 바로 상신한다. */}
           {step < lastStep ? (
             <button className="btn btn-primary" onClick={() => handleNextStep()}>
-              다음 →
+              {t('common.next')} →
             </button>
           ) : (
             <>
