@@ -4,7 +4,7 @@ import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
 import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
-import { PairAfterLookupRow } from '../helpers';
+import { ManualPairsLayerCheck, PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
 import AdiCdTargetsPanel from './AdiCdTargetsPanel';
@@ -49,6 +49,8 @@ interface Step1Props {
   jayerRows: PairAfterLookupRow[];
   oayerRows: PairAfterLookupRow[];
   baSameCount: number;
+  // claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — PP 접두사 구분·J/O 표 대조 결과(그대로 전달만 한다)
+  baManualCheck: ManualPairsLayerCheck | null;
   baSelBefore: string | null;
   baSelAfter: string | null;
   handleBaSelect: (side: BaSide, id: string) => void;
@@ -122,6 +124,7 @@ const Step1: React.FC<Step1Props> = ({
   jayerRows,
   oayerRows,
   baSameCount,
+  baManualCheck,
   baSelBefore,
   baSelAfter,
   handleBaSelect,
@@ -391,6 +394,7 @@ const Step1: React.FC<Step1Props> = ({
                     oayerRows={oayerRows}
                     sameCount={baSameCount}
                     manualOnly={isMergeNone}
+                    manualCheck={baManualCheck}
                     selBefore={baSelBefore}
                     selAfter={baSelAfter}
                     onSelect={handleBaSelect}
