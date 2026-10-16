@@ -5781,6 +5781,30 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
 - **수동 검증 시나리오**: [`/request` → MAP 정보 단계 → M-shot 변경에서 '삭제' 선택] → [기대 결과: 빨간 "특정 제품 삭제 필요"]
   → [언어를 English 로 변경] → [기대 결과: "Specific product deletion required"].
 
+### 기능 추가 (2026-10-16 — 흐름도 Step: 선택 후에도 stepseq 표시 + 결재 상세·이력 확인·상세 내보내기에 stepseq 표기)
+
+- **의도**: 같은 Layer ID 가 여러 stepseq 에 있을 수 있으므로, Step 을 고른 뒤에도 어느 stepseq 의 Layer 인지 바로 보이게 한다.
+- **작성 화면**(`components/Step1.tsx`): Step 시작·끝 입력칸 안 오른쪽에 저장된 stepseq(`step_from_seq`/`step_to_seq`)를 작은 회색 글씨로 표시.
+  칸 최소 폭 80px → 150px. 직접 타이핑하면 stepseq 가 비워지므로 표시도 사라지고, 목록 선택·blur 자동 판정으로 다시 채워지면 다시 보인다.
+  - 공용 `AutocompleteInput` 에 선택 prop `valueHint` 추가 — 넘긴 경우에만 입력칸을 `position: relative` 래퍼로 감싸 오른쪽에 겹쳐 그린다
+    (클릭 통과, 글자 겹침 방지용 오른쪽 여백). 넘기지 않는 다른 사용처는 DOM 구조가 그대로다.
+- **결재 상세 흐름도 표**(`PagedDetailView.tsx` `FlowStepCell`): `L01 AAAA1234 ~ L03 AAAA1238` — 각 Layer 뒤에 stepseq 를 작은 회색 글씨(`.flow-step-seq`)로.
+- **흐름도 이력 확인 창 / 상세 내보내기(엑셀)**: 칸이 글자만 받으므로 `L01 (AAAA1234) ~ L03 (AAAA1238)` 처럼 일반 글씨로 표기
+  (`helpers.ts` `formatFlowStepText` 공용).
+- stepseq 가 없는 행(이 기능 이전 문서·목록 없이 직접 입력)은 어디서나 종전처럼 Layer ID 만 보인다. **의뢰서 제목은 변경 없음**(Layer ID 만).
+- ⚠️ 이력 확인 창은 회차별 표의 글자를 비교하므로, 예전 회차(stepseq 없음) 대비 이번 회차(stepseq 있음) 행은 Layer 가 같아도 바뀐 것으로
+  강조된다 — 2026-10-15 에 '변경됨으로 표시돼도 문제없다'고 정한 것과 같은 경우다.
+- **테스트**: `components/PagedDetailView.flowStepseq.test.tsx`(신규 2건 — 표의 작은 회색 stepseq / 이력 확인 창 일반 글씨),
+  `helpers.test.ts` `formatFlowStepText` 2건, `flowChartStepseq.test.tsx` 1건(선택 후 입력칸 표시·타이핑 시 사라짐).
+  프론트 31 suites / 452건 통과, `tsc --noEmit` 에러 0. 실제 화면(개발 서버 + 임시 sqlite DB)에서 작성 화면·결재 상세 표·이력 확인 창을
+  스크린샷으로 확인했고, 결재 상세 `export` 로 받은 엑셀에 `L01 (AAAA1234) ~ L03 (AAAA1238)` 이 들어 있는 것을 확인했다.
+- **수동 검증 시나리오**:
+  1. [`/request` → STEP1 → 흐름도 Step 시작 칸에서 `L01  AAAA1240` 선택] → [기대 결과: 칸에 `L01` 과 오른쪽 끝에 작은 회색 `AAAA1240`.]
+  2. [같은 칸에서 글자를 지우거나 고침] → [기대 결과: 회색 stepseq 가 사라진다. 다시 목록에서 고르면 나타난다.]
+  3. [stepseq 를 고른 흐름도가 있는 문서를 결재 현황에서 열기 → '의뢰 상세' 탭 흐름도 표] → [기대 결과: Step 칸이 `L01 AAAA1234 ~ L03 AAAA1238`(stepseq 작은 회색).]
+  4. [흐름도 카드의 '이력 확인'] → [기대 결과: Step 칸이 `L01 (AAAA1234) ~ L03 (AAAA1238)`.]
+  5. [상세 화면 `export`] → [기대 결과: 엑셀 흐름도 표 Step 열에 4번과 같은 글자.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
