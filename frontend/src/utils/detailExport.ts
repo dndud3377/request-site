@@ -4,7 +4,7 @@ import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, Merge
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
 import { VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText } from '../pages/RequestPage/helpers';
 
 const NO_ACTIVE_COLOR_FILTERS = new Set<string>();
 
@@ -373,10 +373,11 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
     blocks.push({ kind: 'kv', label: t('request.change_purpose_note'), value: detail.change_purpose_note });
   }
 
+  // claude 수정 (2026-10-16): 흐름도 Step 에 stepseq 를 함께 표기 — 'L01 (AAAA1234) ~ L03 (AAAA1238)'.
   if ((detail.flow_chart?.length ?? 0) > 0) {
     const rows = (detail.flow_chart ?? []).map((r) => [
       r.location, r.product_name, r.process_id,
-      r.step_from && r.step_to ? `${r.step_from} ~ ${r.step_to}` : (r.step_from || r.step_to || ''),
+      formatFlowStepText(r),
     ]);
     blocks.push({ kind: 'table', label: t('request.flow_chart'), headers: [t('request.flow_line'), t('request.flow_partid'), t('request.flow_process_id'), 'Step'], rows });
   }

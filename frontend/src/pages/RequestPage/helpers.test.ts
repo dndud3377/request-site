@@ -9,6 +9,7 @@ import {
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
+  resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES } from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
@@ -1317,5 +1318,79 @@ describe('checkManualPairsAgainstLayers', () => {
     const p = pair({ id: 'p1', before: side(J_OUT), after: side(J_IN) });
     const res = checkManualPairsAgainstLayers([p], [], []);
     expect(res.byPair.p1).toMatchObject({ beforeExists: false, afterMissing: true });
+  });
+});
+
+// claude 수정 (2026-10-15): 흐름도 Step stepseq 순서 검증 헬퍼.
+describe('흐름도 Step stepseq 검증', () => {
+  const opts = [
+    { layerid: 'L01', stepseq: 'AAAA1234' },
+    { layerid: 'L02', stepseq: 'AAAA1236' },
+    { layerid: 'L01', stepseq: 'AAAA1240' },
+  ];
+
+  it('splitStepseq: 접두어 + 끝 숫자로 나누고, 끝이 숫자가 아니면 null', () => {
+    expect(splitStepseq('AAAA1234')).toEqual({ prefix: 'AAAA', num: 1234 });
+    expect(splitStepseq('0100')).toEqual({ prefix: '', num: 100 });
+    expect(splitStepseq('A1B')).toBeNull();
+    expect(splitStepseq('')).toBeNull();
+  });
+
+  it('resolveFlowStepSeq: 저장된 seq 가 맞으면 그대로, layerid 가 한 번뿐이면 그 seq, 여러 번이면 모호', () => {
+    expect(resolveFlowStepSeq('L01', 'AAAA1240', opts)).toEqual({ kind: 'ok', seq: 'AAAA1240' });
+    expect(resolveFlowStepSeq('L02', '', opts)).toEqual({ kind: 'ok', seq: 'AAAA1236' });
+    expect(resolveFlowStepSeq('L01', '', opts)).toEqual({ kind: 'ambiguous' });
+    expect(resolveFlowStepSeq('L01', 'AAAA9999', opts)).toEqual({ kind: 'ambiguous' });
+    expect(resolveFlowStepSeq('LXX', '', opts)).toEqual({ kind: 'not_in_list' });
+  });
+
+  it('resolveFlowStepSeq: 값이 없거나 목록이 비면 검증하지 않고 저장값을 쓴다', () => {
+    expect(resolveFlowStepSeq('', 'X1', opts)).toEqual({ kind: 'skip', seq: 'X1' });
+    expect(resolveFlowStepSeq('ANY', undefined, [])).toEqual({ kind: 'skip', seq: '' });
+  });
+
+  const rows = (...ranges: [string, string][]) => ranges.map(([fromSeq, toSeq], i) => ({ id: `r${i + 1}`, fromSeq, toSeq }));
+
+  it('같은 접두어: 아래 행이 위 행 구간 안·경계·앞에서 시작하면 overlap', () => {
+    ['AAAA1237', 'AAAA1238', 'AAAA1230'].forEach((start) => {
+      const errs = findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], [start, 'AAAA1239']));
+      expect(errs).toEqual([
+        { rowId: 'r2', field: 'step_from', kind: 'overlap', refRowNo: 1, refRange: 'AAAA1234~AAAA1238' },
+      ]);
+    });
+  });
+
+  it('같은 접두어라도 위 행 끝 다음부터 시작하면 통과, 다른 접두어는 비교하지 않는다', () => {
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['AAAA1239', 'AAAA1250']))).toEqual([]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['BBBB1237', 'BBBB1240']))).toEqual([]);
+  });
+
+  it('세 번째 행은 접두어가 같은 모든 위 행과 비교한다(중간에 다른 접두어 행이 있어도)', () => {
+    const errs = findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['BBBB1000', 'BBBB1010'], ['AAAA1235', 'AAAA1236']));
+    expect(errs).toEqual([{ rowId: 'r3', field: 'step_from', kind: 'overlap', refRowNo: 1, refRange: 'AAAA1234~AAAA1238' }]);
+  });
+
+  it('한 행 안: 시작·끝 접두어가 다르거나 끝이 시작보다 앞서면 step_to 오류', () => {
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'BBBB1238']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'prefix_mismatch' }]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1238', 'AAAA1234']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'reversed' }]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1234']))).toEqual([]);
+  });
+
+  it('stepseq 가 없는 칸(직접 입력)은 건너뛴다', () => {
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['', '']))).toEqual([]);
+  });
+});
+
+// claude 수정 (2026-10-16): 흐름도 Step 글자 표기(이력 확인 창·상세 내보내기).
+describe('formatFlowStepText', () => {
+  it('stepseq 가 있으면 괄호로 붙이고, 없으면 layerid 만', () => {
+    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: 'AAAA1238' }))
+      .toBe('L01 (AAAA1234) ~ L03 (AAAA1238)');
+    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03' })).toBe('L01 ~ L03');
+    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: '' })).toBe('L01 (AAAA1234) ~ L03');
+  });
+  it('한쪽만 있으면 그 칸만, 둘 다 없으면 빈 문자열', () => {
+    expect(formatFlowStepText({ step_from: 'L01', step_to: '', step_from_seq: 'AAAA1234' })).toBe('L01 (AAAA1234)');
+    expect(formatFlowStepText({ step_from: '', step_to: '' })).toBe('');
   });
 });

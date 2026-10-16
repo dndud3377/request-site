@@ -13,6 +13,9 @@ import { MemoryRouter } from 'react-router-dom';
 import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
+
+// claude 수정 (2026-10-15): '다음'/'이전' 버튼 문구가 i18n 으로 바뀌어, jsdom 기본 언어(en)가 아닌 한국어로 고정한다.
+beforeAll(async () => { await i18n.changeLanguage('ko'); });
 import { OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY, MERGE_PP_PREFIXES } from './constants';
 
 const mockState: { doc: unknown } = { doc: null };

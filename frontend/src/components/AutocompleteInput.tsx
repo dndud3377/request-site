@@ -37,6 +37,16 @@ interface AutocompleteInputProps {
    * multiSelect 에서만 쓰인다.
    */
   formatMultiValue?: (labels: string[], isFromOptions: boolean[]) => string;
+  // claude 수정 (2026-10-15): 흐름도 Step 처럼 같은 라벨이 여러 번 나오는 목록을 위해 옵션별 보조 글씨·인덱스 선택을 지원한다.
+  /** options 와 같은 순서의 보조 글씨(작게 표시). 검색어는 라벨·보조 글씨 둘 다에서 찾는다. 단일 선택에서만 쓰인다. */
+  optionHints?: readonly string[];
+  /** optionHints 를 쓸 때 현재 선택된 항목의 보조 글씨 — 라벨과 이 값이 모두 같은 항목만 강조한다. */
+  selectedHint?: string;
+  /** 항목을 고르면 options 기준 원래 인덱스로 알려준다(onChange 다음에 호출). */
+  onSelectIndex?: (index: number) => void;
+  // claude 수정 (2026-10-16): 선택한 뒤에도 보조 글씨(흐름도 Step 의 stepseq)를 입력칸 안 오른쪽에 작게 보여준다.
+  /** 입력칸 안 오른쪽에 작은 회색 글씨로 겹쳐 표시할 값. 비어 있으면 표시하지 않는다. */
+  valueHint?: string;
 }
 
 export default function AutocompleteInput({
@@ -61,6 +71,10 @@ export default function AutocompleteInput({
   multiSelect,
   multiSelectIdentity,
   formatMultiValue,
+  optionHints,
+  selectedHint,
+  onSelectIndex,
+  valueHint,
 }: AutocompleteInputProps): React.ReactElement {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -74,11 +88,13 @@ export default function AutocompleteInput({
   // multiSelect 에서는 마지막 콤마 뒤 입력 중인 부분만으로 후보를 좁힌다(전체 값으로 필터링하면
   // 이미 선택된 항목들이 이어붙은 문자열이라 옵션과 매치되지 않는다).
   const filterQuery = multiSelect ? (value.split(',').pop() ?? '').trim() : value;
+  const indexed = options.map((opt, idx) => ({ opt, idx, hint: optionHints?.[idx] }));
+  const query = filterQuery.toLowerCase();
   const filtered = disableFilter
-    ? options
+    ? indexed
     : filterQuery
-      ? options.filter((o) => o.toLowerCase().includes(filterQuery.toLowerCase()))
-      : options;
+      ? indexed.filter((o) => o.opt.toLowerCase().includes(query) || (o.hint ?? '').toLowerCase().includes(query))
+      : indexed;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -114,14 +130,15 @@ export default function AutocompleteInput({
     listStyle: 'none',
     maxHeight: 220,
     overflowY: 'auto',
+    minWidth: optionHints ? 'max-content' : undefined,
   };
 
-  const dropdownItems = filtered.map((opt) => {
+  const dropdownItems = filtered.map(({ opt, idx, hint }) => {
     const checked = multiSelect && selectedIdentities.includes(identityOf(opt));
-    const highlighted = multiSelect ? checked : opt === value;
+    const highlighted = multiSelect ? checked : opt === value && (selectedHint === undefined || hint === selectedHint);
     return (
       <li
-        key={opt}
+        key={optionHints ? idx : opt}
         onMouseDown={(e) => {
           e.preventDefault();
           if (multiSelect) {
@@ -146,6 +163,7 @@ export default function AutocompleteInput({
           }
           onChange(opt);
           onSelect?.(opt);
+          onSelectIndex?.(idx);
           setOpen(false);
         }}
         style={{
@@ -158,6 +176,7 @@ export default function AutocompleteInput({
           color: highlighted ? 'var(--accent)' : 'var(--text-primary)',
           fontWeight: highlighted ? 700 : 400,
           background: 'transparent',
+          whiteSpace: optionHints ? 'nowrap' : undefined,
         }}
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -166,6 +185,9 @@ export default function AutocompleteInput({
           <input type="checkbox" checked={!!checked} readOnly style={{ pointerEvents: 'none', margin: 0 }} />
         )}
         {opt}
+        {hint && (
+          <span style={{ marginLeft: 8, fontSize: '0.75em', fontWeight: 400, color: 'var(--text-muted)' }}>{hint}</span>
+        )}
       </li>
     );
   });
@@ -189,6 +211,26 @@ export default function AutocompleteInput({
     );
   };
 
+  // valueHint 를 넘긴 경우에만 입력칸을 감싸 오른쪽 보조 글씨를 겹쳐 그린다(다른 사용처의 DOM 구조는 그대로).
+  const inputEl = (
+    <input
+      type="text"
+      className={`form-control${error ? ' error' : ''}`}
+      value={value}
+      placeholder={placeholder ?? t('common.input_or_select')}
+      onChange={(e) => { if (!disabled) { onChange(uppercase ? e.target.value.toUpperCase() : e.target.value); setOpen(true); } }}
+      onFocus={() => { if (!disabled) setOpen(true); }}
+      onBlur={() => { if (onBlur) setTimeout(onBlur, 120); }}
+      autoComplete="off"
+      disabled={disabled}
+      maxLength={maxLength}
+      style={{
+        ...(disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle),
+        ...(valueHint ? { paddingRight: `calc(${valueHint.length * 0.5}em + 16px)` } : {}),
+      }}
+    />
+  );
+
   return (
     <div ref={containerRef} style={{ position: 'relative', ...style }}>
       {label && (
@@ -197,19 +239,19 @@ export default function AutocompleteInput({
           {required && <span style={{ color: 'var(--danger)', marginLeft: 2 }}>*</span>}
         </label>
       )}
-      <input
-        type="text"
-        className={`form-control${error ? ' error' : ''}`}
-        value={value}
-        placeholder={placeholder ?? t('common.input_or_select')}
-        onChange={(e) => { if (!disabled) { onChange(uppercase ? e.target.value.toUpperCase() : e.target.value); setOpen(true); } }}
-        onFocus={() => { if (!disabled) setOpen(true); }}
-        onBlur={() => { if (onBlur) setTimeout(onBlur, 120); }}
-        autoComplete="off"
-        disabled={disabled}
-        maxLength={maxLength}
-        style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle}
-      />
+      {valueHint === undefined ? inputEl : (
+        <div style={{ position: 'relative' }}>
+          {inputEl}
+          {valueHint && (
+            <span
+              data-testid="autocomplete-value-hint"
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.75em', color: 'var(--text-muted)', pointerEvents: 'none', whiteSpace: 'nowrap' }}
+            >
+              {valueHint}
+            </span>
+          )}
+        </div>
+      )}
       {error && !hideErrorMessage && <span className="form-error">{error}</span>}
       {renderDropdown()}
     </div>

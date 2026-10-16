@@ -281,7 +281,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   | `MshotImageUpload.tsx` | "Ctrl+V 로 이미지를 붙여넣으세요" |
   | `Step2.tsx` / `Step3.tsx` | `활성 N / 전체 N`, "STEP 정렬", "+ 행 추가", "선택 비활성화" |
   | `Step4.tsx` | "+ 행 추가", "범위 추가" |
-  | `StepMap.tsx` | "특정 제품 삭제 필요" |
+  | `StepMap.tsx` | ~~"특정 제품 삭제 필요"~~ → 2026-10-15 `request.mshot_delete_desc` 로 이관 완료 |
   | `FilterManageModal.tsx` | "저장된 필터", "저장된 필터가 없습니다.", "새 필터 만들기", "필터 수정", "수정 적용", "+ 추가", "수정", "삭제", "전체 삭제", "닫기", "키워드 입력 후 Enter", "🔵 STEPSEQ / 🟢 STEP 설명 / 🟠 PPID" |
 
 ---
@@ -5728,6 +5728,132 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   6. [STEP4(O-layer)에서 1~4 반복] → [기대 결과: J-layer 와 동일. 같은 Layer 의 J 행은 그대로 남는다.]
   7. [임시저장 → 다시 열기] → [기대 결과: 삭제한 행은 돌아오지 않고, 불러온 행에는 여전히 `✕` 가 없다.]
 - ⚠️ **주의**: 삭제한 행을 되돌리는 기능(실행 취소)은 없다. 조리법(process_id)을 다시 선택하면 J/O 가 재조회되어 수동 행도 초기화되는 기존 동작은 그대로다.
+
+
+### 기능 개선 (2026-10-15 — 흐름도 행: 에러 즉시 해제 · 위치 변경 시 하위 칸 초기화 · 제품 이름/조리법 목록 검증)
+
+- **요청**: ① 행 완결성 에러(`flow_row_incomplete`)의 빨간 테두리가 위치·제품 이름·조리법 칸에서는 값을 채워도 "다음"을 다시
+  누를 때까지 남았다. ② 행의 위치(라인)를 바꿔도 제품 이름·조리법·Step 이 그대로 남아, 다른 라인에 없는 값이 저장될 수 있었다.
+  ③ 제품 이름·조리법에는 Step 과 달리 "목록에 없는 값" 검사가 없었다.
+- **규칙**:
+  - 흐름도 칸 어디든 값을 바꾸면 그 칸의 `flow_step_${row.id}_${field}` 에러를 즉시 지운다(기존엔 Step 칸만).
+  - **위치를 바꾸면** 같은 행의 `product_name`·`process_id`·`step_from`·`step_to` 를 모두 `''` 로 비우고 그 칸들의 에러도 지운다.
+    사용자가 위치를 바꿀 때(`handleFlowChange`)만 동작하므로 임시저장 문서를 불러올 때는 값이 지워지지 않는다. 같은 값을 다시 고르면 지우지 않는다.
+  - **제품 이름·조리법 목록 검증**: Step 과 같은 규칙. 목록(`FlowProductOptions`/`FlowProcessIdOptions[row.id]`)이 있으면 목록에 있는 값만
+    허용하고, 목록이 비어 있으면(마스터 DB 에 그 조합 정보가 없음) 직접 입력값을 그대로 인정한다.
+    - 칸에서 포커스가 빠질 때(`handleFlowOptionBlur`): 목록 밖 값이면 빨간 테두리 + 에러 토스트.
+    - "다음"(`validate(1)`): 목록 밖 값이면 해당 칸 표시 + 진행 차단. 메시지 `request.flow_partid_not_in_list` / `request.flow_process_id_not_in_list`.
+- **구현**: `RequestPage/index.tsx` `handleFlowChange` 수정 · `handleFlowOptionBlur` 신설 · `validate(1)` 검사 추가,
+  `components/Step1.tsx` 제품 이름·조리법 `AutocompleteInput` 에 `onBlur` 연결,
+  `constants.ts` `FLOW_LOCATION_DEPENDENT_FIELDS` / `FLOW_NOT_IN_LIST_MSG_KEY` 추가. 백엔드·저장 형식 변경 없음.
+- **i18n**: `request.flow_partid_not_in_list`, `request.flow_process_id_not_in_list` 를 ko/en 에 동시 추가.
+- **테스트**: `RequestPage/flowChartRowInput.test.tsx`(신규, 4건 — 에러 즉시 해제 / 위치 변경 초기화 / 목록 밖 값 blur·"다음" 차단 /
+  목록이 비면 직접 입력 인정). 수정 전 코드에서는 앞의 3건이 실패하는 것을 확인했다.
+  `jayerOayerRowRemove.test.tsx` 픽스처의 흐름도 값(`FLOW제품1`/`FLOW_R1`)이 모의 옵션 목록에 없어 새 검증에 막혔으므로 목록에 추가했다.
+  프론트 전체 27 suites / 414건 통과, `tsc --noEmit` 에러 0.
+- **수동 검증 시나리오**:
+  1. [`/request` → 새 의뢰서 → STEP1 상단 라인·조합법·제품 이름·조리법 선택 → 흐름도 "위치"만 선택 → "다음"] → [기대 결과: 제품 이름·조리법·Step 칸이 빨간 테두리.]
+     → [제품 이름 칸에 목록 값을 선택] → [기대 결과: "다음"을 다시 누르지 않아도 그 칸의 빨간 테두리가 바로 사라지고, 나머지 빈 칸은 그대로 빨갛다.]
+  2. [흐름도 한 행의 5칸을 모두 채운 뒤 "위치"를 다른 라인으로 변경] → [기대 결과: 제품 이름·조리법·Step 시작/끝이 모두 비워지고, 제품 이름 후보가 새 라인 기준으로 바뀐다.]
+  3. [흐름도 제품 이름 칸에 목록에 없는 값(예: `ZZZ`)을 입력하고 다른 칸 클릭] → [기대 결과: 그 칸 빨간 테두리 + "제품 이름은 목록에 있는 값만 선택할 수 있습니다." 토스트.]
+     → [그대로 "다음"] → [기대 결과: 다음 단계로 넘어가지 않는다.] 조리법 칸도 같은 방식으로 확인("조리법은 목록에 있는 값만…").
+  4. [마스터 DB 에 제품 데이터가 없는 라인을 위치로 선택(제품 이름 후보가 비어 있음) → 제품 이름·조리법에 직접 입력] → [기대 결과: 에러 없이 입력이 받아들여진다.]
+  5. [흐름도 값이 있는 임시저장 문서를 다시 열기] → [기대 결과: 흐름도 값이 지워지지 않고 그대로 보인다.]
+- ⚠️ **주의**: 이미 저장된 임시저장·반려 문서 중 흐름도 제품 이름·조리법이 현재 목록에 없는 값이면, 다시 열어 "다음"을 누를 때 이번 검증에 막힌다(의도된 동작).
+
+### 기능 추가 (2026-10-15 — 흐름도 Step: 목록에 stepseq 표시 + stepseq 순서대로 작성 검증)
+
+- **의도**: 흐름도를 stepseq 번호 순서대로 작성하게 한다. 같은 stepseq 계열(접두어, 예: `AAAA`)은 위 행 → 아래 행으로
+  반드시 오름차순이고 겹칠 수 없다. 계열이 다르면(`BBBB`) 서로 상관없다.
+- **API 변경 — `GET /api/form-options/layer-ids/?line=&process=`** (`views.py` `form_options_layer_ids`)
+  - 응답 `options` 가 layerid 문자열 목록 → **`{layerid, stepseq}` 목록**으로 바뀌었다. 중복 제거 단위는 (layerid, stepseq) —
+    같은 layerid 가 여러 stepseq 에 있으면 stepseq 마다 한 항목. 정렬은 각 항목 stepseq 의 자연 정렬(`_natural_key`).
+  - 이전의 `Min(stepseq)`(CharField 문자열 비교) 정렬은 없어졌다. 이 API 의 소비처는 흐름도 Step 하나뿐이다.
+  - 프론트 타입 `LayerStepOption` (`types/index.ts`), `formOptionsAPI.getLayerIds` 반환형 변경.
+- **저장 형식**: 흐름도 행(`FlowChartRow`)에 `step_from_seq` / `step_to_seq`(선택 필드) 추가 — `additional_notes.detail.flow_chart` JSON 안이라
+  DB 마이그레이션 없음. `step_from`/`step_to` 는 여전히 layerid 이므로 제목·상세보기·이력·내보내기 표시는 그대로다.
+- **화면**: Step 드롭다운에 `L01  AAAA1234` 처럼 layerid 옆에 stepseq 가 작게(회색) 보인다. 검색어는 layerid·stepseq 둘 다에서 찾는다.
+  공용 `AutocompleteInput` 에 선택 prop `optionHints`/`selectedHint`/`onSelectIndex` 를 추가했다(다른 화면은 미사용 → 영향 없음).
+  - 목록에서 고르면 layerid + 그 항목의 stepseq 를 함께 저장(`handleFlowStepSelect`). 직접 타이핑하면 그 칸의 stepseq 를 비운다.
+  - 칸을 벗어날 때(`handleFlowStepBlur`): layerid 가 목록에 한 번만 있으면 stepseq 를 자동으로 채운다. 여러 번 있는데 어느 것인지 모르면
+    `request.flow_step_ambiguous` 오류. 목록에 없으면 기존 `flow_step_not_in_list`. 목록이 비어 있으면(마스터 DB 정보 없음) 직접 입력 인정.
+- **순서 검증** (`helpers.ts` `findFlowStepOrderErrors`, 칸을 벗어날 때 + "다음" `validate(1)`):
+  - stepseq 를 "접두어 + 끝 숫자"로 나눈다(`splitStepseq`: `AAAA1234` → `AAAA`/1234). 끝이 숫자가 아니면 비교하지 않는다.
+  - 한 행: 시작·끝 접두어가 같아야 하고(`flow_step_prefix_mismatch`), 시작 ≤ 끝(`flow_step_reversed`). 오류는 Step 끝 칸에 표시.
+  - 행 사이(화면 순서): 접두어가 같은 위쪽 행이 하나라도 있으면 아래 행 시작 > 그 행 끝이어야 한다 — 같은 번호(경계)·구간 안·더 앞 번호 모두 불가
+    (`flow_step_overlap`, `{{row}}`행 `{{range}}` 보간). 위치·조리법은 비교 범위에 넣지 않는다(접두어만 비교).
+    예) 1행 `AAAA1234~AAAA1238` → 2행 `AAAA1237`/`AAAA1238`/`AAAA1230` 시작 ✕, `AAAA1239`·`BBBB1237` 시작 ○.
+  - stepseq 가 없는 칸(목록이 비어 직접 입력, 또는 이 기능 이전 문서에서 layerid 가 여러 stepseq 라 정할 수 없는 칸)은 순서 비교에서 빠진다.
+    이전 문서의 칸은 layerid 가 목록에 한 번만 있으면 검증 때 그 stepseq 로 판정한다.
+- **i18n**: `request.flow_step_ambiguous` / `flow_step_prefix_mismatch` / `flow_step_reversed` / `flow_step_overlap` 를 ko/en 동시 추가.
+- **테스트**: `helpers.test.ts` stepseq 검증 8건, `RequestPage/flowChartStepseq.test.tsx`(신규 4건 — 목록 표시, 같은 layerid 중 고른 stepseq 저장,
+  AAAA 겹침 차단·BBBB 허용, 모호한 직접 입력 차단), `backend/api/tests.py` `FormOptionsLayerIdsStepseqTest`(2건).
+  `getLayerIds` 를 문자열로 모의하던 `draftRoundTrip`/`jayerOayerRowRemove`/`flowChartRowInput` 테스트는 새 응답 형태로 바꿨다.
+  프론트 28 suites / 426건, 백엔드 `manage.py test api` 695건 통과, `tsc --noEmit` 에러 0.
+- **수동 검증 시나리오** (`/request` → 새 의뢰서 → STEP1, 상단 라인·조합법·제품 이름·조리법을 먼저 선택):
+  1. [흐름도 1행 위치·제품 이름·조리법 입력 → Step 시작 칸 클릭] → [기대 결과: 목록 각 줄에 Layer ID 와 그 옆 작은 회색 stepseq 가 보이고 stepseq 순서로 정렬돼 있다.
+     같은 Layer ID 가 두 stepseq 에 있으면 두 줄로 따로 보인다.]
+  2. [Step 시작 칸에 stepseq 일부(예: `1236`)를 입력] → [기대 결과: stepseq 로도 목록이 걸러진다.]
+  3. [1행 Step 을 `AAAA1234 ~ AAAA1238` 에 해당하는 Layer 로 선택 → "+ 행 추가" → 2행도 같은 위치·제품·조리법 → 2행 Step 시작을 `AAAA1237`(또는 `AAAA1238`) Layer 로 선택하고 다른 칸 클릭]
+     → [기대 결과: 2행 Step 시작 칸 빨간 테두리 + "1행 Step 구간(AAAA1234~AAAA1238)과 겹칩니다…" 토스트. "다음" 을 눌러도 넘어가지 않는다.]
+  4. [2행 Step 시작을 `BBBB` 계열 Layer 로 바꿈] → [기대 결과: 오류 없이 통과.] [`AAAA1239` 이후 Layer 로 바꿔도 통과.]
+  5. [한 행에서 Step 끝을 시작보다 앞선 stepseq 로 선택] → [기대 결과: Step 끝 칸 빨간 테두리 + "Step 끝의 stepseq가 시작보다 앞섭니다…".]
+  6. [Step 칸에 여러 stepseq 에 있는 Layer ID 를 목록 선택 없이 직접 타이핑 후 다른 칸 클릭] → [기대 결과: "같은 Layer가 여러 stepseq에 있습니다…" 오류.]
+  7. [임시저장 → 다시 열기 → Step 칸 클릭] → [기대 결과: 저장한 Layer 와 같은 stepseq 줄이 강조(굵게)돼 있다.]
+- ⚠️ **주의**:
+  - 같은 위치·조리법이라도 접두어만 다르면 겹침을 보지 않는다(요청대로). 접두어 판정은 "끝 숫자 앞 전체 문자열" 이므로 실제 stepseq 형식이
+    `AAAA1234` 꼴이 아니면(예: 숫자만) 접두어가 빈 문자열로 같은 계열로 취급된다.
+  - 이 기능 이전 문서는 흐름도 행에 stepseq 필드가 없다. 재상신 시 Step 칸을 건드려 stepseq 가 채워지면 Layer 를 안 바꿔도
+    결재 상세 '변경 감지'(`computeDetailDiff`, flow_chart JSON 전체 비교)가 흐름도를 변경으로 표시할 수 있다 — 사용자 확인(2026-10-15): 문제없음, 그대로 둔다.
+
+### 버그 수정 (2026-10-15 — 단계 이동 버튼 '이전/다음' 하드코딩 제거 + 흐름도 '+ + 행 추가' 중복 표시)
+
+- **증상**: ① 의뢰서 하단 단계 이동 버튼이 `← 이전` / `다음 →` 로 하드코딩돼 영어 화면에서도 한국어로 보였다(규칙 G 위반).
+  ② 흐름도 행 추가 버튼이 JSX 의 `+ ` 와 i18n 값(`request.flow_add_row` = "+ 행 추가")의 `+ ` 가 겹쳐 "+ + 행 추가" 로 보였다.
+- **수정**: ① `RequestPage/index.tsx` 하단 버튼을 기존 키 `common.prev` / `common.next` 로 교체(화살표 기호는 유지 — 💾·📋 와 같은 장식 기호).
+  ② `components/Step1.tsx` 에서 앞의 `+ ` 를 제거(i18n 값은 그대로). 새 i18n 키 없음.
+- **테스트**: '다음' 글자로 버튼을 찾으면서 언어를 지정하지 않던 테스트 4개(`draftRoundTrip`/`salesAgreerAutoClear`/
+  `requesterResubmitHistory`/`pauseResumeDisabledRows`)가 jsdom 기본 언어(en)에서 "Next" 로 렌더돼 실패 → 다른 테스트처럼
+  `i18n.changeLanguage('ko')` 를 추가했다. 프론트 28 suites / 426건 통과, `tsc --noEmit` 에러 0.
+  main 병합(2026-10-15) 때 main 에서 새로 들어온 `overlayRefDocRequired.test.tsx` 도 같은 이유(`'다음 →'` 로 버튼 검색)로 실패해
+  같은 방식으로 고쳤다. 병합 후 프론트 30 suites / 447건, 백엔드 699건 통과.
+- **수동 검증 시나리오**:
+  1. [`/request` → STEP1 하단] → [기대 결과: `다음 →` 버튼. STEP2 이상에서는 왼쪽에 `← 이전`.]
+  2. [상단 언어를 English 로 변경] → [기대 결과: `Next →` / `← Previous` 로 바뀐다.]
+  3. [STEP1 흐름도 영역 하단 버튼] → [기대 결과: "+ 행 추가"(영어: "+ Add Row") — `+` 가 한 번만 보인다.]
+
+### 버그 수정 (2026-10-15 — MAP 정보 'M-shot 삭제' 안내 문구 하드코딩 제거)
+
+- **증상**: MAP 정보 단계(`StepMap.tsx`)에서 M-shot 변경을 '삭제'로 고르면 나오는 빨간 안내 "특정 제품 삭제 필요" 가 하드코딩돼
+  영어 화면에서도 한국어로 보였다(규칙 G 위반).
+- **수정**: 새 키 `request.mshot_delete_desc`(ko "특정 제품 삭제 필요" / en "Specific product deletion required")를 ko/en 에 동시 추가하고
+  `t()` 로 교체. 문구는 결재 상세(`PagedDetailView`)의 기존 `approval.mshot_delete_desc` 와 같다. 동작 변경 없음.
+- **수동 검증 시나리오**: [`/request` → MAP 정보 단계 → M-shot 변경에서 '삭제' 선택] → [기대 결과: 빨간 "특정 제품 삭제 필요"]
+  → [언어를 English 로 변경] → [기대 결과: "Specific product deletion required"].
+
+### 기능 추가 (2026-10-16 — 흐름도 Step: 선택 후에도 stepseq 표시 + 결재 상세·이력 확인·상세 내보내기에 stepseq 표기)
+
+- **의도**: 같은 Layer ID 가 여러 stepseq 에 있을 수 있으므로, Step 을 고른 뒤에도 어느 stepseq 의 Layer 인지 바로 보이게 한다.
+- **작성 화면**(`components/Step1.tsx`): Step 시작·끝 입력칸 안 오른쪽에 저장된 stepseq(`step_from_seq`/`step_to_seq`)를 작은 회색 글씨로 표시.
+  칸 최소 폭 80px → 150px. 직접 타이핑하면 stepseq 가 비워지므로 표시도 사라지고, 목록 선택·blur 자동 판정으로 다시 채워지면 다시 보인다.
+  - 공용 `AutocompleteInput` 에 선택 prop `valueHint` 추가 — 넘긴 경우에만 입력칸을 `position: relative` 래퍼로 감싸 오른쪽에 겹쳐 그린다
+    (클릭 통과, 글자 겹침 방지용 오른쪽 여백). 넘기지 않는 다른 사용처는 DOM 구조가 그대로다.
+- **결재 상세 흐름도 표**(`PagedDetailView.tsx` `FlowStepCell`): `L01 AAAA1234 ~ L03 AAAA1238` — 각 Layer 뒤에 stepseq 를 작은 회색 글씨(`.flow-step-seq`)로.
+- **흐름도 이력 확인 창 / 상세 내보내기(엑셀)**: 칸이 글자만 받으므로 `L01 (AAAA1234) ~ L03 (AAAA1238)` 처럼 일반 글씨로 표기
+  (`helpers.ts` `formatFlowStepText` 공용).
+- stepseq 가 없는 행(이 기능 이전 문서·목록 없이 직접 입력)은 어디서나 종전처럼 Layer ID 만 보인다. **의뢰서 제목은 변경 없음**(Layer ID 만).
+- ⚠️ 이력 확인 창은 회차별 표의 글자를 비교하므로, 예전 회차(stepseq 없음) 대비 이번 회차(stepseq 있음) 행은 Layer 가 같아도 바뀐 것으로
+  강조된다 — 2026-10-15 에 '변경됨으로 표시돼도 문제없다'고 정한 것과 같은 경우다.
+- **테스트**: `components/PagedDetailView.flowStepseq.test.tsx`(신규 2건 — 표의 작은 회색 stepseq / 이력 확인 창 일반 글씨),
+  `helpers.test.ts` `formatFlowStepText` 2건, `flowChartStepseq.test.tsx` 1건(선택 후 입력칸 표시·타이핑 시 사라짐).
+  프론트 31 suites / 452건 통과, `tsc --noEmit` 에러 0. 실제 화면(개발 서버 + 임시 sqlite DB)에서 작성 화면·결재 상세 표·이력 확인 창을
+  스크린샷으로 확인했고, 결재 상세 `export` 로 받은 엑셀에 `L01 (AAAA1234) ~ L03 (AAAA1238)` 이 들어 있는 것을 확인했다.
+- **수동 검증 시나리오**:
+  1. [`/request` → STEP1 → 흐름도 Step 시작 칸에서 `L01  AAAA1240` 선택] → [기대 결과: 칸에 `L01` 과 오른쪽 끝에 작은 회색 `AAAA1240`.]
+  2. [같은 칸에서 글자를 지우거나 고침] → [기대 결과: 회색 stepseq 가 사라진다. 다시 목록에서 고르면 나타난다.]
+  3. [stepseq 를 고른 흐름도가 있는 문서를 결재 현황에서 열기 → '의뢰 상세' 탭 흐름도 표] → [기대 결과: Step 칸이 `L01 AAAA1234 ~ L03 AAAA1238`(stepseq 작은 회색).]
+  4. [흐름도 카드의 '이력 확인'] → [기대 결과: Step 칸이 `L01 (AAAA1234) ~ L03 (AAAA1238)`.]
+  5. [상세 화면 `export`] → [기대 결과: 엑셀 흐름도 표 Step 열에 4번과 같은 글자.]
 
 ## 5. 검증 방법
 ```bash
