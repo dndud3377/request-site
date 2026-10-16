@@ -14,6 +14,9 @@ import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
 import { MERGE_PP_PREFIXES } from './constants';
 
+// claude 수정 (2026-10-16): main 병합으로 '다음'/'이전' 버튼 문구가 i18n 이 되어, jsdom 기본 언어(en)가 아닌 한국어로 고정한다.
+beforeAll(async () => { await i18n.changeLanguage('ko'); });
+
 // jsdom 에는 scrollIntoView 구현이 없다 — 검증 실패 시 앱이 오류 셀로 스크롤하는 동작을 no-op 처리.
 window.HTMLElement.prototype.scrollIntoView = () => {};
 
