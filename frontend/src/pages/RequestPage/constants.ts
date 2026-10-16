@@ -40,6 +40,14 @@ export const MERGE_MANUAL_FIELDS = ['process_id', 'sp', 'sd', 'pp'] as const;
 // 수기로 추가한 행의 기본 구분 — 사용자가 드롭다운으로 O-ayer 로 바꿀 수 있다.
 export const MERGE_DEFAULT_TABLE: MergeTable = 'J';
 
+// claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — PP 값이 어떤 단어로 시작하는지로 구분(J/O)을 정한다.
+// 앞뒤 공백은 무시하고 대소문자는 구분하지 않는다(예: 'TEST1_TTT' → J, 'test2_eee' → O).
+// 접두사는 여러 개 둘 수 있으며 운영 값으로 직접 관리한다. 양쪽에 모두 걸리면 J 를 먼저 본다.
+export const MERGE_PP_PREFIXES: Record<MergeTable, readonly string[]> = {
+  J: ['TEST1'],
+  O: ['TEST2'],
+};
+
 // 'Only MAP' 요청 목적: StepMap 정보까지만 작성하고 결재 경로도 단축된다(backend RequestDocument.ONLY_MAP_PURPOSE 와 동일 값).
 export const ONLY_MAP_PURPOSE = 'Only MAP';
 
