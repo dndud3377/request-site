@@ -2,7 +2,7 @@ import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ValidationSystemValu
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
-  MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, INTER_AUTO_YES_PROCESS_PREFIXES,
+  MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -761,6 +761,132 @@ export const validateMergePairs = (pairs: MergePair[]): MergePairsValidation => 
     });
   });
   return { incompleteCells, blankRows, validCount };
+};
+
+// claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — PP 접두사로 구분(J/O)을 정하고, 입력값을 현재 J/O 표와 대조한다.
+// '있음' 모드는 Merge 가 구분을 정하므로 이 판정·검증을 쓰지 않는다.
+
+/** PP 가 어느 구분의 접두사로 시작하는가 — 앞뒤 공백 무시·대소문자 무시. 어디에도 해당하지 않으면 null. */
+export const mergeTableFromPp = (pp: string | undefined): MergeTable | null => {
+  const value = baNorm(pp).toUpperCase();
+  if (value === '') return null;
+  const hit = (Object.keys(MERGE_PP_PREFIXES) as MergeTable[]).find((table) =>
+    MERGE_PP_PREFIXES[table].some((prefix) => {
+      const p = prefix.trim().toUpperCase();
+      return p !== '' && value.startsWith(p);
+    })
+  );
+  return hit ?? null;
+};
+
+/** 구분 판정 오류 — 'unknown': 접두사에 해당하지 않는 PP / 'mismatch': 변경전·변경후 PP 의 구분이 서로 다름 */
+export type ManualPairTableError = 'unknown' | 'mismatch';
+
+export interface ManualPairTableResolution {
+  table: MergeTable | null;
+  error: ManualPairTableError | null;
+}
+
+/**
+ * 한 행의 구분 — 값이 있는 쪽의 PP 로 정한다. PP 가 빈 쪽은 판정에서 뺀다(빈 칸은 4칸 필수 검사가 잡는다).
+ * 판정할 PP 가 하나도 없으면 오류 없이 null 이다.
+ */
+export const resolveManualPairTable = (
+  pair: Pick<MergePair, 'before' | 'after'>
+): ManualPairTableResolution => {
+  const pps = [pair.before, pair.after]
+    .filter((info): info is MergeRowInfo => !isMergeSideEmpty(info))
+    .map((info) => baNorm(info.pp))
+    .filter((pp) => pp !== '');
+  if (pps.length === 0) return { table: null, error: null };
+  const tables = pps.map(mergeTableFromPp);
+  if (tables.some((table) => table === null)) return { table: null, error: 'unknown' };
+  if (new Set(tables).size > 1) return { table: null, error: 'mismatch' };
+  return { table: tables[0], error: null };
+};
+
+/** PP 로 구분이 정해지면 행의 구분을 그 값으로 맞춘다(판정할 수 없으면 기존 값을 그대로 둔다). */
+export const syncManualPairTable = (pair: MergePair): MergePair => {
+  const { table } = resolveManualPairTable(pair);
+  return table && table !== pair.table ? { ...pair, table } : pair;
+};
+
+/** J/O-layer 표와 대조할 때 필요한 최소 형태 */
+export interface ManualLayerKeyRow {
+  process_id: string;
+  sp: string;
+  sd: string;
+  pp: string;
+}
+
+/** 같은 데이터 판정 키 — process_id·SP·SD·PP 4값, 앞뒤 공백·대소문자 무시. st·요청 기준은 보지 않는다. */
+const manualLayerKey = (r: ManualLayerKeyRow): string =>
+  MERGE_MANUAL_FIELDS.map((f) => baNorm(r[f]).toUpperCase()).join('||');
+
+/** 4칸이 모두 채워진 쪽만 J/O 표와 대조한다(미입력은 4칸 필수 검사가 잡는다). */
+const isMergeSideComplete = (info: MergeRowInfo | null): info is MergeRowInfo =>
+  !!info && MERGE_MANUAL_FIELDS.every((f) => baNorm(info[f]) !== '');
+
+export interface ManualPairLayerCheck {
+  /** PP 접두사로 정한 구분 — 판정할 PP 가 없거나 오류면 null */
+  table: MergeTable | null;
+  tableError: ManualPairTableError | null;
+  /** 구분 판정 오류를 표시할 PP 칸 */
+  ppError: { before: boolean; after: boolean };
+  /** 변경전 값이 지금 J/O 표에 이미 있다(변경전은 없어야 한다) */
+  beforeExists: boolean;
+  /** 변경후 값이 지금 J/O 표에 없다(변경후는 있어야 한다) */
+  afterMissing: boolean;
+}
+
+export interface ManualPairsLayerCheck {
+  byPair: Record<string, ManualPairLayerCheck>;
+  unknownRows: number;
+  mismatchRows: number;
+  beforeExistsRows: number;
+  afterMissingRows: number;
+}
+
+/**
+ * '없음' 모드 변경전/변경후 표를 현재 J/O-layer 표와 대조한다(검증만 — J/O 값은 바꾸지 않는다).
+ * 행의 구분은 PP 접두사로 정하고, 그 구분의 표에서
+ * 변경전 값은 **없어야** 하고 변경후 값은 **있어야** 한다.
+ * '있다'는 4값이 같은 행이 하나라도 있다는 뜻이다(st·요청 기준·layer삭제 여부 무관).
+ */
+export const checkManualPairsAgainstLayers = (
+  pairs: MergePair[],
+  jayerRows: ManualLayerKeyRow[],
+  oayerRows: ManualLayerKeyRow[]
+): ManualPairsLayerCheck => {
+  const keys: Record<MergeTable, Set<string>> = {
+    J: new Set((jayerRows ?? []).map(manualLayerKey)),
+    O: new Set((oayerRows ?? []).map(manualLayerKey)),
+  };
+  const result: ManualPairsLayerCheck = {
+    byPair: {}, unknownRows: 0, mismatchRows: 0, beforeExistsRows: 0, afterMissingRows: 0,
+  };
+  (pairs ?? []).forEach((pair) => {
+    const { table, error } = resolveManualPairTable(pair);
+    const ppBad = (info: MergeRowInfo | null): boolean =>
+      !isMergeSideEmpty(info) && baNorm(info!.pp) !== ''
+      && (error === 'mismatch' || (error === 'unknown' && mergeTableFromPp(info!.pp) === null));
+    const beforeExists = table !== null && isMergeSideComplete(pair.before)
+      && keys[table].has(manualLayerKey(pair.before));
+    const afterMissing = table !== null && isMergeSideComplete(pair.after)
+      && !keys[table].has(manualLayerKey(pair.after));
+    result.byPair[pair.id] = {
+      table,
+      tableError: error,
+      ppError: { before: ppBad(pair.before), after: ppBad(pair.after) },
+      beforeExists,
+      afterMissing,
+    };
+    if (error === 'unknown') result.unknownRows += 1;
+    if (error === 'mismatch') result.mismatchRows += 1;
+    if (beforeExists) result.beforeExistsRows += 1;
+    if (afterMissing) result.afterMissingRows += 1;
+  });
+  return result;
 };
 
 /** J/O-layer 행에 사용자가 입력한 값이 하나라도 있는가 — 수동 행 삭제 시 확인 모달 여부 판단용 */

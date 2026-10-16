@@ -16,7 +16,7 @@ import i18n from '../../i18n';
 
 // claude 수정 (2026-10-15): '다음'/'이전' 버튼 문구가 i18n 으로 바뀌어, jsdom 기본 언어(en)가 아닌 한국어로 고정한다.
 beforeAll(async () => { await i18n.changeLanguage('ko'); });
-import { OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY } from './constants';
+import { OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY, MERGE_PP_PREFIXES } from './constants';
 
 const mockState: { doc: unknown } = { doc: null };
 
@@ -71,6 +71,23 @@ const VALID_PAIR = {
   kind: 'changed',
 };
 
+// claude 수정 (2026-10-16): '없음' 모드는 PP 접두사로 구분을 정하고 현재 J/O 표와 대조한다 —
+// 변경전은 J 표에 없는 값, 변경후는 J 표에 있는 값이어야 통과한다.
+const NONE_VALID_PAIR = {
+  id: 'pair_manual_1',
+  table: 'J',
+  beforeId: null,
+  before: { process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: `${MERGE_PP_PREFIXES.J[0]}_OLD`, layerid: '' },
+  afterId: null,
+  after: { process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: `${MERGE_PP_PREFIXES.J[0]}_NEW`, layerid: '' },
+  kind: 'changed',
+};
+
+const NONE_JAYER_ROWS = [{
+  id: 'j1', updated: '', sortOrder: 1, process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: `${MERGE_PP_PREFIXES.J[0]}_NEW`,
+  layerid: 'L02', st: 'O', new_or_copy: '신규', product_name: '', step: '', item_id: '', loaded: true,
+}];
+
 const baseDetail = {
   request_purpose: '신규',
   other_purpose: [] as string[],
@@ -87,7 +104,7 @@ const baseDetail = {
   post_approvers: [],
 };
 
-function makeDoc(detailOverride: Record<string, unknown>) {
+function makeDoc(detailOverride: Record<string, unknown>, jayerRows: unknown[] = []) {
   return {
     id: 1,
     status: 'draft',
@@ -100,7 +117,7 @@ function makeDoc(detailOverride: Record<string, unknown>) {
     reference_materials: '',
     additional_notes: JSON.stringify({
       detail: { ...baseDetail, ...detailOverride },
-      jayerRows: [],
+      jayerRows,
       oayerRows: [],
       bbRows: [],
       history: [],
@@ -130,8 +147,8 @@ const onStep1 = () =>
 const errorToasts = () =>
   Array.from(document.querySelectorAll('.toast-error')).map((el) => el.textContent ?? '').join('\n');
 
-async function renderStep1(detailOverride: Record<string, unknown>) {
-  mockState.doc = makeDoc(detailOverride);
+async function renderStep1(detailOverride: Record<string, unknown>, jayerRows: unknown[] = []) {
+  mockState.doc = makeDoc(detailOverride, jayerRows);
   render(
     <MemoryRouter initialEntries={[{ pathname: '/request', state: { editDocId: 1 } }]}>
       <ToastProvider>
@@ -214,8 +231,8 @@ describe("'Overlay만 변경' — 참조 요청서 필수", () => {
     await renderStep1({
       other_purpose: [OTHER_PURPOSE_OVERLAY],
       merge_ref_doc_id: null, merge_ref_mode: 'none', merge_applied: true,
-      merge_pairs: [VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
-    });
+      merge_pairs: [NONE_VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
+    }, NONE_JAYER_ROWS);
     await clickNext();
     expect(onStep1()).toBe(false);
   });
@@ -245,8 +262,8 @@ describe("'Overlay만 변경' — 참조 요청서 필수", () => {
     await renderStep1({
       other_purpose: [OTHER_PURPOSE_OVERLAY],
       merge_ref_doc_id: null, merge_ref_mode: 'none', merge_applied: true,
-      merge_pairs: [VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
-    });
+      merge_pairs: [NONE_VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
+    }, NONE_JAYER_ROWS);
     await click(modeRadio('ref'));
     await click(buttonWith(i18n.t('common.cancel')));
     expect(modeRadio('none').checked).toBe(true);

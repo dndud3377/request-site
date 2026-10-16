@@ -117,6 +117,7 @@ import {
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
+  syncManualPairTable, checkManualPairsAgainstLayers,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
@@ -1245,11 +1246,11 @@ export default function RequestPage(): React.ReactElement {
             merge_applied: parsed.detail.merge_applied ?? (parsed.detail.merge_ref_doc_id != null),
             // BEFORE/AFTER 비교 도입 전 문서도 같은 이유로 빈 배열 백필.
             // 행 id 도입 전 문서는 편집 키가 없으므로 로드 시 백필한다.
-            merge_pairs: (parsed.detail.merge_pairs ?? []).map((pair: MergePair) => ({
-              ...pair,
-              id: pair.id ?? genId(),
-              kind: deriveMergeKind(pair.before, pair.after),
-            })),
+            // claude 수정 (2026-10-16): '없음' 모드는 구분을 PP 접두사로 맞춰 불러온다(상세보기·내보내기가 저장된 구분을 쓰므로).
+            merge_pairs: (parsed.detail.merge_pairs ?? []).map((pair: MergePair) => {
+              const loaded: MergePair = { ...pair, id: pair.id ?? genId(), kind: deriveMergeKind(pair.before, pair.after) };
+              return parsed.detail.merge_ref_mode === 'none' ? syncManualPairTable(loaded) : loaded;
+            }),
             merge_unmatched_before: parsed.detail.merge_unmatched_before ?? [],
             merge_unmatched_after: parsed.detail.merge_unmatched_after ?? [],
             // ADI CD 변경 도입 전 문서는 값이 없다 → 같은 이유로 빈 값 백필.
@@ -1839,6 +1840,14 @@ export default function RequestPage(): React.ReactElement {
   const disabledSteps = useMemo(
     () => Array.from({ length: STEP_LAST - lastStep }, (_, i) => lastStep + 1 + i),
     [lastStep],
+  );
+  // claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — 변경전/변경후 표를 지금 J/O 표와 대조한 결과(셀 오류 표시용).
+  // '다음'·상신 관문(addBaGateError)도 같은 함수로 다시 계산한다.
+  const baManualCheck = useMemo(
+    () => (detail.merge_ref_mode === 'none' && detail.merge_applied
+      ? checkManualPairsAgainstLayers(detail.merge_pairs ?? [], jayerRows, oayerRows)
+      : null),
+    [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, jayerRows, oayerRows],
   );
   // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
   const isMapReasonMode = isMapDeleteEditType(detail.map_type);
@@ -3259,7 +3268,10 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== 변경전/변경후 표 직접 편집 =====
 
-  /** 한 행의 한쪽을 통째로 바꾼다 — 판정(kind)은 항상 미등록 여부에서 다시 계산한다. */
+  /**
+   * 한 행의 한쪽을 통째로 바꾼다 — 판정(kind)은 항상 미등록 여부에서 다시 계산한다.
+   * claude 수정 (2026-10-16): '없음' 모드는 구분(J/O)을 PP 접두사로 다시 정한다.
+   */
   const updateMergePair = (
     pairId: string,
     side: BaSide,
@@ -3270,7 +3282,8 @@ export default function RequestPage(): React.ReactElement {
       merge_pairs: prev.merge_pairs.map((pair) => {
         if (pair.id !== pairId) return pair;
         const updated = { ...pair, [side]: next(pair[side]) } as MergePair;
-        return { ...updated, kind: deriveMergeKind(updated.before, updated.after) };
+        const withKind = { ...updated, kind: deriveMergeKind(updated.before, updated.after) };
+        return prev.merge_ref_mode === 'none' ? syncManualPairTable(withKind) : withKind;
       }),
     }));
   };
@@ -3288,10 +3301,17 @@ export default function RequestPage(): React.ReactElement {
    * 엑셀 붙여넣기 — 붙여넣은 행부터 아래로 채운다. 열은 항상 process_id 부터 고정이며,
    * 행이 모자라면 새 행을 만든다(반대쪽은 미등록이라 양쪽 행 수가 함께 늘어난다).
    */
+  // claude 수정 (2026-10-16): '없음' 모드는 붙여넣은 행의 구분(J/O)도 PP 접두사로 다시 정한다.
   const handleBaPasteRaw = (pairId: string, side: BaSide, raw: string) => {
     const grid = parseMergePasteRows(raw);
     if (grid.length === 0) return;
-    setDetail((prev) => ({ ...prev, merge_pairs: applyMergePaste(prev.merge_pairs, pairId, side, grid) }));
+    setDetail((prev) => {
+      const pasted = applyMergePaste(prev.merge_pairs, pairId, side, grid);
+      return {
+        ...prev,
+        merge_pairs: prev.merge_ref_mode === 'none' ? pasted.map(syncManualPairTable) : pasted,
+      };
+    });
   };
 
   const handleBaTableChange = (pairId: string, table: MergeTable) => {
@@ -4011,6 +4031,23 @@ export default function RequestPage(): React.ReactElement {
       const msg = t('request.ba_gate_manual_blank_row', { count: blankRows });
       newErrors['merge_pairs_blank'] = msg;
       errorMessages.push(msg);
+    }
+    // claude 수정 (2026-10-16): '없음' 모드는 입력값을 현재 J/O 표와 대조한다 — 구분은 PP 접두사로 정하고,
+    // 변경전 값은 그 표에 없어야, 변경후 값은 그 표에 있어야 한다('있음' 모드는 Merge 가 정하므로 검사하지 않는다).
+    if (detail.merge_ref_mode === 'none') {
+      const check = checkManualPairsAgainstLayers(detail.merge_pairs ?? [], jayerRows, oayerRows);
+      const manualErrors: [string, number, string][] = [
+        ['merge_pairs_pp_unknown', check.unknownRows, 'request.ba_gate_none_pp_unknown'],
+        ['merge_pairs_pp_mismatch', check.mismatchRows, 'request.ba_gate_none_pp_mismatch'],
+        ['merge_pairs_before_exists', check.beforeExistsRows, 'request.ba_gate_none_before_exists'],
+        ['merge_pairs_after_missing', check.afterMissingRows, 'request.ba_gate_none_after_missing'],
+      ];
+      manualErrors.forEach(([key, count, msgKey]) => {
+        if (count === 0) return;
+        const msg = t(msgKey as never, { count }) as string;
+        newErrors[key] = msg;
+        errorMessages.push(msg);
+      });
     }
   };
 
@@ -5047,6 +5084,7 @@ export default function RequestPage(): React.ReactElement {
           jayerRows={jayerRows}
           oayerRows={oayerRows}
           baSameCount={baSameCount}
+          baManualCheck={baManualCheck}
           baSelBefore={baSelBefore}
           baSelAfter={baSelAfter}
           handleBaSelect={handleBaSelect}

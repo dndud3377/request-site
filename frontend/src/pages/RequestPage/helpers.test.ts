@@ -8,9 +8,10 @@ import {
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
+  mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
 } from './helpers';
-import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
+import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES } from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
 
 // claude 수정 (2026-10-15): STEP2 X/Y·예외 구역 값 숫자 판정 테스트 추가
@@ -1172,6 +1173,153 @@ describe('applyMergePaste', () => {
   });
 });
 
+// claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — PP 접두사 구분 판정 + 현재 J/O 표 대조(검증만)
+// 접두사는 운영 값으로 바뀌므로 테스트는 상수의 첫 값을 그대로 쓴다.
+const J_PREFIX = MERGE_PP_PREFIXES.J[0];
+const O_PREFIX = MERGE_PP_PREFIXES.O[0];
+
+describe('mergeTableFromPp', () => {
+  it('J/O 접두사로 시작하면 그 구분을 돌려준다', () => {
+    expect(mergeTableFromPp(`${J_PREFIX}_TTT`)).toBe('J');
+    expect(mergeTableFromPp(`${O_PREFIX}_EEE`)).toBe('O');
+  });
+
+  it('앞뒤 공백·대소문자를 무시한다', () => {
+    expect(mergeTableFromPp(`  ${J_PREFIX.toLowerCase()}_ttt  `)).toBe('J');
+    expect(mergeTableFromPp(O_PREFIX.toLowerCase())).toBe('O');
+  });
+
+  it('접두사로 시작하지 않으면(중간에 포함돼도) null', () => {
+    expect(mergeTableFromPp('PP01')).toBeNull();
+    expect(mergeTableFromPp(`X_${J_PREFIX}`)).toBeNull();
+  });
+
+  it('빈 값은 null', () => {
+    expect(mergeTableFromPp('')).toBeNull();
+    expect(mergeTableFromPp('   ')).toBeNull();
+    expect(mergeTableFromPp(undefined)).toBeNull();
+  });
+});
+
+describe('resolveManualPairTable / syncManualPairTable', () => {
+  const full = (pp: string, over: Partial<MergeRowInfo> = {}) =>
+    info({ process_id: 'P1', sp: 'SP1', sd: 'SD1', pp, ...over });
+
+  it('한쪽만 값이 있으면 그 PP 로 정한다', () => {
+    expect(resolveManualPairTable(pair({ before: null, after: full(`${O_PREFIX}_A`) }))).toEqual({ table: 'O', error: null });
+    expect(resolveManualPairTable(pair({ before: full(`${J_PREFIX}_A`), after: null }))).toEqual({ table: 'J', error: null });
+  });
+
+  it('양쪽 PP 가 같은 구분이면 그 구분', () => {
+    expect(resolveManualPairTable(pair({ before: full(`${J_PREFIX}_A`), after: full(`${J_PREFIX}_B`) })))
+      .toEqual({ table: 'J', error: null });
+  });
+
+  it('양쪽 PP 의 구분이 다르면 mismatch', () => {
+    expect(resolveManualPairTable(pair({ before: full(`${J_PREFIX}_A`), after: full(`${O_PREFIX}_B`) })))
+      .toEqual({ table: null, error: 'mismatch' });
+  });
+
+  it('접두사에 해당하지 않는 PP 가 있으면 unknown', () => {
+    expect(resolveManualPairTable(pair({ before: full('PP01'), after: null }))).toEqual({ table: null, error: 'unknown' });
+    expect(resolveManualPairTable(pair({ before: full(`${J_PREFIX}_A`), after: full('PP02') })))
+      .toEqual({ table: null, error: 'unknown' });
+  });
+
+  it('판정할 PP 가 없으면(양쪽 미등록·PP 빈 칸) 오류 없이 null', () => {
+    expect(resolveManualPairTable(pair())).toEqual({ table: null, error: null });
+    expect(resolveManualPairTable(pair({ before: info({ process_id: 'P1' }) }))).toEqual({ table: null, error: null });
+  });
+
+  it('syncManualPairTable 은 판정된 구분으로 맞추고, 판정할 수 없으면 기존 값을 둔다', () => {
+    const toO = pair({ table: 'J', after: full(`${O_PREFIX}_A`) });
+    expect(syncManualPairTable(toO).table).toBe('O');
+    const unknown = pair({ table: 'O', after: full('PP01') });
+    expect(syncManualPairTable(unknown)).toBe(unknown);
+    const same = pair({ table: 'J', after: full(`${J_PREFIX}_A`) });
+    expect(syncManualPairTable(same)).toBe(same);
+  });
+});
+
+describe('checkManualPairsAgainstLayers', () => {
+  const row = (pp: string, over: Record<string, string> = {}) => ({ process_id: 'P1', sp: 'SP1', sd: 'SD1', pp, ...over });
+  const side = (pp: string, over: Partial<MergeRowInfo> = {}) =>
+    info({ process_id: 'P1', sp: 'SP1', sd: 'SD1', pp, ...over });
+  const J_IN = `${J_PREFIX}_IN`;     // J 표에 있는 값
+  const J_OUT = `${J_PREFIX}_OUT`;   // J 표에 없는 값
+  const O_IN = `${O_PREFIX}_IN`;
+  const jayer = [row(J_IN)];
+  const oayer = [row(O_IN)];
+
+  it('변경전은 표에 없고 변경후는 표에 있으면 오류가 없다', () => {
+    const p = pair({ id: 'p1', before: side(J_OUT), after: side(J_IN) });
+    const res = checkManualPairsAgainstLayers([p], jayer, oayer);
+    expect(res.byPair.p1).toEqual({
+      table: 'J', tableError: null, ppError: { before: false, after: false }, beforeExists: false, afterMissing: false,
+    });
+    expect([res.unknownRows, res.mismatchRows, res.beforeExistsRows, res.afterMissingRows]).toEqual([0, 0, 0, 0]);
+  });
+
+  it('변경전 값이 표에 있으면 beforeExists', () => {
+    const p = pair({ id: 'p1', before: side(J_IN), after: null });
+    const res = checkManualPairsAgainstLayers([p], jayer, oayer);
+    expect(res.byPair.p1.beforeExists).toBe(true);
+    expect(res.beforeExistsRows).toBe(1);
+  });
+
+  it('변경후 값이 표에 없으면 afterMissing', () => {
+    const p = pair({ id: 'p1', before: null, after: side(J_OUT) });
+    const res = checkManualPairsAgainstLayers([p], jayer, oayer);
+    expect(res.byPair.p1.afterMissing).toBe(true);
+    expect(res.afterMissingRows).toBe(1);
+  });
+
+  it('PP 구분에 해당하는 표하고만 대조한다(O 값은 O 표에서 찾는다)', () => {
+    const p = pair({ id: 'p1', before: null, after: side(O_IN) });
+    expect(checkManualPairsAgainstLayers([p], jayer, oayer).byPair.p1.afterMissing).toBe(false);
+    // 같은 값이 J 표에만 있으면 O 표에 없는 것이다
+    expect(checkManualPairsAgainstLayers([p], [row(O_IN)], []).byPair.p1.afterMissing).toBe(true);
+  });
+
+  it('4값(process_id·SP·SD·PP)이 모두 같아야 같은 데이터다', () => {
+    const p = pair({ id: 'p1', before: null, after: side(J_IN, { sd: 'SD9' }) });
+    expect(checkManualPairsAgainstLayers([p], jayer, oayer).byPair.p1.afterMissing).toBe(true);
+  });
+
+  it('앞뒤 공백·대소문자를 무시하고 비교한다', () => {
+    const p = pair({ id: 'p1', before: null, after: side(` ${J_IN.toLowerCase()} `, { process_id: 'p1 ', sp: 'sp1' }) });
+    expect(checkManualPairsAgainstLayers([p], jayer, oayer).byPair.p1.afterMissing).toBe(false);
+  });
+
+  it('st·요청 기준과 무관하게 같은 데이터가 있으면 있다(layer삭제·st=X 행 포함)', () => {
+    const rows = [{ ...row(J_IN), st: 'X', new_or_copy: NOC_LAYER_DELETE }];
+    const before = pair({ id: 'b', before: side(J_IN), after: null });
+    const after = pair({ id: 'a', before: null, after: side(J_IN) });
+    const res = checkManualPairsAgainstLayers([before, after], rows, []);
+    expect(res.byPair.b.beforeExists).toBe(true);
+    expect(res.byPair.a.afterMissing).toBe(false);
+  });
+
+  it('구분을 판정할 수 없으면 존재 대조는 하지 않고 PP 칸에 오류를 표시한다', () => {
+    const unknown = pair({ id: 'u', before: side(J_IN), after: side('PP01') });
+    const mismatch = pair({ id: 'm', before: side(J_OUT), after: side(O_IN) });
+    const res = checkManualPairsAgainstLayers([unknown, mismatch], jayer, oayer);
+    expect(res.byPair.u).toMatchObject({ tableError: 'unknown', ppError: { before: false, after: true }, beforeExists: false, afterMissing: false });
+    expect(res.byPair.m).toMatchObject({ tableError: 'mismatch', ppError: { before: true, after: true }, beforeExists: false, afterMissing: false });
+    expect([res.unknownRows, res.mismatchRows]).toEqual([1, 1]);
+  });
+
+  it('4칸이 다 차지 않은 쪽은 대조하지 않는다(4칸 필수 검사가 잡는다)', () => {
+    const p = pair({ id: 'p1', before: null, after: side(J_OUT, { sd: '' }) });
+    expect(checkManualPairsAgainstLayers([p], jayer, oayer).byPair.p1.afterMissing).toBe(false);
+  });
+
+  it('J/O 표가 비어 있으면 변경후 값은 모두 없는 것이다', () => {
+    const p = pair({ id: 'p1', before: side(J_OUT), after: side(J_IN) });
+    const res = checkManualPairsAgainstLayers([p], [], []);
+    expect(res.byPair.p1).toMatchObject({ beforeExists: false, afterMissing: true });
+  });
+});
 
 // claude 수정 (2026-10-15): 흐름도 Step stepseq 순서 검증 헬퍼.
 describe('흐름도 Step stepseq 검증', () => {

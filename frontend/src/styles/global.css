@@ -5230,6 +5230,8 @@ select.form-control option {
 .ba-badge-added { background: var(--success-light); color: var(--success); border-color: var(--success); }
 .ba-badge-deleted { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
 .ba-badge-inactive { background: var(--bg-secondary); color: var(--text-muted); border-color: var(--border); }
+/* claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — PP 접두사로 구분을 판정할 수 없을 때(판정 불가·구분 불일치) */
+.ba-badge-error { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
 .ba-group-before { background: var(--danger-light) !important; text-align: center !important; }
 .ba-group-after { background: var(--success-light) !important; text-align: center !important; }
 .ba-cell-changed { color: var(--warning); font-weight: 700; }
