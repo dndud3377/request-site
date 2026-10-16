@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DetailFormState, MergePair, MergeRowInfo, MergeTable, MergeUnmatchedRow } from '../../../types';
 import { MERGE_UNREGISTERED_ID, MERGE_MANUAL_FIELDS } from '../constants';
-import { deriveMergeKind, isMergeSideEmpty, isPairAfterInactive, PairAfterLookupRow } from '../helpers';
+import { deriveMergeKind, isMergeSideEmpty, isPairAfterInactive, ManualPairsLayerCheck, PairAfterLookupRow } from '../helpers';
 
 /**
  * 참조 요청서 Merge 의 변경전/변경후 비교 패널.
@@ -28,6 +28,8 @@ export interface BeforeAfterPanelProps {
   sameCount: number;
   /** 참조 요청서 없이 '없음' 으로 확정한 경우 — BEFORE/AFTER 매핑 표를 감춘다 */
   manualOnly: boolean;
+  /** '없음' 모드 — 행별 구분(PP 접두사) 판정과 현재 J/O 표 대조 결과. '있음' 모드는 null */
+  manualCheck: ManualPairsLayerCheck | null;
   selBefore: string | null;
   selAfter: string | null;
   onSelect: (side: BaSide, id: string) => void;
@@ -49,6 +51,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   oayerRows,
   sameCount,
   manualOnly,
+  manualCheck,
   selBefore,
   selAfter,
   onSelect,
@@ -158,15 +161,37 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
     </table>
   );
 
+  // claude 수정 (2026-10-16): '없음' 모드의 구분은 PP 접두사로 자동 판정한다 — 드롭다운 대신 판정 결과(또는 오류)를 보여준다.
+  const renderManualTableCell = (pair: MergePair) => {
+    const check = manualCheck?.byPair[pair.id];
+    if (check?.tableError) {
+      return (
+        <span className="ba-badge ba-badge-error" title={t(`request.ba_cell_pp_${check.tableError}`)}>
+          {t(`request.ba_table_${check.tableError}`)}
+        </span>
+      );
+    }
+    return check?.table ? tableBadge(check.table) : <span className="ba-hint">—</span>;
+  };
+
   /**
    * 확정 표의 한쪽 5칸.
    * 미등록(값이 하나도 없음)이고 아직 편집을 열지 않았으면 5칸을 합쳐 '미등록' 한 줄로 표시하고,
    * 클릭하면 입력 칸으로 바뀐다. layerid 는 수기 입력 대상이 아니라 항상 읽기 전용이다.
+   * claude 수정 (2026-10-16): '없음' 모드는 J/O 표 대조 결과(변경전 존재·변경후 부재·PP 구분 오류)를 셀 오류로 표시한다.
    */
   const renderPairCells = (pair: MergePair, side: BaSide) => {
     const info = pair[side];
     const other = pair[side === 'before' ? 'after' : 'before'];
     const empty = isMergeSideEmpty(info);
+    const check = manualCheck?.byPair[pair.id];
+    const layerError = side === 'before' ? !!check?.beforeExists : !!check?.afterMissing;
+    const layerErrorTitle = layerError && check?.table
+      ? t(side === 'before' ? 'request.ba_cell_before_exists' : 'request.ba_cell_after_missing', {
+        table: t(check.table === 'J' ? 'request.jayer' : 'request.oayer'),
+      })
+      : undefined;
+    const ppError = !!check?.ppError[side];
     if (empty && !editing.has(editKey(pair.id, side))) {
       return (
         <td
@@ -187,10 +212,13 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
           const value = info?.[f] ?? '';
           const missing = !empty && value.trim() === '';
           const changed = compare && value.trim() !== (other?.[f] ?? '').trim();
+          const cellPpError = f === 'pp' && ppError;
+          const checkError = layerError || cellPpError;
           return (
             <td key={f}>
               <input
-                className={`ba-cell-input${missing ? ' ba-cell-input-error' : ''}${changed ? ' ba-cell-changed' : ''}`}
+                className={`ba-cell-input${missing || checkError ? ' ba-cell-input-error' : ''}${checkError ? ' field-error-target' : ''}${changed ? ' ba-cell-changed' : ''}`}
+                title={cellPpError && check?.tableError ? t(`request.ba_cell_pp_${check.tableError}`) : layerErrorTitle}
                 value={value}
                 autoFocus={empty && f === 'process_id'}
                 aria-label={t(f === 'process_id' ? 'request.process_id' : `request.col_${f}`)}
@@ -261,6 +289,8 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
 
       {/* ② 변경전 / 변경후 — 확정된 짝. 모든 셀을 직접 편집할 수 있다. */}
       <div className="ba-section-title">{t('request.ba_result_title')}</div>
+      {/* claude 수정 (2026-10-16): '없음' 모드 — 구분 자동 판정·J/O 표 대조 규칙 안내 */}
+      {manualOnly && <div className="ba-note">{t('request.ba_none_check_hint')}</div>}
       <div className="ba-pane">
         <div className="ba-result-scroll">
           <table className="ba-table ba-result-table">
@@ -289,15 +319,17 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
               {pairs.map((pair, idx) => (
                 <tr key={pair.id}>
                   <td>
-                    <select
-                      className="ba-table-select"
-                      value={pair.table}
-                      aria-label={t('request.ba_table_division')}
-                      onChange={(e) => onTableChange(pair.id, e.target.value as MergeTable)}
-                    >
-                      <option value="J">{t('request.jayer')}</option>
-                      <option value="O">{t('request.oayer')}</option>
-                    </select>
+                    {manualOnly ? renderManualTableCell(pair) : (
+                      <select
+                        className="ba-table-select"
+                        value={pair.table}
+                        aria-label={t('request.ba_table_division')}
+                        onChange={(e) => onTableChange(pair.id, e.target.value as MergeTable)}
+                      >
+                        <option value="J">{t('request.jayer')}</option>
+                        <option value="O">{t('request.oayer')}</option>
+                      </select>
+                    )}
                   </td>
                   {renderPairCells(pair, 'before')}
                   {renderPairCells(pair, 'after')}
