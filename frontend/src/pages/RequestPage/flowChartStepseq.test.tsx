@@ -101,7 +101,7 @@ async function pickStep(input: HTMLInputElement, layerid: string, stepseq: strin
   await act(async () => { fireEvent.focus(input); });
   await act(async () => { fireEvent.change(input, { target: { value: '' } }); });
   await flushEffects(3);
-  const items = Array.from((input.parentElement as HTMLElement).querySelectorAll('li'));
+  const items = Array.from((input.closest('div[style*="flex"]') as HTMLElement).querySelectorAll('li'));
   const li = items.find((x) => x.textContent === `${layerid}${stepseq}`);
   if (!li) throw new Error(`항목 ${layerid}/${stepseq} 이 없다 — ${items.map((x) => x.textContent).join(', ')}`);
   await act(async () => { fireEvent.mouseDown(li); });
@@ -147,7 +147,7 @@ describe('STEP1 흐름도 Step — stepseq', () => {
     await fillRowKeys(row);
     await act(async () => { fireEvent.focus(row.stepFrom); });
     await flushEffects(3);
-    const items = Array.from((row.stepFrom.parentElement as HTMLElement).querySelectorAll('li'));
+    const items = Array.from((row.stepFrom.closest('div[style*="flex"]') as HTMLElement).querySelectorAll('li'));
     expect(items.map((li) => [li.childNodes[0].textContent, li.querySelector('span')?.textContent])).toEqual([
       ['L01', 'AAAA1234'], ['L02', 'AAAA1236'], ['L09', 'BBBB1237'], ['L03', 'AAAA1238'], ['L10', 'BBBB1239'], ['L01', 'AAAA1240'],
     ]);
@@ -161,6 +161,20 @@ describe('STEP1 흐름도 Step — stepseq', () => {
     await clickButton(container, '💾');
     const notes = JSON.parse((mockState.captured as { additional_notes: string }).additional_notes);
     expect(notes.detail.flow_chart[0]).toMatchObject({ step_from: 'L01', step_from_seq: 'AAAA1240' });
+  });
+
+  // claude 수정 (2026-10-16): 선택한 뒤에도 입력칸 안 오른쪽에 stepseq 가 보이고, 직접 타이핑하면 사라진다.
+  it('선택한 뒤 Step 입력칸 안에 stepseq 가 보이고, 직접 타이핑하면 사라진다', async () => {
+    const { container } = await renderPage();
+    await fillRowKeys(flowRows(container)[0]);
+    await pickStep(flowRows(container)[0].stepFrom, 'L01', 'AAAA1240');
+    const hintOf = (input: HTMLInputElement) =>
+      (input.parentElement as HTMLElement).querySelector('[data-testid="autocomplete-value-hint"]')?.textContent ?? null;
+    expect(flowRows(container)[0].stepFrom.value).toBe('L01');
+    expect(hintOf(flowRows(container)[0].stepFrom)).toBe('AAAA1240');
+    expect(hintOf(flowRows(container)[0].stepTo)).toBeNull();
+    await type(flowRows(container)[0].stepFrom, 'L0');
+    expect(hintOf(flowRows(container)[0].stepFrom)).toBeNull();
   });
 
   it('같은 접두어: 2행이 1행 구간(AAAA1234~AAAA1238) 안에서 시작하면 막고, 다른 접두어(BBBB1237)는 허용한다', async () => {

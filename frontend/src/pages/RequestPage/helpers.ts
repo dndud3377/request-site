@@ -165,6 +165,16 @@ export const findFlowStepOrderErrors = (rows: readonly FlowStepSeqRow[]): FlowSt
   return errors;
 };
 
+// claude 수정 (2026-10-16): 흐름도 Step 을 글자로만 보여주는 곳(결재 상세 이력 확인 창·상세 내보내기)에서 stepseq 를 함께 표기한다.
+/** 'L01 (AAAA1234) ~ L03 (AAAA1238)' — stepseq 가 없는 칸은 layerid 만, 한쪽만 있으면 그 칸만. */
+export const formatFlowStepText = (row: Pick<FlowChartRow, 'step_from' | 'step_to' | 'step_from_seq' | 'step_to_seq'>): string => {
+  const part = (layer: string | undefined, seq: string | undefined): string =>
+    layer ? (seq ? `${layer} (${seq})` : layer) : '';
+  const from = part(row.step_from, row.step_from_seq);
+  const to = part(row.step_to, row.step_to_seq);
+  return from && to ? `${from} ~ ${to}` : (from || to);
+};
+
 /** 숫자 전용 입력 필터: 부호(-, 맨 앞 1개만)·소수점(1개만) 외 문자는 제거 (MAP X/Y, 예외구역 값 등) */
 export const sanitizeSignedDecimal = (raw: string): string => {
   let v = raw.replace(/[^0-9.\-]/g, '');

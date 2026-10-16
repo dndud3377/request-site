@@ -8,7 +8,7 @@ import {
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
-  resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors,
+  resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
@@ -1230,5 +1230,19 @@ describe('흐름도 Step stepseq 검증', () => {
 
   it('stepseq 가 없는 칸(직접 입력)은 건너뛴다', () => {
     expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['', '']))).toEqual([]);
+  });
+});
+
+// claude 수정 (2026-10-16): 흐름도 Step 글자 표기(이력 확인 창·상세 내보내기).
+describe('formatFlowStepText', () => {
+  it('stepseq 가 있으면 괄호로 붙이고, 없으면 layerid 만', () => {
+    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: 'AAAA1238' }))
+      .toBe('L01 (AAAA1234) ~ L03 (AAAA1238)');
+    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03' })).toBe('L01 ~ L03');
+    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: '' })).toBe('L01 (AAAA1234) ~ L03');
+  });
+  it('한쪽만 있으면 그 칸만, 둘 다 없으면 빈 문자열', () => {
+    expect(formatFlowStepText({ step_from: 'L01', step_to: '', step_from_seq: 'AAAA1234' })).toBe('L01 (AAAA1234)');
+    expect(formatFlowStepText({ step_from: '', step_to: '' })).toBe('');
   });
 });
