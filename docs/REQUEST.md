@@ -288,6 +288,56 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-10-16 — 참조 요청서 '없음': 변경전/변경후 표를 J/O 표와 대조 + PP 접두사로 구분 자동 판정)
+
+- **의도(사용자)**: '참조 요청서 없음'으로 직접 입력한 변경전/변경후 값이 실제 J-ayer/O-ayer 표와 맞는지 검증한다.
+  방향은 **표 → J/O 단방향, 검증만**(J/O 의 st·요청 기준 등 값은 바꾸지 않는다). 지금까지 '없음' 모드 표는 J/O 와 전혀 연동되지 않는 기록용이었다.
+- **적용 범위**: `detail.merge_ref_mode === 'none'`(확정 후)에만 적용한다. 참조 요청서 블록을 쓰는 모든 상세 목적(Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경) 공통.
+  **'있음' 모드는 변경 없음**(사용자 결정: 구분은 Merge 가 정하므로 분리) — 구분 드롭다운·검사 모두 기존 그대로.
+- **구분 자동 판정**(`constants.ts` `MERGE_PP_PREFIXES`, `helpers.ts` `mergeTableFromPp`·`resolveManualPairTable`):
+  - PP 값이 어떤 단어로 **시작하는지**로 정한다 — 앞뒤 공백 무시, 대소문자 무시. 예: `TEST1_TTT` → J, `test2_eee` → O.
+  - 접두사는 `MERGE_PP_PREFIXES = { J: [...], O: [...] }` 에 **여러 개** 둘 수 있으며 운영 값은 사용자가 직접 넣는다(현재 `TEST1`/`TEST2` 임시값).
+    한 PP 가 J·O 접두사에 모두 걸리면 J 를 먼저 본다.
+  - 행의 구분은 값이 있는 쪽 PP 로 정한다. PP 가 접두사에 해당하지 않으면 **판정 불가**, 변경전·변경후 PP 가 서로 다른 구분이면 **구분 불일치** — 둘 다 오류.
+  - '없음' 모드의 구분 칸은 드롭다운 대신 판정 결과 배지(J-ayer / O-ayer / 판정 불가 / 구분 불일치)를 보여준다. PP 를 입력·붙여넣기하면 즉시 다시 판정되고,
+    판정된 값은 `pair.table` 에 저장된다(`syncManualPairTable` — 셀 편집·붙여넣기·문서 불러오기 시). 상세보기·내보내기는 저장된 구분을 그대로 쓴다.
+- **J/O 표 대조**(`helpers.ts` `checkManualPairsAgainstLayers`):
+  - 같은 데이터 = **process_id·SP·SD·PP 4값이 같은 행**(앞뒤 공백·대소문자 무시). st·요청 기준(layer삭제 포함)은 보지 않는다(사용자 결정: 데이터가 있으면 있는 것).
+  - 판정된 구분의 표(J → J-ayer 표, O → O-ayer 표)에서 **변경전 값은 없어야** 하고 **변경후 값은 있어야** 한다.
+  - 구분 판정 오류가 있는 행과 4칸이 다 차지 않은 쪽은 대조하지 않는다(각각 구분 오류·기존 4칸 필수 검사가 잡는다).
+- **관문**(`index.tsx` `addBaGateError` — STEP1 '다음'·최종 상신 공통, 사용자 결정: '다음'을 막는 오류):
+  `request.ba_gate_none_pp_unknown` / `ba_gate_none_pp_mismatch` / `ba_gate_none_before_exists` / `ba_gate_none_after_missing`(각 `{{count}}`행).
+  화면에서는 입력 즉시 해당 칸에 빨간 테두리(`.ba-cell-input-error`)와 사유 툴팁을 표시하고, '다음'을 누르면 첫 오류 칸으로 스크롤한다(`field-error-target`).
+  J/O 표는 STEP3·4 에서 바뀔 수 있으므로 최종 상신 때 다시 검사한다. 임시저장은 막지 않는다.
+- **알려진 한계·주의**:
+  - 백엔드 검증은 없다(API 직접 호출은 막지 않음).
+  - 이번 변경 전에 '없음'으로 저장한 임시저장·반려 문서도 다시 STEP1 을 넘어갈 때 새 규칙에 걸린다. 특히 접두사가 임시값인 동안에는 실제 PP 가 모두 '판정 불가'가 된다.
+  - J/O 표가 비어 있으면(JOB FILE/OVL 조회 결과 없음 등) 변경후 값은 모두 '표에 없음'이 된다.
+  - 결재 흐름·백엔드·마이그레이션 변경 없음(케이스 러너 대상 아님).
+- **i18n**(ko/en 동시 11개): `request.ba_none_check_hint`, `ba_table_unknown`·`ba_table_mismatch`, `ba_cell_pp_unknown`·`ba_cell_pp_mismatch`,
+  `ba_cell_before_exists`·`ba_cell_after_missing`(`{{table}}`), `ba_gate_none_pp_unknown`·`ba_gate_none_pp_mismatch`·`ba_gate_none_before_exists`·`ba_gate_none_after_missing`.
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 29 suites·461 tests 통과.
+  - `helpers.test.ts` 21건 추가(접두사 판정·구분 판정·J/O 대조).
+  - 신규 `noneModeLayerCheck.test.tsx` 10건 — 구현을 되돌린 상태에서는 이 중 6건이 실패함을 `git stash` 로 확인.
+  - `overlayRefDocRequired.test.tsx` 의 '없음' 확정 문서 2건은 PP `PP01/PP02`·빈 J/O 표 픽스처라 새 규칙에서 막히므로,
+    접두사 PP + 변경후 값이 J 표에 있는 픽스처로 바꿨다(검증 의도 — '없음' 확정·유효 행이면 통과 — 는 그대로).
+- **수동 시나리오**(접두사는 `MERGE_PP_PREFIXES` 의 현재 값 — 아래는 `TEST1`=J, `TEST2`=O 기준):
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → 상세 목적 **Layer 추가/삭제**('있음' 미Merge 상태는 선택사항이라 통과)
+     → '다음'으로 STEP2 필수 입력 후 STEP3(J-ayer) 이동 → '+ 행 추가' → process_id·SP·SD·PP 에 `PROC1 / SP1 / SD1 / TEST1_NEW` 입력 → '이전'으로 STEP1 복귀.
+     (실제 JOB FILE 행의 PP 가 이미 접두사로 시작하면 이 행 추가 대신 그 값을 쓰면 된다.)
+  2. ['참조 요청서 없음' 선택 → 모달 확인]
+     → [기대: 변경전/변경후 표 위에 "참조 요청서 없음: 구분(J-ayer/O-ayer)은 PP 값의 접두사로 자동 판정됩니다…" 안내, 구분 칸은 드롭다운 없이 `—`.]
+  3. [변경후 칸을 클릭해 `PROC1 / SP1 / SD1 / TEST1_NEW` 입력, 변경전 칸에 `PROC1 / SP1 / SD1 / TEST1_OLD` 입력]
+     → [기대: 구분 칸에 **J-ayer** 배지, 빨간 칸 없음 → '다음 →' 누르면 STEP2 로 이동.]
+  4. [변경후 PP 를 `TEST1_XXX`(J 표에 없는 값)로 바꿈] → [기대: 변경후 4칸이 빨간 테두리, 마우스를 올리면 "현재 J-ayer 표에 없는 값입니다…".
+     '다음 →' → STEP1 에 머물고 토스트 "변경후 값이 현재 J-ayer/O-ayer 표에 없는 행이 1건 있습니다…". 실패 신호: STEP2 로 넘어감.]
+  5. [변경후는 `TEST1_NEW` 로 되돌리고 변경전 PP 도 `TEST1_NEW` 로 바꿈(J 표에 있는 값)] → [기대: 변경전 4칸 빨간 테두리, '다음' 시 "변경전 값이 현재 … 이미 있는 행이 1건" 토스트.]
+  6. [변경전 PP 를 `TEST2_OLD` 로 바꿈] → [기대: 구분 칸이 빨간 **구분 불일치** 배지, 양쪽 PP 칸 빨간 테두리, '다음' 시 "구분이 서로 다른 행이 1건" 토스트.]
+  7. [변경전 PP 를 `ABC_OLD`(접두사 없음)로 바꿈] → [기대: 구분 칸 **판정 불가** 배지, 변경전 PP 칸만 빨간 테두리, '다음' 시 "판정할 수 없는 행이 1건" 토스트.]
+  8. [소문자 `test1_new` / 앞뒤 공백을 넣어 3번과 같은 값 입력] → [기대: 3번과 똑같이 J-ayer 로 판정되고 통과(대소문자·공백 무시).]
+  9. ['참조 요청서 있음'으로 참조 요청서를 Merge 한 문서] → [기대: 구분 칸은 기존 J-ayer/O-ayer 드롭다운 그대로, PP 값과 무관하게 이번 검사로 막히지 않는다.]
+  10. [언어 English 로 4 반복] → [기대: "… row(s) have after values that do not exist in the current J-ayer/O-ayer table …". 키 문자열이 보이면 실패.]
+
 ### 기능 변경 (2026-10-15 — 'Overlay만 변경': 참조 요청서 필수 + '없음'→'있음' 라디오 전환)
 
 - **의도(사용자)**: 'Overlay만 변경' 의뢰서가 변경전/변경후 정보 없이 상신돼 **무엇이 바뀌는지 누락**되는 것을 막는다.
