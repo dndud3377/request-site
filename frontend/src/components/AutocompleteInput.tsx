@@ -44,6 +44,9 @@ interface AutocompleteInputProps {
   selectedHint?: string;
   /** 항목을 고르면 options 기준 원래 인덱스로 알려준다(onChange 다음에 호출). */
   onSelectIndex?: (index: number) => void;
+  // claude 수정 (2026-10-16): 선택한 뒤에도 보조 글씨(흐름도 Step 의 stepseq)를 입력칸 안 오른쪽에 작게 보여준다.
+  /** 입력칸 안 오른쪽에 작은 회색 글씨로 겹쳐 표시할 값. 비어 있으면 표시하지 않는다. */
+  valueHint?: string;
 }
 
 export default function AutocompleteInput({
@@ -71,6 +74,7 @@ export default function AutocompleteInput({
   optionHints,
   selectedHint,
   onSelectIndex,
+  valueHint,
 }: AutocompleteInputProps): React.ReactElement {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -207,6 +211,26 @@ export default function AutocompleteInput({
     );
   };
 
+  // valueHint 를 넘긴 경우에만 입력칸을 감싸 오른쪽 보조 글씨를 겹쳐 그린다(다른 사용처의 DOM 구조는 그대로).
+  const inputEl = (
+    <input
+      type="text"
+      className={`form-control${error ? ' error' : ''}`}
+      value={value}
+      placeholder={placeholder ?? t('common.input_or_select')}
+      onChange={(e) => { if (!disabled) { onChange(uppercase ? e.target.value.toUpperCase() : e.target.value); setOpen(true); } }}
+      onFocus={() => { if (!disabled) setOpen(true); }}
+      onBlur={() => { if (onBlur) setTimeout(onBlur, 120); }}
+      autoComplete="off"
+      disabled={disabled}
+      maxLength={maxLength}
+      style={{
+        ...(disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle),
+        ...(valueHint ? { paddingRight: `calc(${valueHint.length * 0.5}em + 16px)` } : {}),
+      }}
+    />
+  );
+
   return (
     <div ref={containerRef} style={{ position: 'relative', ...style }}>
       {label && (
@@ -215,19 +239,19 @@ export default function AutocompleteInput({
           {required && <span style={{ color: 'var(--danger)', marginLeft: 2 }}>*</span>}
         </label>
       )}
-      <input
-        type="text"
-        className={`form-control${error ? ' error' : ''}`}
-        value={value}
-        placeholder={placeholder ?? t('common.input_or_select')}
-        onChange={(e) => { if (!disabled) { onChange(uppercase ? e.target.value.toUpperCase() : e.target.value); setOpen(true); } }}
-        onFocus={() => { if (!disabled) setOpen(true); }}
-        onBlur={() => { if (onBlur) setTimeout(onBlur, 120); }}
-        autoComplete="off"
-        disabled={disabled}
-        maxLength={maxLength}
-        style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle}
-      />
+      {valueHint === undefined ? inputEl : (
+        <div style={{ position: 'relative' }}>
+          {inputEl}
+          {valueHint && (
+            <span
+              data-testid="autocomplete-value-hint"
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.75em', color: 'var(--text-muted)', pointerEvents: 'none', whiteSpace: 'nowrap' }}
+            >
+              {valueHint}
+            </span>
+          )}
+        </div>
+      )}
       {error && !hideErrorMessage && <span className="form-error">{error}</span>}
       {renderDropdown()}
     </div>
