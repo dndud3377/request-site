@@ -496,7 +496,7 @@ const Step1: React.FC<Step1Props> = ({
                       />
                     </div>
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                      {/* claude 수정 (2026-10-15): Step 목록에 layerid 와 함께 stepseq 를 작게 표시하고, 고른 항목의 stepseq 를 저장 */}
+                      {/* claude 수정 (2026-10-16): Step 목록에 layerid 와 함께 stepseq 를 작게 표시하고 고른 항목의 stepseq 를 저장 + 선택 후에도 입력칸 안 오른쪽에 stepseq 표시(칸 폭 80→150px) */}
                       <label className="form-label">{t('request.flow_progress_layer')}</label>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                         <AutocompleteInput
@@ -507,8 +507,9 @@ const Step1: React.FC<Step1Props> = ({
                           optionHints={(FlowLayerIdOptions[row.id] || []).map((o) => o.stepseq)}
                           selectedHint={row.step_from_seq || ''}
                           onSelectIndex={(i) => handleFlowStepSelect(row.id, 'step_from', i)}
+                          valueHint={row.step_from_seq || ''}
                           placeholder={t('request.select_placeholder')}
-                          style={{ minWidth: '80px' }}
+                          style={{ minWidth: '150px' }}
                           error={errors[`flow_step_${row.id}_step_from`]}
                           hideErrorMessage
                           disabled={disableOptional}
@@ -522,8 +523,9 @@ const Step1: React.FC<Step1Props> = ({
                           optionHints={(FlowLayerIdOptions[row.id] || []).map((o) => o.stepseq)}
                           selectedHint={row.step_to_seq || ''}
                           onSelectIndex={(i) => handleFlowStepSelect(row.id, 'step_to', i)}
+                          valueHint={row.step_to_seq || ''}
                           placeholder={t('request.select_placeholder')}
-                          style={{ minWidth: '80px' }}
+                          style={{ minWidth: '150px' }}
                           error={errors[`flow_step_${row.id}_step_to`]}
                           hideErrorMessage
                           disabled={disableOptional}
