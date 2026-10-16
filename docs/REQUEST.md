@@ -321,6 +321,12 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - 신규 `noneModeLayerCheck.test.tsx` 10건 — 구현을 되돌린 상태에서는 이 중 6건이 실패함을 `git stash` 로 확인.
   - `overlayRefDocRequired.test.tsx` 의 '없음' 확정 문서 2건은 PP `PP01/PP02`·빈 J/O 표 픽스처라 새 규칙에서 막히므로,
     접두사 PP + 변경후 값이 J 표에 있는 픽스처로 바꿨다(검증 의도 — '없음' 확정·유효 행이면 통과 — 는 그대로).
+- **main 병합(2026-10-16, origin/main `748a4a8` — #611·#612 흐름도 stepseq·단계 이동 버튼 i18n)**:
+  - 충돌 2건은 양쪽이 같은 자리에 줄을 추가한 것이라 **양쪽 모두 유지**했다 —
+    `helpers.test.ts`(import 줄·파일 끝 테스트 묶음), `overlayRefDocRequired.test.tsx`(main 의 테스트 언어 ko 고정 + `MERGE_PP_PREFIXES` import).
+  - 충돌은 아니지만 main 에서 '다음 →' 버튼이 i18n(`common.next`)으로 바뀌어 jsdom 기본 언어(en)에서는 `Next →` 가 되므로,
+    `'다음 →'` 로 버튼을 찾는 `noneModeLayerCheck.test.tsx` 가 10건 중 7건 실패했다 → 다른 테스트와 같이 언어를 ko 로 고정.
+  - 병합 후 `tsc --noEmit` 에러 0 / 프론트 32 suites·482 tests 통과 / 백엔드 `manage.py test api` 699건 OK.
 - **수동 시나리오**(접두사는 `MERGE_PP_PREFIXES` 의 현재 값 — 아래는 `TEST1`=J, `TEST2`=O 기준):
   1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → 상세 목적 **Layer 추가/삭제**('있음' 미Merge 상태는 선택사항이라 통과)
      → '다음'으로 STEP2 필수 입력 후 STEP3(J-ayer) 이동 → '+ 행 추가' → process_id·SP·SD·PP 에 `PROC1 / SP1 / SD1 / TEST1_NEW` 입력 → '이전'으로 STEP1 복귀.
