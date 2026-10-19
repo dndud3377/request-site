@@ -551,6 +551,8 @@
     "ba_after": "AFTER — 현재 작성 중 요청서",
     "ba_before_col": "변경전 (참조 요청서)",
     "ba_after_col": "변경후 (현재 요청서)",
+    "ba_before_col_manual": "변경전",
+    "ba_after_col_manual": "변경후",
     "ba_table_division": "구분",
     "ba_kind": "판정",
     "ba_unregistered": "미등록",
