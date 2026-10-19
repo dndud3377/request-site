@@ -1400,6 +1400,26 @@ describe('흐름도 Step stepseq 검증', () => {
     expect(findFlowStepOrderErrors(rows(['AAAA1234A', 'AAAA1238A'], ['AAAA1239A', 'AAAA1240B']))).toEqual([]);
   });
 
+  // claude 수정 (2026-10-19): 숫자 자릿수가 서로 다르면 앞 4자리 → 나머지 자리 순으로 비교한다(AAAA1234 < AAAA12345 < AAAA1235).
+  it('splitStepseq: 숫자는 앞 4자리를 정수부, 5번째 자리부터를 소수부로 둔 값이다', () => {
+    expect(splitStepseq('AAAA12345')).toEqual({ prefix: 'AAAA', num: 1234.5 });
+    expect(splitStepseq('AAAA123405')).toEqual({ prefix: 'AAAA', num: 1234.05 });
+    expect(splitStepseq('AAAA12345B')).toEqual({ prefix: 'AAAA', num: 1234.5 });
+    expect(splitStepseq('AAAA1235')).toEqual({ prefix: 'AAAA', num: 1235 });
+  });
+
+  it('자릿수가 다른 stepseq: 앞 4자리를 먼저, 같으면 나머지 자리로 순서를 검증한다', () => {
+    // 한 행: 12345 → 1234.5 < 1235 이므로 통과, 반대 방향은 역순
+    expect(findFlowStepOrderErrors(rows(['AAAA12345', 'AAAA1235']))).toEqual([]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1235', 'AAAA12345']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'reversed' }]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA12345']))).toEqual([]);
+    // 행 사이: 1행 끝 1234 다음 12345(1234.5) 시작은 통과, 1행 끝 1235 다음 12345 시작은 앞 번호라 overlap
+    expect(findFlowStepOrderErrors(rows(['AAAA1230', 'AAAA1234'], ['AAAA12345', 'AAAA1240']))).toEqual([]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1230', 'AAAA1235'], ['AAAA12345', 'AAAA1240']))).toEqual([
+      { rowId: 'r2', field: 'step_from', kind: 'overlap', refRowNo: 1, refRange: 'AAAA1230~AAAA1235' },
+    ]);
+  });
+
   it('stepseq 가 없는 칸(직접 입력)은 건너뛴다', () => {
     expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['', '']))).toEqual([]);
   });

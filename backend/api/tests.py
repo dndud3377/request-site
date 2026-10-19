@@ -9945,7 +9945,7 @@ class OidcCallbackValidationTest(TestCase):
                 self.assertIn(name, '\n'.join(logs.output))
 
 
-# claude 수정 (2026-10-15): 흐름도 Step 목록 API 가 (layerid, stepseq) 쌍을 stepseq 자연 정렬로 돌려주는지 검증.
+# claude 수정 (2026-10-19): 흐름도 Step 목록 API 가 (layerid, stepseq) 쌍을 stepseq 순서로 돌려주는지 + 자릿수가 다른 숫자는 앞 4자리부터 비교하는지 검증.
 class FormOptionsLayerIdsStepseqTest(TestCase):
     """흐름도 Step 목록(/form-options/layer-ids/) — layerid 와 stepseq 를 함께, stepseq 순서로 준다."""
 
@@ -9969,6 +9969,18 @@ class FormOptionsLayerIdsStepseqTest(TestCase):
             {'layerid': 'L02', 'stepseq': 'AAAA10'},
             {'layerid': 'L01', 'stepseq': 'AAAA12'},
         ])
+
+    def test_digits_of_different_length_compare_leading_four_first(self):
+        from .models import PhotoStepS1
+        base = dict(processid='PRC2', descript='d', recipeid='r', areaname='a', eqptype='PMAINF')
+        # 1235 > 1234|5 > 1234|0 — 자릿수가 많아도 앞 4자리가 작으면 앞에 온다
+        PhotoStepS1.objects.create(stepseq='BBBB1235', layerid='L03', **base)
+        PhotoStepS1.objects.create(stepseq='BBBB12345', layerid='L02', **base)
+        PhotoStepS1.objects.create(stepseq='BBBB1234', layerid='L01', **base)
+        PhotoStepS1.objects.create(stepseq='BBBB12341', layerid='L04', **base)
+        res = self.client.get('/api/form-options/layer-ids/?line=line1&process=PRC2')
+        self.assertEqual([o['stepseq'] for o in json.loads(res.content)['options']],
+                         ['BBBB1234', 'BBBB12341', 'BBBB12345', 'BBBB1235'])
 
     def test_unknown_line_or_missing_process_is_empty(self):
         for url in ('/api/form-options/layer-ids/?line=line2&process=PRC1', '/api/form-options/layer-ids/?line=line1'):
