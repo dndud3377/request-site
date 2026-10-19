@@ -538,6 +538,7 @@
     "merge_reselect_no_snapshot": "This document has no pre-merge snapshot, so only the comparison tables and mappings will be cleared.",
     "merge_mode_ref": "With reference request",
     "merge_mode_none": "No reference request",
+    "merge_ref_locked": "Feature under revision",
     "merge_ref_none": "None",
     "merge_none_done": "This request is confirmed with no reference request. Press 'Reselect' to change it.",
     "merge_mode_change_title": "Change reference request mode",
