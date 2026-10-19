@@ -87,8 +87,10 @@ class DocPermFieldsMixin(serializers.Serializer):
         user = self._perm_user()
         return bool(user and doc_permissions.can_requester_resubmit(user, obj))
 
+    # claude 수정 (2026-10-19): 잠금 조건 변경(지난 회차 포함 R/고정 후결자 합의 이력)에 맞춰 설명 갱신
     def get_map_info_locked(self, obj):
-        """R(+RV) 합의 완료 후 중단(pause)된 문서면 True — 편집 화면이 MAP 정보를 read-only로 막는다.
+        """R(+RV) 또는 고정 후결자 합의 이력이 있는 문서면 True — 편집 화면이 MAP 정보와
+        요청 목적·라인~조리법을 read-only로 막는다(`doc_permissions.map_info_locked`).
 
         사용자와 무관한 문서 상태 판정이라 로그인 여부와 상관없이 계산한다.
         """

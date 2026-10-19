@@ -18,6 +18,7 @@ from . import auth_views
 from . import mailer
 from . import pop3_mail
 from . import design_rule_stats
+from . import doc_permissions
 from .management.commands import backfill_title_flow_step
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
@@ -8629,6 +8630,120 @@ class MapInfoLockedFieldCoverageTest(TestCase):
         doc = self._make_locked_doc(base)
         res = self._patch_detail(doc, base, {'customer_requirement': 'AFTER'})
         self.assertEqual(res.status_code, 200, res.content)
+
+
+# claude 수정 (2026-10-19): 지난 회차 R/고정 후결자 합의 이력 기준 잠금 + 요청 목적·라인~조리법 잠금 회귀 테스트
+@override_settings(POST_APPROVER_LOGINID='fixed_ra')
+class MapInfoLockAfterApprovalHistoryTest(TestCase):
+    """지난 회차를 포함해 R(+RV) 또는 고정 후결자 합의 이력이 있는 문서는 반려·중단 후 편집에서
+    MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 바꿀 수 없다(PATCH 400).
+
+    재현 상황(사용자 보고): 3회차에 R 합의 → 이후 회차에서 반려 → 재상신 편집 중 제품 이름을
+    지웠다 다시 입력 → MAP 목적이 NEW 에서 EXISTING 으로 바뀐 채 상신됐다.
+    """
+
+    BASE_DETAIL = {
+        'request_purpose': '신규', 'line': '라인1', 'process_selection': 'PROC_A',
+        'partid_selection': 'ABCD1234-X1', 'process_id': 'PID-1', 'map_type': 'NEW',
+        'customer_requirement': 'BEFORE',
+    }
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='mlh_a', mail='mlh_a@company.com', role='NONE')
+        self.r_user = UserProfile.objects.create(loginid='mlh_r', mail='mlh_r@company.com', role='TE_R')
+        self.fixed_ra = UserProfile.objects.create(loginid='fixed_ra', mail='fixed_ra@company.com', role='NONE')
+        self.extra_ra = UserProfile.objects.create(loginid='extra_ra', mail='extra_ra@company.com', role='NONE')
+
+    def _doc(self, status='rejected'):
+        payload = {'detail': dict(self.BASE_DETAIL), 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        return RequestDocument.objects.create(
+            title='잠금 이력 테스트', requester=self.author, requester_name='작성자',
+            requester_email='mlh_a@company.com', requester_department='개발팀',
+            product_name='ABCD1234-X1', status=status,
+            additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _r_approved_in_round3_then_rejected_in_round5(self, doc):
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=3, assignee=self.r_user)
+        ApprovalStep.objects.create(document=doc, agent='P', action='rejected', round=3)
+        ApprovalStep.objects.create(document=doc, agent='R', action='rejected', round=5, assignee=self.r_user)
+
+    def _patch(self, doc, overrides):
+        payload = {'detail': {**self.BASE_DETAIL, **overrides}, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        self.client.force_authenticate(user=self.author)
+        return self.client.patch(
+            f'/api/documents/{doc.id}/',
+            {'additional_notes': json.dumps(payload, ensure_ascii=False)},
+            format='json',
+        )
+
+    def test_map_type_change_rejected_after_r_approval_in_earlier_round(self):
+        """사용자 보고 상황 — 지난 회차(3회차) R 합의 후 반려된 문서에서 NEW→EXISTING 은 400."""
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        res = self._patch(doc, {'map_type': 'EXISTING'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_step1_lock_fields_rejected(self):
+        for field, value in (
+            ('request_purpose', 'Only MAP'), ('line', '라인2'), ('process_selection', 'PROC_B'),
+            ('partid_selection', 'EFGH5678-Y1'), ('process_id', 'PID-2'),
+        ):
+            doc = self._doc()
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            res = self._patch(doc, {field: value})
+            self.assertEqual(res.status_code, 400, f'field={field} {res.content}')
+
+    def test_unlocked_field_change_allowed(self):
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        res = self._patch(doc, {'customer_requirement': 'AFTER'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_locked_in_every_editable_status(self):
+        for status in ('rejected', 'under_review', 'submitted', 'pause'):
+            doc = self._doc(status=status)
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            self.assertTrue(doc_permissions.map_info_locked(doc), f'status={status}')
+        for status in ('draft', 'approved'):
+            doc = self._doc(status=status)
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            self.assertFalse(doc_permissions.map_info_locked(doc), f'status={status}')
+
+    def test_not_locked_without_r_approval(self):
+        """대조군 — R 이 반려만 했고 합의한 적이 없으면 잠그지 않는다."""
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='R', action='rejected', round=1, assignee=self.r_user)
+        res = self._patch(doc, {'map_type': 'EXISTING', 'partid_selection': 'EFGH5678-Y1'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_not_locked_when_rv_did_not_approve_in_same_round(self):
+        """R 은 합의했지만 같은 회차 RV 가 반려했다면 R 단계는 완료되지 않은 것이다."""
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=1, assignee=self.r_user)
+        ApprovalStep.objects.create(document=doc, agent='RV', action='rejected', round=1, assignee=self.r_user)
+        self.assertFalse(doc_permissions.map_info_locked(doc))
+
+    def test_locked_by_fixed_post_approver_approval(self):
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='RA', action='approved', round=1, assignee=self.fixed_ra)
+        self.assertTrue(doc_permissions.map_info_locked(doc))
+
+    def test_not_locked_by_extra_post_approver_approval(self):
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='RA', action='approved', round=1, assignee=self.extra_ra)
+        self.assertFalse(doc_permissions.map_info_locked(doc))
+
+    def test_detail_response_exposes_lock_flag(self):
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        self.client.force_authenticate(user=self.author)
+        res = self.client.get(f'/api/documents/{doc.id}/')
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        self.assertTrue(body['map_info_locked'])
 
 
 class FormOptionsLineProcessProductProcessIdTest(TestCase):

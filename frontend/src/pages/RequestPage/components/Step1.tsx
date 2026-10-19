@@ -17,6 +17,8 @@ interface Step1Props {
   bbEntriesRequired: boolean;
   /** '연구소 제품'을 고를 수 있는가 — 요청 목적이 Only MAP 일 때만 참 */
   isLabProductAllowed: boolean;
+  /** R/고정 후결자 합의 이력이 있어 요청 목적·라인·조합법·제품 이름·조리법을 바꿀 수 없는가 (map_info_locked) */
+  mapInfoLocked: boolean;
   lineOptions: string[];
   processOptions: string[];
   productOptions: string[];
@@ -97,6 +99,7 @@ const Step1: React.FC<Step1Props> = ({
   isOnlyMap,
   bbEntriesRequired,
   isLabProductAllowed,
+  mapInfoLocked,
   lineOptions,
   processOptions,
   productOptions,
@@ -211,6 +214,12 @@ const Step1: React.FC<Step1Props> = ({
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.line')} / {t('request.process_selection')}</span>
           <GuideBadge fk="step1_line_process" tk={t('guide.feat.step1_line_process' as never)} />
         </div>
+        {/* claude 수정 (2026-10-19): R/고정 후결자 합의 이력이 있으면 라인~조리법·요청 목적을 잠근다(MAP 정보 잠금과 같은 조건) */}
+        {mapInfoLocked && (
+          <p className="form-hint full-width" style={{ color: 'var(--text-muted)', margin: 0 }}>
+            🔒 {t('request.step1_locked_notice')}
+          </p>
+        )}
         <div className="full-width flex-row" data-tour="line-fields">
           <FormSelect
             label={t('request.line')}
@@ -222,6 +231,7 @@ const Step1: React.FC<Step1Props> = ({
             required
             error={errors.line}
             className="flex-col"
+            disabled={mapInfoLocked}
           />
           <AutocompleteInput
             label={t('request.process_selection')}
@@ -230,6 +240,7 @@ const Step1: React.FC<Step1Props> = ({
             onChange={(v) => handleDetailSet('process_selection', v)}
             required
             error={errors.process_selection}
+            disabled={mapInfoLocked}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
@@ -241,7 +252,7 @@ const Step1: React.FC<Step1Props> = ({
             required
             error={errors.partid_selection}
             hideErrorMessage={!!detail.partid_selection.trim()}
-            disabled={productOptionsBroad.length === 0}
+            disabled={mapInfoLocked || productOptionsBroad.length === 0}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
@@ -252,6 +263,7 @@ const Step1: React.FC<Step1Props> = ({
             placeholder={t('request.select_placeholder')}
             required
             error={errors.process_id}
+            disabled={mapInfoLocked}
             style={{ flex: 1 }}
           />
         </div>
@@ -275,8 +287,8 @@ const Step1: React.FC<Step1Props> = ({
                 key={val}
                 type="button"
                 className={`map-type-btn${detail.request_purpose === val ? ' active' : ''}`}
-                onClick={() => { if (canSelectPurpose) handleRequestPurposeSelect(val); }}
-                disabled={!canSelectPurpose}
+                onClick={() => { if (canSelectPurpose && !mapInfoLocked) handleRequestPurposeSelect(val); }}
+                disabled={!canSelectPurpose || mapInfoLocked}
               >
                 {val}
               </button>
