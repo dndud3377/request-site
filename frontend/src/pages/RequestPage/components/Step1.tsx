@@ -196,7 +196,7 @@ const Step1: React.FC<Step1Props> = ({
   const refMergeLocked = !MERGE_REF_MODE_ENABLED;
   const refMergeLockedTitle = refMergeLocked ? t('request.merge_ref_locked') : undefined;
   const lockedWrapStyle = refMergeLocked ? { display: 'inline-flex', cursor: 'not-allowed' } : undefined;
-  const lockedBtnStyle = { opacity: 0.4, cursor: 'not-allowed', ...(refMergeLocked ? { pointerEvents: 'none' as const } : {}) };
+  const lockedBtnStyle = { opacity: 0.4, cursor: 'not-allowed', ...(refMergeLocked ? { pointerEvents: 'none' as const, filter: 'grayscale(1)' } : {}) };
 
   return (
     <div className="form-section">
