@@ -126,15 +126,18 @@ function FlowChartTable({
 
 /**
  * 참조 요청서 Merge 의 변경전/변경후 표 (읽기 전용).
- * 작성 화면(BeforeAfterPanel)의 확정 표와 같은 형식 — 미등록은 5칸을 합쳐 한 줄로 보여준다.
+ * 작성 화면(BeforeAfterPanel)의 확정 표와 같은 형식 — 미등록은 한쪽 칸을 모두 합쳐 한 줄로 보여준다.
+ * claude 수정 (2026-10-19): 참조 요청서 '없음'(manualOnly) 문서는 Layer 를 입력하지 않아 헷갈리므로 Layer 열을 숨긴다(작성 화면과 동일).
  */
-function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
+function MergePairsTable({ pairs, manualOnly }: { pairs: MergePair[]; manualOnly: boolean }) {
   const { t } = useTranslation();
-  const fields: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
+  const fields: (keyof MergeRowInfo)[] = manualOnly
+    ? ['process_id', 'sp', 'sd', 'pp']
+    : ['process_id', 'sp', 'sd', 'pp', 'layerid'];
 
   const cells = (info: MergeRowInfo | null, other: MergeRowInfo | null) => {
     if (!info) {
-      return <td colSpan={5} className="ba-cell-unreg">{t('request.ba_unregistered')}</td>;
+      return <td colSpan={fields.length} className="ba-cell-unreg">{t('request.ba_unregistered')}</td>;
     }
     return (
       <>
@@ -153,8 +156,8 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
         <thead>
           <tr>
             <th rowSpan={2}>{t('request.ba_table_division')}</th>
-            <th colSpan={5} className="ba-group-before">{t('request.ba_before_col')}</th>
-            <th colSpan={5} className="ba-group-after">{t('request.ba_after_col')}</th>
+            <th colSpan={fields.length} className="ba-group-before">{t('request.ba_before_col')}</th>
+            <th colSpan={fields.length} className="ba-group-after">{t('request.ba_after_col')}</th>
             <th rowSpan={2}>{t('request.ba_kind')}</th>
           </tr>
           <tr>
@@ -2032,7 +2035,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                   ({t('request.ba_detail_note')})
                 </span>
               </div>
-              <MergePairsTable pairs={detail.merge_pairs ?? []} />
+              <MergePairsTable pairs={detail.merge_pairs ?? []} manualOnly={detail.merge_ref_mode === 'none'} />
             </div>
           )}
 
