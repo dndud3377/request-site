@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, LayerStepOption, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, MERGE_REF_MODE_ENABLED, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
 import { ManualPairsLayerCheck, PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
@@ -191,6 +191,12 @@ const Step1: React.FC<Step1Props> = ({
   const mergeModeLocked = disableOptional || (isMergeDone && !isMergeNone);
   // Merge 사용 목적(Layer 추가/삭제·STEPSEQ 변경·Overlay 변경)을 하나라도 골랐으면 블록을 1개만 노출한다.
   const showMergeBlock = isMergePurposeSelected(detail.other_purpose);
+  // claude 수정 (2026-10-19): 참조 요청서 '있음'(Merge) 잠금 — '있음' 라디오·참조 검색칸·Merge·재선택을 회색으로 잠그고
+  // 마우스를 올리면 '기능 수정 중' 툴팁을 띄운다. 잠긴 버튼은 이벤트를 받지 않으므로 감싼 span 에 툴팁을 단다.
+  const refMergeLocked = !MERGE_REF_MODE_ENABLED;
+  const refMergeLockedTitle = refMergeLocked ? t('request.merge_ref_locked') : undefined;
+  const lockedWrapStyle = refMergeLocked ? { display: 'inline-flex', cursor: 'not-allowed' } : undefined;
+  const lockedBtnStyle = { opacity: 0.4, cursor: 'not-allowed', ...(refMergeLocked ? { pointerEvents: 'none' as const } : {}) };
 
   return (
     <div className="form-section">
@@ -333,24 +339,32 @@ const Step1: React.FC<Step1Props> = ({
                   {([
                     { value: 'ref' as MergeRefMode, label: t('request.merge_mode_ref') },
                     { value: 'none' as MergeRefMode, label: t('request.merge_mode_none') },
-                  ]).map((opt) => (
-                    <label key={opt.value} className="merge-mode-option">
-                      <input
-                        type="radio"
-                        name="merge_ref_mode"
-                        value={opt.value}
-                        checked={detail.merge_ref_mode === opt.value}
-                        disabled={mergeModeLocked}
-                        onChange={() => handleMergeModeSelect(opt.value)}
-                      />
-                      {opt.label}
-                    </label>
-                  ))}
+                  ]).map((opt) => {
+                    const optLocked = refMergeLocked && opt.value === 'ref';
+                    return (
+                      <label
+                        key={opt.value}
+                        className="merge-mode-option"
+                        title={optLocked ? refMergeLockedTitle : undefined}
+                        style={optLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                      >
+                        <input
+                          type="radio"
+                          name="merge_ref_mode"
+                          value={opt.value}
+                          checked={detail.merge_ref_mode === opt.value}
+                          disabled={mergeModeLocked || optLocked}
+                          onChange={() => handleMergeModeSelect(opt.value)}
+                        />
+                        {opt.label}
+                      </label>
+                    );
+                  })}
                 </div>
                 {/* claude 수정 (2026-10-19): Merge 사용 목적 전체(Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경)는 참조 요청서 Merge('있음') 또는 '없음' 확정이 필수 — 미확정 오류 표시 */}
                 {errors.merge_ref_doc && !isMergeDone && <span className="form-error">{errors.merge_ref_doc}</span>}
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1 }} title={refMergeLockedTitle}>
                     <AutocompleteInput
                       label={t('request.merge_ref_doc')}
                       value={isMergeNone ? t('request.merge_ref_none') : (isMergeDone ? detail.merge_ref_doc_label : refDocLabel)}
@@ -361,31 +375,38 @@ const Step1: React.FC<Step1Props> = ({
                       }}
                       onSelect={handleRefDocSelect}
                       placeholder={t('request.merge_ref_placeholder')}
-                      disabled={disableOptional || isMergeDone || isMergeNone}
+                      disabled={disableOptional || isMergeDone || isMergeNone || refMergeLocked}
                     />
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={disableOptional || isMergeDone || (!isMergeNone && refDocId === null)}
-                    style={disableOptional || isMergeDone || (!isMergeNone && refDocId === null) ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                    onClick={handleMergeClick}
-                  >
-                    {t('request.merge_button')}
-                  </button>
-                  {/* 재선택: Merge 결과·매핑을 비우고 J/O 표를 Merge 직전으로 되돌린다 */}
-                  {isMergeDone && (
+                  <span title={refMergeLockedTitle} style={lockedWrapStyle}>
                     <button
                       type="button"
-                      className="btn btn-secondary"
-                      onClick={handleMergeReselect}
-                      title={hasMergeSnapshot ? undefined : t('request.merge_reselect_no_snapshot')}
+                      className="btn btn-primary"
+                      disabled={disableOptional || isMergeDone || (!isMergeNone && refDocId === null) || refMergeLocked}
+                      style={disableOptional || isMergeDone || (!isMergeNone && refDocId === null) || refMergeLocked ? lockedBtnStyle : undefined}
+                      onClick={handleMergeClick}
                     >
-                      ↻ {t('request.merge_reselect')}
+                      {t('request.merge_button')}
                     </button>
+                  </span>
+                  {/* 재선택: Merge 결과·매핑을 비우고 J/O 표를 Merge 직전으로 되돌린다 */}
+                  {isMergeDone && (
+                    <span title={refMergeLockedTitle} style={lockedWrapStyle}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={handleMergeReselect}
+                        disabled={refMergeLocked}
+                        style={refMergeLocked ? lockedBtnStyle : undefined}
+                        title={refMergeLocked || hasMergeSnapshot ? undefined : t('request.merge_reselect_no_snapshot')}
+                      >
+                        ↻ {t('request.merge_reselect')}
+                      </button>
+                    </span>
                   )}
                 </div>
-                {isMergeDone && (
+                {/* '있음' 잠금 중에는 '재선택을 누르세요' 안내가 맞지 않아 숨긴다 */}
+                {isMergeDone && !refMergeLocked && (
                   <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     ⓘ {t(isMergeNone ? 'request.merge_none_done' : 'request.merge_already_done')}
                   </div>
