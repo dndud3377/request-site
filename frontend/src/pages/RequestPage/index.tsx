@@ -5055,6 +5055,8 @@ export default function RequestPage(): React.ReactElement {
           isOnlyMap={isStep1OnlyScope}
           bbEntriesRequired={requiresBbEntries(jayerRows)}
           isLabProductAllowed={isOnlyMap}
+          // claude 수정 (2026-10-19): MAP 정보 잠금 시 Step1 의 요청 목적·라인~조리법도 함께 잠근다
+          mapInfoLocked={mapInfoLocked}
           lineOptions={lineOptions}
           processOptions={processOptions}
           productOptions={productOptions}
