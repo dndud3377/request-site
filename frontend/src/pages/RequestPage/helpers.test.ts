@@ -1329,10 +1329,16 @@ describe('흐름도 Step stepseq 검증', () => {
     { layerid: 'L01', stepseq: 'AAAA1240' },
   ];
 
-  it('splitStepseq: 접두어 + 끝 숫자로 나누고, 끝이 숫자가 아니면 null', () => {
+  // claude 수정 (2026-10-19): 알파벳 접미 stepseq 도 인식(접미는 버림) — 'A1B' 는 이제 null 이 아니다.
+  it('splitStepseq: 접두어 + 숫자 + 알파벳 접미(선택)로 나누고 접미는 버린다, 인식할 수 없으면 null', () => {
     expect(splitStepseq('AAAA1234')).toEqual({ prefix: 'AAAA', num: 1234 });
     expect(splitStepseq('0100')).toEqual({ prefix: '', num: 100 });
-    expect(splitStepseq('A1B')).toBeNull();
+    expect(splitStepseq('AAAA1234A')).toEqual({ prefix: 'AAAA', num: 1234 });
+    expect(splitStepseq('AAAA1234AB')).toEqual({ prefix: 'AAAA', num: 1234 });
+    expect(splitStepseq('A1B')).toEqual({ prefix: 'A', num: 1 });
+    expect(splitStepseq('A1B2')).toEqual({ prefix: 'A1B', num: 2 });
+    expect(splitStepseq('AAAA1234-A')).toBeNull();
+    expect(splitStepseq('AAAA')).toBeNull();
     expect(splitStepseq('')).toBeNull();
   });
 
@@ -1374,6 +1380,20 @@ describe('흐름도 Step stepseq 검증', () => {
     expect(findFlowStepOrderErrors(rows(['AAAA1234', 'BBBB1238']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'prefix_mismatch' }]);
     expect(findFlowStepOrderErrors(rows(['AAAA1238', 'AAAA1234']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'reversed' }]);
     expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1234']))).toEqual([]);
+  });
+
+  // claude 수정 (2026-10-19): 알파벳 접미는 순서 비교에서 무시한다 — 번호만 같으면 같은 위치로 본다.
+  it('알파벳 접미 stepseq: 접미를 무시하고 접두어·번호로 검증한다', () => {
+    expect(findFlowStepOrderErrors(rows(['AAAA1234A', 'AAAA1234B']))).toEqual([]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1238A', 'AAAA1234B']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'reversed' }]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234A', 'BBBB1238A']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'prefix_mismatch' }]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234A', 'AAAA1238A'], ['AAAA1238B', 'AAAA1240']))).toEqual([
+      { rowId: 'r2', field: 'step_from', kind: 'overlap', refRowNo: 1, refRange: 'AAAA1234A~AAAA1238A' },
+    ]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['AAAA1236C', 'AAAA1240']))).toEqual([
+      { rowId: 'r2', field: 'step_from', kind: 'overlap', refRowNo: 1, refRange: 'AAAA1234~AAAA1238' },
+    ]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234A', 'AAAA1238A'], ['AAAA1239A', 'AAAA1240B']))).toEqual([]);
   });
 
   it('stepseq 가 없는 칸(직접 입력)은 건너뛴다', () => {
