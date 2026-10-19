@@ -818,6 +818,81 @@ const buildFinalItems: GroupBuilder = (d, t) => [
   { label: t('request.final_gds'), value: fmtFinalEntries(d?.final_entries), kind: 'table', table: buildFinalTable(d?.final_entries) },
 ];
 
+// claude 수정 (2026-10-19): 이력 추적이 없던 표 블록(ADI CD 스텝·적용 대상, 병합 결과)과 MAP 삭제 이유의
+// 이력용 값 생성기. 화면 표와 같은 열 구성으로 만들어, 화면에 보이는 값이 같으면 변경으로 잡지 않는다.
+const MERGE_HISTORY_FIELDS: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
+const MERGE_FIELD_COUNT = MERGE_HISTORY_FIELDS.length;
+
+const mergeFieldLabel = (f: keyof MergeRowInfo, t: TFunction): string => t((
+  f === 'process_id' ? 'request.process_id' : f === 'layerid' ? 'request.col_layer' : `request.col_${f}`
+) as never);
+
+/** 병합 결과(변경전/변경후 확정 짝) — MergePairsTable 과 같은 열(구분 · 변경전 5열 · 변경후 5열 · 판정). */
+const buildMergePairsTable = (pairs: any, t: TFunction): DiffTable | null => {
+  if (!Array.isArray(pairs) || pairs.length === 0) return null;
+  const side = (info: MergeRowInfo | null): string[] => (info
+    ? MERGE_HISTORY_FIELDS.map((f) => String(info[f] ?? ''))
+    : [t('request.ba_unregistered'), ...Array(MERGE_FIELD_COUNT - 1).fill('')]);
+  return {
+    headers: [
+      t('request.ba_table_division'),
+      ...MERGE_HISTORY_FIELDS.map((f) => t('request.all_history_col_before', { col: mergeFieldLabel(f, t) })),
+      ...MERGE_HISTORY_FIELDS.map((f) => t('request.all_history_col_after', { col: mergeFieldLabel(f, t) })),
+      t('request.ba_kind'),
+    ],
+    rows: (pairs as MergePair[]).map((pair) => [
+      t(pair.table === 'J' ? 'request.jayer' : 'request.oayer'),
+      ...side(pair.before),
+      ...side(pair.after),
+      t(`request.ba_kind_${deriveMergeKind(pair.before, pair.after)}` as never),
+    ]),
+  };
+};
+
+/**
+ * ADI CD 변경 스텝(변경전/변경후) — 같은 인덱스끼리 짝이라 한 행에 전/후를 나란히 둔다.
+ * 표시 대상 행은 AdiCdStepsTable 과 같은 기준(양쪽 다 비어 있는 행만 제외)이다.
+ */
+const buildAdiCdStepsTable = (d: any, t: TFunction): DiffTable | null => {
+  const balanced = balanceAdiCdRows(d?.adi_cd_before ?? [], d?.adi_cd_after ?? []);
+  const isUsed = (s: AdiCdStep): boolean => !!s.unregistered || !!s.step_id.trim() || !!s.step_desc.trim();
+  const cells = (s: AdiCdStep): string[] => (s.unregistered ? [t('request.adi_cd_unregistered'), ''] : [s.step_id, s.step_desc]);
+  const rows = balanced.before
+    .map((b, i) => ({ b, a: balanced.after[i] }))
+    .filter(({ b, a }) => isUsed(b) || isUsed(a))
+    .map(({ b, a }) => [...cells(b), ...cells(a)]);
+  if (rows.length === 0) return null;
+  return {
+    headers: [
+      t('request.all_history_col_before', { col: ADI_CD_STEP_ID_LABEL }),
+      t('request.all_history_col_before', { col: ADI_CD_STEP_DESC_LABEL }),
+      t('request.all_history_col_after', { col: ADI_CD_STEP_ID_LABEL }),
+      t('request.all_history_col_after', { col: ADI_CD_STEP_DESC_LABEL }),
+    ],
+    rows,
+  };
+};
+
+/** ADI CD 동일 변경 적용 대상 — AdiCdTargetsCell 과 같은 (조리법, 제품 이름) 목록. */
+const buildAdiCdTargetsTable = (d: any, t: TFunction): DiffTable | null => {
+  const targets = buildAdiCdTargets(d ?? {});
+  if (targets.length === 0) return null;
+  return {
+    headers: [t('request.process_id'), t('request.partid_selection')],
+    rows: targets.map((target) => [target.process_id, target.partid_selection]),
+  };
+};
+
+/** MAP 삭제 이유는 서식 있는 글(HTML)이라 이력에서는 서식을 뺀 글자로 비교·표시한다. */
+const htmlToText = (html: any): string => {
+  if (!html) return '';
+  const normalized = String(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n');
+  return (new DOMParser().parseFromString(normalized, 'text/html').body.textContent ?? '').trim();
+};
+
+/** 표 데이터 비교용 서명 — 표가 없으면(null) 빈 문자열이다. */
+const tableSig = (table: DiffTable | null): string => (table ? JSON.stringify(table) : '');
+
 // ===== Table Components =====
 
 /**
@@ -1426,6 +1501,13 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   /** 이력 UI 를 띄울 회차가 있는지 — 재상신이 한 번도 없으면 비교 대상 자체가 없다. */
   const hasRounds = history.length > 0;
 
+  // claude 수정 (2026-10-19): 새로 추적하는 항목(Inter·ADI CD·병합 결과 등)은 저장 필드가 아니라 **화면 표시값**으로
+  // 비교한다 — 화면에 안 보이는 잔여 값 때문에 아무것도 안 고쳤는데 변경으로 잡히는 것을 막는다.
+  /** 표시값 기준 회차 간 변경 여부 — 진행 중=직전 회차 대비 / 이력 조회=한 번이라도. */
+  const isValueChanged = (sig: (d: any) => string): boolean => (historyMode
+    ? roundSnaps.some((r, i) => i > 0 && sig(r.detail) !== sig(roundSnaps[i - 1].detail))
+    : (!!prevSnap && sig(detail) !== sig(prevSnap.detail)));
+
   // 강조·버튼 판정 기준이 모드에 따라 갈린다(진행 중=직전 회차 대비 / 이력 조회=전 회차 중 한 번이라도).
   const changedFields = historyMode
     ? computeEverChangedFields(roundSnaps)
@@ -1895,6 +1977,83 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
       : <FieldGroupHistoryModal title={title} rows={toDiffRows(prevSnap?.detail, detail, build, t)} onClose={onClose} />;
   };
 
+  // claude 수정 (2026-10-19): 이력 추적이 없던 항목(Inter·MAP 삭제 이유·ADI CD 스텝/적용 대상·병합 결과)에 이력 추가.
+  const [interHistOpen, setInterHistOpen] = useState(false);
+  const [mapReasonHistOpen, setMapReasonHistOpen] = useState(false);
+  const [adiTargetsHistOpen, setAdiTargetsHistOpen] = useState(false);
+  const [adiStepsHistOpen, setAdiStepsHistOpen] = useState(false);
+  const [mergeHistOpen, setMergeHistOpen] = useState(false);
+
+  /** Inter(3번) — 화면 표시 문구 그대로. YES 가 아니면 빈 값(화면은 회색 '없음'). */
+  const buildInterValue = (d: Partial<DetailFormState>): string => {
+    if (d.inter !== 'YES') return '';
+    const dd = d as any;
+    const parts = dd.in_apply
+      ? [
+          t('approval.inter_applied'),
+          dd.in_apply === 'O' ? t('request.in_apply_o') : t('request.in_apply_x'),
+          dd.inter_select ? t(`request.map_opt_inter_${dd.inter_select}` as never) : null,
+        ]
+      : [
+          t('approval.inter_applied'),
+          d.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
+          d.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
+        ];
+    return parts.filter(Boolean).join(' / ');
+  };
+  const buildMapReasonText = (d: any): string => htmlToText(d?.map_change_reason);
+  const buildAdiTargets = (d: any): DiffTable | null => buildAdiCdTargetsTable(d, t);
+  const buildAdiSteps = (d: any): DiffTable | null => buildAdiCdStepsTable(d, t);
+  const buildMergePairs = (d: any): DiffTable | null => buildMergePairsTable(d?.merge_pairs, t);
+
+  const interChanged = isValueChanged(buildInterValue);
+  const adiTargetsChanged = isValueChanged((d) => tableSig(buildAdiTargets(d)));
+  const adiStepsChanged = isValueChanged((d) => tableSig(buildAdiSteps(d)));
+  const mergeChanged = isValueChanged((d) => tableSig(buildMergePairs(d)));
+
+  /**
+   * 표 블록(ADI CD 스텝·적용 대상, 병합 결과) 이력 모달 — 흐름도 이력(renderFlowHistory)과 같은 방식으로
+   * 표 전체를 구간별로 쌓는다. 진행 중은 변경 전/후, 이력 조회는 회차별.
+   */
+  const renderTableBlockHistory = (label: string, build: (d: any) => DiffTable | null, onClose: () => void): React.ReactNode => {
+    if (!hasRounds) return null;
+    const sections = historyMode
+      ? roundSnaps.map((r) => ({ label: r.label, timestamp: r.timestamp, table: build(r.detail), tone: 'neutral' as const }))
+      : [
+          { label: t('request.before_label'), timestamp: prevSnap?.timestamp ?? null, table: build(prevSnap?.detail), tone: 'before' as const },
+          { label: t('request.after_label'), timestamp: null, table: build(detail), tone: 'after' as const },
+        ];
+    return (
+      <Modal isOpen onClose={onClose} title={t('request.field_change_history', { label })}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {sections.map((s, si) => {
+            const other = historyMode
+              ? (si > 0 ? sections[si - 1].table : null)
+              : sections[si === 0 ? 1 : 0].table;
+            const headColor = s.tone === 'before' ? '#dc3545' : s.tone === 'after' ? '#155724' : 'var(--text-muted)';
+            return (
+              <div key={s.label} style={{ overflowX: 'auto' }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: headColor, marginBottom: 6 }}>
+                  {s.label}
+                  {historyMode && <span style={{ fontWeight: 400, marginLeft: 8, color: 'var(--text-muted)' }}>{fmtRoundTime(s.timestamp)}</span>}
+                </div>
+                {s.table
+                  ? <DiffMiniTable table={s.table} other={other} tone={s.tone} />
+                  : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </Modal>
+    );
+  };
+
+  /** 카드 우상단 '이력 확인' 버튼(흐름도 카드와 같은 모양). */
+  const cardHistBtnStyle: React.CSSProperties = {
+    position: 'absolute', top: 10, right: 12, background: 'none', border: 'none', cursor: 'pointer',
+    color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1,
+  };
+
 type Page = { label: string; content: React.ReactNode; key?: string };
   const pages: Page[] = [
     {
@@ -1935,8 +2094,13 @@ type Page = { label: string; content: React.ReactNode; key?: string };
           {/* ADI CD 변경 전용 카드 — '기본 정보' 바로 아래(2026-08-21). 요청 목적이 'ADI CD 변경'일 때만
               보인다 — 과거 '기타 목적 > ADI CD 변경'으로 저장된 레거시 문서는 adi_cd_before/after 값이
               남아 있어도 더 이상 여기 나타나지 않는다(저장값 자체는 그대로, 표시 조건만 좁힌 것). */}
+          {/* claude 수정 (2026-10-19): ADI CD 적용 대상·스텝 카드에 변경 강조 + '이력 확인' 추가. */}
           {isAdiCdChange && (detail.adi_cd_extra_targets ?? []).length > 0 && (
-            <div style={cardStyle}>
+            <div style={{ ...cardStyle, position: 'relative', ...(adiTargetsChanged ? { border: '2px solid #dc3545' } : {}) }}>
+              {adiTargetsChanged && hasRounds && (
+                <button onClick={() => setAdiTargetsHistOpen(true)} style={cardHistBtnStyle}>{t('request.history_check_btn')}</button>
+              )}
+              {adiTargetsHistOpen && renderTableBlockHistory(t('request.adi_cd_targets_title'), buildAdiTargets, () => setAdiTargetsHistOpen(false))}
               <div style={sectionTitle}>{t('request.adi_cd_targets_title')}</div>
               <AdiCdTargetsCell
                 combo={detail.process_selection ?? ''}
@@ -1947,7 +2111,11 @@ type Page = { label: string; content: React.ReactNode; key?: string };
 
           {isAdiCdChange && ((detail.adi_cd_before ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())
             || (detail.adi_cd_after ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())) && (
-            <div style={cardStyle}>
+            <div style={{ ...cardStyle, position: 'relative', ...(adiStepsChanged ? { border: '2px solid #dc3545' } : {}) }}>
+              {adiStepsChanged && hasRounds && (
+                <button onClick={() => setAdiStepsHistOpen(true)} style={cardHistBtnStyle}>{t('request.history_check_btn')}</button>
+              )}
+              {adiStepsHistOpen && renderTableBlockHistory(t('request.adi_cd_section_title'), buildAdiSteps, () => setAdiStepsHistOpen(false))}
               <div style={sectionTitle}>{t('request.adi_cd_section_title')}</div>
               <AdiCdStepsTable
                 before={detail.adi_cd_before ?? []}
@@ -2024,8 +2192,13 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             </div>
           )}
 
+          {/* claude 수정 (2026-10-19): 병합 결과 카드에 변경 강조 + '이력 확인' 추가. */}
           {(detail.merge_pairs?.length ?? 0) > 0 && (
-            <div style={cardStyle}>
+            <div style={{ ...cardStyle, position: 'relative', ...(mergeChanged ? { border: '2px solid #dc3545' } : {}) }}>
+              {mergeChanged && hasRounds && (
+                <button onClick={() => setMergeHistOpen(true)} style={cardHistBtnStyle}>{t('request.history_check_btn')}</button>
+              )}
+              {mergeHistOpen && renderTableBlockHistory(t('request.ba_result_title'), buildMergePairs, () => setMergeHistOpen(false))}
               <div style={sectionTitle}>
                 {t('request.ba_result_title')}
                 <span style={{ marginLeft: 8, fontSize: '0.76rem', fontWeight: 400, color: 'var(--text-muted)' }}>
@@ -2126,9 +2299,21 @@ type Page = { label: string; content: React.ReactNode; key?: string };
               본문은 RichTextEditor 가 만든 HTML 이라 공지·가이드·VOC 와 같은 방식으로 렌더한다. */}
           {isMapDeleteEditType(detail.map_type) && (
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 6 }}>
-                {t('request.map_change_reason_delete')}
+              {/* claude 수정 (2026-10-19): 빨간 테두리만 뜨고 눌러볼 수 없던 MAP 삭제 이유에 '이력 확인' 추가(서식을 뺀 글자로 비교). */}
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{t('request.map_change_reason_delete')}</span>
+                {changedFields.has('map_change_reason') && hasRounds && (
+                  <button onClick={() => setMapReasonHistOpen(true)} style={{ ...cardHistBtnStyle, position: 'static' }}>{t('request.history_check_btn')}</button>
+                )}
               </div>
+              {mapReasonHistOpen && (
+                <FieldHistoryModal
+                  label={t('request.map_change_reason_delete')}
+                  currentValue={buildMapReasonText(detail)}
+                  buildValue={buildMapReasonText}
+                  onClose={() => setMapReasonHistOpen(false)}
+                />
+              )}
               {detail.map_change_reason ? (
                 <div
                   style={{
@@ -2386,25 +2571,28 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             return (
               <>
                 {/* Inter — 항상 표시. YES 면 버튼이 아닌 글자(코멘트)로 표시, NO 면 Map Option 과 동일하게 "없음" 표시 */}
+                {/* claude 수정 (2026-10-19): 표시 문구를 buildInterValue 로 옮기고 같은 함수로 변경 강조 + '이력 확인'(회차 비교) 추가. */}
                 <div style={rowStyle}>
-                  <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
+                  <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(interChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                    {interChanged && hasRounds && (
+                      <button
+                        onClick={() => setInterHistOpen(true)}
+                        style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0 }}
+                      >
+                        {t('request.history_check_btn')}
+                      </button>
+                    )}
+                    {interHistOpen && (
+                      <FieldHistoryModal
+                        label={t('request.map_opt_inter')}
+                        currentValue={buildInterValue(detail)}
+                        buildValue={buildInterValue}
+                        onClose={() => setInterHistOpen(false)}
+                      />
+                    )}
                     <div style={fieldLabel}>{t('request.map_opt_inter')}</div>
                     <div style={fieldValue}>
-                      {detail.inter === 'YES' ? (
-                        (detail as any).in_apply ? (
-                          [
-                            t('approval.inter_applied'),
-                            (detail as any).in_apply === 'O' ? t('request.in_apply_o') : t('request.in_apply_x'),
-                            (detail as any).inter_select ? t(`request.map_opt_inter_${(detail as any).inter_select}` as never) : null,
-                          ].filter(Boolean).join(' / ')
-                        ) : (
-                          [
-                            t('approval.inter_applied'),
-                            detail.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
-                            detail.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
-                          ].filter(Boolean).join(' / ')
-                        )
-                      ) : (
+                      {buildInterValue(detail) || (
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
                       )}
                     </div>
