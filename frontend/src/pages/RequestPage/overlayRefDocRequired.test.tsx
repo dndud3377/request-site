@@ -5,7 +5,8 @@
  * - '있음'(기본 선택)이면 참조 요청서를 골라 Merge 해야 STEP1 을 넘어간다.
  * - '있음'·'없음' 모두 변경전/변경후 유효 행이 1건 이상이어야 한다.
  * - '없음'으로 확정한 뒤에도 '있음' 라디오를 누를 수 있고, 모드 변경 확인 모달을 거쳐 바뀐다.
- * - Layer 추가/삭제·STEPSEQ 변경은 지금처럼 선택사항이다.
+ * claude 수정 (2026-10-19): 같은 필수 규칙을 Layer 추가/삭제·STEPSEQ 변경에도 적용(Merge 사용 목적 전체 통일).
+ * Merge 를 쓰지 않는 상세 목적은 여전히 참조 요청서 없이 넘어간다.
  */
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
@@ -60,6 +61,8 @@ jest.mock('../../api/client', () => ({
 }));
 
 const LAYER_ADD_DELETE = 'Layer 추가/삭제';
+const STEPSEQ_CHANGE = 'STEPSEQ 변경';
+const FIRSTA_CHANGE = 'FirstA 변경';
 
 const VALID_PAIR = {
   id: 'pair_J_b1__J_a1',
@@ -168,7 +171,7 @@ async function click(el: HTMLElement | undefined) {
 
 const clickNext = () => click(buttonWith('다음 →'));
 
-const REQUIRED_MSG = () => i18n.t('request.ba_gate_overlay_merge_required');
+const REQUIRED_MSG = () => i18n.t('request.ba_gate_merge_required');
 const EMPTY_MSG = () => i18n.t('request.ba_gate_manual_empty');
 
 describe("'Overlay만 변경' — 참조 요청서 필수", () => {
@@ -281,8 +284,57 @@ describe("'Overlay만 변경' — 참조 요청서 필수", () => {
     expect(modeRadio('none').disabled).toBe(true);
   });
 
-  it("'Layer 추가/삭제'는 참조 요청서 없이도 넘어간다(선택사항 유지)", async () => {
-    await renderStep1({ other_purpose: [LAYER_ADD_DELETE] });
+});
+
+// claude 수정 (2026-10-19): Layer 추가/삭제·STEPSEQ 변경도 'Overlay만 변경'과 같은 참조 요청서 필수 규칙을 따른다
+describe.each([LAYER_ADD_DELETE, STEPSEQ_CHANGE])("'%s' — 참조 요청서 필수(Merge 사용 목적 통일)", (purpose) => {
+  beforeEach(() => { localStorage.clear(); });
+
+  it("'있음'에서 Merge 하지 않으면 STEP1 을 넘어가지 못하고 오류를 표시한다", async () => {
+    await renderStep1({ other_purpose: [purpose] });
+    await clickNext();
+    expect(onStep1()).toBe(true);
+    expect(errorToasts()).toContain(REQUIRED_MSG());
+    expect(document.querySelector('.form-error')?.textContent).toBe(REQUIRED_MSG());
+  });
+
+  it("'있음'으로 Merge 했어도 변경전/변경후 유효 행이 0건이면 막는다", async () => {
+    await renderStep1({
+      other_purpose: [purpose],
+      merge_ref_doc_id: 77, merge_ref_doc_label: '참조 요청서 제목', merge_ref_mode: 'ref', merge_applied: true,
+      merge_pairs: [], merge_unmatched_before: [], merge_unmatched_after: [],
+    });
+    await clickNext();
+    expect(onStep1()).toBe(true);
+    expect(errorToasts()).toContain(EMPTY_MSG());
+  });
+
+  it("'있음'으로 Merge 하고 유효 행이 있으면 넘어간다", async () => {
+    await renderStep1({
+      other_purpose: [purpose],
+      merge_ref_doc_id: 77, merge_ref_doc_label: '참조 요청서 제목', merge_ref_mode: 'ref', merge_applied: true,
+      merge_pairs: [VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
+    });
+    await clickNext();
+    expect(onStep1()).toBe(false);
+  });
+
+  it("'없음' 확정 문서에서 유효 행이 있으면 넘어간다", async () => {
+    await renderStep1({
+      other_purpose: [purpose],
+      merge_ref_doc_id: null, merge_ref_mode: 'none', merge_applied: true,
+      merge_pairs: [NONE_VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
+    }, NONE_JAYER_ROWS);
+    await clickNext();
+    expect(onStep1()).toBe(false);
+  });
+});
+
+describe('Merge 를 쓰지 않는 상세 목적', () => {
+  beforeEach(() => { localStorage.clear(); });
+
+  it("'FirstA 변경'만 고르면 참조 요청서 없이도 넘어간다", async () => {
+    await renderStep1({ other_purpose: [FIRSTA_CHANGE] });
     await clickNext();
     expect(onStep1()).toBe(false);
     expect(errorToasts()).not.toContain(REQUIRED_MSG());

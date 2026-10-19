@@ -577,7 +577,7 @@
     "ba_cell_edit_hint": "클릭하면 값을 직접 입력할 수 있습니다.",
     "ba_paste_hint": "엑셀에서 4열(process_id·SP·SD·PP)을 복사해 붙여넣으면 여러 행이 한 번에 입력됩니다. layer 는 입력 대상이 아닙니다.",
     "ba_gate_manual_empty": "변경전/변경후 항목을 1건 이상 입력하세요.",
-    "ba_gate_overlay_merge_required": "Overlay만 변경은 참조 요청서가 필수입니다 — '참조 요청서 있음'이면 참조 요청서를 선택해 Merge 하고, 없으면 '참조 요청서 없음'을 선택해 변경전/변경후를 입력하세요.",
+    "ba_gate_merge_required": "참조 요청서가 필요합니다 — '참조 요청서 있음'이면 참조 요청서를 선택해 Merge 하고, 없으면 '참조 요청서 없음'을 선택해 변경전/변경후를 입력하세요.",
     "ba_gate_manual_incomplete": "미입력 칸이 {{count}}개 있습니다 — process_id·SP·SD·PP 를 모두 채우세요.",
     "ba_gate_manual_blank_row": "양쪽 모두 미등록인 행이 {{count}}건 있습니다.",
     "ba_empty": "매핑할 항목이 없습니다.",

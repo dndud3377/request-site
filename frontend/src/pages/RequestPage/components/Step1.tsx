@@ -347,7 +347,7 @@ const Step1: React.FC<Step1Props> = ({
                     </label>
                   ))}
                 </div>
-                {/* claude 수정 (2026-10-15): 'Overlay만 변경'은 참조 요청서 Merge('있음') 또는 '없음' 확정이 필수 — 미확정 오류 표시 */}
+                {/* claude 수정 (2026-10-19): Merge 사용 목적 전체(Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경)는 참조 요청서 Merge('있음') 또는 '없음' 확정이 필수 — 미확정 오류 표시 */}
                 {errors.merge_ref_doc && !isMergeDone && <span className="form-error">{errors.merge_ref_doc}</span>}
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
                   <div style={{ flex: 1 }}>
