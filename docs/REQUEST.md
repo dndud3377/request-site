@@ -53,7 +53,7 @@ pages/RequestPage/
 | 분류 | export |
 |---|---|
 | 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
-| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
+| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_REF_MODE_ENABLED`(2026-10-19 '있음' 잠금 플래그), `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
 | ADI CD | `ADI_CD_CHANGE_PURPOSE`(2026-08-20 요청 목적으로 승격 — 이전 이름 `OTHER_PURPOSE_ADI_CD`), `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL`, `mapInfoDefaults`(StepMap 소유 필드 전체를 초기값으로) |
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
@@ -287,6 +287,45 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 변경 (2026-10-19 — 참조 요청서 '있음'(Merge) 잠금: 상세 목적을 누르면 변경전/변경후 표가 바로 열린다)
+
+- **의도(사용자)**: 참조할 승인 요청서가 아직 거의 없고, '있음/없음' 선택과 Merge 단계가 사용자에게 번거롭고 혼란스럽다.
+  참조 요청서 Merge 는 **삭제하지 않고 당분간 막아 둔다**(나중에 다시 쓸 수 있게). Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경을
+  누르면 바로 변경전/변경후 표를 채울 수 있게 한다.
+- **잠금 플래그**: `constants.ts` **`MERGE_REF_MODE_ENABLED = false`**. `true` 로 바꾸면 잠금 전 동작(기본 '있음', Merge·재선택, '없음'↔'있음' 전환 모달)으로 돌아간다.
+  Merge 계산(`computeLayerMerge`·`computeBeforeAfter`)·재선택·매핑 코드와 i18n 키는 모두 그대로 남겼다.
+  - 신규 문서 기본값 `INITIAL_DETAIL.merge_ref_mode` 는 잠금 중 `'none'`. `clearMergeComparison()` 의 기본 모드도 이 값을 따른다.
+- **자동 확정(`index.tsx` effect)**: 잠금 중 Merge 사용 목적이 선택돼 있는데 '없음' 확정(`merge_ref_mode==='none' && merge_applied`)이 아니면
+  즉시 '없음'으로 확정한다 → `merge_applied=true`, 행이 없으면 빈 행 1개, `merge_ref_doc_id=null`, `merge_unmatched_before/after=[]`, `mergeSnapshot=null`.
+  신규 선택·임시저장 재진입·반려 재작성 모두 같은 경로다. 목적을 모두 해제하면 기존대로 비교 상태를 비운다.
+- **예전 '있음'(Merge) 문서(사용자 결정: 표 내용 유지)**: 변경전/변경후 행(`merge_pairs`)과 J/O 표는 그대로 두고 '없음'으로 바뀐다.
+  행 구분은 PP 접두사로 다시 맞춘다(`syncManualPairTable`). **매핑 대기 목록(`merge_unmatched_*`)은 비운다** — 매핑 표는 '없음'에서 숨겨져
+  사용자가 풀 수 없는데 `ba_gate_ng` 가 상신을 막기 때문이다. 이후 '없음' 규칙(PP 접두사·J/O 표 대조·1건 이상)을 그대로 받으므로
+  Merge 로 만든 행이 규칙에 맞지 않으면 사용자가 고쳐야 다음 단계로 간다.
+- **UI(`Step1.tsx`, 사용자 결정: 숨기지 않고 회색 잠금)**: '참조 요청서 있음' 라디오, 참조 요청서 검색칸, Merge, 재선택을 회색으로 잠근다.
+  마우스를 올리면 툴팁 **`request.merge_ref_locked`**("기능 수정 중" / "Feature under revision")이 뜬다.
+  잠긴 버튼은 마우스 이벤트를 받지 않아 버튼을 감싼 `span` 에 `title` 을 단다. '없음'은 항상 체크된다.
+  '재선택을 누르세요' 안내(`request.merge_none_done`)는 잠금 중에는 숨긴다.
+- **i18n**: `request.merge_ref_locked` ko/en 동시 추가.
+- **백엔드**: 변경 없음(참조 요청서 검증은 원래 프론트에만 있다).
+- **가이드 투어 문구(`guide.tour.step.groups.s1g3`, `guide.tour.steps.request.flow.ref_doc_merge`)**: '기존 승인 요청서를 참조해 Merge' 설명이 남아 있어 지금 동작과 다르다 — 사용자 결정 대기로 변경하지 않았다.
+- **테스트**: 신규 `refMergeLocked.test.tsx` 5건(목적 클릭 → 표 즉시 표시 / 잠금·툴팁 / '있음' 클릭 무반응 / 예전 '있음' 문서 변환·저장 / 변환 후 '없음' 규칙 적용).
+  `overlayRefDocRequired.test.tsx` 는 `MERGE_REF_MODE_ENABLED=true` 로 mock 해 잠금 해제 시 회귀 테스트로 유지한다.
+  `noneModeLayerCheck.test.tsx` 의 '있음 모드는 검사하지 않는다' 1건은 잠금 동작('없음'으로 바뀌어 검사됨)으로 교체했다.
+  `draftRoundTrip`·`jayerOayerRowRemove` 픽스처는 '없음' 규칙을 통과하는 행으로 바꿨다. Merge 는 이 두 테스트의 검증 대상이 아니다.
+- **수동 시나리오**(PP 접두사는 `MERGE_PP_PREFIXES` 현재 값 — `TEST1`=J, `TEST2`=O):
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → [상세 목적 **Layer 추가/삭제** 클릭]
+     → [기대: '참조 요청서 Merge' 블록이 열리고 '참조 요청서 없음'이 체크돼 있다. 아래에 변경전/변경후 표(빈 행 1개)와 "참조 요청서 없음: 구분은 PP 접두사로…" 안내가 바로 보인다.
+     실패 신호: 'Merge' 버튼을 눌러야 표가 열림 / '있음'이 체크됨.]
+  2. ['참조 요청서 있음' 라디오, 참조 요청서 검색칸('없음' 표시), 'Merge'·'↻ 재선택' 버튼에 각각 마우스 올리기]
+     → [기대: 모두 회색이며 "기능 수정 중" 툴팁이 뜬다. 클릭해도 아무 일이 없다(모달 없음). 실패 신호: 툴팁 없음 / 클릭 시 모드 변경 모달.]
+  3. [STEPSEQ 변경, Overlay만 변경으로 바꿔 1~2 반복] → [기대: 같은 동작.]
+  4. [빈 행 그대로 '다음 →'] → [기대: "변경전/변경후 항목을 1건 이상 입력하세요." 로 막힌다. 행을 '없음' 규칙대로 채우면 STEP2 로 간다.]
+  5. [잠금 전 '참조 요청서 있음'으로 Merge 해 임시저장(또는 반려)된 문서 열기]
+     → [기대: '없음'이 체크돼 있고 Merge 로 만들어졌던 변경전/변경후 행이 그대로 보인다. 구분 칸은 드롭다운 없이 PP 접두사로 판정한 값이다.
+     '다음 →' 시 '없음' 규칙 오류가 있으면 해당 문구로 막힌다. 실패 신호: 행이 사라짐 / "매핑 대기 N건" 오류로 막힘.]
+  6. [상세 목적을 모두 해제 → 다시 Layer 추가/삭제 클릭] → [기대: 빈 행 1개 표가 다시 바로 열린다.]
 
 ### 기능 변경 (2026-10-19 — 참조 요청서 필수 규칙을 Merge 사용 목적 전체로 통일)
 
