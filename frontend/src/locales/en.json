@@ -551,6 +551,8 @@
     "ba_after": "AFTER — Current request",
     "ba_before_col": "Before (Reference)",
     "ba_after_col": "After (Current)",
+    "ba_before_col_manual": "Before",
+    "ba_after_col_manual": "After",
     "ba_table_division": "Table",
     "ba_kind": "Result",
     "ba_unregistered": "Not registered",
