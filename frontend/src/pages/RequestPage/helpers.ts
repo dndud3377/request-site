@@ -2,7 +2,7 @@ import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ValidationSystemValu
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
-  MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
+  MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES, STEPSEQ_LEAD_DIGITS,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -101,14 +101,18 @@ export const resolveFlowStepSeq = (
   return { kind: 'ambiguous' };
 };
 
-// claude 수정 (2026-10-19): 마스터 DB 에 알파벳 접미가 붙은 stepseq(AAAA1234A)가 있어 순서 검증에서 빠지던 것을, 접미까지 인식하고 비교에서는 무시하도록 확장.
+// claude 수정 (2026-10-19): 알파벳 접미 stepseq(AAAA1234A) 인식 + 숫자 자릿수가 서로 달라도(AAAA1235 vs AAAA12345) 앞 4자리 → 나머지 자리 순으로 비교하도록 num 을 '앞4자리.나머지' 소수로 계산.
 /**
  * stepseq 를 '접두어 + 숫자 + 알파벳 접미(선택)'로 나눈다(AAAA1234 → AAAA / 1234, AAAA1234A → AAAA / 1234).
+ * num 은 숫자의 앞 4자리를 정수부, 5번째 자리부터를 소수부로 둔 값이다(AAAA12345 → 1234.5, AAAA1235 → 1235)
+ * — 앞 4자리를 먼저 비교하고 같으면 나머지 자리로 비교한다. 백엔드 Step 목록 정렬(views.py _stepseq_sort_key)과 같은 규칙.
  * 접미는 순서 비교에 쓰지 않으므로 버린다. 숫자가 없거나 접미에 알파벳 외 문자가 있으면 비교 불가(null).
  */
 export const splitStepseq = (seq: string | undefined): { prefix: string; num: number } | null => {
   const m = /^(.*?)(\d+)[A-Za-z]*$/.exec((seq || '').trim());
-  return m ? { prefix: m[1], num: parseInt(m[2], 10) } : null;
+  if (!m) return null;
+  const digits = m[2];
+  return { prefix: m[1], num: parseFloat(`${digits.slice(0, STEPSEQ_LEAD_DIGITS)}.${digits.slice(STEPSEQ_LEAD_DIGITS) || '0'}`) };
 };
 
 export interface FlowStepSeqRow {
