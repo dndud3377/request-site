@@ -3670,13 +3670,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         review_items_sync.confirm(reviewer, bool(request.data.get('confirmed', True)))
         return self._review_items_response(document, request)
 
+    # claude 수정 (2026-10-19): 잠금 범위(요청 목적·라인~조리법 포함)·조건(지난 회차 합의 이력) 확대에 맞춰 설명·거부 문구 갱신
     def update(self, request, *args, **kwargs):
         """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403.
 
-        R(+RV) 합의 완료 후 중단(pause)된 문서는 MAP 정보가 잠긴다(`doc_permissions.
-        map_info_locked`) — R이 이미 검토를 마친 MAP 정보를 되돌아가 바꾸지 못하게 한다
-        (2026-09, `docs/APPROVAL.md` Case M 참고). 프론트가 이미 read-only 로 막아도
-        직접 API 호출로 우회할 수 있으므로 백엔드에서도 거부한다.
+        지난 회차를 포함해 R(+RV) 또는 고정 후결자 합의 이력이 있는 문서는 MAP 정보와
+        요청 목적·라인~조리법이 잠긴다(`doc_permissions.map_info_locked`) — 합의된 MAP 정보를
+        반려·중단 후 편집에서 바꾸지 못하게 한다(`docs/APPROVAL.md` Case M 참고). 프론트가 이미
+        read-only 로 막아도 직접 API 호출로 우회할 수 있으므로 백엔드에서도 거부한다.
         """
         document = self.get_object()
         if not self._can_edit(request.user, document):
@@ -3691,7 +3692,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     new_detail = None
                 if new_detail is not None and document.changed_map_info_fields(new_detail):
                     return Response(
-                        {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보를 수정할 수 없습니다.'},
+                        {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다.'},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
         return super().update(request, *args, **kwargs)
