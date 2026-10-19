@@ -309,7 +309,10 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   '재선택을 누르세요' 안내(`request.merge_none_done`)는 잠금 중에는 숨긴다.
 - **i18n**: `request.merge_ref_locked` ko/en 동시 추가.
 - **백엔드**: 변경 없음(참조 요청서 검증은 원래 프론트에만 있다).
-- **가이드 투어 문구(`guide.tour.step.groups.s1g3`, `guide.tour.steps.request.flow.ref_doc_merge`)**: '기존 승인 요청서를 참조해 Merge' 설명이 남아 있어 지금 동작과 다르다 — 사용자 결정 대기로 변경하지 않았다.
+- **가이드 투어 문구(사용자 결정: 변경)**: 단계 가이드 `guide.tour.step.groups.s1g3`('변경전/변경후 입력' — 목적 선택 시 표가 바로 열리고 Merge 는 기능 수정 중),
+  `s1g3b`('변경전/변경후 직접 작성' — PP 접두사 구분 판정·변경전/변경후 대조 규칙), 전체 가이드 자막 `guide.tour.steps.request.flow.ref_doc_merge` 를 ko/en 동시에 바꿨다.
+  블록 제목 `guide.feat.step1_ref_doc_merge`('참조 요청서 Merge')는 화면 라벨이라 그대로 둔다.
+- **잠긴 버튼 색**: Merge·재선택은 `opacity` 만으로는 옅은 파랑으로 보여 `filter: grayscale(1)` 을 더해 회색으로 보이게 했다.
 - **테스트**: 신규 `refMergeLocked.test.tsx` 5건(목적 클릭 → 표 즉시 표시 / 잠금·툴팁 / '있음' 클릭 무반응 / 예전 '있음' 문서 변환·저장 / 변환 후 '없음' 규칙 적용).
   `overlayRefDocRequired.test.tsx` 는 `MERGE_REF_MODE_ENABLED=true` 로 mock 해 잠금 해제 시 회귀 테스트로 유지한다.
   `noneModeLayerCheck.test.tsx` 의 '있음 모드는 검사하지 않는다' 1건은 잠금 동작('없음'으로 바뀌어 검사됨)으로 교체했다.
@@ -326,6 +329,8 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      → [기대: '없음'이 체크돼 있고 Merge 로 만들어졌던 변경전/변경후 행이 그대로 보인다. 구분 칸은 드롭다운 없이 PP 접두사로 판정한 값이다.
      '다음 →' 시 '없음' 규칙 오류가 있으면 해당 문구로 막힌다. 실패 신호: 행이 사라짐 / "매핑 대기 N건" 오류로 막힘.]
   6. [상세 목적을 모두 해제 → 다시 Layer 추가/삭제 클릭] → [기대: 빈 행 1개 표가 다시 바로 열린다.]
+  7. [STEP 1 제목 '📋 의뢰 상세' 옆 가이드 투어 배지 → '다음'으로 3/8·4/8 단계] → [기대: 제목 '변경전/변경후 입력' / '변경전/변경후 직접 작성' 과 위 설명 문구.
+     실패 신호: "기존 승인 요청서를 참조해 비교·병합" 문구가 남아 있음.]
 
 ### 기능 변경 (2026-10-19 — 참조 요청서 필수 규칙을 Merge 사용 목적 전체로 통일)
 
