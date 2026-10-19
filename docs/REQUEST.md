@@ -388,8 +388,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   '참조 요청서 모드 변경' 확인 모달(`request.merge_mode_change_confirm`)이 뜬다 → 확인 시 변경전/변경후 내용을 비우고 '있음'(미Merge)으로,
   취소 시 그대로. 모든 Merge 사용 목적에 공통이다(블록 공용).
   - '있음'으로 **Merge 확정한 뒤**에는 기존대로 라디오가 잠기고 '재선택'으로만 해제한다(요청 범위 밖이라 변경 없음).
-- **알려진 한계(기존 동작, 변경 없음)**: 최종 상신 버튼은 마지막 STEP 만 검증하고 STEP1 관문은 '다음'으로 넘어갈 때 검사한다
-  (기존 참조 요청서 관문과 동일). 이번 변경 전에 Overlay 문서를 STEP5까지 진행해 임시저장한 경우 STEP1 을 다시 지나지 않으면 이 관문에 걸리지 않는다.
+- **검증 시점(2026-10-19 정정)**: 이 관문(`addBaGateError`)은 STEP1 '다음'뿐 아니라 **최종 상신 검증(`validate(5)`)에서도 다시 돈다**
+  (`index.tsx` STEP5 블록 — "초안 복원 등으로 STEP 1 검증을 건너뛴 경우를 대비한 최종 안전망"). 따라서 이번 변경 전에 STEP5까지 진행해
+  임시저장한 Overlay 문서도 상신할 때 막힌다. (처음 작성 때는 "STEP1 을 다시 지나지 않으면 걸리지 않는다"고 적었으나 코드와 달라 정정했다.)
   백엔드에는 참조 요청서 검증이 없다(API 직접 호출은 막지 않음).
 - **i18n**: `request.ba_gate_overlay_merge_required` ko/en 동시 추가.
 - **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 28 suites·431 tests 통과 — 신규 `overlayRefDocRequired.test.tsx` 11건
