@@ -1448,6 +1448,18 @@ class PEStageReviewerFlowTest(TestCase):
             self.assertEqual(n.subject, f'[P 완료 통보] {doc.title}')
             self.assertEqual(len(n.recipients), 1, '팀별로 분리 발송되어 한 통에 다른 팀이 섞이지 않아야 한다')
 
+    # claude 수정 (2026-10-19): J 단계가 없는 'Overlay만 변경' 단독 문서는 P 완료 통보가 TE_O 에게만 가는지 고정
+    def test_p_completion_skips_te_j_when_overlay_only(self):
+        """'Overlay만 변경' 단독 문서는 J 단계가 없으므로 P 완료 통보를 TE_J 에게 보내지 않는다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        notis = list(MailNotification.objects.filter(document=doc, event_type='notify_p_completed'))
+        self.assertEqual(len(notis), 1, 'TE_O 1통만 나가야 한다')
+        self.assertEqual(notis[0].recipients, [self.o_user.mail])
+
     def test_notify_rjo_completed_sent_when_r_j_o_all_done(self):
         """(2026-09) 2구역 R + 3구역 J·O 가 모두 완료되면 TE_P 팀 전원에게 참고 통보가 간다."""
         doc = self._advance_to_parallel()  # R 은 이미 완료된 상태로 진입
