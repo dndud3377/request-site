@@ -538,6 +538,7 @@
     "merge_reselect_no_snapshot": "이 의뢰서에는 Merge 이전 스냅샷이 없어 비교 표와 매핑만 초기화됩니다.",
     "merge_mode_ref": "참조 요청서 있음",
     "merge_mode_none": "참조 요청서 없음",
+    "merge_ref_locked": "기능 수정 중",
     "merge_ref_none": "없음",
     "merge_none_done": "이 의뢰서는 참조 요청서 '없음'으로 확정되었습니다. 바꾸려면 '재선택'을 누르세요.",
     "merge_mode_change_title": "참조 요청서 모드 변경",
