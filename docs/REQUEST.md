@@ -288,6 +288,52 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-10-19 — MAP 정보 잠금 확대: R/고정 후결자 합의 이력이 있으면 MAP 정보 + 요청 목적·라인~조리법 수정 불가)
+
+- **배경(사용자 보고)**: MAP 목적 NEW 로 상신해 3회차에 R 이 합의한 요청서가 이후 반려됐고, 재상신 편집에서 제품 이름을 지웠다
+  다시 입력하자 Step1 라인/제품 변경 시 EXISTING 자동 재매칭(2026-10-05 "Step1 라인/제품이 바뀌면 EXISTING 자동 매칭을 무조건 다시 판별")이
+  StepMap 을 초기화하고 EXISTING 으로 채워, NEW 였던 요청서가 EXISTING 으로 상신됐다.
+  기존 MAP 정보 잠금은 **중단(pause) 상태 + 현재 회차 R 합의**일 때만 걸려 이 경우를 막지 못했다.
+- **의도(사용자)**: R 이 한 번 합의한 MAP 정보는 그대로 남아야 한다. MAP 을 바꾸려면 MAP 삭제 후 다시 올리고,
+  라인·제품이 바뀌면 기존 요청서를 고치지 말고 새 요청서를 작성한다.
+- **동작(사용자 결정)**:
+  - 잠금 조건: 지난 회차 포함 **R(+RV) 전원 합의 회차가 있거나 고정 후결자 합의가 있었던** 문서(`RequestDocument.has_map_info_approval`).
+    이후 R 이 직접 반려해도 잠금은 유지된다.
+  - 적용 상태: `rejected`·`under_review`·`submitted`·`pause`(`doc_permissions.MAP_INFO_LOCK_STATUSES`). `draft`·`approved` 는 대상 아님.
+  - 잠그는 필드: MAP 정보(`MAP_INFO_FIELDS`, 기존과 동일) + **요청 목적·라인·조합법·제품 이름·조리법**(`MAP_LOCK_STEP1_FIELDS`).
+    조합법·조리법도 함께 잠그는 이유: 조합법을 바꾸면 제품 이름이 지워지고(`index.tsx` 조합법 변경 effect), 조리법을 바꾸면
+    기존 제품이 목록에 없을 때 제품 이름이 지워져, 잠긴 제품 이름을 다시 입력할 수 없게 되기 때문이다.
+  - 화면: `Step1` 의 라인 select·조합법/제품 이름/조리법 입력·요청 목적 버튼 disabled + 안내 문구 `request.step1_locked_notice`(ko/en),
+    StepMap 은 기존 read-only + `request.map_info_locked_notice` 그대로. 입력 자체가 막히므로 EXISTING 자동 재매칭 effect 가 돌 일이 없다.
+  - 서버: `RequestDocumentViewSet.update` 가 잠긴 문서에서 위 필드 값이 하나라도 달라지면 400
+    (`MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다.`).
+- **영향 파일**: `backend/api/models.py`, `doc_permissions.py`, `views.py`, `serializers.py`, `tests.py`,
+  `frontend/src/pages/RequestPage/components/Step1.tsx`, `index.tsx`, `mapInfoLockStep1.test.tsx`(신규), `types/index.ts`, `locales/ko.json`·`en.json`.
+  마이그레이션 없음.
+- **검증**:
+  - 백엔드 `manage.py test api` **708건 OK**. 신규 `MapInfoLockAfterApprovalHistoryTest` 9건 — 구현을 `git stash` 로 되돌리면 5건 실패(대조군 4건만 통과).
+  - 프론트 `npm test` **33 suites·486건 통과**(신규 `mapInfoLockStep1.test.tsx` 3건 포함) — Step1/index 변경을 되돌리면 잠금 테스트 1건 실패.
+    `tsc --noEmit` 에러 0.
+  - 원격 세션에서 sqlite + `AUTH_MODE=dev` 로 백엔드·프론트 개발 서버를 띄우고 Playwright 로 수정 전/후 화면을 캡처:
+    수정 전엔 제품 이름을 지웠다 같은 값을 다시 입력하면 MAP 목적이 EXISTING 으로 바뀌었고, 수정 후엔 입력이 잠겨 NEW 가 유지됐다.
+    잠긴 문서를 바꾼 값 없이 임시저장하면 PATCH 200.
+  - 결재 케이스 러너: 로컬 sqlite 환경에 JOB FILE layer 마스터 데이터가 없어 실행 불가(`상신에 쓸 마스터 데이터를 찾지 못했다`) —
+    결재 액션·결재선 생성 로직은 바꾸지 않았다.
+- **⚠️ 알려진 한계(확인됨, 미수정 — 사용자 결정 대기)**: 편집 화면이 구버전 문서를 불러올 때 일부 MAP 필드를 백필한다
+  (`map_change_reason` 없음 → `''`, `prodc_scope` 없음 → 리전 값으로 역추론). 잠긴 문서가 이런 구버전 형태면 사용자가 아무것도
+  바꾸지 않아도 저장 시 서버가 "값이 달라졌다"고 보고 400 을 낸다 — `map_change_reason` 키가 없는 잠긴 반려 문서로 임시저장 시
+  PATCH 400 을 실제로 재현했다. 기존 중단(pause) 잠금에도 있던 문제이나, 이번에 잠금 대상이 반려 문서까지 넓어져 영향 범위가 커졌다.
+- **수동 검증 시나리오**:
+  1. [결재 현황 → R 이 합의한 적이 있고 이후 반려된 의뢰서 → '수정·재상신'] → [기대: 의뢰 상세 상단에 🔒 "RFG(R) 또는 고정 후결자 합의가
+     완료된 요청서는 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다…" 문구, 라인·조합법·제품 이름·조리법 입력과 요청 목적
+     버튼이 회색으로 클릭/입력 불가.] 실패 신호: 제품 이름 칸에 커서가 들어가 지울 수 있음.
+  2. [1번 이어서 '다음'(또는 위저드의 'MAP 정보')] → [기대: 🔒 "RFG(R) 검토가 완료되어 MAP 정보는 더 이상 수정할 수 없습니다." 문구,
+     MAP 목적이 상신 당시 값(예: NEW) 그대로이고 모든 입력이 흐리게 잠김.] 실패 신호: MAP 목적이 EXISTING 으로 바뀌어 있음.
+  3. [1번 문서에서 J-ayer 등 잠기지 않은 항목만 고친 뒤 임시저장/재상신] → [기대: 정상 저장·재상신, 상세보기 MAP 정보 탭의 MAP 목적은 그대로.]
+  4. [R 이 아직 합의한 적이 없는 반려 문서(PL 반려 또는 R 반려만 있는 문서) → 수정·재상신] → [기대: 잠금 문구 없음, 라인~조리법·요청 목적·MAP 정보 모두 수정 가능(기존과 동일).]
+  5. [R 합의 후 중단된 문서 → 재개 전 수정] → [기대: 1·2번과 같은 잠금.]
+  6. [언어 English 로 1번 반복] → [기대: "Request purpose, line, combination method, product name and cooking method can no longer be edited…". 키 문자열이 보이면 실패.]
+
 ### 기능 추가 (2026-10-16 — 참조 요청서 '없음': 변경전/변경후 표를 J/O 표와 대조 + PP 접두사로 구분 자동 판정)
 
 - **의도(사용자)**: '참조 요청서 없음'으로 직접 입력한 변경전/변경후 값이 실제 J-ayer/O-ayer 표와 맞는지 검증한다.
