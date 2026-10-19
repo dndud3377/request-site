@@ -367,6 +367,17 @@ class RequestDocument(models.Model):
             other = [other]
         return len(other) == 1 and other[0] in self.OTHER_PURPOSE_OVERLAY_VALUES
 
+    # claude 수정 (2026-10-19): 'Overlay만 변경' 단독 문서는 RFG(R) 팀과 무관하므로 2구역(R)도 뺀다
+    def skip_r_stage(self):
+        """결재 경로에서 2구역(R/RV)을 빼는 의뢰서인가 — `skip_j_stage()` 와 같은 조건(기타 목적
+        'Overlay만 변경' 단독, 일반 경로만).
+
+        참이면 PL(+SA) 전원 합의 직후 R 없이 곧바로 3구역(P ∥ O ∥ [E] ∥ RA)을 연다
+        (`RequestDocumentViewSet._open_stage_after_pl`). 판정은 J 와 마찬가지로 **단계 생성 시점**에
+        이뤄진다 — 이미 R step 이 생성된 진행 중 문서는 그대로 R 을 거친다.
+        """
+        return self.skip_j_stage()
+
     def has_ppid_plel(self):
         """J-layer 행의 pp 중 하나라도 판정 키워드(plel)를 포함하는지 여부.
 

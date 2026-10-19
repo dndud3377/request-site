@@ -169,8 +169,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > `P·PV·J·O·R·RV`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
-> **예외 — 기타 목적 'Overlay만 변경' 단독 (2026-08, 2026-10-15 이름·저장값 변경)**: `RequestDocument.skip_j_stage()`가 참이면
-> **일반 경로에서 J 단계를 아예 만들지 않는다**(`PL → R → P ∥ O ∥ [E] ∥ RA`). 판정은
+> **예외 — 기타 목적 'Overlay만 변경' 단독 (2026-08, 2026-10-15 이름·저장값 변경, 2026-10-19 R 제외)**: `RequestDocument.skip_j_stage()`가 참이면
+> **일반 경로에서 J 단계를 아예 만들지 않는다**. (2026-10-19) 같은 조건(`skip_r_stage()`)으로 **2구역(R/RV)도
+> 만들지 않아** 경로는 `PL(+SA) → P(+PV) ∥ O ∥ [E(+EV)] ∥ RA` 다(아래 "2구역(R) 제외" 항목). 판정은
 > `detail.other_purpose` 가 **이 항목 한 개뿐**일 때만 참이다 — 다른 기타 목적을
 > 함께 골랐으면(예: `Overlay 변경 + STEPSEQ 변경`) 그 목적의 검토가 남아 있으므로 J 를 유지한다
 > (상수 `RequestDocument.OTHER_PURPOSE_OVERLAY`, 프론트 `RequestPage/constants.ts` 의
@@ -200,6 +201,25 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 >   `test_overlay_only_document_approved_without_j`
 > - ⚠️ 판정은 **단계 생성 시점**에 이뤄진다 — 이미 J step 이 생성된 기존 문서는 영향이 없고,
 >   재상신(round+1)하면 새 회차부터 규칙이 적용된다.
+> - **(2026-10-19) 2구역(R) 제외** — 관련 없는 RFG 팀이 결재하지 않도록 R(+RV)도 뺐다(사용자 요청).
+>   - **생성**: `_open_stage_after_pl` 이 `document.skip_r_stage()`(= `skip_j_stage()` 와 같은 조건)이면
+>     R 을 만들지 않고 PL(+SA) 전원 합의 직후 `_advance_to_parallel` 로 3구역을 연다 — 반려 후 재상신 R 생략
+>     (Case T)과 같은 분기다. 3구역 기한 기준일은 PL 전원 합의 시각(P 4영업일, O·E·RA 6영업일).
+>   - **진행 중 문서**: 판정은 J 와 같이 **단계 생성 시점**이다. 배포 시점에 PL 단계였던 문서는 PL 합의가
+>     끝날 때 R 없이 진행되고, **R step 이 이미 생성된 문서는 그대로 R 을 거친다**(사용자 결정).
+>   - **구역 정의(`pause_zones`)는 바꾸지 않았다** — R 이 진행 중인 기존 문서의 중단·재개·철회 판정이 깨지지
+>     않게 하기 위해서다(Case T 와 동일). 2구역이 비어 있을 뿐이다.
+>   - **메일**: `mailer.route_agents_for` 가 현재 회차에 R step 이 없으면 R·RV 를 뺀다(PL 단계 포함) —
+>     반려 메일에 TE_R 이 빠지고 결재 경로 카드에도 R 이 나오지 않는다. R 이 이미 생성된 회차는 R 을 유지한다.
+>   - **화면**: 결재 상세 '결재 경로' 탭의 R 행은 '2구역' 머리글 아래 `해당없음`(PL 단계부터, 그 회차에 R step 이
+>     없을 때). 결재현황 목록 그리드는 Case T 와 같이 R 없는 회차를 그대로 처리한다(변경 없음).
+>   - **R/J/O 완료 통보(`notify_rjo_completed`)는 보내지 않는다** — R·J 가 모두 없어 조건이 성립하지 않으며,
+>     그대로 두기로 했다(사용자 결정, `docs/MAIL.md`).
+>   - MAP 정보 잠금(`has_map_info_approval`)은 고정 후결자 합의 이력으로 그대로 동작한다.
+>   - 테스트: `test_r_step_not_created_when_overlay_only`, `test_r_step_not_created_for_legacy_overlay_value`,
+>     `test_r_step_created_when_overlay_selected_with_others`, `test_in_progress_overlay_doc_with_r_step_keeps_r`,
+>     `test_route_and_reject_mail_exclude_r_when_overlay_only`, `test_notify_rjo_completed_not_sent_when_overlay_only`,
+>     프론트 `PagedDetailView.overlayOnlyRoute.test.tsx`, 러너 `R-10`·`R-11`·`X-07`.
 
 ### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
@@ -240,6 +260,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   추가로 **E**(due: 6영업일, 병렬)는 `plel` 인 의뢰서에만 생성한다.
 - ✅ **(2026-08) 기타 목적 'Overlay만 변경'(구 값 'Overlay 변경') 단독이면 J 를 생성하지 않는다**(`document.skip_j_stage()`).
   J 도착 메일과 검토 항목 채우기(`fill_from_master`)도 함께 건너뛴다 — 위 예외 항목 참조.
+  **(2026-10-19)** 이 문서는 R 자체가 없어(`skip_r_stage()`) 이 Case 를 거치지 않고, 같은 병렬 생성이
+  PL(+SA) 전원 합의 시점(`_open_stage_after_pl`)에 일어난다. R step 이 이미 생성된 진행 중 문서만 이 Case 를 탄다.
 - ✅ **(2026-08) J 도 이 시점에 생성**된다(예전엔 P 완료 후 생성). J 도착 메일(`stage_arrival(J)`)도
   여기서 발송되며, 수신자도 **미배정 시 TE_J 팀 전원**으로 바뀌었다(예전엔 고정 주소 1곳).
   J 가 팀원 누구나 선점하는 병렬 단계가 됐는데 대표 주소로만 보내면 자기 차례를 알 수 없다.
@@ -987,6 +1009,16 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 - ⚠️ **알려진 부수효과**: R이 생략된 회차는 `_is_r_zone_complete`가 항상 거짓이 되어, "R+J+O
   완료 시 P팀 참고 통보"(`notify_rjo_completed`) 메일이 그 회차엔 발송되지 않는다(R 자체가
   없으므로 자연스러운 결과).
+- 🐛→✅ **(2026-10-19) R 생략 회차의 반려 메일이 TE_R 에도 가던 문제**: 반려 수신자 산출
+  (`mailer._remaining_stage_team_groups`)이 결재선에서 "아직 합의하지 않은 단계"를 고르는데, R step 이 없는
+  회차에서도 R 이 결재선에 남아 있어 TE_R 팀 전원이 반려 메일을 받았다. 이제 `mailer.route_agents_for` 가
+  `is_r_skipped(현재 회차)` 이면 R·RV 를 뺀다('Overlay만 변경' 단독 문서의 R 제외와 같은 함수).
+  R 생략이 확정되기 전(그 회차 PL 단계)은 3구역이 아직 없어 그대로 R 을 결재선에 둔다 — PL 단계 반려는
+  팀 브로드캐스트 대상이 아니라 영향이 없다. 테스트: `RSkipStageIntegrationTest.test_reject_in_r_skipped_round_excludes_te_r_from_mail`.
+- ⚠️ **알려진 제약(기록만, 2026-10-19 사용자 결정)**: R 이 없는 회차에서 그 회차의 RA 가 0명이면(고정 후결자
+  `POST_APPROVER_LOGINID` 미설정 + 추가 후결자 없음) 진행 중 후결자 추가가 "R 합의 이후에만…" 400 으로 막히고,
+  결재 경로 변경도 RA step 을 만들지 않는다(`_post_approver_due_date` 가 R 합의일만 기준으로 쓴다).
+  운영은 고정 후결자가 항상 있어 실제로 발생하지 않는다. 'Overlay만 변경' 단독 문서도 같다.
 - 테스트: `backend/api/tests.py::ShouldSkipRStageTest`, `RSkipStageIntegrationTest`
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
