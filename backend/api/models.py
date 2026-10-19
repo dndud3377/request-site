@@ -7,6 +7,7 @@
 """
 import json
 from decimal import Decimal, InvalidOperation
+from django.conf import settings
 from django.db import models
 from django.core.validators import RegexValidator
 from django.contrib.auth import get_user_model
@@ -448,6 +449,28 @@ class RequestDocument(models.Model):
             return False
         return not r_steps.exclude(action='approved').exists()
 
+    # claude 수정 (2026-10-19): MAP 정보 잠금을 '현재 회차 R 합의'에서 '지난 회차 포함 R 또는 고정 후결자 합의 이력'으로 넓힘
+    def has_map_info_approval(self):
+        """지난 회차를 포함해 어느 회차에서든 R(+RV) 전원 합의 또는 고정 후결자(RA) 합의가 있었는가.
+
+        참이면 MAP 정보와 요청 목적·라인~조리법을 더 이상 바꿀 수 없다(`doc_permissions.map_info_locked`).
+        한 번 합의된 MAP 정보는 이후 반려·재상신을 거쳐도 그대로 유지돼야 하고, 바꾸려면 MAP 삭제 후
+        새 요청서로 올려야 하기 때문이다. 목록 직렬화에서도 호출되므로 `approval_steps.all()`
+        (prefetch 캐시)만 사용한다.
+        """
+        fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+        r_actions_by_round = {}
+        for step in self.approval_steps.all():
+            if step.agent in ('R', 'RV'):
+                r_actions_by_round.setdefault(step.round, []).append(step.action)
+            elif (step.agent == 'RA' and step.action == 'approved' and fixed_lid
+                  and step.assignee and step.assignee.loginid == fixed_lid):
+                return True
+        return any(
+            all(action == 'approved' for action in actions)
+            for actions in r_actions_by_round.values()
+        )
+
     # StepMap(2단계)이 소유한 모든 DetailFormState 필드 — 프론트 `RequestPage/constants.ts` 의
     # mapInfoDefaults() 와 반드시 같은 키 목록이어야 한다(2026-09, MAP 정보 잠금 판정에 재사용).
     MAP_INFO_FIELDS = (
@@ -466,15 +489,25 @@ class RequestDocument(models.Model):
         'labelsideshot', 'hpkglabelheight', 'final_yn', 'final_entries',
     )
 
-    def changed_map_info_fields(self, new_detail):
-        """저장된 detail 과 비교해 값이 달라진 MAP 정보 필드 이름 목록을 반환한다.
+    # claude 수정 (2026-10-19): MAP 정보 잠금 시 함께 잠그는 의뢰 상세(Step1) 필드 신설 — 요청 목적 + 라인·조합법·제품 이름·조리법.
+    # 이 값이 바뀌면 MAP 정보가 초기화·재판별되거나(라인/제품 → EXISTING 자동 매칭) 다른 제품의
+    # 요청서가 되므로, R 이 합의한 MAP 정보를 지키려면 같이 잠가야 한다(2026-10).
+    MAP_LOCK_STEP1_FIELDS = ('request_purpose',) + DETAIL_LINE_TO_PROCESS_ID_FIELDS
 
+    # claude 수정 (2026-10-19): 잠금 비교 대상에 MAP_LOCK_STEP1_FIELDS(요청 목적·라인~조리법) 추가
+    def changed_map_info_fields(self, new_detail):
+        """저장된 detail 과 비교해 값이 달라진 잠금 대상 필드 이름 목록을 반환한다.
+
+        잠금 대상 = MAP 정보(`MAP_INFO_FIELDS`) + `MAP_LOCK_STEP1_FIELDS`.
         `map_info_locked()` 가 참인 상태에서 편집 요청(PATCH)을 검증할 때 쓴다
         (`views.py` `RequestDocumentViewSet.update`).
         """
         old_detail = self.get_detail().get('detail', {}) or {}
         new_detail = new_detail or {}
-        return [f for f in self.MAP_INFO_FIELDS if old_detail.get(f) != new_detail.get(f)]
+        return [
+            f for f in self.MAP_INFO_FIELDS + self.MAP_LOCK_STEP1_FIELDS
+            if old_detail.get(f) != new_detail.get(f)
+        ]
 
 
 class LayerFilterSet(models.Model):
