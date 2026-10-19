@@ -230,6 +230,9 @@ describe("참조 요청서 '있음' 잠금", () => {
     expect(headers).not.toContain(i18n.t('request.ba_before_col'));
     expect(document.querySelector('.ba-summary')).toBeNull();
     expect(document.querySelectorAll('.ba-result-table tbody tr:first-child td')).toHaveLength(11);
+    // 붙여넣기 안내도 layer 문장이 빠진 '없음' 전용 문구다.
+    expect(document.body.textContent).toContain(i18n.t('request.ba_paste_hint_manual'));
+    expect(document.body.textContent).not.toContain(i18n.t('request.ba_paste_hint'));
   });
 
   it("'있음' 라디오를 눌러도 모드 변경 모달이 뜨지 않고 '없음'이 유지된다", async () => {
