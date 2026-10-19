@@ -220,6 +220,18 @@ describe("참조 요청서 '있음' 잠금", () => {
     expect(document.body.textContent).not.toContain(i18n.t('request.merge_none_done'));
   });
 
+  // claude 수정 (2026-10-19): '없음' 표는 layer 컬럼·Merge 요약 줄 없이 '변경전'/'변경후' 머리글로 그린다
+  it("'없음' 표는 layer 컬럼과 Merge 요약 줄이 없고 머리글은 '변경전'/'변경후'다", async () => {
+    await renderStep1(noneDetail(manualPair(side(J_OUT), side(J_IN))));
+    const headers = Array.from(document.querySelectorAll('.ba-result-table thead th')).map((th) => th.textContent);
+    expect(headers).not.toContain(i18n.t('request.col_layer'));
+    expect(headers).toContain(i18n.t('request.ba_before_col_manual'));
+    expect(headers).toContain(i18n.t('request.ba_after_col_manual'));
+    expect(headers).not.toContain(i18n.t('request.ba_before_col'));
+    expect(document.querySelector('.ba-summary')).toBeNull();
+    expect(document.querySelectorAll('.ba-result-table tbody tr:first-child td')).toHaveLength(11);
+  });
+
   it("'있음' 라디오를 눌러도 모드 변경 모달이 뜨지 않고 '없음'이 유지된다", async () => {
     await renderStep1(noneDetail(manualPair(null, side(J_IN))));
     await act(async () => { modeRadio('ref').click(); });
