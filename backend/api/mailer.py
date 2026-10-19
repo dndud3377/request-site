@@ -1367,9 +1367,14 @@ def enqueue_notify_p_completed(document):
     도착 통보가 중복이 됐고, 대신 P 진행 상황을 알 수 있도록 이 완료 통보에 합류시켰다.
     TE_O·TE_J 는 서로 다른 팀이라 한 통에 묶지 않고 각각 별도 메일로, 순서대로(겹치지
     않게) 보낸다.
+
+    결재 경로에 J 가 없는 문서('Overlay만 변경' 단독 — `ROUTE_AGENTS_NO_J`)는 TE_J 가 할 일이
+    없으므로 TE_O 에게만 보낸다(반려 수신자 산출과 같은 `route_agents_for` 기준).
     """
+    # claude 수정 (2026-10-19): J 단계가 없는 문서(Overlay만 변경 단독)에는 TE_J 에게 P 완료 통보를 보내지 않는다
+    team_keys = ('O', 'J') if 'J' in route_agents_for(document) else ('O',)
     notis = []
-    for team_key in ('O', 'J'):
+    for team_key in team_keys:
         recipients = _apply_redirect(_team_emails(team_key), document)
         notis.append(_enqueue(document, 'notify_p_completed', recipients, agent=team_key, dispatch=False))
     _dispatch_batch(notis)
