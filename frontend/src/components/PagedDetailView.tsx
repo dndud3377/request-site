@@ -873,9 +873,13 @@ const buildAdiCdStepsTable = (d: any, t: TFunction): DiffTable | null => {
   };
 };
 
-/** ADI CD 동일 변경 적용 대상 — AdiCdTargetsCell 과 같은 (조리법, 제품 이름) 목록. */
+/**
+ * ADI CD 동일 변경 적용 대상 — AdiCdTargetsCell 과 같은 (조리법, 제품 이름) 목록.
+ * 카드는 추가 대상이 있을 때만 보이므로 추가 대상이 없으면 표도 없다(첫 대상=문서 자신의 값은 기본 정보에서 따로 추적).
+ */
 const buildAdiCdTargetsTable = (d: any, t: TFunction): DiffTable | null => {
-  const targets = buildAdiCdTargets(d ?? {});
+  if (!Array.isArray(d?.adi_cd_extra_targets) || d.adi_cd_extra_targets.length === 0) return null;
+  const targets = buildAdiCdTargets(d);
   if (targets.length === 0) return null;
   return {
     headers: [t('request.process_id'), t('request.partid_selection')],
@@ -892,6 +896,15 @@ const htmlToText = (html: any): string => {
 
 /** 표 데이터 비교용 서명 — 표가 없으면(null) 빈 문자열이다. */
 const tableSig = (table: DiffTable | null): string => (table ? JSON.stringify(table) : '');
+
+/** '모든 이력 확인'의 Map Option 값 — R 탭 Map Option 블록(mapOptionDefs)과 같은 목록. 켜진 옵션 이름을 나열한다. */
+const MAP_OPTION_HISTORY_KEYS: [string, string][] = [
+  ['photo_backside', 'request.map_opt_photo_backside'], ['eds_backside', 'request.map_opt_eds_backside'],
+  ['tsv', 'request.map_opt_tsv'], ['rf', 'request.map_opt_rf'], ['fullchip', 'request.map_opt_fullchip'],
+  ['split', 'request.map_opt_split'], ['st', 'request.map_opt_st'], ['ecc', 'request.map_opt_ecc'],
+  ['labelsideshot', 'request.map_opt_labelsideshot'], ['hpkglabelheight', 'request.map_opt_hpkglabelheight'],
+];
+const MAP_OPTION_ACTIVE = '적용';
 
 // ===== Table Components =====
 
@@ -1305,6 +1318,208 @@ function computeTableEverChanged<T extends { id: string }>(
     }
   }
   return changedIds;
+}
+
+// ===== 모든 이력 확인 (탭 단위 · 전 회차 변경 모음) =====
+// claude 수정 (2026-10-19): 직전 회차만 보던 '이력 확인'과 별개로, 탭 하나의 변경을 인접 회차 구간
+// (1차→2차, 2차→3차 …, 직전→현재)마다 모아 보여주는 창. 값이 되돌아온 변경(A→B→A)과 지워진 행도 보인다.
+
+/** 탭 export 옆 '모든 이력 확인' 버튼을 다는 탭 식별자 */
+type AllHistoryTabKey = 'detail' | 'r' | 'jayer' | 'oayer' | 'bb' | 'etc';
+
+type RowChangeKind = 'added' | 'changed' | 'removed';
+
+/** 탭의 표(J/O/뼈찜) 하나 — 행 짝짓기·비교 기준은 기존 행 이력과 같다(matchPrevRows · *_DIFF_FIELDS). */
+interface RowHistorySpec {
+  pick: (r: RoundSnapshot) => Array<{ id: string }>;
+  defs: DiffFieldDef[];
+}
+
+interface TabHistorySpec {
+  title: string;
+  /** 탭의 표 밖 항목. 회차마다 항목 수·순서가 같아야 한다(블록 빌더와 같은 전제). */
+  items?: (d: any) => DiffItem[];
+  rows?: RowHistorySpec;
+}
+
+interface ItemChange { label: string; kind?: DiffItem['kind']; before: DiffItem; after: DiffItem; }
+interface RowChange { kind: RowChangeKind; rowLabel: string; before: Record<string, any> | null; after: Record<string, any> | null; }
+
+const ROW_CHANGE_TONE: Record<RowChangeKind, { text: string; bg: string; labelKey: string }> = {
+  added:   { text: '#155724', bg: 'rgba(21,87,36,0.12)', labelKey: 'request.all_history_row_added' },
+  changed: { text: '#8a5a00', bg: 'rgba(255,193,7,0.18)', labelKey: 'request.all_history_row_changed' },
+  removed: { text: '#dc3545', bg: 'rgba(220,53,69,0.12)', labelKey: 'request.all_history_row_removed' },
+};
+
+const itemSig = (item: DiffItem | undefined): string => (item?.kind === 'table' ? tableSig(item.table ?? null) : (item?.value ?? ''));
+
+/** 한 구간의 표 밖 항목 변경 — 같은 위치의 항목끼리 표시값으로 비교한다. */
+function computeItemChanges(prevItems: DiffItem[], curItems: DiffItem[]): ItemChange[] {
+  const changes: ItemChange[] = [];
+  curItems.forEach((after, i) => {
+    const before = prevItems[i];
+    if (before && itemSig(before) !== itemSig(after)) changes.push({ label: after.label, kind: after.kind, before, after });
+  });
+  return changes;
+}
+
+/**
+ * 한 구간의 행 변경 — 신규(짝 없음) · 변경(표시 컬럼 값이 다름) · 삭제(이전 회차 행이 현재 회차의 어느 행과도 짝이 안 됨).
+ * 행 번호는 신규·변경은 그 회차 표의 위치, 삭제는 이전 회차 표의 위치다.
+ */
+function computeRowChanges(prev: Array<{ id: string }>, cur: Array<{ id: string }>, defs: DiffFieldDef[], t: TFunction): RowChange[] {
+  const matched = matchPrevRows(cur, prev);
+  const usedPrev = new Set(Array.from(matched.values()));
+  const changes: RowChange[] = [];
+  cur.forEach((row, i) => {
+    const p = matched.get(row.id);
+    const rowLabel = t('request.all_history_row_no', { n: i + 1 });
+    if (!p) changes.push({ kind: 'added', rowLabel, before: null, after: row });
+    else if (rowContentSig(row, defs) !== rowContentSig(p, defs)) changes.push({ kind: 'changed', rowLabel, before: p, after: row });
+  });
+  prev.forEach((p, i) => {
+    if (!usedPrev.has(p)) changes.push({ kind: 'removed', rowLabel: t('request.all_history_prev_row_no', { n: i + 1 }), before: p, after: null });
+  });
+  return changes;
+}
+
+function TabAllHistoryModal({ spec, rounds, onClose }: {
+  spec: TabHistorySpec;
+  rounds: RoundSnapshot[];
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const fields = spec.rows ? toDiffFields(spec.rows.defs, t) : [];
+  const thS: React.CSSProperties = {
+    padding: '5px 10px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)',
+    borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)', whiteSpace: 'nowrap', textAlign: 'left',
+  };
+  const tdS: React.CSSProperties = { padding: '5px 10px', fontSize: '0.82rem', verticalAlign: 'top', borderBottom: '1px solid var(--border-light)' };
+  const thumbStyle = (borderColor: string): React.CSSProperties => ({
+    maxWidth: DIFF_THUMB_MAX_WIDTH, maxHeight: DIFF_THUMB_MAX_HEIGHT, borderRadius: 4, border: `1px solid ${borderColor}`, display: 'block',
+  });
+  const muted: React.CSSProperties = { fontSize: '0.85rem', color: 'var(--text-muted)' };
+
+  const renderItemCell = (c: ItemChange, side: 'before' | 'after'): React.ReactNode => {
+    const item = side === 'before' ? c.before : c.after;
+    const other = side === 'before' ? c.after : c.before;
+    if (c.kind === 'table') {
+      return item.table && item.table.rows.length > 0
+        ? <DiffMiniTable table={item.table} other={other.table ?? null} tone={side} />
+        : '-';
+    }
+    if (c.kind === 'image' && item.value) {
+      return <img src={`${MEDIA_URL_PREFIX}${item.value}`} alt={`${c.label} ${t(side === 'before' ? 'request.before_label' : 'request.after_label')}`} style={thumbStyle(side === 'before' ? '#dc3545' : '#155724')} />;
+    }
+    return <span style={{ whiteSpace: 'pre-wrap' }}>{item.value || '-'}</span>;
+  };
+
+  const cell = (f: DiffField, row: Record<string, any> | null): string => (row ? String(row[f.key] ?? '') : noRowMark(t));
+
+  const renderRowChange = (c: RowChange, key: string): React.ReactNode => {
+    const tone = ROW_CHANGE_TONE[c.kind];
+    const changed = fields.map((f) => c.kind !== 'changed' || cell(f, c.before) !== cell(f, c.after));
+    return (
+      <div key={key} style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 8px', borderRadius: 999, color: tone.text, background: tone.bg }}>{t(tone.labelKey as never)}</span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{c.rowLabel}</span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={thS}></th>
+                {fields.map((f) => <th key={f.key} style={{ ...thS, textAlign: 'center' }}>{f.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {(['before', 'after'] as const).map((side) => {
+                const row = side === 'before' ? c.before : c.after;
+                const color = side === 'before' ? '#dc3545' : '#155724';
+                const bg = side === 'before' ? 'rgba(220,53,69,0.06)' : 'rgba(21,87,36,0.06)';
+                return (
+                  <tr key={side}>
+                    <td style={{ ...tdS, fontWeight: 800, whiteSpace: 'nowrap', color }}>{t(side === 'before' ? 'request.before_label' : 'request.after_label')}</td>
+                    {row
+                      ? fields.map((f, fi) => (
+                          <td key={f.key} style={{ ...tdS, textAlign: 'center', whiteSpace: 'nowrap', ...(changed[fi] ? { color, background: bg, fontWeight: 700 } : {}) }}>
+                            {cell(f, row) || '-'}
+                          </td>
+                        ))
+                      : <td colSpan={fields.length} style={{ ...tdS, textAlign: 'center', color, background: bg, fontWeight: 700 }}>{noRowMark(t)}</td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  const sections = rounds.slice(1).map((cur, idx) => {
+    const prev = rounds[idx];
+    const itemChanges = spec.items ? computeItemChanges(spec.items(prev.detail), spec.items(cur.detail)) : [];
+    const rowChanges = spec.rows ? computeRowChanges(spec.rows.pick(prev), spec.rows.pick(cur), spec.rows.defs, t) : [];
+    return { prev, cur, itemChanges, rowChanges };
+  });
+
+  return (
+    <Modal isOpen onClose={onClose} title={t('request.all_history_title', { tab: spec.title })} size="xl">
+      {sections.length === 0 && <div style={muted}>{t('request.all_history_no_rounds')}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {sections.map(({ prev, cur, itemChanges, rowChanges }) => (
+          <div key={`${prev.label}_${cur.label}`}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
+              {t('request.all_history_section', { from: prev.label, to: cur.label })}
+              <span style={{ fontWeight: 400, marginLeft: 8, color: 'var(--text-muted)', fontSize: '0.78rem' }}>{fmtRoundTime(prev.timestamp)}</span>
+            </div>
+            {itemChanges.length === 0 && rowChanges.length === 0 && <div style={muted}>{t('request.no_change_label')}</div>}
+            {itemChanges.length > 0 && (
+              <div style={{ overflowX: 'auto', marginBottom: rowChanges.length > 0 ? 12 : 0 }}>
+                <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
+                  <thead>
+                    <tr>
+                      <th style={thS}>{t('request.item_col')}</th>
+                      <th style={{ ...thS, color: '#dc3545' }}>{t('request.before_label')}</th>
+                      <th style={{ ...thS, color: '#155724' }}>{t('request.after_label')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemChanges.map((c) => (
+                      <tr key={c.label}>
+                        <td style={{ ...tdS, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{c.label}</td>
+                        {c.kind === 'table' ? (
+                          // 표 항목은 열이 많아 좌우로 놓으면 잘리므로 변경 전 위·변경 후 아래로 쌓는다(흐름도 이력과 같은 배치).
+                          <td colSpan={2} style={tdS}>
+                            {(['before', 'after'] as const).map((side) => (
+                              <div key={side} style={{ marginBottom: side === 'before' ? 8 : 0 }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, marginBottom: 4, color: side === 'before' ? '#dc3545' : '#155724' }}>
+                                  {t(side === 'before' ? 'request.before_label' : 'request.after_label')}
+                                </div>
+                                {renderItemCell(c, side)}
+                              </div>
+                            ))}
+                          </td>
+                        ) : (
+                          <>
+                            <td style={{ ...tdS, color: '#dc3545', background: 'rgba(220,53,69,0.05)' }}>{renderItemCell(c, 'before')}</td>
+                            <td style={{ ...tdS, color: '#155724', background: 'rgba(21,87,36,0.05)', fontWeight: 700 }}>{renderItemCell(c, 'after')}</td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {rowChanges.map((c, i) => renderRowChange(c, `${c.kind}_${i}`))}
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
 }
 
 // ===== PagedDetailView =====
@@ -2054,6 +2269,75 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
     color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1,
   };
 
+  // claude 수정 (2026-10-19): 탭별 '모든 이력 확인' — 탭마다 비교할 항목·표를 정의한다. 값 생성기는 각 탭의
+  // '이력 확인'과 같은 함수를 쓴다. 화면 표시 조건(MAP 목적 등)과 무관하게 저장값이 바뀌었으면 모두 보여준다.
+  const [allHistTab, setAllHistTab] = useState<AllHistoryTabKey | null>(null);
+
+  const textItem = (labelKey: string, value: string): DiffItem => ({ label: t(labelKey as never), value });
+  const tableItem = (labelKey: string, table: DiffTable | null): DiffItem => ({ label: t(labelKey as never), value: tableSig(table), kind: 'table', table });
+  const buildMapOptionValue = (d: any): string => MAP_OPTION_HISTORY_KEYS
+    .filter(([k]) => d?.[k] === MAP_OPTION_ACTIVE)
+    .map(([, labelKey]) => t(labelKey as never))
+    .join(', ');
+
+  const allHistSpecs: Record<AllHistoryTabKey, TabHistorySpec> = {
+    detail: {
+      title: t('request.section_detail'),
+      items: (d) => [
+        textItem('request.request_purpose', buildPurposeValue(d ?? {})),
+        textItem('request.line', fmtDiffVal(d?.line)),
+        textItem('request.process_selection', fmtDiffVal(d?.process_selection)),
+        textItem('request.partid_selection', fmtDiffVal(d?.partid_selection)),
+        textItem('request.process_id', fmtDiffVal(d?.process_id)),
+        textItem('request.customer_name', fmtDiffVal(d?.customer_name)),
+        textItem('request.customer_requirement', fmtDiffVal(d?.customer_requirement)),
+        textItem('request.bb_status', buildBbValue(d ?? {})),
+        textItem('request.change_purpose_note', fmtDiffVal(d?.change_purpose_note)),
+        textItem('request.product_manager', fmtDiffVal(d?.product_manager)),
+        textItem('request.mshot_change_cc_label', fmtCcStatus(d?.mshot_change_cc, t)),
+        tableItem('request.adi_cd_targets_title', buildAdiTargets(d)),
+        tableItem('request.adi_cd_section_title', buildAdiSteps(d)),
+        tableItem('request.flow_chart', buildFlowTable(d)),
+        tableItem('request.ba_result_title', buildMergePairs(d)),
+      ],
+    },
+    r: {
+      title: t('request.section_map_r'),
+      items: (d) => [
+        textItem('request.map_type', fmtDiffVal(d?.map_type)),
+        textItem('request.source_line', fmtDiffVal(d?.source_line)),
+        textItem('request.source_partid_selection', fmtDiffVal(d?.source_partid)),
+        textItem('request.map_change_reason_delete', buildMapReasonText(d)),
+        textItem('request.map', buildMapValue(d ?? {})),
+        textItem('request.ea_change', buildEaValue(d ?? {})),
+        ...buildMshotItems(d, t),
+        ...buildProdcItems(d, t),
+        ...buildFinalItems(d, t),
+        textItem('request.map_opt_inter', buildInterValue(d ?? {})),
+        textItem('request.map_option_title', buildMapOptionValue(d)),
+      ],
+    },
+    jayer: { title: t('request.job_li'), rows: { pick: (r) => r.jayerRows, defs: JAYER_DIFF_FIELDS } },
+    oayer: {
+      title: t('request.ovl_li'),
+      rows: { pick: (r) => r.oayerRows, defs: OAYER_DIFF_FIELDS },
+      items: (d) => [
+        textItem('request.partial_shot', fmtDiffVal(d?.partial_shot)),
+        textItem('request.tbvtlv_thickness', fmtDiffVal(d?.tbvtlv_thickness)),
+        tableItem('request.tbvtlv', buildTbvtlvTable(d?.tbvtlv_entries, t)),
+      ],
+    },
+    bb: { title: t('request.bb_li'), rows: { pick: (r) => r.bbRows, defs: BB_DIFF_FIELDS } },
+    etc: { title: t('request.section_etc') },
+  };
+
+  /** 탭 export 버튼 바로 옆에 두는 '모든 이력 확인' 버튼 — 회차 수와 무관하게 항상 보인다. */
+  const allHistBtn = (key: AllHistoryTabKey): React.ReactNode => (
+    <button type="button" onClick={() => setAllHistTab(key)} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>
+      🕘 {t('request.all_history_btn')}
+    </button>
+  );
+
 type Page = { label: string; content: React.ReactNode; key?: string };
   const pages: Page[] = [
     {
@@ -2065,7 +2349,11 @@ type Page = { label: string; content: React.ReactNode; key?: string };
           <div style={cardStyle}>
             <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>{t('approval.section_basic')}</span>
-              <button onClick={exportDetail} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+              {/* claude 수정 (2026-10-19): export 옆에 '모든 이력 확인' 버튼 추가(탭 6곳 공통). */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button onClick={exportDetail} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+                {allHistBtn('detail')}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {basicRow.map((item) => (
@@ -2271,7 +2559,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
         <div style={cardStyle} ref={mapTabRef}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>🗺️ {t('request.section_map_r')}</span>
-            <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+              {allHistBtn('r')}
+            </div>
           </div>
           {adiCdNotice}
         </div>
@@ -2279,7 +2570,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
         <div style={cardStyle} ref={mapTabRef}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>🗺️ {t('request.section_map_r')}</span>
-            <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+              {allHistBtn('r')}
+            </div>
           </div>
 
           {detail.map_type && (
@@ -2674,6 +2968,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>{t('request.total_count_items', { count: jayer.length })}</span>
               <button data-tour="export-jayer" onClick={exportJayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
+              {allHistBtn('jayer')}
             </div>
           </div>
           {reviewItems && (
@@ -2791,6 +3086,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>{t('request.total_count_items', { count: oayer.length })}</span>
                   <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
+                  {allHistBtn('oayer')}
                 </div>
               </div>
               {doc.layer_drift_detected && onOpenLayerDrift && (
@@ -2991,6 +3287,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>{t('request.total_count_items', { count: bb.length })}</span>
               <button onClick={exportBb} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
+              {allHistBtn('bb')}
             </div>
           </div>
           <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} historyMode={historyMode} rounds={roundSnaps} tabCount={Array.isArray(detail?.bb_entries) ? detail.bb_entries.length : 0} entryIds={Array.isArray(detail?.bb_entries) ? detail.bb_entries.map((e: { id?: string }) => e.id ?? '') : []} />
@@ -3336,7 +3633,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             <div style={cardStyle}>
               <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>{t('request.section_etc')}</span>
-                <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+                  {allHistBtn('etc')}
+                </div>
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('request.value_none')}</div>
             </div>
@@ -3346,7 +3646,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
               <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>{section.title}</span>
                 {idx === 0 && (
-                  <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+                    {allHistBtn('etc')}
+                  </div>
                 )}
               </div>
               {section.content}
@@ -3517,6 +3820,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
         </div>
       )}
       {currentPage.content}
+      {/* claude 수정 (2026-10-19): 탭별 '모든 이력 확인' 창 — 닫으면 상태가 초기화된다. */}
+      {allHistTab && (
+        <TabAllHistoryModal spec={allHistSpecs[allHistTab]} rounds={roundSnaps} onClose={() => setAllHistTab(null)} />
+      )}
       {zoomedImage && (
         <div
           onClick={() => setZoomedImage(null)}
