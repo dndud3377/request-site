@@ -53,7 +53,7 @@ pages/RequestPage/
 | 분류 | export |
 |---|---|
 | 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
-| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_REF_MODE_ENABLED`(2026-10-19 '있음' 잠금 플래그), `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
+| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_REF_MODE_ENABLED`(2026-10-19 '있음' 잠금 플래그), `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE`, `OTHER_PURPOSE_LAYER`·`OTHER_PURPOSE_STEPSEQ`(2026-10-19 상세 목적 자동 선택 값) |
 | ADI CD | `ADI_CD_CHANGE_PURPOSE`(2026-08-20 요청 목적으로 승격 — 이전 이름 `OTHER_PURPOSE_ADI_CD`), `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL`, `mapInfoDefaults`(StepMap 소유 필드 전체를 초기값으로) |
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
@@ -77,7 +77,7 @@ pages/RequestPage/
 | 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations`, `computeExpectedRequestPurpose` |
 | 3-way Merge | `MergeComparableRow`(타입), `MergeStats`(타입), `computeLayerMerge` |
 | BEFORE/AFTER 비교 | `BaComparableRow`(타입), `toMergeRowInfo`, `BeforeAfterResult`(타입), `computeBeforeAfter` |
-| 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs` |
+| 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs`, `deriveAutoOtherPurpose`·`sameOtherPurpose`(2026-10-19 표 → 상세 목적 자동 선택) |
 | Validation System | `isValidationKeywordRow`, `isValidationTarget`, `autoValidationSystem` |
 | ADI CD 붙여넣기 | `parseClipboardTable`, `AdiCdHeaderMatch`(타입), `detectAdiCdHeader`, `AdiCdPasteDecision`(타입), `decideAdiCdPaste`, `buildAdiCdRows`, `AdiCdValidationResult`(타입), `validateAdiCdRows` |
 | ADI CD 행 수 동일·적용 대상 | `balanceAdiCdRows`, `AdiCdTargetsValidation`(타입), `validateAdiCdTargets`(2026-08-21 신설 — '동일 변경 적용 대상' 표 검증) |
@@ -287,6 +287,51 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 변경 (2026-10-19 — 참조 요청서 '없음': 변경전/변경후 표의 구분·판정으로 상세 목적 자동 선택 → 구분이 O 뿐이면 'Overlay만 변경'으로 경로 축소)
+
+- **의도(사용자)**: 변경전/변경후 표의 구분이 O-ayer 뿐이면 상세 목적이 'Overlay만 변경' 단독이 되어, 결재 경로가 일반 경로보다
+  축소되게 한다(backend `skip_j_stage()` — 'Overlay만 변경' **하나뿐**이면 J 단계를 만들지 않는다. 백엔드는 변경 없음).
+- **적용 범위**: 참조 요청서 **'없음' 확정 상태**(`merge_ref_mode==='none' && merge_applied`)이고 Merge 사용 목적이 하나 이상 선택돼 있을 때만(사용자 결정).
+  '있음'(Merge) 모드는 대상이 아니다.
+- **규칙(`helpers.ts` `deriveAutoOtherPurpose`)** — 판정이 '미작성'이 아니고 구분(PP 접두사)이 정해진 행만 본다.
+  | 표 상태 | 상세 목적 |
+  |---|---|
+  | 해당 행 0건(미작성 행뿐·구분 판정 불가 행뿐) | **바꾸지 않는다**(버튼도 잠그지 않는다 — 지금처럼 눌러서 표를 연다) |
+  | 구분이 **O 뿐** | **`['Overlay만 변경']` 단독** — 판정(추가·삭제·변경)과 무관. FirstA 변경 등 다른 목적도 **해제**(사용자 결정) |
+  | **J 가 하나라도** 있음(J 만 / J+O) | Overlay만 변경(구 값 'Overlay 변경' 포함) 해제 → 추가·삭제가 있으면 **Layer 추가/삭제**, 변경이 있으면 **STEPSEQ 변경**(둘 다면 둘 다). Merge 와 무관한 목적(FirstA 변경 등)은 **유지** |
+  - 구 값 'Overlay 변경'으로 저장된 문서도 O 뿐이면 새 값 'Overlay만 변경'으로 바뀐다.
+  - 구분 판정 불가(PP 접두사 미해당)·구분 불일치 행은 계산에서 빠진다 — 이런 행은 기존 '다음'·상신 관문이 막는다.
+- **반영(`index.tsx`)**: `autoOtherPurpose`(useMemo) 가 위 결과를 계산하고, 현재 값과 항목이 다를 때만(`sameOtherPurpose`) effect 가
+  `detail.other_purpose` 를 바꾸고 info 토스트 **`request.toast_other_purpose_auto`**("변경전/변경후 표에 맞춰 상세 목적을 {{list}}(으)로 바꿨습니다.")를 띄운다.
+  기존 'Overlay만 변경' 충돌 확인 모달(`overlayExclusiveConfirm`)은 거치지 않는다. 셀을 고칠 때마다 다시 계산한다.
+- **잠금(`Step1.tsx`, 사용자 결정: 표가 정하고 잠금)**: `autoOtherPurpose ≠ null` 이면 Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경 버튼을 잠근다.
+  결과가 'Overlay만 변경' 단독이면 다른 목적도 곧바로 해제되므로 **상세 목적 버튼 전체**를 잠근다.
+  마우스를 올리면 툴팁 **`request.other_purpose_auto_locked`**("변경전/변경후 표의 구분·판정에 따라 자동 선택됩니다")가 뜬다(잠긴 버튼은 `pointer-events:none`, 감싼 span 에 툴팁).
+- **i18n**: `request.other_purpose_auto_locked`, `request.toast_other_purpose_auto` ko/en 동시 추가.
+- **영향(기존 동작 변화)**:
+  - '없음'으로 임시저장·반려된 문서를 열면 표 기준으로 상세 목적이 곧바로 다시 맞춰지고 토스트가 뜬다.
+  - O 뿐이 되어 해제된 FirstA 변경 등은 나중에 J 행을 넣어도 **자동으로 되살아나지 않는다**(사용자가 다시 눌러야 한다).
+  - 표에 판정 가능한 행이 있는 동안에는 세 버튼(또는 전체)을 직접 누를 수 없다 — 바꾸려면 표를 고친다.
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 37 suites·519 tests 통과(변경 전 36·507) — 신규 `mergePurposeAutoSync.test.tsx` 7건,
+  `helpers.test.ts` `deriveAutoOtherPurpose`·`sameOtherPurpose` 5건. 백엔드 `manage.py test api` 710건 OK(백엔드 무변경).
+  결재 케이스 러너(`scripts/approval_cases`)는 개발 서버(`localhost:10011`) 접속 불가로 **실행하지 못했다** — 개발환경에서 확인 필요.
+- **수동 시나리오**:
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → 상세 목적 **Layer 추가/삭제** 클릭
+     → [기대: 변경전/변경후 표(빈 행 1개)가 열린다. 상세 목적 버튼은 아직 모두 누를 수 있다.]
+  2. [변경후 칸에 O-ayer 표에 있는 값(PP 는 O 접두사, 예: `TEST2…`) 4칸 입력]
+     → [기대: 구분 'O-ayer', 판정 '추가'. 상세 목적이 **Overlay만 변경** 하나만 선택되고 토스트 "…상세 목적을 Overlay만 변경(으)로 바꿨습니다."
+       상세 목적 버튼이 모두 회색, 마우스를 올리면 "변경전/변경후 표의 구분·판정에 따라 자동 선택됩니다". 실패 신호: Layer 추가/삭제가 남아 있음.]
+  3. ['행 추가' → 변경전·변경후 모두 J-ayer 값(PP 는 J 접두사) 입력]
+     → [기대: Overlay만 변경 해제, **STEPSEQ 변경** 선택(판정 '변경'). Merge 와 무관한 버튼(FirstA 변경 등)은 다시 누를 수 있다.]
+  4. [J 행의 변경전 칸을 비워 판정을 '추가'로] → [기대: **Layer 추가/삭제**로 바뀐다. J 행 하나는 '변경', 다른 하나는 '추가'면 둘 다 선택.]
+  5. [J 행을 삭제(초기화)해 O 행만 남김] → [기대: 다시 Overlay만 변경 단독.]
+  6. [3단계에서 FirstA 변경을 함께 고른 뒤 J 행을 지워 O 만 남김] → [기대: FirstA 변경도 해제되고 Overlay만 변경 단독.]
+  7. [O 뿐인 상태로 끝까지 작성 → 상신 → 결재 현황 → 의뢰서 행 클릭 → '결재 경로' 탭]
+     → [기대: **J(JOB) 단계가 없다**(일반 경로 대비 축소). 실패 신호: J 단계가 보임.]
+  8. [J 가 섞인 상태로 상신 → '결재 경로' 탭] → [기대: J 단계가 있다(일반 경로).]
+  9. [표가 빈 행(미작성)뿐인 상태] → [기대: 상세 목적이 바뀌지 않고 버튼도 잠기지 않는다.]
+  10. [언어 English 로 2 반복] → [기대: "Detail purpose changed to Overlay만 변경 to match the Before/After table." 키 문자열이 보이면 실패.]
 
 ### 기능 변경 (2026-10-19 — 참조 요청서 '있음'(Merge) 잠금: 상세 목적을 누르면 변경전/변경후 표가 바로 열린다)
 
