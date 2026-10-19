@@ -383,7 +383,10 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
   }
 
   if ((detail.merge_pairs?.length ?? 0) > 0) {
-    const fields: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
+    // claude 수정 (2026-10-19): 참조 요청서 '없음' 문서는 Layer 를 입력하지 않아 헷갈리므로 Layer 열을 내보내지 않는다(화면과 동일).
+    const fields: (keyof MergeRowInfo)[] = detail.merge_ref_mode === 'none'
+      ? ['process_id', 'sp', 'sd', 'pp']
+      : ['process_id', 'sp', 'sd', 'pp', 'layerid'];
     const fieldLabel = (f: keyof MergeRowInfo) => t(f === 'process_id' ? 'request.process_id' : f === 'layerid' ? 'request.col_layer' : `request.col_${f}`);
     const cells = (info: MergeRowInfo | null) => info ? fields.map((f) => info[f] || '-') : fields.map(() => t('request.ba_unregistered'));
     const rows = (detail.merge_pairs ?? []).map((pair) => [
