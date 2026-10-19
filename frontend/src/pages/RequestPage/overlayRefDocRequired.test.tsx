@@ -21,6 +21,17 @@ import { OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY, MERGE_PP_PREFIXES 
 
 const mockState: { doc: unknown } = { doc: null };
 
+// claude 수정 (2026-10-19): '있음'(Merge) 은 MERGE_REF_MODE_ENABLED=false 로 잠겼다. 이 파일은 잠금을 풀었을 때의
+// '있음' 흐름 회귀 테스트로 남긴다 — 플래그와 신규 문서 기본 모드를 잠금 전 값으로 되돌려 실행한다.
+jest.mock('./constants', () => {
+  const actual = jest.requireActual('./constants');
+  return {
+    ...actual,
+    MERGE_REF_MODE_ENABLED: true,
+    INITIAL_DETAIL: { ...actual.INITIAL_DETAIL, merge_ref_mode: 'ref' },
+  };
+});
+
 jest.mock('../../components/RichTextEditor', () => ({
   __esModule: true,
   default: ({ value }: { value: string }) => <div data-testid="rte">{value}</div>,
