@@ -1,6 +1,7 @@
 # ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 
 import datetime
+from decimal import Decimal
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -4375,15 +4376,33 @@ def form_options_bb_external(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
+# 흐름도 Step stepseq 숫자 비교에서 먼저 보는 앞자리 수 (프론트 helpers.ts STEPSEQ_LEAD_DIGITS 와 같은 값)
+STEPSEQ_LEAD_DIGITS = 4
+
+
 def _natural_key(s: str) -> list:
     """'{문자}{숫자}' 패턴(예: A1, B10)을 숫자 인식 오름차순으로 정렬하기 위한 키."""
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s or '')]
 
 
-# claude 수정 (2026-10-15): 흐름도 Step 을 stepseq 순서로 검증하려고 layerid 만이 아니라 (layerid, stepseq) 쌍을 stepseq 자연 정렬로 돌려준다.
+# claude 수정 (2026-10-19): stepseq 숫자 자릿수가 서로 달라도(AAAA1235 vs AAAA12345) 앞 4자리 → 나머지 자리 순으로 비교하는 흐름도 Step 전용 정렬 키.
+def _stepseq_sort_key(s: str) -> list:
+    """흐름도 Step 목록 정렬 키 — 숫자 부분을 '앞 4자리.나머지 자리' 소수로 바꿔 비교한다.
+
+    AAAA1234 → 1234.0, AAAA12345 → 1234.5, AAAA1235 → 1235.0 이므로 AAAA1234 < AAAA12345 < AAAA1235.
+    문자 부분은 _natural_key 와 같이 대소문자 구분 없이 비교한다.
+    프론트 순서 검증(RequestPage/helpers.ts splitStepseq)과 같은 규칙이다.
+    """
+    return [
+        Decimal(f'{c[:STEPSEQ_LEAD_DIGITS]}.{c[STEPSEQ_LEAD_DIGITS:] or 0}') if c.isdigit() else c.lower()
+        for c in re.split(r'(\d+)', s or '')
+    ]
+
+
+# claude 수정 (2026-10-19): (layerid, stepseq) 쌍의 정렬 키를 _natural_key → _stepseq_sort_key 로 바꿔 숫자 자릿수가 달라도 앞 4자리부터 비교한다(2026-10-15 도입).
 @require_GET
 def form_options_layer_ids(request):
-    """line + process → 중복 없는 {layerid, stepseq} 목록 (stepseq 자연 정렬).
+    """line + process → 중복 없는 {layerid, stepseq} 목록 (stepseq 정렬 — 숫자는 앞 4자리 → 나머지 자리 순, _stepseq_sort_key).
 
     같은 layerid 가 여러 stepseq 에 있으면 stepseq 마다 한 항목씩 나온다.
     """
@@ -4411,7 +4430,7 @@ def form_options_layer_ids(request):
             .values('layerid', 'stepseq')
             .distinct()
         )
-        sorted_rows = sorted(rows, key=lambda r: (_natural_key(r['stepseq']), r['layerid']))
+        sorted_rows = sorted(rows, key=lambda r: (_stepseq_sort_key(r['stepseq']), r['layerid']))
         return JsonResponse({'options': [{'layerid': r['layerid'], 'stepseq': r['stepseq']} for r in sorted_rows]})
     except Exception as e:
         return JsonResponse({'options': []})
