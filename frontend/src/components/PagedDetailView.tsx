@@ -3002,7 +3002,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
           const zone3Exists = allSteps.some(
             (s) => (s.round ?? 1) === round && ['P', 'J', 'O', 'E', 'RA'].includes(s.agent)
           );
-          if (zone3Exists) {
+          // claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 J 와 함께 R 도 빠진다(백엔드 skip_r_stage) — PL 단계부터 '해당없음'
+          if (zone3Exists || skipJStage) {
             out.push({ status: 'na', label: t('approval.step_na') });
           } else {
             out.push({ status: 'waiting', label: t('approval.step_pending'), roleLabel: t('approval.role_agreer' as any) });
