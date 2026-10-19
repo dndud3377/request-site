@@ -101,9 +101,13 @@ export const resolveFlowStepSeq = (
   return { kind: 'ambiguous' };
 };
 
-/** stepseq 를 '접두어 + 끝 숫자'로 나눈다(AAAA1234 → AAAA / 1234). 끝이 숫자가 아니면 비교 불가(null). */
+// claude 수정 (2026-10-19): 마스터 DB 에 알파벳 접미가 붙은 stepseq(AAAA1234A)가 있어 순서 검증에서 빠지던 것을, 접미까지 인식하고 비교에서는 무시하도록 확장.
+/**
+ * stepseq 를 '접두어 + 숫자 + 알파벳 접미(선택)'로 나눈다(AAAA1234 → AAAA / 1234, AAAA1234A → AAAA / 1234).
+ * 접미는 순서 비교에 쓰지 않으므로 버린다. 숫자가 없거나 접미에 알파벳 외 문자가 있으면 비교 불가(null).
+ */
 export const splitStepseq = (seq: string | undefined): { prefix: string; num: number } | null => {
-  const m = /^(.*?)(\d+)$/.exec((seq || '').trim());
+  const m = /^(.*?)(\d+)[A-Za-z]*$/.exec((seq || '').trim());
   return m ? { prefix: m[1], num: parseInt(m[2], 10) } : null;
 };
 
