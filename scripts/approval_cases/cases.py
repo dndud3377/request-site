@@ -406,23 +406,27 @@ def r09(ctx):
     return f'doc={doc_id}'
 
 
-# claude 수정 (2026-10-15): 저장값 'Overlay만 변경' 변경에 맞춰 케이스 이름 갱신. R-11 조합은 화면에서 막혔고 API 로만 만들 수 있다
-@case('R-10', 'R', "기타목적 'Overlay만 변경' 단독 → J 단계 미생성")
+# claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 J 와 함께 2구역(R)도 빠진다 — R-10 은 R 미생성, R-11 은 R 유지까지 확인. R-11 조합은 화면에서 막혔고 API 로만 만들 수 있다
+@case('R-10', 'R', "기타목적 'Overlay만 변경' 단독 → R·J 단계 미생성(PL 합의 직후 3구역)")
 def r10(ctx):
-    ctx.need(PL=2, TE_R=1)
+    ctx.need(PL=2)
     doc_id, author, pls = F.to_parallel(ctx, other_purpose=[P.OTHER_PURPOSE_OVERLAY])
     doc = F.fetch(author, doc_id)
+    F.expect_no_step(doc, 'R')
     F.expect_no_step(doc, 'J')
+    F.expect_steps(doc, 'P', count=1)
     F.expect_steps(doc, 'O', count=1)
     return f'doc={doc_id} agents={F.agents_in_round(doc)}'
 
 
-@case('R-11', 'R', "'Overlay만 변경' + 다른 기타목적(API 직접) → J 생성")
+@case('R-11', 'R', "'Overlay만 변경' + 다른 기타목적(API 직접) → R·J 생성")
 def r11(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(
         ctx, other_purpose=[P.OTHER_PURPOSE_OVERLAY, 'STEPSEQ 변경'])
-    F.expect_steps(F.fetch(author, doc_id), 'J', count=1)
+    doc = F.fetch(author, doc_id)
+    F.expect_steps(doc, 'R', count=1)
+    F.expect_steps(doc, 'J', count=1)
     return f'doc={doc_id}'
 
 
@@ -940,7 +944,7 @@ def x07(ctx):
     ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.submitted_doc(ctx)
     F.peer_reject(ctx.actor('PL', 1), doc_id)
-    # 재상신 전에 목적을 'Overlay만 변경' 단독으로 바꾼다 → 새 회차부터 J 가 빠져야 한다.
+    # 재상신 전에 목적을 'Overlay만 변경' 단독으로 바꾼다 → 새 회차부터 R·J 가 빠져야 한다.
     doc = F.fetch(author, doc_id)
     import json
     notes = json.loads(doc['additional_notes'])
@@ -951,9 +955,11 @@ def x07(ctx):
         raise CaseFailure(f'문서 수정 실패: {res.status} {res.error_text()}')
     F.resubmit(author, doc_id, [pls[0]['loginid']])
     F.peer_approve(ctx.actor('PL', 1), doc_id)
-    F.pass_r_stage(ctx, doc_id)
+    # claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 R 없이 PL 합의 직후 3구역이 열린다 — R 단계 통과를 빼고 R 미생성까지 확인
     doc = F.fetch(author, doc_id)
+    F.expect_no_step(doc, 'R')
     F.expect_no_step(doc, 'J')
+    F.expect_steps(doc, 'P', count=1)
     return f'doc={doc_id} agents={F.agents_in_round(doc)}'
 
 
