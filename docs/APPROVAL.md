@@ -191,7 +191,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > - **검토 항목**: J 단계 전용 기능이므로 이 문서는 `fill_from_master()` 로 채우지 않는다
 >   (J step 이 없으면 `review_items.is_stage_open()` 이 항상 거짓이라 화면도 닫힌다).
 > - **메일**: `mailer.ROUTE_AGENTS_NO_J` — 반려 시 잔여 결재선 수신자와 '결재 경로' 카드에서
->   J 가 함께 빠진다. **결재 상세 '결재 경로' 탭**은 J 행을 `해당없음`으로 표시한다
+>   J 가 함께 빠진다. (2026-10-19) P 완료 통보(`notify_p_completed`)도 같은 기준으로 TE_J 를 빼고 TE_O 에게만 보낸다
+>   (`docs/MAIL.md` §3 표). **결재 상세 '결재 경로' 탭**은 J 행을 `해당없음`으로 표시한다
 >   (E·RA 와 같은 na 분기 — 없으면 '대기'로 영구 표시된다). 결재현황 목록 그리드의 J 칸은
 >   step 이 없으면 자동으로 `해당없음` 이 되어 별도 처리가 없다.
 > - 테스트: `test_j_step_not_created_when_other_purpose_is_overlay_only`,
