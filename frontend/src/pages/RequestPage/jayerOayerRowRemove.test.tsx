@@ -10,6 +10,7 @@ import { MemoryRouter } from 'react-router-dom';
 import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
+import { MERGE_PP_PREFIXES } from './constants';
 
 // jest.mock 팩토리는 호이스팅되어 `mock` 접두사 변수만 참조할 수 있다.
 const mockState: {
@@ -145,20 +146,20 @@ const fixtureDetail = {
   // 판정 키워드(PLEL)가 있는 문서에서 상신자가 직접 '비대상'을 고른 상태.
   // (키워드가 없으면 규칙상 'NA' 가 되는 것이 정상이므로 픽스처를 규칙에 맞춘다)
   validation_system: 'NO',
-  merge_ref_doc_id: 77,
-  merge_ref_doc_label: '참조 요청서 제목',
-  merge_ref_mode: 'ref',
+  // claude 수정 (2026-10-19): 참조 요청서 '있음' 잠금 — STEP1 을 통과하도록 '없음' 규칙에 맞는 변경전/변경후 1건을 둔다
+  // (변경전만 있는 layer 삭제 행: PP 는 J 접두사, 값은 현재 J 표에 없음).
+  merge_ref_doc_id: null,
+  merge_ref_doc_label: '',
+  merge_ref_mode: 'none',
   merge_applied: true,
-  // 행 id·판정은 표를 직접 편집하기 위해 필요한 값이라 왕복에서 유지돼야 한다
-  // (id 가 없는 구버전 문서는 로드 시 백필되므로 여기서는 신규 형태를 그대로 쓴다).
   merge_pairs: [{
-    id: 'pair_J_b1__J_a1',
+    id: 'pair_manual_1',
     table: 'J',
-    beforeId: 'J_b1',
-    before: { id: 'J_b1', table: 'jayer', process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01' },
-    afterId: 'J_a1',
-    after: { id: 'J_a1', table: 'jayer', process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02' },
-    kind: 'changed',
+    beforeId: null,
+    before: { process_id: PROCESS_ID, sp: 'SP09', sd: 'SD09', pp: `${MERGE_PP_PREFIXES.J[0]}_09`, layerid: '' },
+    afterId: null,
+    after: null,
+    kind: 'deleted',
   }],
   merge_unmatched_before: [],
   merge_unmatched_after: [],

@@ -53,7 +53,7 @@ pages/RequestPage/
 | 분류 | export |
 |---|---|
 | 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
-| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
+| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_REF_MODE_ENABLED`(2026-10-19 '있음' 잠금 플래그), `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
 | ADI CD | `ADI_CD_CHANGE_PURPOSE`(2026-08-20 요청 목적으로 승격 — 이전 이름 `OTHER_PURPOSE_ADI_CD`), `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL`, `mapInfoDefaults`(StepMap 소유 필드 전체를 초기값으로) |
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
@@ -287,6 +287,70 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 변경 (2026-10-19 — 참조 요청서 '있음'(Merge) 잠금: 상세 목적을 누르면 변경전/변경후 표가 바로 열린다)
+
+- **의도(사용자)**: 참조할 승인 요청서가 아직 거의 없고, '있음/없음' 선택과 Merge 단계가 사용자에게 번거롭고 혼란스럽다.
+  참조 요청서 Merge 는 **삭제하지 않고 당분간 막아 둔다**(나중에 다시 쓸 수 있게). Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경을
+  누르면 바로 변경전/변경후 표를 채울 수 있게 한다.
+- **잠금 플래그**: `constants.ts` **`MERGE_REF_MODE_ENABLED = false`**. `true` 로 바꾸면 잠금 전 동작(기본 '있음', Merge·재선택, '없음'↔'있음' 전환 모달)으로 돌아간다.
+  Merge 계산(`computeLayerMerge`·`computeBeforeAfter`)·재선택·매핑 코드와 i18n 키는 모두 그대로 남겼다.
+  - 신규 문서 기본값 `INITIAL_DETAIL.merge_ref_mode` 는 잠금 중 `'none'`. `clearMergeComparison()` 의 기본 모드도 이 값을 따른다.
+- **자동 확정(`index.tsx` effect)**: 잠금 중 Merge 사용 목적이 선택돼 있는데 '없음' 확정(`merge_ref_mode==='none' && merge_applied`)이 아니면
+  즉시 '없음'으로 확정한다 → `merge_applied=true`, 행이 없으면 빈 행 1개, `merge_ref_doc_id=null`, `merge_unmatched_before/after=[]`, `mergeSnapshot=null`.
+  신규 선택·임시저장 재진입·반려 재작성 모두 같은 경로다. 목적을 모두 해제하면 기존대로 비교 상태를 비운다.
+- **예전 '있음'(Merge) 문서(사용자 결정: 표 내용 유지)**: 변경전/변경후 행(`merge_pairs`)과 J/O 표는 그대로 두고 '없음'으로 바뀐다.
+  행 구분은 PP 접두사로 다시 맞춘다(`syncManualPairTable`). **매핑 대기 목록(`merge_unmatched_*`)은 비운다** — 매핑 표는 '없음'에서 숨겨져
+  사용자가 풀 수 없는데 `ba_gate_ng` 가 상신을 막기 때문이다. 이후 '없음' 규칙(PP 접두사·J/O 표 대조·1건 이상)을 그대로 받으므로
+  Merge 로 만든 행이 규칙에 맞지 않으면 사용자가 고쳐야 다음 단계로 간다.
+- **UI(`Step1.tsx`, 사용자 결정: 숨기지 않고 회색 잠금)**: '참조 요청서 있음' 라디오, 참조 요청서 검색칸, Merge, 재선택을 회색으로 잠근다.
+  마우스를 올리면 툴팁 **`request.merge_ref_locked`**("기능 수정 중" / "Feature under revision")이 뜬다.
+  잠긴 버튼은 마우스 이벤트를 받지 않아 버튼을 감싼 `span` 에 `title` 을 단다. '없음'은 항상 체크된다.
+  '재선택을 누르세요' 안내(`request.merge_none_done`)는 잠금 중에는 숨긴다.
+- **i18n**: `request.merge_ref_locked` ko/en 동시 추가.
+- **'없음' 변경전/변경후 표 정리(사용자 결정, `BeforeAfterPanel.tsx` — `manualOnly` 일 때만)**:
+  - **layer 컬럼 제거**: 머리글·셀 모두 그리지 않는다(한쪽 4칸: 조리법·SP·SD·PP). layer 값은 참조 요청서에서만 오는 읽기 전용이라 '없음'에서는 항상 비어 있었다.
+    저장 데이터의 `layerid` 필드는 그대로 둔다(예전 '있음' 문서 값 보존). 이 셀에만 쓰던 CSS `.ba-cell-readonly-locked` 는 삭제.
+  - **머리글**: "변경전 (참조 요청서)"/"변경후 (현재 요청서)" → **`request.ba_before_col_manual`/`ba_after_col_manual`**("변경전"/"변경후", en "Before"/"After") ko/en 동시 추가.
+  - **Merge 요약 줄**("변경 없음 N건 · 확정 N건 · 매핑 대기 N건") 숨김.
+  - '있음' 모드 표는 그대로(layer 컬럼·요약 줄·기존 머리글 유지) — `overlayRefDocRequired.test.tsx` 에 회귀 테스트 1건, `refMergeLocked.test.tsx` 에 '없음' 표 테스트 1건 추가.
+  - **붙여넣기 안내**: '없음' 표에는 layer 컬럼이 없어 "layer 는 입력 대상이 아닙니다." 문장을 뺀 **`request.ba_paste_hint_manual`** 을 쓴다(ko/en 동시 추가, '있음'은 기존 `ba_paste_hint`).
+  - **상세보기·엑셀 내보내기도 같은 규칙(사용자 결정)**: `detail.merge_ref_mode === 'none'` 문서는 `PagedDetailView` `MergePairsTable`(prop `manualOnly`)과
+    `detailExport.ts`(의뢰 상세 시트 변경전/변경후 표)에서 layer 컬럼을 빼고 머리글을 `ba_before_col_manual`/`ba_after_col_manual` 로 쓴다.
+    모드 값이 없는 예전 문서·'있음' 문서는 종전대로(layer 컬럼·"(참조 요청서)" 머리글). 이미 상신된 '있음' 문서는 작성 화면을 거치지 않으므로 '있음' 표 그대로 보인다.
+  - **ADI CD 엑셀 머리글**: 참조 요청서 개념이 없는데 `ba_before_col`("변경전 (참조 요청서)")을 쓰던 것을 `ba_before_col_manual`/`ba_after_col_manual` 로 바꿨다
+    (예: "STEP_ID(변경전)"). 화면(`AdiCdPanel`)은 원래 별도 키라 변경 없음.
+  - 테스트: `components/PagedDetailView.mergeManual.test.tsx` 3건, `utils/detailExport.mergeManual.test.ts` 3건 신규. 변경 전 코드로는 '없음'·ADI CD 4건이 실패함을 확인.
+- **백엔드**: 변경 없음(참조 요청서 검증은 원래 프론트에만 있다).
+- **가이드 투어 문구(사용자 결정: 변경)**: 단계 가이드 `guide.tour.step.groups.s1g3`('변경전/변경후 입력' — 목적 선택 시 표가 바로 열리고 Merge 는 기능 수정 중),
+  `s1g3b`('변경전/변경후 직접 작성' — PP 접두사 구분 판정·변경전/변경후 대조 규칙), 전체 가이드 자막 `guide.tour.steps.request.flow.ref_doc_merge` 를 ko/en 동시에 바꿨다.
+  블록 제목 `guide.feat.step1_ref_doc_merge`('참조 요청서 Merge')는 화면 라벨이라 그대로 둔다.
+- **잠긴 버튼 색**: Merge·재선택은 `opacity` 만으로는 옅은 파랑으로 보여 `filter: grayscale(1)` 을 더해 회색으로 보이게 했다.
+- **테스트**: 신규 `refMergeLocked.test.tsx` 5건(목적 클릭 → 표 즉시 표시 / 잠금·툴팁 / '있음' 클릭 무반응 / 예전 '있음' 문서 변환·저장 / 변환 후 '없음' 규칙 적용).
+  `overlayRefDocRequired.test.tsx` 는 `MERGE_REF_MODE_ENABLED=true` 로 mock 해 잠금 해제 시 회귀 테스트로 유지한다.
+  `noneModeLayerCheck.test.tsx` 의 '있음 모드는 검사하지 않는다' 1건은 잠금 동작('없음'으로 바뀌어 검사됨)으로 교체했다.
+  `draftRoundTrip`·`jayerOayerRowRemove` 픽스처는 '없음' 규칙을 통과하는 행으로 바꿨다. Merge 는 이 두 테스트의 검증 대상이 아니다.
+- **수동 시나리오**(PP 접두사는 `MERGE_PP_PREFIXES` 현재 값 — `TEST1`=J, `TEST2`=O):
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → [상세 목적 **Layer 추가/삭제** 클릭]
+     → [기대: '참조 요청서 Merge' 블록이 열리고 '참조 요청서 없음'이 체크돼 있다. 아래에 변경전/변경후 표(빈 행 1개)와 "참조 요청서 없음: 구분은 PP 접두사로…" 안내가 바로 보인다.
+     실패 신호: 'Merge' 버튼을 눌러야 표가 열림 / '있음'이 체크됨.]
+  2. ['참조 요청서 있음' 라디오, 참조 요청서 검색칸('없음' 표시), 'Merge'·'↻ 재선택' 버튼에 각각 마우스 올리기]
+     → [기대: 모두 회색이며 "기능 수정 중" 툴팁이 뜬다. 클릭해도 아무 일이 없다(모달 없음). 실패 신호: 툴팁 없음 / 클릭 시 모드 변경 모달.]
+  3. [STEPSEQ 변경, Overlay만 변경으로 바꿔 1~2 반복] → [기대: 같은 동작.]
+  4. [빈 행 그대로 '다음 →'] → [기대: "변경전/변경후 항목을 1건 이상 입력하세요." 로 막힌다. 행을 '없음' 규칙대로 채우면 STEP2 로 간다.]
+  5. [잠금 전 '참조 요청서 있음'으로 Merge 해 임시저장(또는 반려)된 문서 열기]
+     → [기대: '없음'이 체크돼 있고 Merge 로 만들어졌던 변경전/변경후 행이 그대로 보인다. 구분 칸은 드롭다운 없이 PP 접두사로 판정한 값이다.
+     '다음 →' 시 '없음' 규칙 오류가 있으면 해당 문구로 막힌다. 실패 신호: 행이 사라짐 / "매핑 대기 N건" 오류로 막힘.]
+  6. [상세 목적을 모두 해제 → 다시 Layer 추가/삭제 클릭] → [기대: 빈 행 1개 표가 다시 바로 열린다.]
+  7. [STEP 1 제목 '📋 의뢰 상세' 옆 가이드 투어 배지 → '다음'으로 3/8·4/8 단계] → [기대: 제목 '변경전/변경후 입력' / '변경전/변경후 직접 작성' 과 위 설명 문구.
+     실패 신호: "기존 승인 요청서를 참조해 비교·병합" 문구가 남아 있음.]
+  8. [1 의 변경전/변경후 표 머리글 확인] → [기대: '변경전'/'변경후' 아래에 조리법·SP·SD·PP 4칸씩만 있고 Layer 칸이 없다. 표 위 "변경 없음 0건 · 확정 1건 · 매핑 대기 0건" 줄이 없다.
+     실패 신호: Layer 칸 / "(참조 요청서)" 머리글 / 요약 줄이 보임.]
+  9. [8 의 표 아래 안내] → [기대: "엑셀에서 4열(process_id·SP·SD·PP)을 복사해 붙여넣으면 여러 행이 한 번에 입력됩니다." 까지만 있고 "layer 는 입력 대상이 아닙니다." 가 없다.]
+  10. ['없음'으로 상신한 문서 → 결재 현황(또는 이력 조회)에서 행 클릭 → 상세 '의뢰 상세' 탭의 "변경전 / 변경후 — 확정된 짝"]
+      → [기대: 작성 화면과 같이 '변경전'/'변경후' 아래 조리법·SP·SD·PP 4칸, Layer 칸 없음. 같은 화면 엑셀 내보내기 → 의뢰 상세 시트 머리글이 "PP(변경전)" 형태이고 "Layer(…)" 열이 없다.
+      실패 신호: Layer 칸 / "(참조 요청서)" 머리글.]
+  11. [ADI CD 변경 문서 → 상세 → 엑셀 내보내기 → 의뢰 상세 시트] → [기대: 머리글 "STEP_ID(변경전)"·"STEP_ID(변경후)". 실패 신호: "STEP_ID(변경전 (참조 요청서))".]
 
 ### 기능 변경 (2026-10-19 — MAP 정보 잠금 확대: R/고정 후결자 합의 이력이 있으면 MAP 정보 + 요청 목적·라인~조리법 수정 불가)
 

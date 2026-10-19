@@ -49,6 +49,10 @@ export const MERGE_ENABLED_PURPOSES = ['Layer 추가/삭제', 'STEPSEQ 변경', 
 export const isMergePurposeSelected = (otherPurpose: string[]): boolean =>
   otherPurpose.some((o) => (MERGE_ENABLED_PURPOSES as readonly string[]).includes(o));
 
+// claude 수정 (2026-10-19): 참조 요청서 '있음'(Merge) 잠금 — 참조할 승인 요청서가 아직 적고 선택 단계가 번거로워
+// 당분간 '없음'(변경전/변경후 직접 입력)만 쓴다. Merge 코드는 남겨 두었으므로 true 로 바꾸면 원래 동작으로 돌아간다.
+export const MERGE_REF_MODE_ENABLED = false;
+
 // BEFORE/AFTER 표의 '미등록' 행 선택 id — 실제 행 id 와 겹치지 않도록 예약어를 쓴다.
 export const MERGE_UNREGISTERED_ID = '__merge_unregistered__';
 
@@ -448,7 +452,8 @@ export const INITIAL_DETAIL: DetailFormState = {
   validation_system: VS_UNSELECTED,
   merge_ref_doc_id: null,
   merge_ref_doc_label: '',
-  merge_ref_mode: 'ref',
+  // claude 수정 (2026-10-19): 참조 요청서 '있음' 잠금 중에는 신규 문서도 '없음'으로 시작한다
+  merge_ref_mode: MERGE_REF_MODE_ENABLED ? 'ref' : 'none',
   merge_applied: false,
   merge_pairs: [],
   merge_unmatched_before: [],
