@@ -249,11 +249,17 @@ def pass_r_stage(ctx, doc_id, reviewer=None):
         approve_step(ctx.actor('TE_R', 1), doc_id, 'RV')
 
 
+# claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 R 없이 PL 합의 직후 3구역이 열리므로 R 단계를 건너뛴다
 def to_parallel(ctx, *, plel=False, pl_count=1, **kw):
-    """상신 → PL 합의 → R 합의까지 끝내 병렬 단계에 진입한 문서를 만든다."""
+    """상신 → PL 합의 → R 합의까지 끝내 병렬 단계에 진입한 문서를 만든다.
+
+    기타 목적이 'Overlay만 변경' 단독이면 R 단계 자체가 없으므로(백엔드 skip_r_stage)
+    PL 합의만으로 병렬 단계에 진입한다.
+    """
     doc_id, author, pls = submitted_doc(ctx, pl_count=pl_count, plel=plel, **kw)
     pass_pl_stage(ctx, doc_id, pls)
-    pass_r_stage(ctx, doc_id)
+    if list(kw.get('other_purpose') or []) != [P.OTHER_PURPOSE_OVERLAY]:
+        pass_r_stage(ctx, doc_id)
     return doc_id, author, pls
 
 
