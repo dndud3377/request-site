@@ -3,6 +3,7 @@ import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
+  MERGE_ENABLED_PURPOSES, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -892,6 +893,40 @@ export const checkManualPairsAgainstLayers = (
   });
   return result;
 };
+
+/**
+ * claude 수정 (2026-10-19): 참조 요청서 '없음' 변경전/변경후 표가 정하는 상세 목적.
+ * 판정이 '미작성'이 아니고 구분(PP 접두사)이 정해진 행만 본다 — 그런 행이 없으면 null(자동 선택 안 함).
+ * - 구분이 O 뿐 → 'Overlay만 변경' 단독(다른 상세 목적도 모두 뺀다 — J 단계를 빼는 축소 경로)
+ * - J 가 하나라도 있음 → Overlay만 변경(구 값 포함)을 빼고, 추가·삭제가 있으면 Layer 추가/삭제,
+ *   변경이 있으면 STEPSEQ 변경. Merge 와 무관한 상세 목적(FirstA 변경 등)은 그대로 둔다.
+ * 값이 같은지 비교하지 않고 목표 배열을 그대로 돌려준다(반영 여부는 호출부가 sameOtherPurpose 로 정한다).
+ */
+export const deriveAutoOtherPurpose = (pairs: MergePair[], otherPurpose: string[]): string[] | null => {
+  const tables = new Set<MergeTable>();
+  let hasAddedOrDeleted = false;
+  let hasChanged = false;
+  (pairs ?? []).forEach((pair) => {
+    const kind = deriveMergeKind(pair.before, pair.after);
+    if (kind === 'empty') return;
+    const { table } = resolveManualPairTable(pair);
+    if (!table) return;
+    tables.add(table);
+    if (kind === 'changed') hasChanged = true;
+    else hasAddedOrDeleted = true;
+  });
+  if (tables.size === 0) return null;
+  if (!tables.has('J')) return [OTHER_PURPOSE_OVERLAY];
+  return [
+    ...otherPurpose.filter((v) => !(MERGE_ENABLED_PURPOSES as readonly string[]).includes(v)),
+    ...(hasAddedOrDeleted ? [OTHER_PURPOSE_LAYER] : []),
+    ...(hasChanged ? [OTHER_PURPOSE_STEPSEQ] : []),
+  ];
+};
+
+/** 상세 목적 두 배열이 순서와 무관하게 같은 항목인가 — 자동 선택 결과를 반영할지 판단용 */
+export const sameOtherPurpose = (a: string[], b: string[]): boolean =>
+  a.length === b.length && a.every((v) => b.includes(v));
 
 /** J/O-layer 행에 사용자가 입력한 값이 하나라도 있는가 — 수동 행 삭제 시 확인 모달 여부 판단용 */
 export const layerRowHasInput = (row: JayerRow | OayerRow): boolean =>

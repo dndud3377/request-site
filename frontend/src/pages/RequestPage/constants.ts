@@ -49,6 +49,10 @@ export const MERGE_ENABLED_PURPOSES = ['Layer 추가/삭제', 'STEPSEQ 변경', 
 export const isMergePurposeSelected = (otherPurpose: string[]): boolean =>
   otherPurpose.some((o) => (MERGE_ENABLED_PURPOSES as readonly string[]).includes(o));
 
+// claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 판정으로 상세 목적을 자동 선택할 때 쓰는 값(OPTION_OTHER_PURPOSE 와 같은 문자열)
+export const OTHER_PURPOSE_LAYER = 'Layer 추가/삭제';
+export const OTHER_PURPOSE_STEPSEQ = 'STEPSEQ 변경';
+
 // claude 수정 (2026-10-19): 참조 요청서 '있음'(Merge) 잠금 — 참조할 승인 요청서가 아직 적고 선택 단계가 번거로워
 // 당분간 '없음'(변경전/변경후 직접 입력)만 쓴다. Merge 코드는 남겨 두었으므로 true 로 바꾸면 원래 동작으로 돌아간다.
 export const MERGE_REF_MODE_ENABLED = false;

@@ -540,6 +540,8 @@
     "merge_mode_ref": "With reference request",
     "merge_mode_none": "No reference request",
     "merge_ref_locked": "Feature under revision",
+    "other_purpose_auto_locked": "Selected automatically from the Table and Result columns of the Before/After table",
+    "toast_other_purpose_auto": "Detail purpose changed to {{list}} to match the Before/After table.",
     "merge_ref_none": "None",
     "merge_none_done": "This request is confirmed with no reference request. Press 'Reselect' to change it.",
     "merge_mode_change_title": "Change reference request mode",

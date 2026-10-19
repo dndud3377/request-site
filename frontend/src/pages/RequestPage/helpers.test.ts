@@ -9,9 +9,13 @@ import {
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
+  deriveAutoOtherPurpose, sameOtherPurpose,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
 } from './helpers';
-import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES } from './constants';
+import {
+  VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES,
+  OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY,
+} from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
 
 // claude 수정 (2026-10-15): STEP2 X/Y·예외 구역 값 숫자 판정 테스트 추가
@@ -1412,5 +1416,51 @@ describe('formatFlowStepText', () => {
   it('한쪽만 있으면 그 칸만, 둘 다 없으면 빈 문자열', () => {
     expect(formatFlowStepText({ step_from: 'L01', step_to: '', step_from_seq: 'AAAA1234' })).toBe('L01 (AAAA1234)');
     expect(formatFlowStepText({ step_from: '', step_to: '' })).toBe('');
+  });
+});
+
+// claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정 → 상세 목적 자동 선택
+describe('deriveAutoOtherPurpose', () => {
+  const FIRST_A = 'FirstA 변경';
+  const info = (pp: string): MergeRowInfo => ({ process_id: 'P1', sp: 'SP', sd: 'SD', pp, layerid: '' });
+  const pair = (before: MergeRowInfo | null, after: MergeRowInfo | null, id = 'p1'): MergePair => ({
+    id, table: 'J', beforeId: null, before, afterId: null, after, kind: 'changed',
+  });
+  const J = `${J_PREFIX}_A`;
+  const O = `${O_PREFIX}_A`;
+
+  it('판정 가능한 행이 없으면 null(미작성 행·구분 판정 불가 행은 보지 않는다)', () => {
+    expect(deriveAutoOtherPurpose([], [OTHER_PURPOSE_LAYER])).toBeNull();
+    expect(deriveAutoOtherPurpose([pair(null, null)], [OTHER_PURPOSE_LAYER])).toBeNull();
+    expect(deriveAutoOtherPurpose([pair(null, info('PP01'))], [OTHER_PURPOSE_LAYER])).toBeNull();
+    expect(deriveAutoOtherPurpose([pair(info(J), info(O))], [OTHER_PURPOSE_LAYER])).toBeNull();
+  });
+
+  it('구분이 O 뿐이면 판정과 무관하게 Overlay만 변경 단독 — 다른 상세 목적도 뺀다', () => {
+    expect(deriveAutoOtherPurpose([pair(info(O), info(O))], [FIRST_A, OTHER_PURPOSE_LAYER])).toEqual([OTHER_PURPOSE_OVERLAY]);
+    expect(deriveAutoOtherPurpose([pair(null, info(O))], [OTHER_PURPOSE_STEPSEQ])).toEqual([OTHER_PURPOSE_OVERLAY]);
+    expect(deriveAutoOtherPurpose([pair(info(O), null)], [OTHER_PURPOSE_OVERLAY_LEGACY])).toEqual([OTHER_PURPOSE_OVERLAY]);
+  });
+
+  it('J 가 있으면 Overlay만 변경(구 값 포함)을 빼고 추가·삭제 → Layer 추가/삭제, 변경 → STEPSEQ 변경', () => {
+    expect(deriveAutoOtherPurpose([pair(null, info(J))], [OTHER_PURPOSE_OVERLAY])).toEqual([OTHER_PURPOSE_LAYER]);
+    expect(deriveAutoOtherPurpose([pair(info(J), null)], [OTHER_PURPOSE_OVERLAY_LEGACY])).toEqual([OTHER_PURPOSE_LAYER]);
+    expect(deriveAutoOtherPurpose([pair(info(J), info(J))], [OTHER_PURPOSE_LAYER])).toEqual([OTHER_PURPOSE_STEPSEQ]);
+    expect(deriveAutoOtherPurpose(
+      [pair(info(J), info(J), 'p1'), pair(null, info(O), 'p2')],
+      [OTHER_PURPOSE_OVERLAY],
+    )).toEqual([OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ]);
+  });
+
+  it('J 가 있으면 Merge 와 무관한 상세 목적은 그대로 둔다', () => {
+    expect(deriveAutoOtherPurpose([pair(info(J), info(J))], [FIRST_A, OTHER_PURPOSE_LAYER])).toEqual([FIRST_A, OTHER_PURPOSE_STEPSEQ]);
+  });
+});
+
+describe('sameOtherPurpose', () => {
+  it('순서와 무관하게 같은 항목이면 true', () => {
+    expect(sameOtherPurpose([OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ], [OTHER_PURPOSE_STEPSEQ, OTHER_PURPOSE_LAYER])).toBe(true);
+    expect(sameOtherPurpose([OTHER_PURPOSE_LAYER], [OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ])).toBe(false);
+    expect(sameOtherPurpose([OTHER_PURPOSE_OVERLAY], [OTHER_PURPOSE_OVERLAY_LEGACY])).toBe(false);
   });
 });

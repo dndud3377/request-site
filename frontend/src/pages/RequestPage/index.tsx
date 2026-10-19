@@ -118,7 +118,7 @@ import {
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
-  syncManualPairTable, checkManualPairsAgainstLayers,
+  syncManualPairTable, checkManualPairsAgainstLayers, deriveAutoOtherPurpose, sameOtherPurpose,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
@@ -1873,6 +1873,20 @@ export default function RequestPage(): React.ReactElement {
       : null),
     [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, jayerRows, oayerRows],
   );
+  // claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정이 정하는 상세 목적(null 이면 자동 선택 안 함).
+  // 구분이 O 뿐이면 'Overlay만 변경' 단독이 되어 backend skip_j_stage 로 J 단계가 빠진다. Step1 은 이 값으로 버튼을 잠근다.
+  const autoOtherPurpose = useMemo(
+    () => (detail.merge_ref_mode === 'none' && detail.merge_applied && isMergePurposeSelected(detail.other_purpose)
+      ? deriveAutoOtherPurpose(detail.merge_pairs ?? [], detail.other_purpose)
+      : null),
+    [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, detail.other_purpose],
+  );
+  useEffect(() => {
+    if (!autoOtherPurpose || sameOtherPurpose(autoOtherPurpose, detail.other_purpose)) return;
+    setDetail((prev) => ({ ...prev, other_purpose: autoOtherPurpose }));
+    if (errors['other_purpose']) setErrors((prev) => ({ ...prev, other_purpose: '' }));
+    addToast(t('request.toast_other_purpose_auto', { list: autoOtherPurpose.join(', ') }), 'info');
+  }, [autoOtherPurpose]); // eslint-disable-line react-hooks/exhaustive-deps
   // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
   const isMapReasonMode = isMapDeleteEditType(detail.map_type);
   // '연구소 제품'(Only MAP 전용) — 선택 시 기존 C가문 후결자 기능이 그대로 켜진다.
@@ -5104,6 +5118,7 @@ export default function RequestPage(): React.ReactElement {
           handlePartidSelectionBlur={handlePartidSelectionBlur}
           handleRequestPurposeSelect={handleRequestPurposeSelect}
           requestOverlayExclusive={(clicked, conflicts) => setOverlayExclusiveConfirm({ clicked, conflicts })}
+          autoOtherPurpose={autoOtherPurpose}
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
           handleMergeReselect={() => setMergeReselectConfirm(true)}
