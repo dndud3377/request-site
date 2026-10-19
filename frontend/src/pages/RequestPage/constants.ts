@@ -28,6 +28,9 @@ export const FLOW_NOT_IN_LIST_MSG_KEY = {
   process_id: 'request.flow_process_id_not_in_list',
 } as const;
 
+// claude 수정 (2026-10-19): stepseq 숫자 자릿수가 서로 달라도 앞 4자리부터 비교하기 위한 자릿수(백엔드 views.py STEPSEQ_LEAD_DIGITS 와 같은 값).
+export const STEPSEQ_LEAD_DIGITS = 4;
+
 // claude 수정 (2026-10-15): 흐름도 Step(layerid) 칸 ↔ 그 칸에서 고른 stepseq 를 담는 필드 / stepseq 순서 검증 오류 종류별 i18n 키.
 export const FLOW_STEP_SEQ_FIELD = {
   step_from: 'step_from_seq',
