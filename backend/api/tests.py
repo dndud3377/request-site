@@ -1298,13 +1298,15 @@ class PEStageReviewerFlowTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
-        self.client.force_authenticate(user=self.r_user)
-        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
-            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
+        # claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 R 없이 PL 합의 직후 3구역이 열리므로 R 지정·합의를 건너뛴다
+        if not doc.skip_r_stage():
+            self.client.force_authenticate(user=self.r_user)
+            r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+                'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+            }, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
+            r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
 
         doc.refresh_from_db()
         return doc
@@ -1554,19 +1556,20 @@ class PEStageReviewerFlowTest(TestCase):
             '2회차 R+J+O 완료 시점에 2번째 통보가 나가야 한다',
         )
 
-    def test_notify_rjo_completed_sent_with_r_o_only_when_j_skipped(self):
-        """'기타 목적이 Overlay 변경뿐인 문서'는 J 단계 자체가 없다 — R+O 완료만으로 통보한다."""
+    # claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 R·J 모두 없어 R/J/O 완료 통보를 보내지 않는다(사용자 결정)
+    def test_notify_rjo_completed_not_sent_when_overlay_only(self):
+        """'기타 목적이 Overlay 변경뿐인 문서'는 J 와 2구역(R) 모두 없다 — O 가 끝나도 R/J/O 완료 통보는 없다."""
         doc = self._advance_to_parallel(other_purpose=['Overlay 변경'])
-        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent__in=('J', 'R'), round=1).exists())
 
         self.client.force_authenticate(user=self.o_user)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
-        self.assertTrue(
+        self.assertFalse(
             MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed').exists(),
-            'J가 없는 문서는 R+O 완료만으로 통보가 나가야 한다',
+            'R·J 가 없는 문서는 R/J/O 완료 통보를 보내지 않는다',
         )
 
     def test_p_reviewer_loginids_denied_before_claim(self):
@@ -1919,7 +1922,7 @@ class PEStageReviewerFlowTest(TestCase):
     # ----- 기타 목적 'Overlay 변경' 단독: 일반 경로에서 J 를 뺀다 -----
 
     def test_j_step_not_created_when_other_purpose_is_overlay_only(self):
-        """기타 목적이 'Overlay 변경' 하나뿐이면 R 합의 시 J 단계를 만들지 않는다."""
+        """기타 목적이 'Overlay 변경' 하나뿐이면 3구역을 열 때 J 단계를 만들지 않는다."""
         doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
         self.assertFalse(
             ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
@@ -1979,6 +1982,96 @@ class PEStageReviewerFlowTest(TestCase):
 
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved', 'J 가 없는 경로도 P·O 합의로 승인돼야 한다')
+
+    # ----- claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 2구역(R)도 빼고 PL 합의 직후 3구역을 연다 -----
+
+    def test_r_step_not_created_when_overlay_only(self):
+        """PL 합의 직후 R 없이 3구역(P·O·RA)이 열린다 — R/RV·J step 은 만들지 않는다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+        agents = set(ApprovalStep.objects.filter(document=doc, round=1).values_list('agent', flat=True))
+        self.assertFalse(agents & {'R', 'RV', 'J'}, f'R·RV·J 가 없어야 한다: {agents}')
+        self.assertTrue({'P', 'O'} <= agents, f'P·O 는 열려야 한다: {agents}')
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+        self.assertEqual(p_step.action, 'pending')
+        self.assertIsNotNone(p_step.due_date, '기한은 PL 합의 시각 기준으로 잡혀야 한다')
+        self.assertEqual(doc.status, 'under_review')
+
+    def test_r_step_not_created_for_legacy_overlay_value(self):
+        """구 저장값 'Overlay 변경' 단독 문서도 R 없이 3구역이 열린다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY_LEGACY])
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='P', round=1).exists())
+
+    def test_r_step_created_when_overlay_selected_with_others(self):
+        """다른 기타 목적을 함께 골랐으면(일반 경로) PL 합의 후 R 이 그대로 생성된다."""
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': {
+                'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY, 'STEPSEQ 변경'],
+            }, 'jayerRows': []}),
+        )
+        self.client.force_authenticate(user=self.requester)
+        self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='P', round=1).exists())
+
+    def test_in_progress_overlay_doc_with_r_step_keeps_r(self):
+        """R step 이 이미 생성된 진행 중 문서(배포 이전 상태)는 그대로 R 을 거친다 — 단계 생성 시점 판정."""
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1',
+            status='under_review',
+            additional_notes=self._json.dumps({'detail': {
+                'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY],
+            }, 'jayerRows': []}),
+        )
+        ApprovalStep.objects.create(document=doc, agent='PL', action='approved', round=1,
+                                    assignee=self.pl_user, acted_at=timezone.now())
+        ApprovalStep.objects.create(document=doc, agent='R', action='pending', round=1)
+        self.assertIn('R', mailer.route_agents_for(doc), 'R 이 진행 중인 회차는 결재선에 R 이 남아야 한다')
+
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        agents = set(ApprovalStep.objects.filter(document=doc, round=1).values_list('agent', flat=True))
+        self.assertTrue({'P', 'O'} <= agents, f'R 합의 후 3구역이 열려야 한다: {agents}')
+        self.assertNotIn('J', agents)
+
+    def test_route_and_reject_mail_exclude_r_when_overlay_only(self):
+        """결재선에서 R·RV 가 빠지고(PL 단계 포함), 3구역 반려 시 TE_R 에 반려 메일이 가지 않는다."""
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': {
+                'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY],
+            }, 'jayerRows': []}),
+        )
+        self.client.force_authenticate(user=self.requester)
+        self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        route = mailer.route_agents_for(doc)
+        self.assertNotIn('R', route, 'PL 단계에서도 R 은 결재선에 없어야 한다')
+        self.assertNotIn('RV', route)
+
+        self.client.force_authenticate(user=self.pl_user)
+        self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/', {'agent': 'O', 'comment': '반려'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        _individual, teams = mailer.resolve_reject_recipients(doc)
+        self.assertNotIn('R', teams, f'TE_R 은 반려 메일 대상이 아니어야 한다: {teams}')
+        self.assertIn('P', teams, '아직 합의하지 않은 P 팀은 반려 메일을 받아야 한다')
 
     def test_general_route_not_approved_while_p_reviewer_pending(self):
         """P 담당자만 합의하고 검토자(PV)가 남아 있으면 J·O 가 끝나도 승인되지 않는다."""
@@ -8400,6 +8493,25 @@ class RSkipStageIntegrationTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
+
+    # claude 수정 (2026-10-19): R 을 생략한 회차에서 반려하면 TE_R 에 반려 메일이 가지 않는지 고정(발견 보고 ①)
+    def test_reject_in_r_skipped_round_excludes_te_r_from_mail(self):
+        detail = {'line': 'L1', 'process_id': 'PID-1'}
+        doc = self._make_doc(detail, [{'id': 'j1', 'pp': 'NORMAL'}], [{'id': 'o1', 'st': 'O'}])
+        self._submit_and_reach_zone3(doc)
+        self._claim_and_reject('O', self.o_user, doc)
+        self._resubmit(doc)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=2).exists())
+
+        self._claim_and_reject('O', self.o_user, doc)
+        doc.refresh_from_db()
+        self.assertNotIn('R', mailer.route_agents_for(doc))
+        _individual, teams = mailer.resolve_reject_recipients(doc)
+        self.assertNotIn('R', teams, f'R 이 없던 회차의 반려 메일은 TE_R 에 가지 않아야 한다: {teams}')
+        self.assertIn('J', teams, '아직 합의하지 않은 J 팀은 반려 메일을 받아야 한다')
 
     def test_o_reject_changed_map_info_keeps_r_on_resubmit(self):
         detail = {'line': 'L1', 'process_id': 'PID-1', 'map_type': 'NEW'}
