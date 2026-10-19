@@ -373,7 +373,8 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
       </div>
 
       <div className="ba-apply-bar">
-        <span className="ba-apply-hint">{t('request.ba_paste_hint')}</span>
+        {/* claude 수정 (2026-10-19): '없음' 표에는 layer 컬럼이 없어 'layer 는 입력 대상이 아닙니다' 문장을 뺀 안내를 쓴다 */}
+        <span className="ba-apply-hint">{t(manualOnly ? 'request.ba_paste_hint_manual' : 'request.ba_paste_hint')}</span>
         <button type="button" className="btn btn-secondary" onClick={onAddRow}>
           + {t('request.ba_add_row')}
         </button>
