@@ -2703,9 +2703,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return
         # (2026-09) resubmit() 이 조건 성립 시 표시해 둔 회차라면 R을 만들지 않고
         # 곧바로 3구역을 연다 — _should_skip_r_stage 참고. 1회용 플래그라 바로 소진한다.
-        if document.r_skip_round == round_no:
+        # claude 수정 (2026-10-19): 'Overlay만 변경' 단독(skip_r_stage)도 R 없이 곧바로 3구역을 연다
+        skip_r_round = document.r_skip_round == round_no
+        if skip_r_round:
             document.r_skip_round = None
             document.save(update_fields=['r_skip_round'])
+        if skip_r_round or document.skip_r_stage():
             self._advance_to_parallel(document, step, round_no)
             return
         # R 생성(중복 방지: 이미 있으면 재생성하지 않음)
