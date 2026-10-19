@@ -296,6 +296,7 @@ describe("'Overlay만 변경' — 참조 요청서 필수", () => {
     expect(headers.filter((h) => h === i18n.t('request.col_layer'))).toHaveLength(2);
     expect(headers).toContain(i18n.t('request.ba_before_col'));
     expect(document.querySelector('.ba-summary')).not.toBeNull();
+    expect(document.body.textContent).toContain(i18n.t('request.ba_paste_hint'));
   });
 
   it("'있음'으로 Merge 확정한 뒤에는 라디오가 잠긴다(기존대로 '재선택' 사용)", async () => {
