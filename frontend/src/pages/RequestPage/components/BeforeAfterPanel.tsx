@@ -44,6 +44,8 @@ export interface BeforeAfterPanelProps {
 }
 
 const FIELDS: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
+// 확정 표에서 변경전/변경후 외의 열 수 — 구분·판정·행 버튼
+const RESULT_EXTRA_COLS = 3;
 
 const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   detail,
@@ -68,6 +70,10 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   const pairs = detail.merge_pairs ?? [];
   const unmatchedBefore = detail.merge_unmatched_before ?? [];
   const unmatchedAfter = detail.merge_unmatched_after ?? [];
+  // claude 수정 (2026-10-19): '없음' 모드는 Layer 를 입력하지도 받지도 않아 헷갈리므로 Layer 열을 숨긴다 —
+  // 한쪽(변경전/변경후) 열 수와 확정 표 전체 열 수를 그에 맞춘다.
+  const sideColSpan = MERGE_MANUAL_FIELDS.length + (manualOnly ? 0 : 1);
+  const resultColSpan = sideColSpan * 2 + RESULT_EXTRA_COLS;
 
   // 미등록 셀을 클릭해 입력 칸으로 연 상태 — 화면 전용이라 문서에 저장하지 않는다.
   // 값을 비운 채 포커스를 벗어나면 부모가 null 로 접고 여기서도 닫는다.
@@ -175,10 +181,11 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   };
 
   /**
-   * 확정 표의 한쪽 5칸.
-   * 미등록(값이 하나도 없음)이고 아직 편집을 열지 않았으면 5칸을 합쳐 '미등록' 한 줄로 표시하고,
-   * 클릭하면 입력 칸으로 바뀐다. layerid 는 수기 입력 대상이 아니라 항상 읽기 전용이다.
-   * claude 수정 (2026-10-16): '없음' 모드는 J/O 표 대조 결과(변경전 존재·변경후 부재·PP 구분 오류)를 셀 오류로 표시한다.
+   * 확정 표의 한쪽 5칸(없음 모드는 Layer 를 뺀 4칸).
+   * 미등록(값이 하나도 없음)이고 아직 편집을 열지 않았으면 한쪽 칸을 모두 합쳐 '미등록' 한 줄로 표시하고,
+   * 클릭하면 입력 칸으로 바뀐다. layerid 는 수기 입력 대상이 아니라 항상 읽기 전용이다('있음' 모드만 표시).
+   * '없음' 모드는 J/O 표 대조 결과(변경전 존재·변경후 부재·PP 구분 오류)를 셀 오류로 표시한다.
+   * claude 수정 (2026-10-19): '없음' 모드는 Layer 셀을 그리지 않는다(입력·표시 대상이 아니라 헷갈림).
    */
   const renderPairCells = (pair: MergePair, side: BaSide) => {
     const info = pair[side];
@@ -195,7 +202,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
     if (empty && !editing.has(editKey(pair.id, side))) {
       return (
         <td
-          colSpan={5}
+          colSpan={sideColSpan}
           className="ba-cell-unreg ba-cell-unreg-click"
           title={t('request.ba_cell_edit_hint')}
           onClick={() => openEdit(pair.id, side)}
@@ -237,7 +244,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
             </td>
           );
         })}
-        <td className={`ba-cell-readonly${manualOnly ? ' ba-cell-readonly-locked' : ''}`}>{info?.layerid || '—'}</td>
+        {!manualOnly && <td className="ba-cell-readonly">{info?.layerid || '—'}</td>}
       </>
     );
   };
@@ -297,8 +304,8 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
             <thead>
               <tr>
                 <th rowSpan={2}>{t('request.ba_table_division')}</th>
-                <th colSpan={5} className="ba-group-before">{t('request.ba_before_col')}</th>
-                <th colSpan={5} className="ba-group-after">{t('request.ba_after_col')}</th>
+                <th colSpan={sideColSpan} className="ba-group-before">{t('request.ba_before_col')}</th>
+                <th colSpan={sideColSpan} className="ba-group-after">{t('request.ba_after_col')}</th>
                 <th rowSpan={2}>{t('request.ba_kind')}</th>
                 <th rowSpan={2} aria-label={t('request.ba_unpair')} />
               </tr>
@@ -307,12 +314,12 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
                 <th className="ba-group-before">{t('request.col_sp')}</th>
                 <th className="ba-group-before">{t('request.col_sd')}</th>
                 <th className="ba-group-before">{t('request.col_pp')}</th>
-                <th className="ba-group-before">{t('request.col_layer')}</th>
+                {!manualOnly && <th className="ba-group-before">{t('request.col_layer')}</th>}
                 <th className="ba-group-after">{t('request.process_id')}</th>
                 <th className="ba-group-after">{t('request.col_sp')}</th>
                 <th className="ba-group-after">{t('request.col_sd')}</th>
                 <th className="ba-group-after">{t('request.col_pp')}</th>
-                <th className="ba-group-after">{t('request.col_layer')}</th>
+                {!manualOnly && <th className="ba-group-after">{t('request.col_layer')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -359,7 +366,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
                 </tr>
               ))}
               {pairs.length === 0 && (
-                <tr><td colSpan={13} className="ba-hint">{t('request.ba_result_empty')}</td></tr>
+                <tr><td colSpan={resultColSpan} className="ba-hint">{t('request.ba_result_empty')}</td></tr>
               )}
             </tbody>
           </table>
