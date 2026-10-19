@@ -285,6 +285,19 @@ describe("'Overlay만 변경' — 참조 요청서 필수", () => {
     expect(onStep1()).toBe(false);
   });
 
+  // claude 수정 (2026-10-19): layer 컬럼·요약 줄 제거는 '없음' 모드에만 적용 — '있음' 표는 그대로다
+  it("'있음' 표는 layer 컬럼과 Merge 요약 줄을 그대로 보여준다", async () => {
+    await renderStep1({
+      other_purpose: [OTHER_PURPOSE_OVERLAY],
+      merge_ref_doc_id: 77, merge_ref_doc_label: '참조 요청서 제목', merge_ref_mode: 'ref', merge_applied: true,
+      merge_pairs: [VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
+    });
+    const headers = Array.from(document.querySelectorAll('.ba-result-table thead th')).map((th) => th.textContent);
+    expect(headers.filter((h) => h === i18n.t('request.col_layer'))).toHaveLength(2);
+    expect(headers).toContain(i18n.t('request.ba_before_col'));
+    expect(document.querySelector('.ba-summary')).not.toBeNull();
+  });
+
   it("'있음'으로 Merge 확정한 뒤에는 라디오가 잠긴다(기존대로 '재선택' 사용)", async () => {
     await renderStep1({
       other_purpose: [OTHER_PURPOSE_OVERLAY],
