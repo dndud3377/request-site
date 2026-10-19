@@ -97,6 +97,7 @@ import {
   VS_NA,
   VS_UNSELECTED,
   isMergePurposeSelected,
+  MERGE_REF_MODE_ENABLED,
   isOverlayPurpose,
   MERGE_UNREGISTERED_ID,
   ADI_CD_CHANGE_PURPOSE,
@@ -117,7 +118,7 @@ import {
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
-  syncManualPairTable, checkManualPairsAgainstLayers,
+  syncManualPairTable, checkManualPairsAgainstLayers, deriveAutoOtherPurpose, sameOtherPurpose,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
@@ -333,8 +334,9 @@ export default function RequestPage(): React.ReactElement {
   /**
    * 비교 결과·스냅샷·참조 문서 기록을 모두 지운다(J/O 표는 건드리지 않는다).
    * 조리법 변경·Merge 목적 전체 해제·재선택에서 공통으로 쓴다.
+   * claude 수정 (2026-10-19): 기본 모드를 신규 문서 기본값(INITIAL_DETAIL)과 맞춘다 — '있음' 잠금 중에는 'none'.
    */
-  const clearMergeComparison = (nextMode: MergeRefMode = 'ref') => {
+  const clearMergeComparison = (nextMode: MergeRefMode = INITIAL_DETAIL.merge_ref_mode) => {
     setMergeSnapshot(null);
     setBaSelBefore(null);
     setBaSelAfter(null);
@@ -953,6 +955,28 @@ export default function RequestPage(): React.ReactElement {
       clearMergeComparison();
     }
   }, [detail.other_purpose]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // claude 수정 (2026-10-19): 참조 요청서 '있음'(Merge) 잠금 중에는 Merge 사용 목적을 고르면 곧바로 '없음'으로 확정해
+  // 변경전/변경후 표를 연다(빈 행 1개로 시작). 임시저장·반려된 '있음' 문서도 여기서 '없음'으로 바뀌며,
+  // 변경전/변경후 행과 J/O 표는 그대로 두고 매핑 대기 목록만 비운다 — 매핑 표가 숨겨져 풀 수 없는데 상신을 막기 때문이다.
+  useEffect(() => {
+    if (MERGE_REF_MODE_ENABLED || !isMergePurposeSelected(detail.other_purpose)) return;
+    if (detail.merge_ref_mode === 'none' && detail.merge_applied) return;
+    setMergeSnapshot(null);
+    setBaSelBefore(null);
+    setBaSelAfter(null);
+    setBaSameCount(0);
+    setDetail((prev) => ({
+      ...prev,
+      merge_ref_doc_id: null,
+      merge_ref_doc_label: '',
+      merge_ref_mode: 'none',
+      merge_applied: true,
+      merge_pairs: prev.merge_pairs.length > 0 ? prev.merge_pairs.map(syncManualPairTable) : [emptyMergePair()],
+      merge_unmatched_before: [],
+      merge_unmatched_after: [],
+    }));
+  }, [detail.other_purpose, detail.merge_ref_mode, detail.merge_applied]);
 
 
   useEffect(() => {
@@ -1849,6 +1873,20 @@ export default function RequestPage(): React.ReactElement {
       : null),
     [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, jayerRows, oayerRows],
   );
+  // claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정이 정하는 상세 목적(null 이면 자동 선택 안 함).
+  // 구분이 O 뿐이면 'Overlay만 변경' 단독이 되어 backend skip_j_stage 로 J 단계가 빠진다. Step1 은 이 값으로 버튼을 잠근다.
+  const autoOtherPurpose = useMemo(
+    () => (detail.merge_ref_mode === 'none' && detail.merge_applied && isMergePurposeSelected(detail.other_purpose)
+      ? deriveAutoOtherPurpose(detail.merge_pairs ?? [], detail.other_purpose)
+      : null),
+    [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, detail.other_purpose],
+  );
+  useEffect(() => {
+    if (!autoOtherPurpose || sameOtherPurpose(autoOtherPurpose, detail.other_purpose)) return;
+    setDetail((prev) => ({ ...prev, other_purpose: autoOtherPurpose }));
+    if (errors['other_purpose']) setErrors((prev) => ({ ...prev, other_purpose: '' }));
+    addToast(t('request.toast_other_purpose_auto', { list: autoOtherPurpose.join(', ') }), 'info');
+  }, [autoOtherPurpose]); // eslint-disable-line react-hooks/exhaustive-deps
   // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
   const isMapReasonMode = isMapDeleteEditType(detail.map_type);
   // '연구소 제품'(Only MAP 전용) — 선택 시 기존 C가문 후결자 기능이 그대로 켜진다.
@@ -5080,6 +5118,7 @@ export default function RequestPage(): React.ReactElement {
           handlePartidSelectionBlur={handlePartidSelectionBlur}
           handleRequestPurposeSelect={handleRequestPurposeSelect}
           requestOverlayExclusive={(clicked, conflicts) => setOverlayExclusiveConfirm({ clicked, conflicts })}
+          autoOtherPurpose={autoOtherPurpose}
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
           handleMergeReselect={() => setMergeReselectConfirm(true)}

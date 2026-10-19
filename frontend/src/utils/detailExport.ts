@@ -359,7 +359,8 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
       blocks.push({
         kind: 'table',
         label: t('request.adi_cd_section_title'),
-        headers: [`${ADI_CD_STEP_ID_LABEL}(${t('request.ba_before_col')})`, `${ADI_CD_STEP_DESC_LABEL}(${t('request.ba_before_col')})`, `${ADI_CD_STEP_ID_LABEL}(${t('request.ba_after_col')})`, `${ADI_CD_STEP_DESC_LABEL}(${t('request.ba_after_col')})`],
+        // claude 수정 (2026-10-19): ADI CD 에는 참조 요청서 개념이 없어 '변경전'/'변경후' 키를 쓴다(이전: '변경전 (참조 요청서)')
+        headers: [`${ADI_CD_STEP_ID_LABEL}(${t('request.ba_before_col_manual')})`, `${ADI_CD_STEP_DESC_LABEL}(${t('request.ba_before_col_manual')})`, `${ADI_CD_STEP_ID_LABEL}(${t('request.ba_after_col_manual')})`, `${ADI_CD_STEP_DESC_LABEL}(${t('request.ba_after_col_manual')})`],
         rows,
       });
     }
@@ -382,8 +383,14 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
     blocks.push({ kind: 'table', label: t('request.flow_chart'), headers: [t('request.flow_line'), t('request.flow_partid'), t('request.flow_process_id'), 'Step'], rows });
   }
 
+  // claude 수정 (2026-10-19): '없음' 문서는 작성 화면·상세보기와 같이 layer 컬럼을 빼고 머리글을 '변경전'/'변경후'로 쓴다
   if ((detail.merge_pairs?.length ?? 0) > 0) {
-    const fields: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
+    const manualOnly = detail.merge_ref_mode === 'none';
+    const fields: (keyof MergeRowInfo)[] = manualOnly
+      ? ['process_id', 'sp', 'sd', 'pp']
+      : ['process_id', 'sp', 'sd', 'pp', 'layerid'];
+    const beforeCol = t(manualOnly ? 'request.ba_before_col_manual' : 'request.ba_before_col');
+    const afterCol = t(manualOnly ? 'request.ba_after_col_manual' : 'request.ba_after_col');
     const fieldLabel = (f: keyof MergeRowInfo) => t(f === 'process_id' ? 'request.process_id' : f === 'layerid' ? 'request.col_layer' : `request.col_${f}`);
     const cells = (info: MergeRowInfo | null) => info ? fields.map((f) => info[f] || '-') : fields.map(() => t('request.ba_unregistered'));
     const rows = (detail.merge_pairs ?? []).map((pair) => [
@@ -397,8 +404,8 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
       label: t('request.ba_result_title'),
       headers: [
         t('request.ba_table_division'),
-        ...fields.map((f) => `${fieldLabel(f)}(${t('request.ba_before_col')})`),
-        ...fields.map((f) => `${fieldLabel(f)}(${t('request.ba_after_col')})`),
+        ...fields.map((f) => `${fieldLabel(f)}(${beforeCol})`),
+        ...fields.map((f) => `${fieldLabel(f)}(${afterCol})`),
         t('request.ba_kind'),
       ],
       rows,
