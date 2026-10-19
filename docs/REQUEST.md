@@ -314,7 +314,13 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - **머리글**: "변경전 (참조 요청서)"/"변경후 (현재 요청서)" → **`request.ba_before_col_manual`/`ba_after_col_manual`**("변경전"/"변경후", en "Before"/"After") ko/en 동시 추가.
   - **Merge 요약 줄**("변경 없음 N건 · 확정 N건 · 매핑 대기 N건") 숨김.
   - '있음' 모드 표는 그대로(layer 컬럼·요약 줄·기존 머리글 유지) — `overlayRefDocRequired.test.tsx` 에 회귀 테스트 1건, `refMergeLocked.test.tsx` 에 '없음' 표 테스트 1건 추가.
-  - 상세보기(`PagedDetailView` `MergePairsTable`)·엑셀 내보내기(`detailExport.ts`)의 변경전/변경후 표는 이번에 바꾸지 않았다.
+  - **붙여넣기 안내**: '없음' 표에는 layer 컬럼이 없어 "layer 는 입력 대상이 아닙니다." 문장을 뺀 **`request.ba_paste_hint_manual`** 을 쓴다(ko/en 동시 추가, '있음'은 기존 `ba_paste_hint`).
+  - **상세보기·엑셀 내보내기도 같은 규칙(사용자 결정)**: `detail.merge_ref_mode === 'none'` 문서는 `PagedDetailView` `MergePairsTable`(prop `manualOnly`)과
+    `detailExport.ts`(의뢰 상세 시트 변경전/변경후 표)에서 layer 컬럼을 빼고 머리글을 `ba_before_col_manual`/`ba_after_col_manual` 로 쓴다.
+    모드 값이 없는 예전 문서·'있음' 문서는 종전대로(layer 컬럼·"(참조 요청서)" 머리글). 이미 상신된 '있음' 문서는 작성 화면을 거치지 않으므로 '있음' 표 그대로 보인다.
+  - **ADI CD 엑셀 머리글**: 참조 요청서 개념이 없는데 `ba_before_col`("변경전 (참조 요청서)")을 쓰던 것을 `ba_before_col_manual`/`ba_after_col_manual` 로 바꿨다
+    (예: "STEP_ID(변경전)"). 화면(`AdiCdPanel`)은 원래 별도 키라 변경 없음.
+  - 테스트: `components/PagedDetailView.mergeManual.test.tsx` 3건, `utils/detailExport.mergeManual.test.ts` 3건 신규. 변경 전 코드로는 '없음'·ADI CD 4건이 실패함을 확인.
 - **백엔드**: 변경 없음(참조 요청서 검증은 원래 프론트에만 있다).
 - **가이드 투어 문구(사용자 결정: 변경)**: 단계 가이드 `guide.tour.step.groups.s1g3`('변경전/변경후 입력' — 목적 선택 시 표가 바로 열리고 Merge 는 기능 수정 중),
   `s1g3b`('변경전/변경후 직접 작성' — PP 접두사 구분 판정·변경전/변경후 대조 규칙), 전체 가이드 자막 `guide.tour.steps.request.flow.ref_doc_merge` 를 ko/en 동시에 바꿨다.
@@ -340,6 +346,11 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      실패 신호: "기존 승인 요청서를 참조해 비교·병합" 문구가 남아 있음.]
   8. [1 의 변경전/변경후 표 머리글 확인] → [기대: '변경전'/'변경후' 아래에 조리법·SP·SD·PP 4칸씩만 있고 Layer 칸이 없다. 표 위 "변경 없음 0건 · 확정 1건 · 매핑 대기 0건" 줄이 없다.
      실패 신호: Layer 칸 / "(참조 요청서)" 머리글 / 요약 줄이 보임.]
+  9. [8 의 표 아래 안내] → [기대: "엑셀에서 4열(process_id·SP·SD·PP)을 복사해 붙여넣으면 여러 행이 한 번에 입력됩니다." 까지만 있고 "layer 는 입력 대상이 아닙니다." 가 없다.]
+  10. ['없음'으로 상신한 문서 → 결재 현황(또는 이력 조회)에서 행 클릭 → 상세 '의뢰 상세' 탭의 "변경전 / 변경후 — 확정된 짝"]
+      → [기대: 작성 화면과 같이 '변경전'/'변경후' 아래 조리법·SP·SD·PP 4칸, Layer 칸 없음. 같은 화면 엑셀 내보내기 → 의뢰 상세 시트 머리글이 "PP(변경전)" 형태이고 "Layer(…)" 열이 없다.
+      실패 신호: Layer 칸 / "(참조 요청서)" 머리글.]
+  11. [ADI CD 변경 문서 → 상세 → 엑셀 내보내기 → 의뢰 상세 시트] → [기대: 머리글 "STEP_ID(변경전)"·"STEP_ID(변경후)". 실패 신호: "STEP_ID(변경전 (참조 요청서))".]
 
 ### 기능 변경 (2026-10-19 — 참조 요청서 필수 규칙을 Merge 사용 목적 전체로 통일)
 
