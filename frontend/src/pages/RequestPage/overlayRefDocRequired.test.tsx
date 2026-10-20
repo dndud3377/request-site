@@ -182,6 +182,17 @@ async function click(el: HTMLElement | undefined) {
 
 const clickNext = () => click(buttonWith('다음 →'));
 
+// claude 수정 (2026-10-20): '없음' 변경전/변경후 표가 미확정이면 STEP1 '다음'에서 확정 모달이 뜬다 —
+// 모달 문구를 확인하고 '확정'을 눌러 확정한 뒤 이어서 이동한다.
+async function confirmRefDocModal() {
+  expect(document.body.textContent).toContain(i18n.t('request.ba_confirm_modal_msg'));
+  const btn = Array.from(document.querySelectorAll('.modal-footer button'))
+    .find((b) => b.textContent?.includes(i18n.t('request.ba_confirm'))) as HTMLButtonElement | undefined;
+  if (!btn) throw new Error('참조 요청서 확정 모달의 확정 버튼을 찾지 못했다');
+  await act(async () => { btn.click(); });
+  await flush(3);
+}
+
 const REQUIRED_MSG = () => i18n.t('request.ba_gate_merge_required');
 const EMPTY_MSG = () => i18n.t('request.ba_gate_manual_empty');
 
@@ -248,6 +259,7 @@ describe("'Overlay만 변경' — 참조 요청서 필수", () => {
       merge_pairs: [NONE_VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
     }, NONE_JAYER_ROWS);
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 
@@ -282,6 +294,7 @@ describe("'Overlay만 변경' — 참조 요청서 필수", () => {
     await click(buttonWith(i18n.t('common.cancel')));
     expect(modeRadio('none').checked).toBe(true);
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 
@@ -351,6 +364,7 @@ describe.each([LAYER_ADD_DELETE, STEPSEQ_CHANGE])("'%s' — 참조 요청서 필
       merge_pairs: [NONE_VALID_PAIR], merge_unmatched_before: [], merge_unmatched_after: [],
     }, NONE_JAYER_ROWS);
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 });
