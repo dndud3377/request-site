@@ -475,6 +475,65 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             pass
         return None
 
+    # claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표가 정한 J/O st 를 서버에서도 검증한다(API 직접 호출 대비)
+    def _validate_ref_doc_st(self, document):
+        """참조 요청서 '없음' 변경전/변경후 표 ↔ J/O 표 검증. 문제 있으면 error 문자열, 없으면 None.
+
+        대상: detail.merge_ref_mode == 'none' 이고 확정(merge_applied)됐으며 기타 목적에 Merge 사용 목적
+        (Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경, 구 값 'Overlay 변경' 포함)이 있는 문서.
+        프론트 `RequestPage/helpers.ts` 의 checkManualPairsAgainstLayers·computeRefDocStTargets 와 같은 규칙이다.
+          - 변경전/변경후 유효 행(한쪽이라도 값이 있는 행)이 1건 이상
+          - 구분(pair.table — 프론트가 PP 접두사로 판정해 저장한 값)의 표에서 변경전 값은 없고, 변경후 값은 있어야 한다
+          - 변경후 값과 4값(process_id·SP·SD·PP, 앞뒤 공백·대소문자 무시)이 같은 J/O 행은 st 'O', 나머지 J/O 행은 st 'X'
+          - st 'O' 가 될 행의 요청 기준(new_or_copy)은 기등록/layer삭제/미진행일 수 없다
+        4칸이 다 차지 않은 쪽은 대조하지 않는다(프론트 4칸 필수 검사가 막는다).
+        """
+        MERGE_PURPOSES = ('Layer 추가/삭제', 'STEPSEQ 변경') + RequestDocument.OTHER_PURPOSE_OVERLAY_VALUES
+        NOC_SPECIAL = ('기등록', 'layer삭제', '미진행')
+        FIELDS = ('process_id', 'sp', 'sd', 'pp')
+        data = document.get_detail()
+        detail = data.get('detail', {}) or {}
+        if detail.get('merge_ref_mode') != 'none' or not detail.get('merge_applied'):
+            return None
+        if not any(p in MERGE_PURPOSES for p in (detail.get('other_purpose') or [])):
+            return None
+
+        def side_values(info):
+            return [str((info or {}).get(f) or '').strip() for f in FIELDS]
+
+        def key_of(info):
+            return '||'.join(v.upper() for v in side_values(info))
+
+        rows = {'J': data.get('jayerRows') or [], 'O': data.get('oayerRows') or []}
+        table_keys = {t: {key_of(r) for r in rs} for t, rs in rows.items()}
+        after_keys = {'J': set(), 'O': set()}
+        valid_count = 0
+        for pair in (detail.get('merge_pairs') or []):
+            before, after = pair.get('before'), pair.get('after')
+            if not any(side_values(before)) and not any(side_values(after)):
+                continue
+            valid_count += 1
+            table = pair.get('table')
+            if table not in table_keys:
+                continue
+            if all(side_values(before)) and key_of(before) in table_keys[table]:
+                return '변경전 값이 이미 J-ayer/O-ayer 표에 있는 행이 있습니다. 참조 요청서를 수정하세요.'
+            if all(side_values(after)):
+                if key_of(after) not in table_keys[table]:
+                    return '변경후 값이 J-ayer/O-ayer 표에 없는 행이 있습니다. 참조 요청서를 수정하세요.'
+                after_keys[table].add(key_of(after))
+        if valid_count == 0:
+            return '참조 요청서(변경전/변경후)를 1건 이상 입력해야 상신할 수 있습니다.'
+
+        for table, rs in rows.items():
+            for r in rs:
+                target_o = key_of(r) in after_keys[table]
+                if target_o and r.get('new_or_copy') in NOC_SPECIAL:
+                    return 'layer 추가 행은 기등록/layer삭제/미진행을 요청기준이 될 수 없습니다. 변경을 원하시면 참조 요청서를 수정하세요.'
+                if str(r.get('st') or '').strip() != ('O' if target_o else 'X'):
+                    return 'J-ayer/O-ayer 표의 ST 가 참조 요청서 내용과 다릅니다. STEP1 에서 참조 요청서를 다시 확정하세요.'
+        return None
+
     def _validate_post_approvers(self, document):
         """C가문(only_prodc=YES) 또는 '연구소 제품' 문서는 상신 시 추가 후결자
         (detail.post_approvers)를 1명 이상 지정해야 한다. 문제 있으면 error 문자열, 없으면 None.
@@ -594,6 +653,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -703,6 +766,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -805,6 +872,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -885,6 +956,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         # 문서 내용 검증은 상신과 동일하게 적용한다(결재선 관련 검증만 생략).
         err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_ref_doc_st(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
