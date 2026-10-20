@@ -941,7 +941,10 @@ export interface RefDocStTargets {
   /** 행 id → 확정 시 st. 변경후 값과 4값이 같은 행은 'O', 그 밖의 행은 모두 'X' */
   jayer: Record<string, string>;
   oayer: Record<string, string>;
-  /** 'O' 가 될 행인데 요청 기준이 기등록/layer삭제/미진행이라 확정할 수 없는 행 */
+  /**
+   * 'O' 가 될 행인데 요청 기준이 기등록/layer삭제/미진행인 행.
+   * claude 수정 (2026-10-20): 확정은 이 행들의 요청 기준을 비우고 진행한다(사용자 결정). 상신 안전망은 여전히 이 값으로 막는다.
+   */
   nocConflicts: { table: MergeTable; id: string }[];
 }
 

@@ -4205,9 +4205,10 @@ export default function RequestPage(): React.ReactElement {
   };
 
   /**
-   * claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표 확정.
-   * 표 검사(1건 이상·4칸·PP 구분·J/O 표 대조)를 통과하고 'O' 가 될 행의 요청 기준이 기등록/layer삭제/미진행이 아니면
-   * 변경후 값과 같은 J/O 행은 st='O', 나머지는 st='X' 로 바꾼다. 'X' 가 되는 활성 행은 st 를 'X' 로 바꿀 때와 같이
+   * claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표 확정. 재확정 시 'O' 가 될 행의 기등록/layer삭제/미진행 요청 기준은
+   * 충돌로 막지 않고 비운다(사용자 결정 — 이전 확정으로 X 가 된 행을 '추가' 대상으로 넣으면 확정이 막히던 문제).
+   * 표 검사(1건 이상·4칸·PP 구분·J/O 표 대조)를 통과하면 변경후 값과 같은 J/O 행은 st='O'(요청 기준이 기등록/layer삭제/미진행이면
+   * 비움), 나머지는 st='X' 로 바꾼다. 'X' 가 되는 활성 행은 st 를 'X' 로 바꿀 때와 같이
    * 요청 기준·제품 이름·STEP(·ITEM_ID)을 비우고 bb 매핑을 푼다. 확정했으면 true.
    */
   const runRefDocConfirm = (): boolean => {
@@ -4221,20 +4222,26 @@ export default function RequestPage(): React.ReactElement {
       return false;
     }
     const targets = computeRefDocStTargets(detail.merge_pairs ?? [], jayerRows, oayerRows);
-    if (targets.nocConflicts.length > 0) {
-      addToast(t('request.ba_noc_special_conflict'), 'error');
-      return false;
-    }
+    const nocClearIds = (table: MergeTable) =>
+      new Set(targets.nocConflicts.filter((c) => c.table === table).map((c) => c.id));
+    const jayerNocClear = nocClearIds('J');
+    const oayerNocClear = nocClearIds('O');
     unmapIfMapped(jayerRows.filter((r) => targets.jayer[r.id] === ST_X && !isRowInactive(r.st)).map((r) => r.id));
     setJayerRows((rows) => rows.map((r) => {
       const target = targets.jayer[r.id];
-      if (target === ST_O) return r.st === ST_O ? r : { ...r, st: ST_O };
+      if (target === ST_O) {
+        const next = jayerNocClear.has(r.id) ? { ...r, new_or_copy: '' } : r;
+        return next.st === ST_O ? next : { ...next, st: ST_O };
+      }
       if (target !== ST_X || isRowInactive(r.st)) return r;
       return { ...r, st: ST_X, ...stClearExtra('st', ST_X, true) };
     }));
     setOayerRows((rows) => rows.map((r) => {
       const target = targets.oayer[r.id];
-      if (target === ST_O) return r.st === ST_O ? r : { ...r, st: ST_O };
+      if (target === ST_O) {
+        const next = oayerNocClear.has(r.id) ? { ...r, new_or_copy: '' } : r;
+        return next.st === ST_O ? next : { ...next, st: ST_O };
+      }
       if (target !== ST_X || isRowInactive(r.st)) return r;
       return { ...r, st: ST_X, ...stClearExtra('st', ST_X, false) };
     }));
