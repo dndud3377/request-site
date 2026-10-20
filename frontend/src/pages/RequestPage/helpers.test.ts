@@ -10,6 +10,7 @@ import {
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
   deriveAutoOtherPurpose, sameOtherPurpose, computeRefDocStTargets, isRefDocStApplied, RefDocStRow,
+  nocOptionsForSt, findStNocMismatchViolations,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
 } from './helpers';
 import {
@@ -1554,5 +1555,32 @@ describe('computeRefDocStTargets / isRefDocStApplied', () => {
     // 확정 뒤 새로 추가된 행(st 미입력)이 있으면 어긋난다
     const added = [...jayer, layer('j3', J_ETC)];
     expect(isRefDocStApplied(computeRefDocStTargets(pairs, added, oayer), added, oayer)).toBe(false);
+  });
+});
+
+// claude 수정 (2026-10-20): ST ↔ 요청 기준 짝 규칙
+describe('nocOptionsForSt / findStNocMismatchViolations', () => {
+  it('ST 가 O 계열이면 신규·차용, X 면 기등록·layer삭제·미진행, 미선택이면 전체', () => {
+    expect(nocOptionsForSt('O')).toEqual(['신규', '차용']);
+    expect(nocOptionsForSt('O (D)')).toEqual(['신규', '차용']);
+    expect(nocOptionsForSt('X')).toEqual(['기등록', 'layer삭제', '미진행']);
+    expect(nocOptionsForSt(' X ')).toEqual(['기등록', 'layer삭제', '미진행']);
+    expect(nocOptionsForSt('')).toEqual(['신규', '차용', '기등록', 'layer삭제', '미진행']);
+    expect(nocOptionsForSt(undefined)).toHaveLength(5);
+  });
+
+  it('ST 와 맞지 않는 요청 기준 행만 찾고, 공란·목록 밖 값은 제외한다', () => {
+    const rows = [
+      { id: 'ok_o', st: 'O', new_or_copy: '신규' },
+      { id: 'ok_od', st: 'O (D)', new_or_copy: '차용' },
+      { id: 'ok_x', st: 'X', new_or_copy: '미진행' },
+      { id: 'bad_x', st: 'X', new_or_copy: '신규' },
+      { id: 'bad_o', st: 'O', new_or_copy: '기등록' },
+      { id: 'bad_od', st: 'O (D)', new_or_copy: 'layer삭제' },
+      { id: 'empty_st', st: '', new_or_copy: '신규' },
+      { id: 'empty_noc', st: 'X', new_or_copy: '' },
+      { id: 'other', st: 'X', new_or_copy: '기타값' },
+    ];
+    expect(findStNocMismatchViolations(rows)).toEqual(['bad_x', 'bad_o', 'bad_od']);
   });
 });
