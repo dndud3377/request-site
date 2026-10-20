@@ -288,6 +288,63 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-10-20 — 참조 요청서 '없음': 변경전/변경후 표 '확정' → J/O 표 ST 결정·잠금 + 상신 서버 검증)
+
+- **의도(사용자)**: 참조 요청서(변경전/변경후 표)가 켜져 있으면 J-ayer/O-ayer 표의 ST 는 참조 요청서 내용으로 정해져야 한다.
+  변경후(추가·변경) 값과 같은 행만 ST=O, 참조 요청서에 없는 행은 모두 ST=X. 사용자가 ST 를 바꿀 수 없고, 바꾸려면 참조 요청서를 고친다.
+  입력 도중 값이 지워지는 문제를 막으려고 **즉시 계산이 아니라 '확정' 버튼을 누르는 순간 계산**한다(사용자 결정).
+- **적용 범위**: `merge_ref_mode==='none' && merge_applied && isMergePurposeSelected(other_purpose)`(사용자 결정: '없음'만). 프론트 `refDocStLocked`.
+- **검증(기존 그대로)**: 판정 추가 → 변경후 값이 표에 있어야, 변경 → 변경전 없음·변경후 있음, 삭제 → 변경전 없음(`checkManualPairsAgainstLayers`, 2026-10-16).
+- **ST 계산(`helpers.ts` `computeRefDocStTargets`)**: 구분(PP 접두사)의 표에서 변경후 4값(process_id·SP·SD·PP, 공백·대소문자 무시)과 같은 행 → `'O'`
+  (`'O (D)'` 도 `'O'` 로 — 사용자 결정), 그 밖의 J/O 행 → `'X'`. 다른 구분 표는 전부 X(예: J 행만 있으면 O-ayer 표 전체 X — 사용자 결정).
+  삭제 행만 있으면 J/O 전부 X. `'O'` 가 될 행의 요청 기준이 기등록/layer삭제/미진행이면 `nocConflicts`.
+- **확정/변경(`BeforeAfterPanel.tsx`, `index.tsx` `runRefDocConfirm`)**:
+  - 표 아래 **[✔ 확정]**: 기존 표 검사(`addBaGateError`)를 통과하고 `nocConflicts` 가 없으면 ST 를 반영한다.
+    X 가 되는 활성 행은 ST 를 X 로 바꿀 때와 같이 **요청 기준·제품 이름·STEP(·ITEM_ID) 초기화 + bb 매핑 해제**(사용자 결정: 기존과 동일).
+    `detail.merge_confirmed=true`(저장됨), 토스트 `request.toast_ba_confirmed`. 표는 읽기 전용(셀·행 추가·↺·✕·붙여넣기 잠금) + 안내 `request.ba_confirmed_notice`.
+  - 확정 후 **[변경]**: `merge_confirmed=false` → 표 편집 가능. ST 는 다시 확정할 때까지 그대로 두고 계속 잠근다.
+  - 요청 기준 충돌 시 에러 토스트 **`request.ba_noc_special_conflict`**("layer 추가 행은 기등록/layer삭제/미진행을 요청기준이 될 수 없습니다. 변경을 원하시면 참조 요청서를 수정하세요.").
+- **STEP1 '다음'(`goToStep`)**: 표가 켜져 있고 미확정이면 모달(`request.ba_confirm_modal_title`/`ba_confirm_modal_msg` "아직 확정이 되지 않았습니다. 현재 참조요청서의 내용을 확정하시겠습니까").
+  확정 → `runRefDocConfirm` 성공 시 다음 렌더에서 원래 목적지로 이동(`refDocResumeTargetRef`), 실패 시 STEP1 에 머물고 오류 표시. 취소 → STEP1.
+  표가 비었거나(빈 행만) 오류가 있으면 기존 관문(`ba_gate_manual_empty` 등)이 먼저 막는다(모달 전에 `validate(1)`).
+- **확정 자동 해제(사용자 결정 A-1)**: 확정 후 J/O 표가 바뀌어 지금 ST 가 확정 결과와 어긋나면(`isRefDocStApplied` false — 행 추가, 대상 행 삭제·값 변경 등)
+  `merge_confirmed=false` + warning 토스트 `request.toast_ba_confirm_released`. 대상이 아닌 X 행을 지우는 것처럼 ST 가 어긋나지 않는 변화는 확정을 유지한다.
+  조리법 변경(J/O 재조회)·상세 목적 해제는 `clearMergeComparison` 이 확정까지 함께 푼다.
+- **최종 상신(사용자 결정 B-1)**: `validate(lastStep)` 에서 미확정이면 `request.ba_gate_unconfirmed` 오류(`merge_confirm`). 오류가 STEP1 항목(참조 요청서·Backbone)뿐이면 STEP1 로 이동.
+  확정 상태라도 `nocConflicts` 가 있으면 같은 충돌 문구로 막는다(안전망).
+- **ST 잠금(표가 켜져 있는 동안 — 확정 여부 무관)**: ST 칸(`Step2`/`Step3` `stLocked`, 툴팁 `request.st_locked_by_ref_doc`), ST 전체 O/X/초기화, 필터 적용 버튼,
+  셀 붙여넣기·Delete 의 ST 열(`isLayerCellLocked`), J↔O 동기화로 ST 가 바뀌는 것(ST 변경 자체를 막음),
+  ST 가 O 인 행의 요청 기준을 기등록/layer삭제/미진행으로 바꾸는 입력·붙여넣기(되돌리고 에러 토스트). ST 가 X 인 행의 요청 기준은 자유롭게 바꿀 수 있다.
+  상세 목적을 해제하면 잠금만 풀리고 ST 값은 그대로다(사용자 결정).
+- **백엔드(`views.py` `_validate_ref_doc_st`, 사용자 결정: 구분은 저장된 `pair.table`)**: submit·resubmit·requester-resubmit·direct-approve 에서
+  `_validate_bb_mapping` 직후 호출. 유효 행 1건 이상 / 변경전 없음 / 변경후 있음 / 대상 행 ST=='O'·나머지 ST=='X' / 대상 행 요청 기준 특수값 금지 → 어긋나면 400.
+  `merge_confirmed` 플래그는 화면용이라 보지 않는다. 임시저장(PATCH)·peer-submit 은 검사하지 않는다. 상신 후 결재 상세의 필터 적용(TE_J/O 권한)은 그대로 허용(사용자 결정).
+- **기존 문서**: `merge_confirmed` 키가 없으면 미확정으로 불러온다 → '다음'에서 확정 모달, 상신은 확정 전까지 막힌다.
+- **i18n**(ko/en 동시 10개): `request.ba_confirm`·`ba_edit`·`ba_confirmed_notice`·`ba_confirm_modal_title`·`ba_confirm_modal_msg`·`ba_gate_unconfirmed`·
+  `ba_noc_special_conflict`·`toast_ba_confirmed`·`toast_ba_confirm_released`·`st_locked_by_ref_doc`. (en 의 '확정'은 공용 '확인'(Confirm)과 겹치지 않게 "Finalize")
+- **알려진 영향**:
+  - X 가 된 행은 요청 기준이 비워지는데, 요청 기준은 X 행에도 필수(2026-09-09)라 STEP3/4 '다음'에서 X 행마다 요청 기준을 다시 채워야 한다(현재 동작 — 보고 후 결정 대기).
+  - 결재 흐름 액션·결재선 생성은 바꾸지 않았다(상신 검증만 추가).
+- **테스트**: `tsc --noEmit` 0 / 프론트 39 suites·545 tests 통과(신규 `refDocStConfirm.test.tsx` 12건, `helpers.test.ts` 8건).
+  신규 통합 테스트는 구현 파일을 되돌리면 12건 중 11건 실패(나머지 1건은 잠금 해제 대조군). 기존 테스트 중 '없음' 확정 문서가 STEP2 로 넘어가는 5개 파일은
+  확정 모달을 거치도록(또는 Merge 와 무관한 목적으로) 수정했다. 백엔드 `manage.py test api` 735건 OK(신규 `RefDocStValidationTest` 13건 — 구현을 되돌리면 13건 모두 실패).
+  결재 케이스 러너: 로컬 sqlite + `AUTH_MODE=dev` 개발 서버(`127.0.0.1:10011`)를 띄워 실행했으나 "상신에 쓸 마스터 데이터를 찾지 못했다 (… JOB FILE layer …)"로 **실행되지 않았다** — 개발환경에서 확인 필요.
+- **수동 시나리오**(PP 접두사 `TEST1`=J, `TEST2`=O):
+  1. [`/request` → STEP1] 라인·조합법·제품 이름·조리법 선택(J/O 표 자동 조회) → 상세 목적 **Layer 추가/삭제** → 변경후 칸에 J-ayer 표에 있는 행 값 입력(PP 는 `TEST1…`)
+     → [기대: 표 아래 '+ 행 추가' 옆 **✔ 확정** 버튼.]
+  2. ['다음 →'] → [기대: "아직 확정이 되지 않았습니다. 현재 참조요청서의 내용을 확정하시겠습니까" 모달. 취소 → STEP1 그대로.]
+  3. [다시 '다음 →' → 모달 '확정'] → [기대: "참조 요청서 내용을 확정했습니다." 토스트 후 STEP2. STEP3 J-ayer 표: 입력한 행만 ST=O, 나머지 ST=X(회색, 요청 기준·제품 이름 비어 있음). O-ayer 표는 전부 X.]
+  4. [STEP3 ST 칸·'전체 O/X/초기화'·필터 버튼에 마우스] → [기대: 회색, 툴팁 "ST 는 참조 요청서(변경전/변경후 표)로 정해집니다. 변경을 원하시면 참조 요청서를 수정하세요.", 클릭해도 무반응.]
+  5. [ST=O 행의 요청 기준을 '기등록'으로] → [기대: 에러 토스트 "layer 추가 행은 기등록/layer삭제/미진행을 요청기준이 될 수 없습니다…", 값은 그대로. ST=X 행은 '미진행' 등 선택 가능.]
+  6. [X 행 요청 기준을 모두 채우고 STEP4·5 진행 → 상신] → [기대: 정상 상신. 결재 상세 J/O 표의 ST 가 3 과 같다.]
+  7. [STEP1 로 돌아가 '변경' → 셀 수정 → '다음'] → [기대: 확정 모달이 다시 뜬다.]
+  8. [확정 후 STEP3 에서 '+ 행 추가'] → [기대: 경고 토스트 "J/O 표가 바뀌어 참조 요청서 확정이 해제되었습니다…", STEP1 에 다시 '✔ 확정' 버튼.]
+  9. [8 상태에서 단계 탭으로 STEP5 → 상신] → [기대: "참조 요청서가 확정되지 않았습니다. STEP1에서 확정하세요." 오류 후 STEP1 로 이동.]
+  10. [변경후 행의 대상 J 행 요청 기준이 '기등록'인 상태에서 '확정'] → [기대: 같은 충돌 에러 토스트, 확정되지 않음.]
+  11. [표에 빈 행만 있는 상태로 '다음'] → [기대: 모달 없이 "변경전/변경후 항목을 1건 이상 입력하세요."로 막힘.]
+  12. [언어 English 로 2·4 반복] → [기대: "It has not been finalized yet…", "ST is set by the reference request…". 키 문자열이 보이면 실패.]
+  - 실패 신호: 확정 전 ST 가 바뀜 / 입력 중 ST 가 바뀜 / ST 칸을 바꿀 수 있음 / 미확정인데 상신됨.
+
 ### 기능 변경 (2026-10-19 — 참조 요청서 '없음': 변경전/변경후 표의 구분·판정으로 상세 목적 자동 선택 → 구분이 O 뿐이면 'Overlay만 변경'으로 경로 축소)
 
 - **의도(사용자)**: 변경전/변경후 표의 구분이 O-ayer 뿐이면 상세 목적이 'Overlay만 변경' 단독이 되어, 결재 경로가 일반 경로보다
