@@ -6213,7 +6213,7 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   | R | MAP 삭제 이유 | 빨간 테두리만 있고 누를 수 없던 것에 버튼 추가. 서식(HTML)을 뺀 글자로 비교(`htmlToText`) |
   | 의뢰 상세 | ADI CD 변경 스텝 | 표 블록(`buildAdiCdStepsTable`) |
   | 의뢰 상세 | ADI CD 동일 변경 적용 대상 | 표 블록(`buildAdiCdTargetsTable`, 추가 대상이 없으면 표 없음 = 카드 노출 조건과 같음) |
-  | 의뢰 상세 | 병합 결과(변경전/변경후 확정 짝) | 표 블록(`buildMergePairsTable`) |
+  | 의뢰 상세 | 병합 결과(변경전/변경후 확정 짝) | 표 블록(`buildMergePairsTable`). '없음'(직접 입력, `merge_ref_mode='none'`) 문서는 화면 표(`MergePairsTable` manualOnly)처럼 Layer 열을 뺀다 |
 
   - 새 항목은 저장 필드가 아니라 **화면 표시값**으로 비교한다(`isValueChanged`). 화면에 안 보이는 잔여 값(예: Inter NO 인데 `inter_xs` 만 다름,
     ADI CD 스텝의 행 id)만 다르면 변경이 아니다. 진행 중=직전 회차 대비 / 이력 조회=한 번이라도(기존 `historyMode` 규칙 그대로).
@@ -6238,9 +6238,10 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
 - **i18n**: `request.all_history_btn` / `all_history_title` / `all_history_no_rounds` / `all_history_section` / `all_history_row_no` /
   `all_history_prev_row_no` / `all_history_row_added` / `all_history_row_changed` / `all_history_row_removed` / `all_history_col_before` /
   `all_history_col_after` (ko·en 동시 추가). 백엔드·API·저장 형식·결재 흐름 변경 없음.
-- **테스트**: `PagedDetailView.untrackedHistory.test.tsx`(9건 — 새 추적 항목 강조·모달, 잔여 값 비강조, 이력 조회 A→B→A),
+- **테스트**: `PagedDetailView.untrackedHistory.test.tsx`(10건 — 새 추적 항목 강조·모달, 잔여 값 비강조, 이력 조회 A→B→A, '없음' 병합 문서 Layer 열 제외),
   `PagedDetailView.allHistory.test.tsx`(15건 — 6개 탭 버튼, 이력 없음 안내, 닫기, A→B→A 두 구간, 변경 없음, 행 신규/변경/삭제, 조건부 항목,
-  Inter, 기타 탭, 이력 조회). 프론트 34 suites / 507건 통과, `tsc --noEmit` 에러 0. 실제 컴포넌트를 가짜 데이터로 띄워 화면 캡처로도 확인.
+  Inter, 기타 탭, 이력 조회). main 병합(2026-10-20) 후 프론트 42 suites / 580건, 백엔드 `manage.py test api` 735건 통과, `tsc --noEmit` 에러 0.
+  실제 컴포넌트를 가짜 데이터로 띄워 화면 캡처로도 확인.
 - **수동 검증 시나리오** (재상신이 2번 이상 된 의뢰서 필요 — 반려 → 수정 → 재상신을 반복해 만든다):
   1. [결재 현황 → 의뢰서 행 클릭 → 상세 모달 '의뢰 상세' 탭] → [기대 결과: '기본 정보' 카드 우측에 `📊 export` 와 `🕘 모든 이력 확인` 이 나란히 보인다.
      R · J-ayer · O-ayer · 뼈찜 · 기타 탭도 export 옆에 같은 버튼이 있다.]
