@@ -12,7 +12,8 @@ import { MemoryRouter } from 'react-router-dom';
 import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
-import { MERGE_PP_PREFIXES, ADI_CD_CHANGE_PURPOSE } from './constants';
+import { MERGE_PP_PREFIXES, ADI_CD_CHANGE_PURPOSE, INITIAL_DETAIL } from './constants';
+import BeforeAfterPanel from './components/BeforeAfterPanel';
 import { errorKeyStep, errorRedirectStep, findRefDocNocConflictPairIds } from './helpers';
 
 // jest.mock 팩토리는 호이스팅되어 `mock` 접두사 변수만 참조할 수 있다.
@@ -353,26 +354,31 @@ describe('검증 오류 → 오류 위치로 이동 + 빨간 표시', () => {
     expect(scrolled).toContain(box);
   });
 
-  // claude 수정 (2026-10-20): 참조 요청서 '확정'에서 요청 기준 충돌이 나면 충돌 행 변경후 칸을 빨간 표시하고 그 칸으로 이동한다.
-  it("참조 요청서 '확정' 시 요청 기준 충돌이 나면 표 아래 문구 + 충돌 행 변경후 칸 빨간 표시 후 그 칸으로 이동한다", async () => {
+  // claude 수정 (2026-10-20): 확정은 충돌 행의 요청 기준을 비우고 진행한다(#624, 사용자 결정) — 충돌로 막히는 건 상신 안전망뿐이다.
+  // 그 오류(merge_noc_conflict)가 났을 때 충돌 행의 변경후 칸이 빨간 표시·이동 대상이 되는지 표만 띄워 확인한다.
+  it('요청 기준 충돌 행(nocConflictPairIds)의 변경후 칸은 빨간 테두리·이동 대상·충돌 툴팁으로 표시된다', () => {
     const J_PP = `${MERGE_PP_PREFIXES.J[0]}_NEW`;
-    const conflictRow = { ...MANUAL_J_FILLED, pp: J_PP, st: 'X', new_or_copy: '기등록', product_name: '', step: '' };
-    const pairs = [{
-      id: 'pair_conflict', table: 'J', beforeId: null, before: null, afterId: null,
-      after: { process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: J_PP, layerid: '' }, kind: 'added',
-    }];
-    mockState.doc = docWith({ other_purpose: ['Layer 추가/삭제'], merge_pairs: pairs }, [LOADED_J, conflictRow]);
-    const { container } = await renderPage();
-    const block = container.querySelector('[data-tour="ref-doc-merge"]')!;
-    expect(block.querySelectorAll('.field-error-target')).toHaveLength(0);
-    await clickNext(container, i18n.t('request.ba_confirm'));
+    const pairs = [
+      { id: 'pair_conflict', table: 'J' as const, beforeId: null, before: null, afterId: null,
+        after: { process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: J_PP, layerid: '' }, kind: 'added' as const },
+      { id: 'pair_ok', table: 'J' as const, beforeId: null, before: null, afterId: null,
+        after: { process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: `${MERGE_PP_PREFIXES.J[0]}_OK`, layerid: '' }, kind: 'added' as const },
+    ];
+    const noop = () => {};
+    const { container } = render(
+      <BeforeAfterPanel
+        detail={{ ...INITIAL_DETAIL, merge_ref_mode: 'none', merge_applied: true, merge_pairs: pairs }}
+        jayerRows={[]} oayerRows={[]} sameCount={0} manualOnly manualCheck={null}
+        nocConflictPairIds={new Set(['pair_conflict'])}
+        selBefore={null} selAfter={null} onSelect={noop} onApply={noop} onUnpair={noop}
+        onCellChange={noop} onCellBlur={noop} onPasteRaw={noop} onTableChange={noop}
+        onAddRow={noop} onResetRow={noop} confirmed={false} onConfirm={noop} onEdit={noop}
+      />
+    );
     const msg = i18n.t('request.ba_noc_special_conflict');
-    expect(toastsOf('error')).toContain(msg);
-    expect(Array.from(block.querySelectorAll('.form-error')).some((e) => e.textContent === msg)).toBe(true);
-    const cells = Array.from(block.querySelectorAll('input.field-error-target')) as HTMLInputElement[];
+    const cells = Array.from(container.querySelectorAll('input.field-error-target')) as HTMLInputElement[];
     expect(cells.map((c) => c.value)).toEqual([PROCESS_ID, 'SP02', 'SD02', J_PP]);
-    expect(cells.every((c) => c.title === msg)).toBe(true);
-    expect(scrolled.some((el) => el.contains(cells[0]))).toBe(true);
+    expect(cells.every((c) => c.title === msg && c.className.includes('ba-cell-input-error'))).toBe(true);
   });
 
   // claude 수정 (2026-10-20): '이력 바로 등록'도 상신처럼 마지막 단계 기준으로 검증한다 — ADI CD 변경은 STEP1 이 마지막이라
