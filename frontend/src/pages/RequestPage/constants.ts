@@ -462,6 +462,8 @@ export const INITIAL_DETAIL: DetailFormState = {
   // claude 수정 (2026-10-19): 참조 요청서 '있음' 잠금 중에는 신규 문서도 '없음'으로 시작한다
   merge_ref_mode: MERGE_REF_MODE_ENABLED ? 'ref' : 'none',
   merge_applied: false,
+  // claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 여부 — 확정해야 J/O st 가 정해지고 다음 단계로 간다
+  merge_confirmed: false,
   merge_pairs: [],
   merge_unmatched_before: [],
   merge_unmatched_after: [],
