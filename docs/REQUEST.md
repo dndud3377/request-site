@@ -140,7 +140,7 @@ pages/RequestPage/
 |---|---|
 | 뒤로 (`target < step`) | **검증 없이 즉시 이동.** 이미 통과해서 지나온 단계다. |
 | 앞으로 (`target > step`) | `현재 step` ~ `target-1` 을 **순서대로 `validate()`**. 전부 통과해야 `target` 도달. |
-| 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. 단 `validate()` 가 `redirectStep` 을 돌려주면 그 단계로 보낸다(입력칸이 다른 단계에 있는 오류 — 현재는 `bb_entries` → STEP1). |
+| 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. 단 `validate()` 가 `redirectStep` 을 돌려주면 그 단계로 보낸다 — **(2026-10-20) 현재 단계에 고칠 오류가 하나도 없으면 오류가 있는 가장 앞 단계**(`helpers.ts` `errorRedirectStep`, 오류 키 → 단계 표는 `constants.ts` `ERROR_KEY_STEPS`). 상신·이력 바로 등록도 같은 규칙. |
 | 현재 단계 클릭 / 범위 밖 | 무동작. |
 
 - **범위 밖의 상한은 고정 5가 아니라 `lastStep` 이다 (2026-08).**
@@ -287,6 +287,54 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 버그 수정 (2026-10-20 후속 — '이력 바로 등록' 검증 기준 = lastStep / 참조 요청서 '확정' 요청 기준 충돌 행 표시)
+
+- **배경**: 위 '오류 위치로 이동' 작업 중 발견 보고 2건 → 사용자 결정: 둘 다 1번(지금 고친다).
+- **'이력 바로 등록'(`handleDirectHistoryClick`)**: `validate(5)` → **`validate(lastStep)`**(상신 버튼과 같은 기준). 이동 대상 기본값도 `lastStep`.
+  수정 전에는 ADI CD 변경(STEP1 이 마지막)·Only MAP·MAP 삭제(STEP2) 문서도 STEP5 검사를 돌아, ADI CD 문서가
+  "모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다." 로 막혔다(테스트로 재현 확인).
+- **참조 요청서 요청 기준 충돌 행 표시**: 처음에는 '확정'에서 충돌이 나면 막고 표시하도록 했으나, main 에 먼저 들어간 #624(사용자 결정:
+  재확정 시 'O' 가 될 행의 기등록/layer삭제/미진행 요청 기준은 **비우고 확정**)와 충돌해 **#624 방식을 따른다**(사용자 결정, merge 시 정리).
+  → '확정'은 이 오류를 내지 않는다. 충돌로 막히는 곳은 **상신 안전망**(`addBaGateError` 의 `merge_noc_conflict` → STEP1 이동)뿐이며,
+  그때 충돌을 일으키는 행(`helpers.ts` `findRefDocNocConflictPairIds` — `computeRefDocStTargets` 판정 재사용)의 **변경후 4칸**에
+  빨간 테두리 + `field-error-target` + 툴팁(`request.ba_noc_special_conflict`)을 달아 그 칸으로 스크롤한다(표 칸이라 깜빡임 없음).
+  표시는 오류가 난 뒤에만 하고, 충돌을 고치면 칸 표시는 바로 사라진다(표 아래 문구는 다음 검증 때 사라진다).
+- **i18n**: 새 키 없음.
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 통과 — `errorScrollTarget.test.tsx` 3건 추가(이력 바로 등록·충돌 행 칸 표시·충돌 헬퍼). 이력 바로 등록 테스트는 수정 전 코드로 실패 확인.
+- **수동 검증 시나리오** (`http://localhost:10011`):
+  1. [MASTER 로그인 → 요청 목적 'ADI CD 변경' 의뢰서 작성(변경전/변경후 표 채움) → '📋 이력에 바로 등록'] → [기대: 상신일·결재 완료일 모달이 뜬다. 실패 신호: "Backbone을 매핑해야…" 토스트.]
+  2. ['확정' 시 충돌 행 요청 기준 비움 동작은 아래 '참조 요청서 재확정'(#624) 항목의 시나리오 참조. 충돌 행 칸 표시는 상신 안전망(정상 화면 흐름에서는 확정 뒤 요청 기준을 바꿀 수 없어 재현이 어렵다)에서만 나타난다.]
+
+### 버그 수정 (2026-10-20 — 검증 오류 시 맨 위로만 올라가던 곳을 "오류 위치로 이동 + 빨간 표시 + 에러 토스트"로 통일)
+
+- **의도(사용자)**: 의뢰서 작성 오류가 어디서 나든 **오류난 곳으로 이동 → 빨간 상자로 표시 → 에러 토스트**가 똑같이 동작해야 한다.
+  실제로 겪은 곳: O-ayer 'OVL 정보' 탭에서 '다음'을 눌렀을 때 O 표 오류 칸으로 가지 않음, STEP1 참조 요청서 표.
+- **원인**: `scrollToFirstError` 는 화면의 첫 `.form-error`(문구) / `.field-error-target`(표 칸)으로 이동하고, **못 찾으면 맨 위로 올라간다.**
+  1. STEP4 는 Partial Shot 오류일 때 'info' 탭으로 바꾸는 코드만 있고 **'table' 탭으로 돌아가는 코드가 없어**, 정보 탭을 보던 중 O 표 오류는 표가 화면에 없었다
+     (J-ayer 는 탭이 없어 문제없음).
+  2. 화면에 표시가 없는 오류 키: 참조 요청서 표 `merge_unmatched_after`·`merge_pairs`·`merge_pairs_blank`·`merge_confirm`·`merge_noc_conflict`,
+     ADI CD `adi_cd_before`·`adi_cd_after`·`adi_cd_extra_targets`, STEP3 `validation_system`.
+  3. 상신(마지막 단계)의 안전망 검사가 다른 단계(STEP1·3·4) 오류로 막으면 그 칸이 화면에 없었다.
+- **수정**:
+  - `scrollToFirstError(4)`: `helpers.ts` `hasOayerTableErrors`(ST/요청 기준 미입력·불일치, 차용 필수칸)가 참이면 **'table' 탭 우선**, 아니고 Partial Shot 이 비었으면 'info' 탭.
+  - 강조 상자는 가장 가까운 **`[data-error-box]` 또는 `.form-group`**. 참조 요청서 블록·ADI CD 두 블록·Validation System 칸에 `data-error-box` 를 달아
+    그 블록만 빨갛게 깜빡인다(전에는 `merge_ref_doc` 오류가 상세 목적 영역 전체 `.form-group` 을 깜빡였다 — 이제 참조 요청서 블록만).
+  - 위 2 의 키를 해당 블록에 `.form-error` 문구로 표시: 참조 요청서는 표 **아래**(`constants.ts` `MERGE_PANEL_ERROR_KEYS` — 칸 표시가 있는
+    PP 판정 불가·구분 불일치·J/O 대조 오류는 표 안 칸이 DOM 상 먼저라 지금처럼 그 칸으로 간다), ADI CD 는 각 표 아래, Validation System 은 토글 옆.
+  - `validate()` 의 `redirectStep` 일반화(사용자 결정: 그 단계로 자동 이동): 현재 단계에 고칠 오류가 없으면 오류가 있는 **가장 앞 단계**.
+    기존 Backbone 조합 영역·참조 요청서 미확정 → STEP1 이동은 이 규칙에 포함된다. '이력 바로 등록'도 `redirectStep` 을 따른다.
+  - 표 셀(J/O 표·참조 요청서 칸)은 지금처럼 빨간 테두리 + 스크롤만, 깜빡임 없음(사용자 결정).
+- **i18n**: 새 키 없음(기존 오류 메시지를 그대로 표시).
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 43 suites·587 tests 통과 — 신규 `errorScrollTarget.test.tsx` 7건
+  (수정 전 코드로 돌리면 O-ayer 탭·참조 요청서·Validation System·ADI CD 4건 실패 확인).
+- **수동 검증 시나리오** (`http://localhost:10011`):
+  1. [의뢰서 작성 → STEP4 O-ayer 표에서 수동 행 ST 를 비워 둠 → 'OVL 정보' 탭 클릭 → '다음 →'] → [기대: '표' 탭으로 돌아가 그 행 ST·요청 기준 칸이 빨간 테두리로 보이는 위치로 스크롤 + 토스트. 실패 신호: 정보 탭에 머문 채 맨 위로 올라감.]
+  2. [STEP4 O 표 정상 + Partial Shot 미선택 → '표' 탭에서 '다음 →'] → [기대: 'OVL 정보' 탭으로 바뀌고 Partial Shot 칸이 빨갛게 깜빡임.]
+  3. [STEP1 상세 목적 'Layer 추가/삭제' → 참조 요청서 '없음' 표를 빈 행만 둔 채 '다음 →'] → [기대: 참조 요청서 블록으로 이동, 블록이 빨갛게 깜빡이고 표 아래 "1건 이상" 빨간 문구 + 토스트.]
+  4. [요청 목적 'ADI CD 변경' → 변경전 표를 비운 채 '📤 상신'] → [기대: 변경전/변경후 표 블록으로 이동해 빨갛게 깜빡이고 표 아래 빨간 문구 + 토스트.]
+  5. [STEP3 J 표에 판정 키워드(PLEL 등) 행이 있는데 Validation System 미선택 → '다음 →'] → [기대: 표 제목 줄의 Validation System 칸이 빨갛게 깜빡이고 옆에 빨간 문구 + 토스트.]
+  6. [STEP5 에서 '📤 상신' 시 STEP3/4 오류만 남은 경우(예: 임시저장 복원 문서)] → [기대: 그 단계로 이동해 오류 칸이 보인다. STEP5 Backbone 매핑 오류가 함께 있으면 STEP5 에 머문다.]
 
 ### 기능 추가 (2026-10-20 — J/O-ayer 표 ST ↔ 요청 기준 짝 규칙 + '전체 X' 값 초기화)
 

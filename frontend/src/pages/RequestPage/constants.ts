@@ -550,6 +550,26 @@ export const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'process_id',
 ];
 
+// claude 수정 (2026-10-20): 검증 오류 키 → 그 입력칸이 있는 단계. 현재 단계에 고칠 오류가 없으면 이 단계로 보낸다.
+// 위에서부터 차례로 맞춰 본다(jayer_mapping 이 jayer_ 접두어보다 먼저). 어디에도 맞지 않으면 ERROR_KEY_DEFAULT_STEP.
+export const ERROR_KEY_STEPS: { step: number; keys: string[]; prefixes: string[] }[] = [
+  { step: 5, keys: ['jayer_mapping'], prefixes: [] },
+  { step: 1, keys: [...DETAIL_REQUIRED, 'bb_entries'], prefixes: ['flow_step_', 'merge_', 'adi_cd_'] },
+  { step: 3, keys: ['validation_system'], prefixes: ['jayer_'] },
+  { step: 4, keys: ['partial_shot'], prefixes: ['oayer_'] },
+];
+export const ERROR_KEY_DEFAULT_STEP = 2;
+
+// claude 수정 (2026-10-20): 참조 요청서 변경전/변경후 표 아래에 문구로 보여 줄 오류 키 — 표 칸에 표시되지 않는 오류들이다
+// (PP 판정 불가·구분 불일치·J/O 표 대조 오류는 해당 칸에 빨간 테두리로 표시된다).
+export const MERGE_PANEL_ERROR_KEYS = [
+  'merge_unmatched_after',
+  'merge_pairs',
+  'merge_pairs_blank',
+  'merge_confirm',
+  'merge_noc_conflict',
+] as const;
+
 // ===== 전체 가이드(투어) 샘플 시드 =====
 // /request?embed=tour 진입 시, 위저드 각 단계를 "값이 채워진" 상태로 보여주기 위한 샘플 데이터.
 export const makeTourDetail = (): DetailFormState => ({
