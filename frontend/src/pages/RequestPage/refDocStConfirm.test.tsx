@@ -362,12 +362,56 @@ describe("참조 요청서 '없음' 확정 → J/O 표 st 결정", () => {
     expect(saved.jayerRows.map((r) => r.st)).toEqual(['O', 'O']);
   });
 
-  it('O 가 될 행의 요청 기준이 기등록이면 확정하지 않고 오류 토스트를 띄운다', async () => {
-    const rows = fixtureJayerRows.map((r) => (r.id === 'j2' ? { ...r, new_or_copy: '기등록', st: 'X' } : r));
+  // claude 수정 (2026-10-20): 'O' 가 될 행의 기등록/layer삭제/미진행 요청 기준은 확정을 막지 않고 비운다(사용자 결정 — ST 무관).
+  it.each([
+    ['st 가 X 인 행(이전 확정으로 X)', 'X', '미진행'],
+    ['st 가 O 인 행(예전 문서의 불일치 데이터)', 'O', '기등록'],
+  ])('O 가 될 %s 의 요청 기준이 특수값이면 비우고 확정한다', async (_label, st, noc) => {
+    const rows = fixtureJayerRows.map((r) => (r.id === 'j2' ? { ...r, new_or_copy: noc, st } : r));
     await renderLoaded({ ...fixtureDoc, additional_notes: JSON.stringify({ ...fixtureNotes, jayerRows: rows }) });
     await click(panelButton(i18n.t('request.ba_confirm')));
-    expect(toastsOf('error')).toContain(i18n.t('request.ba_noc_special_conflict'));
-    expect(panelButton(i18n.t('request.ba_confirm'))).toBeDefined();
+    expect(toastsOf('error')).not.toContain(i18n.t('request.ba_noc_special_conflict'));
+    expect(toastsOf('success')).toContain(i18n.t('request.toast_ba_confirmed'));
+    const saved = await saveDraftAndCapture();
+    expect(saved.detail.merge_confirmed).toBe(true);
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O', new_or_copy: '' });
+  });
+
+  it('확정 → X 행 요청 기준을 미진행으로 → STEP1 변경 → 그 행을 판정 추가로 넣고 재확정하면 O 가 되고 요청 기준이 비워진다', async () => {
+    const j3 = { ...MANUAL_J_FILLED, id: 'j3', sortOrder: 3, sp: 'SP03', sd: 'SD03', pp: `${MERGE_PP_PREFIXES.J[0]}_03`, layerid: 'L03' };
+    const { container } = await renderLoaded({
+      ...fixtureDoc,
+      additional_notes: JSON.stringify({ ...fixtureNotes, jayerRows: [...fixtureJayerRows, j3] }),
+    });
+    await goToTable(container, J_TABLE);
+    expect(stInputOf(rowOf(container, J_TABLE, 'SP03')).value).toBe('X');
+    await fillNoc(container, J_TABLE, 'SP03', '미진행');
+    expect(nocInputOf(rowOf(container, J_TABLE, 'SP03')).value).toBe('미진행');
+
+    for (let i = 0; i < 4 && !onStep1(); i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await click(buttonWith(container, i18n.t('common.prev')));
+    }
+    expect(onStep1()).toBe(true);
+    await click(panelButton(i18n.t('request.ba_edit')));
+    await click(panelButton(i18n.t('request.ba_add_row')));
+    const lastRow = Array.from(document.querySelectorAll('.ba-result-table tbody tr')).pop() as HTMLTableRowElement;
+    await click(lastRow.querySelectorAll('.ba-cell-unreg')[1] as HTMLElement);
+    const afterInputs = Array.from(lastRow.querySelectorAll('input.ba-cell-input')) as HTMLInputElement[];
+    const values = [PROCESS_ID, 'SP03', 'SD03', j3.pp];
+    for (let i = 0; i < values.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => { fireEvent.change(afterInputs[i], { target: { value: values[i] } }); });
+    }
+    await act(async () => { fireEvent.blur(afterInputs[values.length - 1]); });
+    await flush(5);
+
+    await click(panelButton(i18n.t('request.ba_confirm')));
+    expect(toastsOf('error')).not.toContain(i18n.t('request.ba_noc_special_conflict'));
+    const saved = await saveDraftAndCapture();
+    expect(saved.detail.merge_confirmed).toBe(true);
+    expect(saved.jayerRows.find((r) => r.id === 'j3')).toMatchObject({ st: 'O', new_or_copy: '' });
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O', new_or_copy: '신규' });
   });
 
   it('표가 켜져 있으면 J 표의 ST 칸·ST 일괄 버튼이 잠기고 툴팁이 달린다', async () => {
