@@ -1055,6 +1055,7 @@
     "col_submitted": "상신일",
     "col_approved": "결재 완료일",
     "col_rejected": "반려일",
+    "col_sort_hint": "클릭하여 정렬(오름차순 → 내림차순 → 원래 상태)",
     "delete": "삭제",
     "delete_title": "문서 삭제",
     "delete_confirm": "\"{{title}}\" 문서를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",

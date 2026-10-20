@@ -48,6 +48,18 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
   모두 동일). '결재 완료일'·'반려일' 칸은 기존과 동일하게 날짜만 표시한다(`formatDate`, 변경 없음).
 - '결재 완료일'은 `approval_steps` 중 `action='approved'` 인 단계의 가장 늦은 `acted_at`.
 - **반려 탭에서만** 마지막 컬럼이 '반려일'(`rejected_at`)로 바뀐다. 나머지 컬럼 구성은 동일하다.
+- ✅ **(2026-10) 상신일·결재 완료일(반려일) 헤더 정렬** — 두 헤더를 클릭하면 결재 현황 컬럼 헤더 정렬
+  (`docs/APPROVAL.md` §3.1)과 같은 3단 순환(오름차순 ▲ → 내림차순 ▼ → 해제 ⇅)으로 정렬된다.
+  예: MY 탭에서 상신일 ▲ → 내가 상신·관여한 문서를 상신 순서대로 본다.
+  - **모든 필터 탭에 적용**된다(전체/MY/라인/반려). 반려 탭에서는 마지막 헤더가 '반려일'이므로 `rejected_at` 기준.
+  - 정렬 상태(`colSort`)는 **탭을 바꿔도 유지**된다(결재 현황은 탭 전환 시 초기화 — 여기는 의도적으로 다르다).
+    검색어를 바꿔도 유지된다. 정렬을 바꾸면 페이지는 1페이지로 돌아간다.
+  - 처리 순서: 필터 탭 → 정렬(`sortedDocs`/`sortedSnapshots`) → 10건 페이지 자르기. 즉 **페이지 안이 아니라
+    탭의 전체 목록**을 정렬한다. 해제하면 서버가 내려준 순서(문서 `-created_at`, 반려 이력 `rejected_at` 최신순) 그대로.
+  - 비교는 표시값이 아니라 **원본 시각**이다. '결재 완료일' 칸은 날짜만 보이지만 정렬은 `acted_at` 시:분까지 비교하므로
+    같은 날 완료된 문서끼리도 순서가 정확하다.
+  - 날짜가 없는 행(결재 완료일 `-` 등)은 방향과 무관하게 **항상 맨 아래**다. 같은 시각끼리는 원래 순서를 유지한다.
+  - 프론트 전용 — API 변경 없음. 툴팁 문구는 `history.col_sort_hint`.
 - MASTER 에게만 맨 오른쪽에 삭제 열이 보인다. 반려 탭에서는 **반려 이력 1행**을 지우며,
   원본 문서는 그대로 남는다.
 - `role='NONE'` 사용자는 제목을 클릭할 수 없다(상세 모달 미노출). 반려 탭도 동일하다.
@@ -190,7 +202,7 @@ MASTER 는 의뢰서 작성 화면에서 결재를 전혀 거치지 않고 문�
 `col_product`, `col_type`, `col_requester`, `col_status`, `col_submitted`, `col_approved`,
 `col_rejected`, `delete`, `delete_title`, `delete_confirm`, `delete_success`,
 `delete_snapshot_title`, `delete_snapshot_confirm`, `delete_snapshot_success`,
-`pagination_nav`, `pagination_go_to_page`(§2.5)
+`pagination_nav`, `pagination_go_to_page`(§2.5), `col_sort_hint`(§2 헤더 정렬)
 
 이력 바로 등록(§4.5)의 문구는 작성 화면 소속이라 `request.*` 에 있다 —
 `direct_history`, `direct_history_register`, `direct_history_submitted_at`,
