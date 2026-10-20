@@ -227,8 +227,12 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   상신할 수 있다(그 외 403). draft 를 **볼 수 있는 사람**과 **상신할 수 있는 사람**을 분리하기 위해
   조회 스코프와 별개로 검사한다. `resubmit` 도 같은 규칙이다(반려 문서는 의뢰자·지정 PL·공유 그룹 멤버·MASTER).
 - **검증 순서**(하나라도 걸리면 400, 이 시점까지 DB 변경 없음): 지정 PL 파싱·검증 →
-  `_validate_bb_mapping` → `_validate_post_approvers` → `_resolve_sales_agreers` →
+  `_validate_bb_mapping` → `_validate_ref_doc_st` → `_validate_post_approvers` → `_resolve_sales_agreers` →
   `_validate_sales_agreers`. 통과 후 한 트랜잭션에서 상태 전이 + step 생성이 이뤄진다.
+  **(2026-10-20 추가)** `_validate_ref_doc_st`: 참조 요청서 '없음' 변경전/변경후 표가 켜진 문서(`merge_ref_mode=='none'`·
+  `merge_applied`·Merge 사용 목적 선택)는 변경후 값과 4값이 같은 J/O 행만 st 'O', 나머지는 'X' 여야 하고 'O' 행의 요청 기준이
+  기등록/layer삭제/미진행이면 안 된다(변경전 없음·변경후 있음·유효 행 1건 이상도 함께 검사). submit·resubmit·requester-resubmit·
+  direct-approve 4곳(`_validate_bb_mapping` 과 같은 곳)에서 호출하며 peer-submit 에는 없다. 상세는 `docs/REQUEST.md` §4.1 2026-10-20 항목.
   **(2026-10-14 삭제)** `_validate_bb_mapping` 직후에 있던 J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사
   (`layer_sd_check.validate_document`)를 submit·resubmit·requester-resubmit·direct-approve·peer-submit
   모두에서 없앴다 — SD 와 Layer 가 달라도 상신된다(`docs/REQUEST.md` §4.1 2026-10-14 SD-Layer 삭제 항목).
@@ -957,7 +961,7 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 - **권한**: 의뢰자 본인 또는 MASTER만(`doc_permissions.can_requester_resubmit`) — 지정 PL·공유
   그룹 멤버는 대상이 아니다(그쪽은 기존 `peer_submit`, Case D를 그대로 쓴다).
 - **동작**: `resubmit`(Case I)과 거의 동일하다 — 문서 내용은 사전에 `/request` 편집에서
-  update됨. 지정 PL 파싱·검증(`_resolve_designated_pls`) → `_validate_bb_mapping` →
+  update됨. 지정 PL 파싱·검증(`_resolve_designated_pls`) → `_validate_bb_mapping` → `_validate_ref_doc_st`(2026-10-20) →
   `_validate_post_approvers` → `_resolve_sales_agreers`/`_validate_sales_agreers` 통과 후,
   `_max_round + 1`로 새 회차에 지정 PL 전원 + SA 전원의 pending step을 생성한다. **이전 회차
   step은 이력으로 남고, 새 회차가 조회 대상이 되면서 자동으로 무효화**된다(round 승격 자체가
