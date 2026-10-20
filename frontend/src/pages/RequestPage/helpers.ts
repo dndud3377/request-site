@@ -249,6 +249,36 @@ export const findEmptyStNocViolations = (
     .filter((r) => !r.st?.trim() || !r.new_or_copy?.trim())
     .map((r) => r.id);
 
+// claude 수정 (2026-10-20): ST 와 요청 기준(new_or_copy)의 짝 규칙 — ST 가 O 계열('O'·'O (D)')이면 신규/차용,
+// X 이면 기등록/layer삭제/미진행만 쓸 수 있다. ST 를 아직 고르지 않았으면 5개 모두 고를 수 있다
+// (기등록/layer삭제/미진행을 고르면 기존대로 ST 가 'X' 가 된다).
+const NOC_OPTIONS_ST_O = [NOC_NEW, NOC_BORROW];
+const NOC_OPTIONS_ST_X = [NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING];
+const NOC_OPTIONS_ALL = [...NOC_OPTIONS_ST_O, ...NOC_OPTIONS_ST_X];
+
+/** 이 ST 에서 고를 수 있는 요청 기준 목록 (J/O-ayer 공용) */
+export const nocOptionsForSt = (st?: string): string[] => {
+  if (isStO(st)) return NOC_OPTIONS_ST_O;
+  if (isRowInactive(st)) return NOC_OPTIONS_ST_X;
+  return NOC_OPTIONS_ALL;
+};
+
+/**
+ * ST 와 요청 기준이 맞지 않는 행 id 목록 (J/O-ayer 공용) — 예: ST 'X' 인데 '신규', ST 'O' 인데 '미진행'.
+ * 타이핑·붙여넣기·예전 문서로 들어온 값을 잡는다. ST·요청 기준 중 하나라도 비어 있는 행은
+ * findEmptyStNocViolations 가 잡으므로 여기서는 뺀다. 목록에 없는 값(오타 등)은 이 검사 대상이 아니다.
+ */
+export const findStNocMismatchViolations = (
+  rows: { id: string; st: string; new_or_copy: string }[]
+): string[] =>
+  rows
+    .filter((r) => {
+      const noc = (r.new_or_copy ?? '').trim();
+      if (!r.st?.trim() || !NOC_OPTIONS_ALL.includes(noc)) return false;
+      return !nocOptionsForSt(r.st).includes(noc);
+    })
+    .map((r) => r.id);
+
 /** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */
 export const findNocBorrowViolations = (
   rows: { id: string; st: string; new_or_copy: string; product_name: string; step: string }[]
