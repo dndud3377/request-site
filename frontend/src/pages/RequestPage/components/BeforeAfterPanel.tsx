@@ -30,6 +30,8 @@ export interface BeforeAfterPanelProps {
   manualOnly: boolean;
   /** '없음' 모드 — 행별 구분(PP 접두사) 판정과 현재 J/O 표 대조 결과. '있음' 모드는 null */
   manualCheck: ManualPairsLayerCheck | null;
+  /** claude 수정 (2026-10-20): 요청 기준 충돌을 일으키는 행 id — 변경후 칸을 빨간 테두리로 표시하고 오류 이동 대상으로 삼는다 */
+  nocConflictPairIds: Set<string>;
   selBefore: string | null;
   selAfter: string | null;
   onSelect: (side: BaSide, id: string) => void;
@@ -58,6 +60,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   sameCount,
   manualOnly,
   manualCheck,
+  nocConflictPairIds,
   selBefore,
   selAfter,
   onSelect,
@@ -207,6 +210,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
       })
       : undefined;
     const ppError = !!check?.ppError[side];
+    const nocConflict = side === 'after' && nocConflictPairIds.has(pair.id);
     if (empty && !editing.has(editKey(pair.id, side))) {
       return (
         <td
@@ -228,12 +232,13 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
           const missing = !empty && value.trim() === '';
           const changed = compare && value.trim() !== (other?.[f] ?? '').trim();
           const cellPpError = f === 'pp' && ppError;
-          const checkError = layerError || cellPpError;
+          // claude 수정 (2026-10-20): 요청 기준 충돌 행의 변경후 칸도 오류 칸으로 표시한다(사유 툴팁 = 충돌 문구).
+          const checkError = layerError || cellPpError || nocConflict;
           return (
             <td key={f}>
               <input
                 className={`ba-cell-input${missing || checkError ? ' ba-cell-input-error' : ''}${checkError ? ' field-error-target' : ''}${changed ? ' ba-cell-changed' : ''}`}
-                title={cellPpError && check?.tableError ? t(`request.ba_cell_pp_${check.tableError}`) : layerErrorTitle}
+                title={cellPpError && check?.tableError ? t(`request.ba_cell_pp_${check.tableError}`) : (layerErrorTitle ?? (nocConflict ? t('request.ba_noc_special_conflict') : undefined))}
                 value={value}
                 readOnly={locked}
                 autoFocus={empty && f === 'process_id'}
