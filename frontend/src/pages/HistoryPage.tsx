@@ -58,13 +58,36 @@ const LINE_I18N_SUFFIX: Record<string, string> = {
   nv: 'nv',
 };
 
-const getApprovalCompletedDate = (doc: RequestDocument): string => {
+// claude 수정 (2026-10-20): 정렬에 쓰도록 완료 시각(원본값) 추출을 분리 — 표시(날짜만)와 달리 시:분까지 비교한다
+const getApprovalCompletedAt = (doc: RequestDocument): string | null => {
   const approved = (doc.approval_steps ?? []).filter((s) => s.action === 'approved' && s.acted_at);
-  if (!approved.length) return '-';
+  if (!approved.length) return null;
   const latest = approved.reduce((a, b) =>
     new Date(a.acted_at!) > new Date(b.acted_at!) ? a : b
   );
-  return formatDate(latest.acted_at);
+  return latest.acted_at ?? null;
+};
+
+const getApprovalCompletedDate = (doc: RequestDocument): string => {
+  const completedAt = getApprovalCompletedAt(doc);
+  return completedAt ? formatDate(completedAt) : '-';
+};
+
+// claude 수정 (2026-10-20): 상신일/결재 완료일(반려 탭은 반려일) 헤더 클릭 정렬.
+// 'completed' 는 탭에 따라 결재 완료일 또는 반려일을 뜻한다(마지막 컬럼과 같은 자리).
+type HistorySortKey = 'submitted' | 'completed';
+type HistorySort = { key: HistorySortKey; dir: 'asc' | 'desc' };
+
+/** 날짜 기준 정렬. 날짜가 없는 행은 방향과 무관하게 항상 맨 아래에 두고, 같은 시각끼리는 원래 순서를 유지한다. */
+const sortByDate = <T,>(rows: T[], getDate: (row: T) => string | null | undefined, dir: HistorySort['dir']): T[] => {
+  const withTime = rows.map((row) => {
+    const value = getDate(row);
+    return { row, time: value ? Date.parse(value) : NaN };
+  });
+  const dated = withTime.filter((r) => !Number.isNaN(r.time));
+  const undated = withTime.filter((r) => Number.isNaN(r.time));
+  dated.sort((a, b) => (dir === 'asc' ? a.time - b.time : b.time - a.time));
+  return [...dated, ...undated].map((r) => r.row);
 };
 
 /** 의뢰서에 선택된 라인. 제목이 아니라 원본 detail 값을 본다.
@@ -119,7 +142,9 @@ export default function HistoryPage(): React.ReactElement {
   // 목록 페이지네이션 — 필터 탭·검색어가 바뀌면 항상 1페이지로 돌아간다(검색 결과가
   // 몇 페이지 뒤에 있든 즉시 보이도록, ApprovalPage 와 동일 패턴).
   const [listPage, setListPage] = useState(1);
-  useEffect(() => { setListPage(1); }, [filter, search]);
+  // claude 수정 (2026-10-20): 헤더 정렬 상태. 탭을 바꿔도 유지하고, 정렬이 바뀌면 1페이지로 돌아간다.
+  const [colSort, setColSort] = useState<HistorySort | null>(null);
+  useEffect(() => { setListPage(1); }, [filter, search, colSort]);
   // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
   const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
@@ -225,16 +250,46 @@ export default function HistoryPage(): React.ReactElement {
   );
   const isEmpty = isRejectedTab ? snapshots.length === 0 : visibleDocs.length === 0;
 
+  // claude 수정 (2026-10-20): 필터 → 정렬 → 페이지 자르기 순서. 정렬 해제 시 서버가 내려준 순서 그대로.
+  const sortedDocs = useMemo(() => {
+    if (!colSort) return visibleDocs;
+    const getDate = colSort.key === 'submitted'
+      ? (d: RequestDocument) => d.submitted_at
+      : getApprovalCompletedAt;
+    return sortByDate(visibleDocs, getDate, colSort.dir);
+  }, [visibleDocs, colSort]);
+  const sortedSnapshots = useMemo(() => {
+    if (!colSort) return snapshots;
+    const getDate = colSort.key === 'submitted'
+      ? (s: RejectionSnapshot) => s.submitted_at
+      : (s: RejectionSnapshot) => s.rejected_at;
+    return sortByDate(snapshots, getDate, colSort.dir);
+  }, [snapshots, colSort]);
+
+  // 오름차순 → 내림차순 → 해제 3단 순환(결재 현황 컬럼 헤더 정렬과 동일).
+  const toggleColSort = (key: HistorySortKey) => {
+    setColSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  };
+
+  const colSortIndicator = (key: HistorySortKey) => {
+    if (colSort?.key !== key) return <span style={{ color: 'var(--text-muted)' }}> ⇅</span>;
+    return colSort.dir === 'asc' ? ' ▲' : ' ▼';
+  };
+
   // 현재 탭의 대상 건수만큼 10건 단위로 잘라 보여준다(ApprovalPage 와 동일한 클라이언트 측 페이지네이션).
   const totalRows = isRejectedTab ? snapshots.length : visibleDocs.length;
   const totalListPages = Math.max(1, Math.ceil(totalRows / HISTORY_LIST_PAGE_SIZE));
   const pagedSnapshots = useMemo(
-    () => snapshots.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
-    [snapshots, listPage]
+    () => sortedSnapshots.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
+    [sortedSnapshots, listPage]
   );
   const pagedDocs = useMemo(
-    () => visibleDocs.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
-    [visibleDocs, listPage]
+    () => sortedDocs.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
+    [sortedDocs, listPage]
   );
   // 삭제 등으로 목록이 줄어 지금 보던 페이지가 사라지면 마지막 페이지로 보정한다.
   useEffect(() => {
@@ -394,8 +449,21 @@ export default function HistoryPage(): React.ReactElement {
                 <th>{t('history.col_product')}</th>
                 <th>{t('history.col_requester')}</th>
                 <th>{t('history.col_status')}</th>
-                <th>{t('history.col_submitted')}</th>
-                <th>{isRejectedTab ? t('history.col_rejected') : t('history.col_approved')}</th>
+                {/* claude 수정 (2026-10-20): 상신일·결재 완료일(반려일) 헤더 클릭 정렬 */}
+                <th
+                  className="sortable-col"
+                  onClick={() => toggleColSort('submitted')}
+                  title={t('history.col_sort_hint')}
+                >
+                  {t('history.col_submitted')}{colSortIndicator('submitted')}
+                </th>
+                <th
+                  className="sortable-col"
+                  onClick={() => toggleColSort('completed')}
+                  title={t('history.col_sort_hint')}
+                >
+                  {isRejectedTab ? t('history.col_rejected') : t('history.col_approved')}{colSortIndicator('completed')}
+                </th>
                 {isMaster && <th></th>}
               </tr>
             </thead>
