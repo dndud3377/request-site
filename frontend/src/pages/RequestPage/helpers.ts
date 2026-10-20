@@ -898,6 +898,57 @@ export const checkManualPairsAgainstLayers = (
   return result;
 };
 
+// claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 — 변경전/변경후 표로 J/O 표의 st 를 정한다(확정 버튼·상신 검증 공용).
+
+/** st 를 정하는 데 필요한 J/O 행의 최소 형태 */
+export interface RefDocStRow extends ManualLayerKeyRow {
+  id: string;
+  st: string;
+  new_or_copy: string;
+}
+
+export interface RefDocStTargets {
+  /** 행 id → 확정 시 st. 변경후 값과 4값이 같은 행은 'O', 그 밖의 행은 모두 'X' */
+  jayer: Record<string, string>;
+  oayer: Record<string, string>;
+  /** 'O' 가 될 행인데 요청 기준이 기등록/layer삭제/미진행이라 확정할 수 없는 행 */
+  nocConflicts: { table: MergeTable; id: string }[];
+}
+
+/**
+ * 변경전/변경후 표의 판정 추가·변경 행(변경후 4칸이 모두 찬 행)의 변경후 값과 4값이 같은 J/O 행은 st='O',
+ * 나머지 J/O 행은 모두 st='X' 로 정한다. 구분은 PP 접두사 판정(resolveManualPairTable)을 따른다.
+ * 삭제 행은 변경후 값이 없으므로 'O' 가 되는 행을 만들지 않는다.
+ */
+export const computeRefDocStTargets = (
+  pairs: MergePair[],
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): RefDocStTargets => {
+  const keys: Record<MergeTable, Set<string>> = { J: new Set(), O: new Set() };
+  (pairs ?? []).forEach((pair) => {
+    const { table } = resolveManualPairTable(pair);
+    if (table && isMergeSideComplete(pair.after)) keys[table].add(manualLayerKey(pair.after));
+  });
+  const nocConflicts: RefDocStTargets['nocConflicts'] = [];
+  const targetsOf = (table: MergeTable, rows: RefDocStRow[]): Record<string, string> =>
+    Object.fromEntries((rows ?? []).map((r) => {
+      const hit = keys[table].has(manualLayerKey(r));
+      if (hit && isNocSpecial(r.new_or_copy)) nocConflicts.push({ table, id: r.id });
+      return [r.id, hit ? ST_O : ST_X];
+    }));
+  return { jayer: targetsOf('J', jayerRows), oayer: targetsOf('O', oayerRows), nocConflicts };
+};
+
+/** 지금 J/O 표의 st 가 확정 결과와 모두 같은가 — 다르면 확정 뒤 J/O 표가 바뀐 것이다(확정 해제 판단용). */
+export const isRefDocStApplied = (
+  targets: RefDocStTargets,
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): boolean =>
+  (jayerRows ?? []).every((r) => (r.st ?? '').trim() === targets.jayer[r.id])
+  && (oayerRows ?? []).every((r) => (r.st ?? '').trim() === targets.oayer[r.id]);
+
 /**
  * claude 수정 (2026-10-19): 참조 요청서 '없음' 변경전/변경후 표가 정하는 상세 목적.
  * 판정이 '미작성'이 아니고 구분(PP 접두사)이 정해진 행만 본다 — 그런 행이 없으면 null(자동 선택 안 함).
