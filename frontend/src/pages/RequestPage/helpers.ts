@@ -998,6 +998,29 @@ export const computeRefDocStTargets = (
   return { jayer: targetsOf('J', jayerRows), oayer: targetsOf('O', oayerRows), nocConflicts };
 };
 
+/**
+ * claude 수정 (2026-10-20): 요청 기준 충돌(nocConflicts)을 일으키는 변경후/변경전 표 행(pair) id 목록 — 그 행의 변경후 칸을 빨간 표시한다.
+ * 충돌 판정은 computeRefDocStTargets 를 그대로 쓰고, 충돌한 J/O 행과 변경후 4값이 같은 행을 찾는다.
+ */
+export const findRefDocNocConflictPairIds = (
+  pairs: MergePair[],
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): string[] => {
+  const { nocConflicts } = computeRefDocStTargets(pairs, jayerRows, oayerRows);
+  const conflictKeys: Record<MergeTable, Set<string>> = { J: new Set(), O: new Set() };
+  nocConflicts.forEach(({ table, id }) => {
+    const row = (table === 'J' ? jayerRows : oayerRows).find((r) => r.id === id);
+    if (row) conflictKeys[table].add(manualLayerKey(row));
+  });
+  return (pairs ?? [])
+    .filter((pair) => {
+      const { table } = resolveManualPairTable(pair);
+      return !!table && isMergeSideComplete(pair.after) && conflictKeys[table].has(manualLayerKey(pair.after));
+    })
+    .map((pair) => pair.id);
+};
+
 /** 지금 J/O 표의 st 가 확정 결과와 모두 같은가 — 다르면 확정 뒤 J/O 표가 바뀐 것이다(확정 해제 판단용). */
 export const isRefDocStApplied = (
   targets: RefDocStTargets,
