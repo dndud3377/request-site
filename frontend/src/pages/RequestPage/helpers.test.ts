@@ -9,7 +9,7 @@ import {
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
-  deriveAutoOtherPurpose, sameOtherPurpose,
+  deriveAutoOtherPurpose, sameOtherPurpose, computeRefDocStTargets, isRefDocStApplied, RefDocStRow,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
 } from './helpers';
 import {
@@ -1482,5 +1482,77 @@ describe('sameOtherPurpose', () => {
     expect(sameOtherPurpose([OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ], [OTHER_PURPOSE_STEPSEQ, OTHER_PURPOSE_LAYER])).toBe(true);
     expect(sameOtherPurpose([OTHER_PURPOSE_LAYER], [OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ])).toBe(false);
     expect(sameOtherPurpose([OTHER_PURPOSE_OVERLAY], [OTHER_PURPOSE_OVERLAY_LEGACY])).toBe(false);
+  });
+});
+
+// claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 — 변경전/변경후 표로 J/O st 를 정하는 함수
+describe('computeRefDocStTargets / isRefDocStApplied', () => {
+  const layer = (id: string, pp: string, over: Partial<RefDocStRow> = {}): RefDocStRow =>
+    ({ id, process_id: 'P1', sp: 'SP1', sd: 'SD1', pp, st: '', new_or_copy: '', ...over });
+  const side = (pp: string) => info({ process_id: 'P1', sp: 'SP1', sd: 'SD1', pp });
+  const J_ADD = `${J_PREFIX}_ADD`;
+  const J_NEW = `${J_PREFIX}_NEW`;
+  const J_OLD = `${J_PREFIX}_OLD`;
+  const J_ETC = `${J_PREFIX}_ETC`;
+  const O_ADD = `${O_PREFIX}_ADD`;
+  const O_ETC = `${O_PREFIX}_ETC`;
+
+  it('추가 행: 변경후 값과 같은 J 행은 O, 나머지 J·O 행은 모두 X', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(J_ADD) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ADD), layer('j2', J_ETC)], [layer('o1', O_ETC)]);
+    expect(res.jayer).toEqual({ j1: 'O', j2: 'X' });
+    expect(res.oayer).toEqual({ o1: 'X' });
+    expect(res.nocConflicts).toEqual([]);
+  });
+
+  it('변경 행: 변경후 값만 O 가 되고 변경전 값은 O 가 되지 않는다', () => {
+    const pairs = [pair({ id: 'p1', before: side(J_OLD), after: side(J_NEW) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_NEW), layer('j2', J_OLD)], []);
+    expect(res.jayer).toEqual({ j1: 'O', j2: 'X' });
+  });
+
+  it('삭제 행만 있으면 J/O 행이 모두 X', () => {
+    const pairs = [pair({ id: 'p1', before: side(J_OLD), after: null })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ETC)], [layer('o1', O_ETC)]);
+    expect(res.jayer).toEqual({ j1: 'X' });
+    expect(res.oayer).toEqual({ o1: 'X' });
+  });
+
+  it('O 구분 행은 O-ayer 표에서만 찾는다 — 같은 값이 J 표에 있어도 J 행은 X', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(O_ADD) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', O_ADD)], [layer('o1', O_ADD)]);
+    expect(res.jayer).toEqual({ j1: 'X' });
+    expect(res.oayer).toEqual({ o1: 'O' });
+  });
+
+  it('4값 비교는 앞뒤 공백·대소문자를 무시한다', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(` ${J_ADD.toLowerCase()} `) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ADD, { sp: ' sp1 ' })], []);
+    expect(res.jayer).toEqual({ j1: 'O' });
+  });
+
+  it('변경후 4칸이 다 차지 않은 행은 O 대상을 만들지 않는다', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: info({ process_id: 'P1', sp: 'SP1', sd: '', pp: J_ADD }) })];
+    expect(computeRefDocStTargets(pairs, [layer('j1', J_ADD)], []).jayer).toEqual({ j1: 'X' });
+  });
+
+  it('O 가 될 행의 요청 기준이 기등록/layer삭제/미진행이면 nocConflicts 로 알려준다', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(J_ADD) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ADD, { new_or_copy: NOC_LAYER_DELETE }), layer('j2', J_ETC, { new_or_copy: NOC_REGISTERED })], []);
+    // X 가 될 행(j2)은 요청 기준과 무관하다
+    expect(res.nocConflicts).toEqual([{ table: 'J', id: 'j1' }]);
+  });
+
+  it('isRefDocStApplied: st 가 확정 결과와 모두 같을 때만 true', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(J_ADD) })];
+    const jayer = [layer('j1', J_ADD, { st: 'O' }), layer('j2', J_ETC, { st: 'X' })];
+    const oayer = [layer('o1', O_ETC, { st: 'X' })];
+    const targets = computeRefDocStTargets(pairs, jayer, oayer);
+    expect(isRefDocStApplied(targets, jayer, oayer)).toBe(true);
+    // 'O (D)' 는 확정 값('O')과 다르다
+    expect(isRefDocStApplied(targets, [{ ...jayer[0], st: 'O (D)' }, jayer[1]], oayer)).toBe(false);
+    // 확정 뒤 새로 추가된 행(st 미입력)이 있으면 어긋난다
+    const added = [...jayer, layer('j3', J_ETC)];
+    expect(isRefDocStApplied(computeRefDocStTargets(pairs, added, oayer), added, oayer)).toBe(false);
   });
 });
