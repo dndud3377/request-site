@@ -288,6 +288,43 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-10-20 — J/O-ayer 표 ST ↔ 요청 기준 짝 규칙 + '전체 X' 값 초기화)
+
+- **의도(사용자)**: ST 와 요청 기준(`new_or_copy`)이 맞지 않는 조합(ST O + 기등록/layer삭제/미진행, ST X + 신규/차용)이 **저장·상신되지 않게** 한다.
+  **모든 의뢰서**의 J/O 표에 적용한다(참조 요청서 유무 무관 — 사용자 결정). 백엔드는 바꾸지 않았다(사용자 결정: 프론트 차단).
+- **규칙(`helpers.ts` `nocOptionsForSt`)**:
+  | ST | 요청 기준 드롭다운 |
+  |---|---|
+  | `O`, `O (D)` (사용자 결정: O 계열) | 신규, 차용 |
+  | `X` | 기등록, layer삭제, 미진행 |
+  | 미선택(`''`) | 5개 전체 — 기등록/layer삭제/미진행을 고르면 **기존대로 ST 가 X** 가 된다 |
+  `Step2.tsx`(J)·`Step3.tsx`(O) 의 요청 기준 `AutocompleteInput` `options` 를 `nocOptionsForSt(row.st)` 로 바꿨다(로컬 `NEW_OR_COPY_OPTIONS` 삭제).
+- **차단(`helpers.ts` `findStNocMismatchViolations`, `index.tsx` `addStNocError`)**: 드롭다운 밖 경로(직접 타이핑·엑셀 붙여넣기·예전 임시저장/반려 문서)로 들어온 불일치 행을
+  STEP3·STEP4 '다음'과 최종 상신(`validate(5)`)에서 막는다(사용자 결정). 요청 기준 칸 빨간 테두리(기존 키 `{table}_stnoc_{id}_new_or_copy`) +
+  토스트 **`request.jayer_stnoc_mismatch`/`oayer_stnoc_mismatch`**(`{{count}}`행), 칸 오류 문구 `request.stnoc_mismatch_field_error`.
+  ST·요청 기준 중 하나라도 비어 있는 행은 기존 공란 검사(`findEmptyStNocViolations`)가 잡으므로 이 검사에서는 뺀다. 목록에 없는 값(오타)은 대상이 아니다. 임시저장은 막지 않는다.
+- **'전체 X' 값 초기화(발견 보고 → 사용자 결정 2)**: 툴바 '전체 X' 가 ST 만 바꾸고 요청 기준을 남겨 신규/차용 행이 모두 불일치가 되던 문제 —
+  한 행씩 X 로 바꿀 때(`handleJayerChange`)와 같이 **활성이던 행**의 요청 기준·제품 이름·STEP(J 는 ITEM_ID 도)을 비우고 J 는 bb 매핑을 푼다
+  (`handleJayerSetAll`/`handleOayerSetAll`). 이미 X 였던 행은 건드리지 않는다.
+- **참조 요청서 확정과의 관계**: 확정으로 X 가 된 행은 요청 기준이 비워지고(2026-10-20 확정 기능), 이제 기등록/layer삭제/미진행 중에서만 고른다.
+  ST 가 바뀌지 않으므로 X 행에서 요청 기준을 바꿔도 O 로 바뀌지 않는다(실행 확인).
+- **영향(기존 동작 변화)**: X 행에 신규/차용이 저장된 임시저장·반려 문서는 STEP3/4 '다음'·상신에서 막힌다 — 요청 기준을 기등록/layer삭제/미진행으로 바꿔야 한다.
+  결재 진행 중 문서·결재 흐름·백엔드 무변경.
+- **i18n**(ko/en 동시 3개): `request.stnoc_mismatch_field_error`, `request.jayer_stnoc_mismatch`, `request.oayer_stnoc_mismatch`.
+- **테스트**: `tsc --noEmit` 0 / 프론트 40 suites·555 tests 통과 — 신규 `stNocRule.test.tsx` 8건(구현 파일을 되돌리면 7건 실패, 나머지 1건은 기존 동작 대조군),
+  `helpers.test.ts` 2건. 백엔드 무변경.
+- **수동 시나리오**(`http://localhost:10011`):
+  1. [의뢰서 작성 → STEP3 J-ayer 표] ST 가 O 인 행의 요청 기준 칸 클릭 → [기대: 드롭다운에 신규·차용만.]
+  2. [ST 칸을 X 로 변경] → [기대: 요청 기준이 비워지고, 칸을 누르면 기등록·layer삭제·미진행만.]
+  3. ['+ 행 추가'로 만든 ST 빈 행의 요청 기준 칸 클릭] → [기대: 5개 모두. '미진행' 선택 → ST 가 X 로 바뀐다.]
+  4. [ST X 행의 요청 기준 칸에 '신규'를 직접 타이핑(또는 엑셀에서 붙여넣기) → '다음'] → [기대: STEP3 에 머물고 요청 기준 칸 빨간 테두리 +
+     "J-ayer 표 1행의 요청 기준이 ST 와 맞지 않습니다 — ST 가 O 이면 신규/차용, X 이면 미진행/기등록/layer삭제만 쓸 수 있습니다." 토스트.]
+  5. [툴바 '전체 X'] → [기대: 모든 행 ST X, 요청 기준·제품 이름·STEP·ID 가 비워지고 Backbone 매핑이 풀린다. 요청 기준 칸은 기등록·layer삭제·미진행만.]
+  6. [STEP4 O-ayer 표에서 1~5 반복] → [기대: 같은 동작(O 는 ID 칸 없음).]
+  7. [예전에 ST X + 차용으로 임시저장한 문서 열기 → STEP3 '다음'] → [기대: 4 와 같은 오류. 요청 기준을 미진행 등으로 바꾸면 통과.]
+  8. [언어 English 로 4 반복] → [기대: "… row(s) have a request basis that does not match ST …". 키 문자열이 보이면 실패.]
+  - 실패 신호: ST O 행 드롭다운에 기등록 등이 보임 / 불일치인데 STEP4 로 넘어감 / '전체 X' 후 신규·차용 값이 남음.
+
 ### 기능 추가 (2026-10-20 — 참조 요청서 '없음': 변경전/변경후 표 '확정' → J/O 표 ST 결정·잠금 + 상신 서버 검증)
 
 - **의도(사용자)**: 참조 요청서(변경전/변경후 표)가 켜져 있으면 J-ayer/O-ayer 표의 ST 는 참조 요청서 내용으로 정해져야 한다.
