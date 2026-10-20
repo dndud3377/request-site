@@ -116,7 +116,7 @@ import {
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
-  requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
+  requiresBbEntries, findBbEntryViolations, findStNocMismatchViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
@@ -3004,8 +3004,14 @@ export default function RequestPage(): React.ReactElement {
     // layerids는 "이 클릭이 반영된 뒤"의 참여 상태 기준으로 계산한다 — 클릭 이전 상태로 계산하면
     // st 필드 버튼 자체가 참여 여부를 뒤집는 클릭인 경우(예: 전체 X 다음 전체 O) 자기모순으로 빈 집합이
     // 되어 반대편 표로 전파되지 않는다.
-    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: value } : r);
+    // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP·ITEM_ID 를
+    // 비우고 bb 매핑을 푼다(ST X 에는 신규/차용을 쓸 수 없으므로 X 용 요청 기준을 다시 고르게 한다).
+    const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
+    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field)
+      ? { ...r, [field]: value, ...(clearedIds.includes(r.id) ? stClearExtra(field, value, true) : {}) }
+      : r);
     setJayerRows(updatedRows);
+    unmapIfMapped(clearedIds);
     const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
     if (targetIds.size > 0) {
@@ -3139,7 +3145,10 @@ export default function RequestPage(): React.ReactElement {
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, J 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
-    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: value } : r);
+    // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP 를 비운다
+    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field)
+      ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) }
+      : r);
     setOayerRows(updatedRows);
     const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
@@ -4093,14 +4102,26 @@ export default function RequestPage(): React.ReactElement {
     rows: { id: string; st: string; new_or_copy: string }[]
   ) => {
     const violations = findEmptyStNocViolations(rows);
-    if (violations.length === 0) return;
-    violations.forEach((id) => {
-      newErrors[`${table}_stnoc_${id}_st`] = t('request.stnoc_field_error');
-      newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_field_error');
-    });
-    const msg = t(`request.${table}_stnoc_required` as never, { count: violations.length }) as string;
-    newErrors[`${table}_stnoc_required`] = msg;
-    errorMessages.push(msg);
+    if (violations.length > 0) {
+      violations.forEach((id) => {
+        newErrors[`${table}_stnoc_${id}_st`] = t('request.stnoc_field_error');
+        newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_field_error');
+      });
+      const msg = t(`request.${table}_stnoc_required` as never, { count: violations.length }) as string;
+      newErrors[`${table}_stnoc_required`] = msg;
+      errorMessages.push(msg);
+    }
+    // claude 수정 (2026-10-20): ST 와 요청 기준이 맞지 않는 행(ST O 계열+기등록/layer삭제/미진행, ST X+신규/차용)도 막는다 —
+    // 드롭다운은 ST 에 맞는 값만 보여주지만 타이핑·붙여넣기·예전 문서로 들어온 값을 잡는다.
+    const mismatches = findStNocMismatchViolations(rows);
+    if (mismatches.length > 0) {
+      mismatches.forEach((id) => {
+        newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_mismatch_field_error');
+      });
+      const msg = t(`request.${table}_stnoc_mismatch` as never, { count: mismatches.length }) as string;
+      newErrors[`${table}_stnoc_mismatch`] = msg;
+      errorMessages.push(msg);
+    }
   };
 
   /**
