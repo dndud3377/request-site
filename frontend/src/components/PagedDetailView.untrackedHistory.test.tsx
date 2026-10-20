@@ -138,6 +138,21 @@ describe('병합 결과 이력', () => {
     expect(cells).toEqual(expect.arrayContaining(['L02', 'L09']));
   });
 
+  it("'없음'(직접 입력) 문서는 화면 표처럼 이력 표에도 Layer 열이 없다", () => {
+    const manual = (layer: string) => ({ ...pair('J', 'L01', layer), before: { ...pair('J', 'L01', layer).before, sp: 'SP_OLD' } });
+    const doc = makeDoc(
+      { merge_ref_mode: 'none', merge_pairs: [pair('J', 'L01', 'L02')] },
+      [snap({ merge_ref_mode: 'none', merge_pairs: [manual('L02')] })],
+    );
+    const { container } = render(<Harness doc={doc} tab={DETAIL_TAB_IDX} />);
+    fireEvent.click(histBtns(container)[0]);
+    const headers = Array.from(document.querySelectorAll('th')).map((th) => th.textContent);
+    const layerCol = i18n.t('request.all_history_col_before', { col: i18n.t('request.col_layer') });
+    const spCol = i18n.t('request.all_history_col_before', { col: i18n.t('request.col_sp') });
+    expect(headers).toContain(spCol);
+    expect(headers).not.toContain(layerCol);
+  });
+
   it('이전 회차와 같으면 이력 확인이 뜨지 않는다', () => {
     const doc = makeDoc({ merge_pairs: [pair('J', 'L01', 'L02')] }, [snap({ merge_pairs: [pair('J', 'L01', 'L02')] })]);
     const { container } = render(<Harness doc={doc} tab={DETAIL_TAB_IDX} />);
