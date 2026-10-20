@@ -1219,6 +1219,131 @@ class BbMappingValidationTest(TestCase):
         self.assertIsNone(self._view._validate_bb_mapping(doc))
 
 
+# claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 — 변경전/변경후 표가 정한 J/O st 를 상신 시 서버에서도 검증한다
+@override_settings(POST_APPROVER_LOGINID='')
+class RefDocStValidationTest(TestCase):
+    """_validate_ref_doc_st — 참조 요청서 '없음' 변경전/변경후 표 ↔ J/O 표 상신 검증.
+
+    변경후 값과 4값이 같은 J/O 행은 st 'O', 나머지는 'X' 여야 하고, 'O' 행의 요청 기준은 기등록/layer삭제/미진행일 수 없다.
+    변경전 값은 표에 없어야, 변경후 값은 표에 있어야 하며 유효 행이 1건 이상이어야 한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        from .views import RequestDocumentViewSet
+        self._json = json
+        self._view = RequestDocumentViewSet()
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='pl1', mail='pl1@c.com', role='PL')
+
+    @staticmethod
+    def _side(pp, sp='SP02'):
+        return {'process_id': 'P1', 'sp': sp, 'sd': 'SD02', 'pp': pp, 'layerid': ''}
+
+    @staticmethod
+    def _row(rid, pp, st, sp='SP02', noc='신규'):
+        return {'id': rid, 'process_id': 'P1', 'sp': sp, 'sd': 'SD02', 'pp': pp, 'st': st, 'new_or_copy': noc}
+
+    def _doc(self, pairs, jayer, oayer=None, other_purpose=None, mode='none', status='draft'):
+        detail = {
+            'other_purpose': other_purpose if other_purpose is not None else ['Layer 추가/삭제'],
+            'merge_ref_mode': mode, 'merge_applied': True, 'merge_confirmed': True, 'merge_pairs': pairs,
+        }
+        doc = _make_document(self.requester)
+        doc.status = status
+        doc.additional_notes = self._json.dumps({
+            'detail': detail, 'jayerRows': jayer, 'oayerRows': oayer or [],
+            # st 'O' 행은 bb 매핑 검증도 통과하도록 매핑해 둔다
+            'bbRows': [{'sourceJayerRowId': r['id']} for r in jayer],
+        })
+        doc.save()
+        return doc
+
+    def _added(self, table, pp):
+        return {'id': f'p_{pp}', 'table': table, 'before': None, 'after': self._side(pp)}
+
+    def test_consistent_st_passes(self):
+        doc = self._doc(
+            [self._added('J', 'TEST1_A'), self._added('O', 'TEST2_A')],
+            [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'X', sp='SP09', noc='미진행')],
+            [self._row('o1', 'TEST2_A', 'O'), self._row('o2', 'ETC', 'X', sp='SP09', noc='')],
+        )
+        self.assertIsNone(self._view._validate_ref_doc_st(doc))
+
+    def test_non_target_row_with_st_o_blocks(self):
+        doc = self._doc([self._added('J', 'TEST1_A')],
+                        [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'O', sp='SP09')])
+        self.assertIn('ST', self._view._validate_ref_doc_st(doc))
+
+    def test_target_row_with_st_x_or_o_d_blocks(self):
+        for st in ('X', 'O (D)'):
+            doc = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', st)])
+            self.assertIsNotNone(self._view._validate_ref_doc_st(doc), st)
+
+    def test_o_table_rows_are_x_when_only_j_pairs(self):
+        doc = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', 'O')],
+                        [self._row('o1', 'TEST2_A', 'O')])
+        self.assertIsNotNone(self._view._validate_ref_doc_st(doc))
+
+    def test_target_row_with_special_noc_blocks(self):
+        doc = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', 'X', noc='기등록')])
+        self.assertIn('기등록/layer삭제/미진행', self._view._validate_ref_doc_st(doc))
+
+    def test_after_missing_blocks(self):
+        doc = self._doc([self._added('J', 'TEST1_NONE')], [self._row('j1', 'TEST1_A', 'X')])
+        self.assertIn('변경후', self._view._validate_ref_doc_st(doc))
+
+    def test_before_exists_blocks(self):
+        pair = {'id': 'p1', 'table': 'J', 'before': self._side('TEST1_A'), 'after': None}
+        doc = self._doc([pair], [self._row('j1', 'TEST1_A', 'X')])
+        self.assertIn('변경전', self._view._validate_ref_doc_st(doc))
+
+    def test_delete_only_requires_all_rows_x(self):
+        pair = {'id': 'p1', 'table': 'J', 'before': self._side('TEST1_OLD'), 'after': None}
+        self.assertIsNone(self._view._validate_ref_doc_st(self._doc([pair], [self._row('j1', 'TEST1_A', 'X')])))
+        self.assertIsNotNone(self._view._validate_ref_doc_st(self._doc([pair], [self._row('j1', 'TEST1_A', 'O')])))
+
+    def test_no_valid_rows_blocks(self):
+        empty = {'id': 'p1', 'table': 'J', 'before': None, 'after': None}
+        self.assertIn('1건 이상', self._view._validate_ref_doc_st(self._doc([empty], [])))
+
+    def test_key_match_ignores_case_and_spaces(self):
+        pair = {'id': 'p1', 'table': 'J', 'before': None, 'after': self._side(' test1_a ')}
+        doc = self._doc([pair], [self._row('j1', 'TEST1_A', 'O')])
+        self.assertIsNone(self._view._validate_ref_doc_st(doc))
+
+    def test_not_applied_to_ref_mode_or_non_merge_purpose(self):
+        bad_rows = [self._row('j1', 'ETC', 'O')]
+        self.assertIsNone(self._view._validate_ref_doc_st(
+            self._doc([self._added('J', 'TEST1_A')], bad_rows, mode='ref')))
+        self.assertIsNone(self._view._validate_ref_doc_st(
+            self._doc([self._added('J', 'TEST1_A')], bad_rows, other_purpose=['FirstA 변경'])))
+
+    def test_submit_api_blocks_and_passes(self):
+        self.client.force_authenticate(user=self.requester)
+        bad = self._doc([self._added('J', 'TEST1_A')],
+                        [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'O', sp='SP09')])
+        r = self.client.post(f'/api/documents/{bad.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('ST', r.json()['error'])
+        bad.refresh_from_db()
+        self.assertEqual(bad.status, 'draft')
+
+        good = self._doc([self._added('J', 'TEST1_A')],
+                         [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'X', sp='SP09', noc='미진행')])
+        r = self.client.post(f'/api/documents/{good.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_resubmit_api_blocks(self):
+        self.client.force_authenticate(user=self.requester)
+        bad = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', 'X')], status='rejected')
+        r = self.client.post(f'/api/documents/{bad.id}/resubmit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('ST', r.json()['error'])
+
+
 class HasPpidPlelTest(TestCase):
     """RequestDocument.has_ppid_plel — E(MASK) 단계 생성 판정 (2026-08부터 비활성 행도 저장되므로
     여기서 직접 걸러야 한다).

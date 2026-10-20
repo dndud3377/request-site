@@ -249,6 +249,36 @@ export const findEmptyStNocViolations = (
     .filter((r) => !r.st?.trim() || !r.new_or_copy?.trim())
     .map((r) => r.id);
 
+// claude 수정 (2026-10-20): ST 와 요청 기준(new_or_copy)의 짝 규칙 — ST 가 O 계열('O'·'O (D)')이면 신규/차용,
+// X 이면 기등록/layer삭제/미진행만 쓸 수 있다. ST 를 아직 고르지 않았으면 5개 모두 고를 수 있다
+// (기등록/layer삭제/미진행을 고르면 기존대로 ST 가 'X' 가 된다).
+const NOC_OPTIONS_ST_O = [NOC_NEW, NOC_BORROW];
+const NOC_OPTIONS_ST_X = [NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING];
+const NOC_OPTIONS_ALL = [...NOC_OPTIONS_ST_O, ...NOC_OPTIONS_ST_X];
+
+/** 이 ST 에서 고를 수 있는 요청 기준 목록 (J/O-ayer 공용) */
+export const nocOptionsForSt = (st?: string): string[] => {
+  if (isStO(st)) return NOC_OPTIONS_ST_O;
+  if (isRowInactive(st)) return NOC_OPTIONS_ST_X;
+  return NOC_OPTIONS_ALL;
+};
+
+/**
+ * ST 와 요청 기준이 맞지 않는 행 id 목록 (J/O-ayer 공용) — 예: ST 'X' 인데 '신규', ST 'O' 인데 '미진행'.
+ * 타이핑·붙여넣기·예전 문서로 들어온 값을 잡는다. ST·요청 기준 중 하나라도 비어 있는 행은
+ * findEmptyStNocViolations 가 잡으므로 여기서는 뺀다. 목록에 없는 값(오타 등)은 이 검사 대상이 아니다.
+ */
+export const findStNocMismatchViolations = (
+  rows: { id: string; st: string; new_or_copy: string }[]
+): string[] =>
+  rows
+    .filter((r) => {
+      const noc = (r.new_or_copy ?? '').trim();
+      if (!r.st?.trim() || !NOC_OPTIONS_ALL.includes(noc)) return false;
+      return !nocOptionsForSt(r.st).includes(noc);
+    })
+    .map((r) => r.id);
+
 /** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */
 export const findNocBorrowViolations = (
   rows: { id: string; st: string; new_or_copy: string; product_name: string; step: string }[]
@@ -897,6 +927,57 @@ export const checkManualPairsAgainstLayers = (
   });
   return result;
 };
+
+// claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 — 변경전/변경후 표로 J/O 표의 st 를 정한다(확정 버튼·상신 검증 공용).
+
+/** st 를 정하는 데 필요한 J/O 행의 최소 형태 */
+export interface RefDocStRow extends ManualLayerKeyRow {
+  id: string;
+  st: string;
+  new_or_copy: string;
+}
+
+export interface RefDocStTargets {
+  /** 행 id → 확정 시 st. 변경후 값과 4값이 같은 행은 'O', 그 밖의 행은 모두 'X' */
+  jayer: Record<string, string>;
+  oayer: Record<string, string>;
+  /** 'O' 가 될 행인데 요청 기준이 기등록/layer삭제/미진행이라 확정할 수 없는 행 */
+  nocConflicts: { table: MergeTable; id: string }[];
+}
+
+/**
+ * 변경전/변경후 표의 판정 추가·변경 행(변경후 4칸이 모두 찬 행)의 변경후 값과 4값이 같은 J/O 행은 st='O',
+ * 나머지 J/O 행은 모두 st='X' 로 정한다. 구분은 PP 접두사 판정(resolveManualPairTable)을 따른다.
+ * 삭제 행은 변경후 값이 없으므로 'O' 가 되는 행을 만들지 않는다.
+ */
+export const computeRefDocStTargets = (
+  pairs: MergePair[],
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): RefDocStTargets => {
+  const keys: Record<MergeTable, Set<string>> = { J: new Set(), O: new Set() };
+  (pairs ?? []).forEach((pair) => {
+    const { table } = resolveManualPairTable(pair);
+    if (table && isMergeSideComplete(pair.after)) keys[table].add(manualLayerKey(pair.after));
+  });
+  const nocConflicts: RefDocStTargets['nocConflicts'] = [];
+  const targetsOf = (table: MergeTable, rows: RefDocStRow[]): Record<string, string> =>
+    Object.fromEntries((rows ?? []).map((r) => {
+      const hit = keys[table].has(manualLayerKey(r));
+      if (hit && isNocSpecial(r.new_or_copy)) nocConflicts.push({ table, id: r.id });
+      return [r.id, hit ? ST_O : ST_X];
+    }));
+  return { jayer: targetsOf('J', jayerRows), oayer: targetsOf('O', oayerRows), nocConflicts };
+};
+
+/** 지금 J/O 표의 st 가 확정 결과와 모두 같은가 — 다르면 확정 뒤 J/O 표가 바뀐 것이다(확정 해제 판단용). */
+export const isRefDocStApplied = (
+  targets: RefDocStTargets,
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): boolean =>
+  (jayerRows ?? []).every((r) => (r.st ?? '').trim() === targets.jayer[r.id])
+  && (oayerRows ?? []).every((r) => (r.st ?? '').trim() === targets.oayer[r.id]);
 
 /**
  * claude 수정 (2026-10-19): 참조 요청서 '없음' 변경전/변경후 표가 정하는 상세 목적.

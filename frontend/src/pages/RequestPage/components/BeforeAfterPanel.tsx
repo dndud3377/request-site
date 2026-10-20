@@ -41,6 +41,12 @@ export interface BeforeAfterPanelProps {
   onTableChange: (pairId: string, table: MergeTable) => void;
   onAddRow: () => void;
   onResetRow: (pairId: string) => void;
+  /** '없음' 모드에서 표를 확정했는가 — 확정하면 표를 읽기 전용으로 잠그고 '변경' 버튼만 남긴다 */
+  confirmed: boolean;
+  /** '확정' — 표를 검사하고 J/O 표의 st 를 정한다(부모 소유) */
+  onConfirm: () => void;
+  /** '변경' — 확정을 풀고 표를 다시 편집할 수 있게 한다 */
+  onEdit: () => void;
 }
 
 const FIELDS: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
@@ -63,6 +69,9 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   onTableChange,
   onAddRow,
   onResetRow,
+  confirmed,
+  onConfirm,
+  onEdit,
 }) => {
   const { t } = useTranslation();
   const pairs = detail.merge_pairs ?? [];
@@ -72,6 +81,8 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   // 머리글은 '변경전'/'변경후'로 쓰며 Merge 요약 줄(변경 없음·매핑 대기)을 숨긴다.
   const sideColSpan = manualOnly ? MERGE_MANUAL_FIELDS.length : MERGE_MANUAL_FIELDS.length + 1;
   const resultColSpan = sideColSpan * 2 + 3;
+  // claude 수정 (2026-10-20): '없음' 표를 확정하면 '변경'을 누르기 전까지 셀·행 추가·초기화·해제·붙여넣기를 막는다.
+  const locked = manualOnly && confirmed;
 
   // 미등록 셀을 클릭해 입력 칸으로 연 상태 — 화면 전용이라 문서에 저장하지 않는다.
   // 값을 비운 채 포커스를 벗어나면 부모가 null 로 접고 여기서도 닫는다.
@@ -200,9 +211,9 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
       return (
         <td
           colSpan={sideColSpan}
-          className="ba-cell-unreg ba-cell-unreg-click"
-          title={t('request.ba_cell_edit_hint')}
-          onClick={() => openEdit(pair.id, side)}
+          className={`ba-cell-unreg${locked ? '' : ' ba-cell-unreg-click'}`}
+          title={locked ? undefined : t('request.ba_cell_edit_hint')}
+          onClick={locked ? undefined : () => openEdit(pair.id, side)}
         >
           {t('request.ba_unregistered')}
         </td>
@@ -224,6 +235,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
                 className={`ba-cell-input${missing || checkError ? ' ba-cell-input-error' : ''}${checkError ? ' field-error-target' : ''}${changed ? ' ba-cell-changed' : ''}`}
                 title={cellPpError && check?.tableError ? t(`request.ba_cell_pp_${check.tableError}`) : layerErrorTitle}
                 value={value}
+                readOnly={locked}
                 autoFocus={empty && f === 'process_id'}
                 aria-label={t(f === 'process_id' ? 'request.process_id' : `request.col_${f}`)}
                 onChange={(e) => onCellChange(pair.id, side, f, e.target.value)}
@@ -233,7 +245,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
                 }}
                 onPaste={(e) => {
                   const raw = e.clipboardData.getData('text/plain');
-                  if (!raw) return;
+                  if (!raw || locked) return;
                   e.preventDefault();
                   onPasteRaw(pair.id, side, raw);
                 }}
@@ -345,6 +357,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
                       type="button"
                       className="ba-reset-btn"
                       title={t('request.ba_reset_row')}
+                      disabled={locked}
                       onClick={() => {
                         closeEdit(pair.id, 'before');
                         closeEdit(pair.id, 'after');
@@ -357,6 +370,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
                       type="button"
                       className="ba-unpair-btn"
                       title={t('request.ba_unpair')}
+                      disabled={locked}
                       onClick={() => onUnpair(idx)}
                     >
                       ✕
@@ -375,10 +389,21 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
       <div className="ba-apply-bar">
         {/* claude 수정 (2026-10-19): '없음' 표에는 layer 컬럼이 없어 'layer 는 입력 대상이 아닙니다' 문장을 뺀 안내를 쓴다 */}
         <span className="ba-apply-hint">{t(manualOnly ? 'request.ba_paste_hint_manual' : 'request.ba_paste_hint')}</span>
-        <button type="button" className="btn btn-secondary" onClick={onAddRow}>
+        <button type="button" className="btn btn-secondary" onClick={onAddRow} disabled={locked}>
           + {t('request.ba_add_row')}
         </button>
+        {/* claude 수정 (2026-10-20): '없음' 표 확정/변경 — 확정하는 순간 J/O 표의 st 가 정해진다 */}
+        {manualOnly && (confirmed ? (
+          <button type="button" className="btn btn-secondary" onClick={onEdit}>
+            {t('request.ba_edit')}
+          </button>
+        ) : (
+          <button type="button" className="btn btn-primary" onClick={onConfirm}>
+            ✔ {t('request.ba_confirm')}
+          </button>
+        ))}
       </div>
+      {locked && <div className="ba-note">ⓘ {t('request.ba_confirmed_notice')}</div>}
     </div>
   );
 };

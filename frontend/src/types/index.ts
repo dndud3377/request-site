@@ -641,6 +641,9 @@ export interface DetailFormState {
   merge_ref_mode: MergeRefMode;
   // 확정 여부. 'none' 은 문서 id 가 없어 merge_ref_doc_id 로 판단할 수 없으므로 별도 플래그를 둔다.
   merge_applied: boolean;
+  // claude 수정 (2026-10-20): '없음' 변경전/변경후 표를 '확정'했는가 — 확정 시점에 J/O 표의 st 를 정한다.
+  // 이 필드 도입 전 문서에는 키가 없다(없으면 미확정).
+  merge_confirmed?: boolean;
 
   // 참조 요청서 Merge 의 변경전/변경후 비교 결과. 확정된 짝과 아직 짝이 없는 행을 나눠 저장해
   // 임시저장 후 재진입에도 화면이 그대로 복원된다(상세 페이지 표시에도 merge_pairs 를 쓴다).

@@ -175,6 +175,17 @@ async function clickNext() {
   await flush(3);
 }
 
+// claude 수정 (2026-10-20): '없음' 변경전/변경후 표가 미확정이면 STEP1 '다음'에서 확정 모달이 뜬다 —
+// 모달 문구를 확인하고 '확정'을 눌러 확정한 뒤 이어서 이동한다.
+async function confirmRefDocModal() {
+  expect(document.body.textContent).toContain(i18n.t('request.ba_confirm_modal_msg'));
+  const btn = Array.from(document.querySelectorAll('.modal-footer button'))
+    .find((b) => b.textContent?.includes(i18n.t('request.ba_confirm'))) as HTMLButtonElement | undefined;
+  if (!btn) throw new Error('참조 요청서 확정 모달의 확정 버튼을 찾지 못했다');
+  await act(async () => { btn.click(); });
+  await flush(3);
+}
+
 const lockedTitle = () => i18n.t('request.merge_ref_locked');
 
 const modeRadio = (value: 'ref' | 'none') =>
@@ -269,6 +280,7 @@ describe("참조 요청서 '있음' 잠금", () => {
 
     // 매핑 대기 목록이 비워졌으므로 '없음' 규칙만 통과하면 넘어간다.
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 

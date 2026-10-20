@@ -307,7 +307,9 @@ describe('임시저장 왕복 — 불러온 값이 그대로 다시 저장되는
       ...fixtureDoc,
       additional_notes: JSON.stringify({
         ...fixtureNotes,
-        detail: { ...fixtureDetail, merge_unmatched_before: [], merge_unmatched_after: [] },
+        // claude 수정 (2026-10-20): Merge 사용 목적은 STEP1 에서 참조 요청서 확정을 거쳐야 넘어가므로 Merge 와 무관한 목적으로 바꾼다
+        // (확정하면 픽스처 J/O 행의 st 가 바뀐다 — 이 테스트는 원본 위치만 본다).
+        detail: { ...fixtureDetail, other_purpose: ['FirstA 변경'], merge_unmatched_before: [], merge_unmatched_after: [] },
       }),
     };
     await renderLoadedPage();
@@ -392,6 +394,9 @@ describe('Only MAP · MAP 삭제 — MAP 정보(2단계)가 마지막 단계', (
         detail: {
           ...fixtureDetail,
           request_purpose: purpose,
+          // claude 수정 (2026-10-20): Only MAP·MAP 삭제는 상세 목적을 쓰지 않는다(화면에서 고르면 초기화된다) — Merge 사용 목적이 남아 있으면
+          // STEP1 참조 요청서 확정 모달에 걸리므로 비운다.
+          other_purpose: [],
           merge_unmatched_before: [],
           merge_unmatched_after: [],
         },

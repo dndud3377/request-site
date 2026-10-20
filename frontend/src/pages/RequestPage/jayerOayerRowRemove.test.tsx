@@ -82,7 +82,9 @@ const fixtureDetail = {
   process_id: PROCESS_ID,
   customer_name: '고객사A',
   customer_requirement: '요구사항 텍스트',
-  other_purpose: ['Layer 추가/삭제'],
+  // claude 수정 (2026-10-20): Merge 사용 목적이면 J/O st 를 참조 요청서 표가 정하고(확정 시 표에 없는 행은 모두 X) STEP1 확정을
+  // 거쳐야 해 이 테스트의 수동 행 픽스처(st 미입력 빈 행 등)를 그대로 쓸 수 없다. 행 삭제가 검증 대상이므로 Merge 와 무관한 목적을 쓴다.
+  other_purpose: ['FirstA 변경'],
   source_line: SRC_LINE,
   source_partid: SRC_PARTID,
   change_purpose_note: '<p>특이사항 메모</p>',

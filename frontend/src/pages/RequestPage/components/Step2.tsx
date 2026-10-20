@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, isNocSpecial } from '../constants';
-import { isValidationKeywordRow, stripDateBracket, formatMultiItemId } from '../helpers';
+import { isValidationKeywordRow, stripDateBracket, formatMultiItemId, nocOptionsForSt } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 import { numberBoundaryMatch } from '../../../utils/specMatch';
@@ -31,10 +31,11 @@ interface Step2Props {
   /** 판정 키워드가 하나도 없어 대상/비대상을 고를 수 없는 문서인가('해당없음') */
   vsNotApplicable: boolean;
   onValidationSystemChange: (value: ValidationSystemValue) => void;
+  /** claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표가 켜져 있어 st 를 표가 정하는가 — st 칸·st 일괄 버튼·필터 적용을 잠근다 */
+  stLocked: boolean;
 }
 
 const ST_OPTIONS = ['O', 'O (D)', 'X'];
-const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제', '미진행'];
 
 const Step2: React.FC<Step2Props> = ({
   jayerRows,
@@ -57,8 +58,12 @@ const Step2: React.FC<Step2Props> = ({
   validationSystem,
   vsNotApplicable,
   onValidationSystemChange,
+  stLocked,
 }) => {
   const { t } = useTranslation();
+  // claude 수정 (2026-10-20): 잠긴 버튼·칸은 마우스 이벤트를 받지 않게 해 감싼 요소의 툴팁이 뜨게 한다.
+  const stLockTitle = stLocked ? t('request.st_locked_by_ref_doc') : undefined;
+  const stLockStyle = stLocked ? { pointerEvents: 'none' as const, opacity: 0.4 } : undefined;
   const renderedJayerRows = [...jayerRows].sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder);
   const renderedJayerIds = renderedJayerRows.map(r => r.id);
   return (
@@ -88,11 +93,11 @@ const Step2: React.FC<Step2Props> = ({
       </div>
       {/* 일괄 설정 툴바 */}
       <div className="wizard-table-toolbar">
-        <div className="wizard-table-toolbar-group">
+        <div className="wizard-table-toolbar-group" title={stLockTitle} style={stLocked ? { cursor: 'not-allowed' } : undefined}>
           <span className="wizard-table-toolbar-label">{t('request.col_st_j')}:</span>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>{t('request.btn_reset')}</button>
+          <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleJayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
+          <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleJayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
+          <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleJayerResetField('st')}>{t('request.btn_reset')}</button>
         </div>
         <div className="wizard-table-toolbar-group">
           <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
@@ -110,15 +115,18 @@ const Step2: React.FC<Step2Props> = ({
         </div>
         <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
           {jayerFilterSets.map(fs => (
-            <button
-              key={fs.id}
-              type="button"
-              className="th-header-btn"
-              title={t('request.filter_apply_hint' as never) as string}
-              onClick={() => handleJayerApplyFilter(fs.id)}
-            >
-              {fs.label}
-            </button>
+            <span key={fs.id} title={stLockTitle} style={stLocked ? { display: 'inline-flex', cursor: 'not-allowed' } : undefined}>
+              <button
+                type="button"
+                className="th-header-btn"
+                title={stLocked ? undefined : t('request.filter_apply_hint' as never) as string}
+                disabled={stLocked}
+                style={stLockStyle}
+                onClick={() => handleJayerApplyFilter(fs.id)}
+              >
+                {fs.label}
+              </button>
+            </span>
           ))}
           <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
           <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
@@ -190,15 +198,16 @@ const Step2: React.FC<Step2Props> = ({
                   <td {...cellProps('sd', greyBg ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                   <td {...cellProps('layerid', greyBg ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                   <td {...cellProps('pp', greyBg ? regBg : undefined)}><input value={row.pp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                  <td {...cellProps('st', greyBg ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined}>
+                  <td {...cellProps('st', greyBg ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined} title={stLockTitle}>
                     <AutocompleteInput
                       value={row.st}
                       onChange={(v) => handleJayerChange(row.id, 'st', v)}
                       options={ST_OPTIONS}
                       // 기등록/layer삭제/미진행 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
-                      disabled={isNocSpecial(row.new_or_copy)}
+                      disabled={isNocSpecial(row.new_or_copy) || stLocked}
                       inputStyle={{
                         backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
+                        ...(stLocked ? { pointerEvents: 'none' as const } : {}),
                         ...(stError ? { border: '1px solid var(--danger)' } : {}),
                       }}
                       dropdownFontSize="0.7rem"
@@ -210,7 +219,8 @@ const Step2: React.FC<Step2Props> = ({
                     <AutocompleteInput
                       value={row.new_or_copy}
                       onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
-                      options={NEW_OR_COPY_OPTIONS}
+                      // claude 수정 (2026-10-20): ST 가 O 계열이면 신규/차용, X 면 기등록/layer삭제/미진행, 미선택이면 전체
+                      options={nocOptionsForSt(row.st)}
                       inputStyle={{
                         backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
                         ...(nocError ? { border: '1px solid var(--danger)' } : {}),

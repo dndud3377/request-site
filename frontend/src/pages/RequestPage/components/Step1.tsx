@@ -67,6 +67,9 @@ interface Step1Props {
   handleBaTableChange: (pairId: string, table: MergeTable) => void;
   handleBaAddRow: () => void;
   handleBaResetRow: (pairId: string) => void;
+  /** claude 수정 (2026-10-20): '없음' 변경전/변경후 표 확정 — 확정 시점에 J/O 표의 st 를 정한다 */
+  handleBaConfirm: () => void;
+  handleBaEdit: () => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
   handleFlowStepSelect: (rowId: string, field: 'step_from' | 'step_to', index: number) => void;
@@ -145,6 +148,8 @@ const Step1: React.FC<Step1Props> = ({
   handleBaTableChange,
   handleBaAddRow,
   handleBaResetRow,
+  handleBaConfirm,
+  handleBaEdit,
   handleFlowChange,
   handleFlowStepBlur,
   handleFlowStepSelect,
@@ -458,6 +463,9 @@ const Step1: React.FC<Step1Props> = ({
                     onTableChange={handleBaTableChange}
                     onAddRow={handleBaAddRow}
                     onResetRow={handleBaResetRow}
+                    confirmed={!!detail.merge_confirmed}
+                    onConfirm={handleBaConfirm}
+                    onEdit={handleBaEdit}
                   />
                 )}
               </div>
