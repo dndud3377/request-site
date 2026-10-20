@@ -233,14 +233,21 @@ def can_resume(user, document):
     return is_requester(user, document)
 
 
-def map_info_locked(document):
-    """중단(pause) 중 편집 화면에서 MAP 정보 필드를 잠가야 하는가.
+# MAP 정보 잠금을 적용하는 문서 상태 — 의뢰자·지정 PL 이 문서를 고칠 수 있는 상태 전부
+# (반려 후 재상신, PL 검토 중 수정·작성자 재상신, 중단 후 재개 전 편집).
+MAP_INFO_LOCK_STATUSES = ('rejected', 'under_review', 'submitted', 'pause')
 
-    R(+RV) 단계가 이미 합의(approved)를 마친 뒤에 중단됐다면, R이 검토를 마친 MAP 정보를
-    되돌아가 바꾸는 셈이라 잠근다(경로 무관 — `RequestDocument.is_r_stage_completed` 참고).
-    R 단계 자체가 없는 문서(ADI CD 변경 등)는 항상 False다. `status != 'pause'`면 애초에
-    이 판정이 의미가 없다(수정 자체가 다른 규칙으로 막히거나 열린다).
+
+# claude 수정 (2026-10-19): 중단(pause) 전용·현재 회차 기준이던 잠금을 수정 가능 상태 전체·지난 회차 합의 이력 기준으로 넓힘
+def map_info_locked(document):
+    """편집 화면에서 MAP 정보와 요청 목적·라인~조리법을 잠가야 하는가.
+
+    지난 회차를 포함해 R(+RV) 전원 합의 또는 고정 후결자 합의가 한 번이라도 있었다면
+    (`RequestDocument.has_map_info_approval`), 이후 반려·중단을 거쳐도 합의된 MAP 정보를
+    바꿀 수 없다 — 바꾸려면 MAP 삭제 후 새 요청서로 올린다. 잠그는 필드는
+    `RequestDocument.MAP_INFO_FIELDS` + `MAP_LOCK_STEP1_FIELDS`. R 단계 자체가 없는 문서
+    (ADI CD 변경)는 합의 이력이 생기지 않아 항상 False다.
     """
-    if document.status != 'pause':
+    if document.status not in MAP_INFO_LOCK_STATUSES:
         return False
-    return document.is_r_stage_completed()
+    return document.has_map_info_approval()

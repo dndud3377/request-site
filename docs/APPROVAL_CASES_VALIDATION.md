@@ -35,7 +35,7 @@
 | # | 축 | 값 | 판정 위치 | 결재선에 미치는 영향 |
 |---|---|---|---|---|
 | A1 | 요청 목적 | 일반(신규/차용/신규+차용/기타) / `Only MAP` / `MAP 삭제` | `models.py:158` `is_only_map()`, `models.py:167` `is_map_delete_edit()` | 경로 자체가 갈린다 |
-| A2 | 기타 목적 `Overlay만 변경`(구 값 `Overlay 변경` 포함) **단독** | 예 / 아니오 | `models.py` `skip_j_stage()` | 일반 경로에서 **J 미생성** |
+| A2 | 기타 목적 `Overlay만 변경`(구 값 `Overlay 변경` 포함) **단독** | 예 / 아니오 | `models.py` `skip_j_stage()` / `skip_r_stage()`(2026-10-19) | 일반 경로에서 **J·R(+RV) 미생성** — PL 합의 직후 3구역 |
 | A3 | J-layer `pp` 에 `plel` | 있음 / 없음 | `has_ppid_plel()` (`VALIDATION_KEYWORD='plel'`) | **E(MASK) 생성 여부** |
 | A4 | 지정 PL 수 | 1명 / 2명 이상 | `views.py:1684` `_resolve_designated_pls` | PL step N개, **전원 합의** |
 | A5 | 영업/기술지원 합의자(SA) | 0명 / N명 (+필수 여부) | `requires_sales_agreer()`, `views.py:350` | PL 과 **병렬**, 전원 합의해야 다음 |
@@ -58,8 +58,11 @@
 |---|---|---|---|
 | **RT-1** | 일반 + J 있음 + E 있음(plel) | `PL(+SA) → R(+RV) → P(+PV) ∥ J ∥ O ∥ E(+EV) ∥ RA` | P·J·O·E·RA 전부 |
 | **RT-2** | 일반 + J 있음 + E 없음 | `PL(+SA) → R(+RV) → P(+PV) ∥ J ∥ O ∥ RA` | P·J·O·RA |
-| **RT-3** | 일반 + `Overlay만 변경` 단독 + E 있음 | `PL(+SA) → R(+RV) → P(+PV) ∥ O ∥ E(+EV) ∥ RA` | P·O·E·RA (`j_approved` 고정 True) |
-| **RT-4** | 일반 + `Overlay만 변경` 단독 + E 없음 | `PL(+SA) → R(+RV) → P(+PV) ∥ O ∥ RA` | P·O·RA |
+| **RT-3** | 일반 + `Overlay만 변경` 단독 + E 있음 | `PL(+SA) → P(+PV) ∥ O ∥ E(+EV) ∥ RA` (2026-10-19 R 제외) | P·O·E·RA (`j_approved` 고정 True) |
+| **RT-4** | 일반 + `Overlay만 변경` 단독 + E 없음 | `PL(+SA) → P(+PV) ∥ O ∥ RA` (2026-10-19 R 제외) | P·O·RA |
+
+> RT-3/RT-4 의 R 제외는 **단계 생성 시점** 판정이다 — R step 이 이미 생성된 진행 중 문서는 그대로
+> `PL → R(+RV) → 3구역` 으로 진행한다(`test_in_progress_overlay_doc_with_r_step_keeps_r`).
 | **RT-5** | `Only MAP` | `PL(+SA) → R(+RV) → RA` | RA 전원(**0명이면 R 합의 즉시 approved**) |
 | **RT-6** | `MAP 삭제` | `PL(+SA) → P(+PV) ∥ J ∥ O → R(+RV)` (2026-09 R 분리 — P·J·O 셋 다 끝나야 R 생성) | 네 단계 전부(R 이 항상 마지막). **E·RA 없음** |
 
@@ -201,8 +204,8 @@
 | R-07 | RV 합의 | 병렬 생성 | `views.py:957` |
 | R-08 | plel 없음 | **E 미생성** | `views.py:1667` |
 | R-09 | plel 있음 | E 생성 | 〃 |
-| R-10 | `Overlay만 변경` 단독 | **J 미생성**(검토항목 채우기도 건너뜀) | `views.py:2624` |
-| R-11 | `Overlay만 변경` + 다른 목적 (2026-10-15부터 화면에서는 불가 — API 직접·이전 문서만) | J 생성 | 〃 |
+| R-10 | `Overlay만 변경` 단독 | **R·J 미생성** — PL 합의 직후 P·O(·E·RA) 생성(검토항목 채우기도 건너뜀, 2026-10-19 R 제외) | `views.py` `_open_stage_after_pl`, `_advance_to_parallel` |
+| R-11 | `Overlay만 변경` + 다른 목적 (2026-10-15부터 화면에서는 불가 — API 직접·이전 문서만) | R·J 생성 | 〃 |
 | R-12 | 일반 경로 | P=4영업일 < J=O=6영업일 | `views.py:1639~1671` |
 | R-13 | 일반 경로 | J 도착 메일이 R 합의 시점, 미배정이면 TE_J 전원 | `views.py:1661` |
 | R-14 | `Only MAP` + RA 있음 | P/J/O/E 없음, RA 만, `under_review` | `views.py:1642` |
@@ -269,7 +272,7 @@
 | X-04 | Only MAP 반려 메일 | 경로 밖 단계 제외 | 〃 |
 | X-05 | 재상신 | `max(round)+1`, 이전 회차 보존 | Case I |
 | X-06 | 재상신 | SA step 도 새 회차 재생성 | `views.py:458` |
-| X-07 | 재상신 전 목적 변경 | **새 회차부터** 새 경로 규칙 적용 | Case G 주석 |
+| X-07 | 재상신 전 목적 변경(`Overlay만 변경` 단독으로) | **새 회차부터** 새 경로 규칙 적용 — R·J 미생성 | Case G 주석 |
 | X-08 | 이전 회차 잔여 pending | '내 차례'에 안 잡힘 | `utils/approvalTable.ts` |
 | X-09 | E/EV 반려 | 즉시 `rejected`(다른 단계와 동일, 2026-09부터) | `views.py:1210` |
 

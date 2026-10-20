@@ -9,9 +9,14 @@ import {
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
+  deriveAutoOtherPurpose, sameOtherPurpose, computeRefDocStTargets, isRefDocStApplied, RefDocStRow,
+  nocOptionsForSt, findStNocMismatchViolations,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
 } from './helpers';
-import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES } from './constants';
+import {
+  VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES,
+  OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY,
+} from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
 
 // claude 수정 (2026-10-15): STEP2 X/Y·예외 구역 값 숫자 판정 테스트 추가
@@ -1396,6 +1401,26 @@ describe('흐름도 Step stepseq 검증', () => {
     expect(findFlowStepOrderErrors(rows(['AAAA1234A', 'AAAA1238A'], ['AAAA1239A', 'AAAA1240B']))).toEqual([]);
   });
 
+  // claude 수정 (2026-10-19): 숫자 자릿수가 서로 다르면 앞 4자리 → 나머지 자리 순으로 비교한다(AAAA1234 < AAAA12345 < AAAA1235).
+  it('splitStepseq: 숫자는 앞 4자리를 정수부, 5번째 자리부터를 소수부로 둔 값이다', () => {
+    expect(splitStepseq('AAAA12345')).toEqual({ prefix: 'AAAA', num: 1234.5 });
+    expect(splitStepseq('AAAA123405')).toEqual({ prefix: 'AAAA', num: 1234.05 });
+    expect(splitStepseq('AAAA12345B')).toEqual({ prefix: 'AAAA', num: 1234.5 });
+    expect(splitStepseq('AAAA1235')).toEqual({ prefix: 'AAAA', num: 1235 });
+  });
+
+  it('자릿수가 다른 stepseq: 앞 4자리를 먼저, 같으면 나머지 자리로 순서를 검증한다', () => {
+    // 한 행: 12345 → 1234.5 < 1235 이므로 통과, 반대 방향은 역순
+    expect(findFlowStepOrderErrors(rows(['AAAA12345', 'AAAA1235']))).toEqual([]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1235', 'AAAA12345']))).toEqual([{ rowId: 'r1', field: 'step_to', kind: 'reversed' }]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA12345']))).toEqual([]);
+    // 행 사이: 1행 끝 1234 다음 12345(1234.5) 시작은 통과, 1행 끝 1235 다음 12345 시작은 앞 번호라 overlap
+    expect(findFlowStepOrderErrors(rows(['AAAA1230', 'AAAA1234'], ['AAAA12345', 'AAAA1240']))).toEqual([]);
+    expect(findFlowStepOrderErrors(rows(['AAAA1230', 'AAAA1235'], ['AAAA12345', 'AAAA1240']))).toEqual([
+      { rowId: 'r2', field: 'step_from', kind: 'overlap', refRowNo: 1, refRange: 'AAAA1230~AAAA1235' },
+    ]);
+  });
+
   it('stepseq 가 없는 칸(직접 입력)은 건너뛴다', () => {
     expect(findFlowStepOrderErrors(rows(['AAAA1234', 'AAAA1238'], ['', '']))).toEqual([]);
   });
@@ -1412,5 +1437,150 @@ describe('formatFlowStepText', () => {
   it('한쪽만 있으면 그 칸만, 둘 다 없으면 빈 문자열', () => {
     expect(formatFlowStepText({ step_from: 'L01', step_to: '', step_from_seq: 'AAAA1234' })).toBe('L01 (AAAA1234)');
     expect(formatFlowStepText({ step_from: '', step_to: '' })).toBe('');
+  });
+});
+
+// claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정 → 상세 목적 자동 선택
+describe('deriveAutoOtherPurpose', () => {
+  const FIRST_A = 'FirstA 변경';
+  const info = (pp: string): MergeRowInfo => ({ process_id: 'P1', sp: 'SP', sd: 'SD', pp, layerid: '' });
+  const pair = (before: MergeRowInfo | null, after: MergeRowInfo | null, id = 'p1'): MergePair => ({
+    id, table: 'J', beforeId: null, before, afterId: null, after, kind: 'changed',
+  });
+  const J = `${J_PREFIX}_A`;
+  const O = `${O_PREFIX}_A`;
+
+  it('판정 가능한 행이 없으면 null(미작성 행·구분 판정 불가 행은 보지 않는다)', () => {
+    expect(deriveAutoOtherPurpose([], [OTHER_PURPOSE_LAYER])).toBeNull();
+    expect(deriveAutoOtherPurpose([pair(null, null)], [OTHER_PURPOSE_LAYER])).toBeNull();
+    expect(deriveAutoOtherPurpose([pair(null, info('PP01'))], [OTHER_PURPOSE_LAYER])).toBeNull();
+    expect(deriveAutoOtherPurpose([pair(info(J), info(O))], [OTHER_PURPOSE_LAYER])).toBeNull();
+  });
+
+  it('구분이 O 뿐이면 판정과 무관하게 Overlay만 변경 단독 — 다른 상세 목적도 뺀다', () => {
+    expect(deriveAutoOtherPurpose([pair(info(O), info(O))], [FIRST_A, OTHER_PURPOSE_LAYER])).toEqual([OTHER_PURPOSE_OVERLAY]);
+    expect(deriveAutoOtherPurpose([pair(null, info(O))], [OTHER_PURPOSE_STEPSEQ])).toEqual([OTHER_PURPOSE_OVERLAY]);
+    expect(deriveAutoOtherPurpose([pair(info(O), null)], [OTHER_PURPOSE_OVERLAY_LEGACY])).toEqual([OTHER_PURPOSE_OVERLAY]);
+  });
+
+  it('J 가 있으면 Overlay만 변경(구 값 포함)을 빼고 추가·삭제 → Layer 추가/삭제, 변경 → STEPSEQ 변경', () => {
+    expect(deriveAutoOtherPurpose([pair(null, info(J))], [OTHER_PURPOSE_OVERLAY])).toEqual([OTHER_PURPOSE_LAYER]);
+    expect(deriveAutoOtherPurpose([pair(info(J), null)], [OTHER_PURPOSE_OVERLAY_LEGACY])).toEqual([OTHER_PURPOSE_LAYER]);
+    expect(deriveAutoOtherPurpose([pair(info(J), info(J))], [OTHER_PURPOSE_LAYER])).toEqual([OTHER_PURPOSE_STEPSEQ]);
+    expect(deriveAutoOtherPurpose(
+      [pair(info(J), info(J), 'p1'), pair(null, info(O), 'p2')],
+      [OTHER_PURPOSE_OVERLAY],
+    )).toEqual([OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ]);
+  });
+
+  it('J 가 있으면 Merge 와 무관한 상세 목적은 그대로 둔다', () => {
+    expect(deriveAutoOtherPurpose([pair(info(J), info(J))], [FIRST_A, OTHER_PURPOSE_LAYER])).toEqual([FIRST_A, OTHER_PURPOSE_STEPSEQ]);
+  });
+});
+
+describe('sameOtherPurpose', () => {
+  it('순서와 무관하게 같은 항목이면 true', () => {
+    expect(sameOtherPurpose([OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ], [OTHER_PURPOSE_STEPSEQ, OTHER_PURPOSE_LAYER])).toBe(true);
+    expect(sameOtherPurpose([OTHER_PURPOSE_LAYER], [OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ])).toBe(false);
+    expect(sameOtherPurpose([OTHER_PURPOSE_OVERLAY], [OTHER_PURPOSE_OVERLAY_LEGACY])).toBe(false);
+  });
+});
+
+// claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 — 변경전/변경후 표로 J/O st 를 정하는 함수
+describe('computeRefDocStTargets / isRefDocStApplied', () => {
+  const layer = (id: string, pp: string, over: Partial<RefDocStRow> = {}): RefDocStRow =>
+    ({ id, process_id: 'P1', sp: 'SP1', sd: 'SD1', pp, st: '', new_or_copy: '', ...over });
+  const side = (pp: string) => info({ process_id: 'P1', sp: 'SP1', sd: 'SD1', pp });
+  const J_ADD = `${J_PREFIX}_ADD`;
+  const J_NEW = `${J_PREFIX}_NEW`;
+  const J_OLD = `${J_PREFIX}_OLD`;
+  const J_ETC = `${J_PREFIX}_ETC`;
+  const O_ADD = `${O_PREFIX}_ADD`;
+  const O_ETC = `${O_PREFIX}_ETC`;
+
+  it('추가 행: 변경후 값과 같은 J 행은 O, 나머지 J·O 행은 모두 X', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(J_ADD) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ADD), layer('j2', J_ETC)], [layer('o1', O_ETC)]);
+    expect(res.jayer).toEqual({ j1: 'O', j2: 'X' });
+    expect(res.oayer).toEqual({ o1: 'X' });
+    expect(res.nocConflicts).toEqual([]);
+  });
+
+  it('변경 행: 변경후 값만 O 가 되고 변경전 값은 O 가 되지 않는다', () => {
+    const pairs = [pair({ id: 'p1', before: side(J_OLD), after: side(J_NEW) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_NEW), layer('j2', J_OLD)], []);
+    expect(res.jayer).toEqual({ j1: 'O', j2: 'X' });
+  });
+
+  it('삭제 행만 있으면 J/O 행이 모두 X', () => {
+    const pairs = [pair({ id: 'p1', before: side(J_OLD), after: null })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ETC)], [layer('o1', O_ETC)]);
+    expect(res.jayer).toEqual({ j1: 'X' });
+    expect(res.oayer).toEqual({ o1: 'X' });
+  });
+
+  it('O 구분 행은 O-ayer 표에서만 찾는다 — 같은 값이 J 표에 있어도 J 행은 X', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(O_ADD) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', O_ADD)], [layer('o1', O_ADD)]);
+    expect(res.jayer).toEqual({ j1: 'X' });
+    expect(res.oayer).toEqual({ o1: 'O' });
+  });
+
+  it('4값 비교는 앞뒤 공백·대소문자를 무시한다', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(` ${J_ADD.toLowerCase()} `) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ADD, { sp: ' sp1 ' })], []);
+    expect(res.jayer).toEqual({ j1: 'O' });
+  });
+
+  it('변경후 4칸이 다 차지 않은 행은 O 대상을 만들지 않는다', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: info({ process_id: 'P1', sp: 'SP1', sd: '', pp: J_ADD }) })];
+    expect(computeRefDocStTargets(pairs, [layer('j1', J_ADD)], []).jayer).toEqual({ j1: 'X' });
+  });
+
+  it('O 가 될 행의 요청 기준이 기등록/layer삭제/미진행이면 nocConflicts 로 알려준다', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(J_ADD) })];
+    const res = computeRefDocStTargets(pairs, [layer('j1', J_ADD, { new_or_copy: NOC_LAYER_DELETE }), layer('j2', J_ETC, { new_or_copy: NOC_REGISTERED })], []);
+    // X 가 될 행(j2)은 요청 기준과 무관하다
+    expect(res.nocConflicts).toEqual([{ table: 'J', id: 'j1' }]);
+  });
+
+  it('isRefDocStApplied: st 가 확정 결과와 모두 같을 때만 true', () => {
+    const pairs = [pair({ id: 'p1', before: null, after: side(J_ADD) })];
+    const jayer = [layer('j1', J_ADD, { st: 'O' }), layer('j2', J_ETC, { st: 'X' })];
+    const oayer = [layer('o1', O_ETC, { st: 'X' })];
+    const targets = computeRefDocStTargets(pairs, jayer, oayer);
+    expect(isRefDocStApplied(targets, jayer, oayer)).toBe(true);
+    // 'O (D)' 는 확정 값('O')과 다르다
+    expect(isRefDocStApplied(targets, [{ ...jayer[0], st: 'O (D)' }, jayer[1]], oayer)).toBe(false);
+    // 확정 뒤 새로 추가된 행(st 미입력)이 있으면 어긋난다
+    const added = [...jayer, layer('j3', J_ETC)];
+    expect(isRefDocStApplied(computeRefDocStTargets(pairs, added, oayer), added, oayer)).toBe(false);
+  });
+});
+
+// claude 수정 (2026-10-20): ST ↔ 요청 기준 짝 규칙
+describe('nocOptionsForSt / findStNocMismatchViolations', () => {
+  it('ST 가 O 계열이면 신규·차용, X 면 기등록·layer삭제·미진행, 미선택이면 전체', () => {
+    expect(nocOptionsForSt('O')).toEqual(['신규', '차용']);
+    expect(nocOptionsForSt('O (D)')).toEqual(['신규', '차용']);
+    expect(nocOptionsForSt('X')).toEqual(['기등록', 'layer삭제', '미진행']);
+    expect(nocOptionsForSt(' X ')).toEqual(['기등록', 'layer삭제', '미진행']);
+    expect(nocOptionsForSt('')).toEqual(['신규', '차용', '기등록', 'layer삭제', '미진행']);
+    expect(nocOptionsForSt(undefined)).toHaveLength(5);
+  });
+
+  it('ST 와 맞지 않는 요청 기준 행만 찾고, 공란·목록 밖 값은 제외한다', () => {
+    const rows = [
+      { id: 'ok_o', st: 'O', new_or_copy: '신규' },
+      { id: 'ok_od', st: 'O (D)', new_or_copy: '차용' },
+      { id: 'ok_x', st: 'X', new_or_copy: '미진행' },
+      { id: 'bad_x', st: 'X', new_or_copy: '신규' },
+      { id: 'bad_o', st: 'O', new_or_copy: '기등록' },
+      { id: 'bad_od', st: 'O (D)', new_or_copy: 'layer삭제' },
+      { id: 'empty_st', st: '', new_or_copy: '신규' },
+      { id: 'empty_noc', st: 'X', new_or_copy: '' },
+      { id: 'other', st: 'X', new_or_copy: '기타값' },
+    ];
+    expect(findStNocMismatchViolations(rows)).toEqual(['bad_x', 'bad_o', 'bad_od']);
   });
 });

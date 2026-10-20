@@ -3,6 +3,7 @@ import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
+  MERGE_ENABLED_PURPOSES, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, STEPSEQ_LEAD_DIGITS,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -101,14 +102,18 @@ export const resolveFlowStepSeq = (
   return { kind: 'ambiguous' };
 };
 
-// claude 수정 (2026-10-19): 마스터 DB 에 알파벳 접미가 붙은 stepseq(AAAA1234A)가 있어 순서 검증에서 빠지던 것을, 접미까지 인식하고 비교에서는 무시하도록 확장.
+// claude 수정 (2026-10-19): 알파벳 접미 stepseq(AAAA1234A) 인식 + 숫자 자릿수가 서로 달라도(AAAA1235 vs AAAA12345) 앞 4자리 → 나머지 자리 순으로 비교하도록 num 을 '앞4자리.나머지' 소수로 계산.
 /**
  * stepseq 를 '접두어 + 숫자 + 알파벳 접미(선택)'로 나눈다(AAAA1234 → AAAA / 1234, AAAA1234A → AAAA / 1234).
+ * num 은 숫자의 앞 4자리를 정수부, 5번째 자리부터를 소수부로 둔 값이다(AAAA12345 → 1234.5, AAAA1235 → 1235)
+ * — 앞 4자리를 먼저 비교하고 같으면 나머지 자리로 비교한다. 백엔드 Step 목록 정렬(views.py _stepseq_sort_key)과 같은 규칙.
  * 접미는 순서 비교에 쓰지 않으므로 버린다. 숫자가 없거나 접미에 알파벳 외 문자가 있으면 비교 불가(null).
  */
 export const splitStepseq = (seq: string | undefined): { prefix: string; num: number } | null => {
   const m = /^(.*?)(\d+)[A-Za-z]*$/.exec((seq || '').trim());
-  return m ? { prefix: m[1], num: parseInt(m[2], 10) } : null;
+  if (!m) return null;
+  const digits = m[2];
+  return { prefix: m[1], num: parseFloat(`${digits.slice(0, STEPSEQ_LEAD_DIGITS)}.${digits.slice(STEPSEQ_LEAD_DIGITS) || '0'}`) };
 };
 
 export interface FlowStepSeqRow {
@@ -242,6 +247,36 @@ export const findEmptyStNocViolations = (
 ): string[] =>
   rows
     .filter((r) => !r.st?.trim() || !r.new_or_copy?.trim())
+    .map((r) => r.id);
+
+// claude 수정 (2026-10-20): ST 와 요청 기준(new_or_copy)의 짝 규칙 — ST 가 O 계열('O'·'O (D)')이면 신규/차용,
+// X 이면 기등록/layer삭제/미진행만 쓸 수 있다. ST 를 아직 고르지 않았으면 5개 모두 고를 수 있다
+// (기등록/layer삭제/미진행을 고르면 기존대로 ST 가 'X' 가 된다).
+const NOC_OPTIONS_ST_O = [NOC_NEW, NOC_BORROW];
+const NOC_OPTIONS_ST_X = [NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING];
+const NOC_OPTIONS_ALL = [...NOC_OPTIONS_ST_O, ...NOC_OPTIONS_ST_X];
+
+/** 이 ST 에서 고를 수 있는 요청 기준 목록 (J/O-ayer 공용) */
+export const nocOptionsForSt = (st?: string): string[] => {
+  if (isStO(st)) return NOC_OPTIONS_ST_O;
+  if (isRowInactive(st)) return NOC_OPTIONS_ST_X;
+  return NOC_OPTIONS_ALL;
+};
+
+/**
+ * ST 와 요청 기준이 맞지 않는 행 id 목록 (J/O-ayer 공용) — 예: ST 'X' 인데 '신규', ST 'O' 인데 '미진행'.
+ * 타이핑·붙여넣기·예전 문서로 들어온 값을 잡는다. ST·요청 기준 중 하나라도 비어 있는 행은
+ * findEmptyStNocViolations 가 잡으므로 여기서는 뺀다. 목록에 없는 값(오타 등)은 이 검사 대상이 아니다.
+ */
+export const findStNocMismatchViolations = (
+  rows: { id: string; st: string; new_or_copy: string }[]
+): string[] =>
+  rows
+    .filter((r) => {
+      const noc = (r.new_or_copy ?? '').trim();
+      if (!r.st?.trim() || !NOC_OPTIONS_ALL.includes(noc)) return false;
+      return !nocOptionsForSt(r.st).includes(noc);
+    })
     .map((r) => r.id);
 
 /** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */
@@ -892,6 +927,91 @@ export const checkManualPairsAgainstLayers = (
   });
   return result;
 };
+
+// claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 — 변경전/변경후 표로 J/O 표의 st 를 정한다(확정 버튼·상신 검증 공용).
+
+/** st 를 정하는 데 필요한 J/O 행의 최소 형태 */
+export interface RefDocStRow extends ManualLayerKeyRow {
+  id: string;
+  st: string;
+  new_or_copy: string;
+}
+
+export interface RefDocStTargets {
+  /** 행 id → 확정 시 st. 변경후 값과 4값이 같은 행은 'O', 그 밖의 행은 모두 'X' */
+  jayer: Record<string, string>;
+  oayer: Record<string, string>;
+  /** 'O' 가 될 행인데 요청 기준이 기등록/layer삭제/미진행이라 확정할 수 없는 행 */
+  nocConflicts: { table: MergeTable; id: string }[];
+}
+
+/**
+ * 변경전/변경후 표의 판정 추가·변경 행(변경후 4칸이 모두 찬 행)의 변경후 값과 4값이 같은 J/O 행은 st='O',
+ * 나머지 J/O 행은 모두 st='X' 로 정한다. 구분은 PP 접두사 판정(resolveManualPairTable)을 따른다.
+ * 삭제 행은 변경후 값이 없으므로 'O' 가 되는 행을 만들지 않는다.
+ */
+export const computeRefDocStTargets = (
+  pairs: MergePair[],
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): RefDocStTargets => {
+  const keys: Record<MergeTable, Set<string>> = { J: new Set(), O: new Set() };
+  (pairs ?? []).forEach((pair) => {
+    const { table } = resolveManualPairTable(pair);
+    if (table && isMergeSideComplete(pair.after)) keys[table].add(manualLayerKey(pair.after));
+  });
+  const nocConflicts: RefDocStTargets['nocConflicts'] = [];
+  const targetsOf = (table: MergeTable, rows: RefDocStRow[]): Record<string, string> =>
+    Object.fromEntries((rows ?? []).map((r) => {
+      const hit = keys[table].has(manualLayerKey(r));
+      if (hit && isNocSpecial(r.new_or_copy)) nocConflicts.push({ table, id: r.id });
+      return [r.id, hit ? ST_O : ST_X];
+    }));
+  return { jayer: targetsOf('J', jayerRows), oayer: targetsOf('O', oayerRows), nocConflicts };
+};
+
+/** 지금 J/O 표의 st 가 확정 결과와 모두 같은가 — 다르면 확정 뒤 J/O 표가 바뀐 것이다(확정 해제 판단용). */
+export const isRefDocStApplied = (
+  targets: RefDocStTargets,
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): boolean =>
+  (jayerRows ?? []).every((r) => (r.st ?? '').trim() === targets.jayer[r.id])
+  && (oayerRows ?? []).every((r) => (r.st ?? '').trim() === targets.oayer[r.id]);
+
+/**
+ * claude 수정 (2026-10-19): 참조 요청서 '없음' 변경전/변경후 표가 정하는 상세 목적.
+ * 판정이 '미작성'이 아니고 구분(PP 접두사)이 정해진 행만 본다 — 그런 행이 없으면 null(자동 선택 안 함).
+ * - 구분이 O 뿐 → 'Overlay만 변경' 단독(다른 상세 목적도 모두 뺀다 — J 단계를 빼는 축소 경로)
+ * - J 가 하나라도 있음 → Overlay만 변경(구 값 포함)을 빼고, 추가·삭제가 있으면 Layer 추가/삭제,
+ *   변경이 있으면 STEPSEQ 변경. Merge 와 무관한 상세 목적(FirstA 변경 등)은 그대로 둔다.
+ * 값이 같은지 비교하지 않고 목표 배열을 그대로 돌려준다(반영 여부는 호출부가 sameOtherPurpose 로 정한다).
+ */
+export const deriveAutoOtherPurpose = (pairs: MergePair[], otherPurpose: string[]): string[] | null => {
+  const tables = new Set<MergeTable>();
+  let hasAddedOrDeleted = false;
+  let hasChanged = false;
+  (pairs ?? []).forEach((pair) => {
+    const kind = deriveMergeKind(pair.before, pair.after);
+    if (kind === 'empty') return;
+    const { table } = resolveManualPairTable(pair);
+    if (!table) return;
+    tables.add(table);
+    if (kind === 'changed') hasChanged = true;
+    else hasAddedOrDeleted = true;
+  });
+  if (tables.size === 0) return null;
+  if (!tables.has('J')) return [OTHER_PURPOSE_OVERLAY];
+  return [
+    ...otherPurpose.filter((v) => !(MERGE_ENABLED_PURPOSES as readonly string[]).includes(v)),
+    ...(hasAddedOrDeleted ? [OTHER_PURPOSE_LAYER] : []),
+    ...(hasChanged ? [OTHER_PURPOSE_STEPSEQ] : []),
+  ];
+};
+
+/** 상세 목적 두 배열이 순서와 무관하게 같은 항목인가 — 자동 선택 결과를 반영할지 판단용 */
+export const sameOtherPurpose = (a: string[], b: string[]): boolean =>
+  a.length === b.length && a.every((v) => b.includes(v));
 
 /** J/O-layer 행에 사용자가 입력한 값이 하나라도 있는가 — 수동 행 삭제 시 확인 모달 여부 판단용 */
 export const layerRowHasInput = (row: JayerRow | OayerRow): boolean =>

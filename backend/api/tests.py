@@ -18,6 +18,7 @@ from . import auth_views
 from . import mailer
 from . import pop3_mail
 from . import design_rule_stats
+from . import doc_permissions
 from .management.commands import backfill_title_flow_step
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
@@ -1218,6 +1219,131 @@ class BbMappingValidationTest(TestCase):
         self.assertIsNone(self._view._validate_bb_mapping(doc))
 
 
+# claude 수정 (2026-10-20): 참조 요청서 '없음' 확정 — 변경전/변경후 표가 정한 J/O st 를 상신 시 서버에서도 검증한다
+@override_settings(POST_APPROVER_LOGINID='')
+class RefDocStValidationTest(TestCase):
+    """_validate_ref_doc_st — 참조 요청서 '없음' 변경전/변경후 표 ↔ J/O 표 상신 검증.
+
+    변경후 값과 4값이 같은 J/O 행은 st 'O', 나머지는 'X' 여야 하고, 'O' 행의 요청 기준은 기등록/layer삭제/미진행일 수 없다.
+    변경전 값은 표에 없어야, 변경후 값은 표에 있어야 하며 유효 행이 1건 이상이어야 한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        from .views import RequestDocumentViewSet
+        self._json = json
+        self._view = RequestDocumentViewSet()
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='pl1', mail='pl1@c.com', role='PL')
+
+    @staticmethod
+    def _side(pp, sp='SP02'):
+        return {'process_id': 'P1', 'sp': sp, 'sd': 'SD02', 'pp': pp, 'layerid': ''}
+
+    @staticmethod
+    def _row(rid, pp, st, sp='SP02', noc='신규'):
+        return {'id': rid, 'process_id': 'P1', 'sp': sp, 'sd': 'SD02', 'pp': pp, 'st': st, 'new_or_copy': noc}
+
+    def _doc(self, pairs, jayer, oayer=None, other_purpose=None, mode='none', status='draft'):
+        detail = {
+            'other_purpose': other_purpose if other_purpose is not None else ['Layer 추가/삭제'],
+            'merge_ref_mode': mode, 'merge_applied': True, 'merge_confirmed': True, 'merge_pairs': pairs,
+        }
+        doc = _make_document(self.requester)
+        doc.status = status
+        doc.additional_notes = self._json.dumps({
+            'detail': detail, 'jayerRows': jayer, 'oayerRows': oayer or [],
+            # st 'O' 행은 bb 매핑 검증도 통과하도록 매핑해 둔다
+            'bbRows': [{'sourceJayerRowId': r['id']} for r in jayer],
+        })
+        doc.save()
+        return doc
+
+    def _added(self, table, pp):
+        return {'id': f'p_{pp}', 'table': table, 'before': None, 'after': self._side(pp)}
+
+    def test_consistent_st_passes(self):
+        doc = self._doc(
+            [self._added('J', 'TEST1_A'), self._added('O', 'TEST2_A')],
+            [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'X', sp='SP09', noc='미진행')],
+            [self._row('o1', 'TEST2_A', 'O'), self._row('o2', 'ETC', 'X', sp='SP09', noc='')],
+        )
+        self.assertIsNone(self._view._validate_ref_doc_st(doc))
+
+    def test_non_target_row_with_st_o_blocks(self):
+        doc = self._doc([self._added('J', 'TEST1_A')],
+                        [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'O', sp='SP09')])
+        self.assertIn('ST', self._view._validate_ref_doc_st(doc))
+
+    def test_target_row_with_st_x_or_o_d_blocks(self):
+        for st in ('X', 'O (D)'):
+            doc = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', st)])
+            self.assertIsNotNone(self._view._validate_ref_doc_st(doc), st)
+
+    def test_o_table_rows_are_x_when_only_j_pairs(self):
+        doc = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', 'O')],
+                        [self._row('o1', 'TEST2_A', 'O')])
+        self.assertIsNotNone(self._view._validate_ref_doc_st(doc))
+
+    def test_target_row_with_special_noc_blocks(self):
+        doc = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', 'X', noc='기등록')])
+        self.assertIn('기등록/layer삭제/미진행', self._view._validate_ref_doc_st(doc))
+
+    def test_after_missing_blocks(self):
+        doc = self._doc([self._added('J', 'TEST1_NONE')], [self._row('j1', 'TEST1_A', 'X')])
+        self.assertIn('변경후', self._view._validate_ref_doc_st(doc))
+
+    def test_before_exists_blocks(self):
+        pair = {'id': 'p1', 'table': 'J', 'before': self._side('TEST1_A'), 'after': None}
+        doc = self._doc([pair], [self._row('j1', 'TEST1_A', 'X')])
+        self.assertIn('변경전', self._view._validate_ref_doc_st(doc))
+
+    def test_delete_only_requires_all_rows_x(self):
+        pair = {'id': 'p1', 'table': 'J', 'before': self._side('TEST1_OLD'), 'after': None}
+        self.assertIsNone(self._view._validate_ref_doc_st(self._doc([pair], [self._row('j1', 'TEST1_A', 'X')])))
+        self.assertIsNotNone(self._view._validate_ref_doc_st(self._doc([pair], [self._row('j1', 'TEST1_A', 'O')])))
+
+    def test_no_valid_rows_blocks(self):
+        empty = {'id': 'p1', 'table': 'J', 'before': None, 'after': None}
+        self.assertIn('1건 이상', self._view._validate_ref_doc_st(self._doc([empty], [])))
+
+    def test_key_match_ignores_case_and_spaces(self):
+        pair = {'id': 'p1', 'table': 'J', 'before': None, 'after': self._side(' test1_a ')}
+        doc = self._doc([pair], [self._row('j1', 'TEST1_A', 'O')])
+        self.assertIsNone(self._view._validate_ref_doc_st(doc))
+
+    def test_not_applied_to_ref_mode_or_non_merge_purpose(self):
+        bad_rows = [self._row('j1', 'ETC', 'O')]
+        self.assertIsNone(self._view._validate_ref_doc_st(
+            self._doc([self._added('J', 'TEST1_A')], bad_rows, mode='ref')))
+        self.assertIsNone(self._view._validate_ref_doc_st(
+            self._doc([self._added('J', 'TEST1_A')], bad_rows, other_purpose=['FirstA 변경'])))
+
+    def test_submit_api_blocks_and_passes(self):
+        self.client.force_authenticate(user=self.requester)
+        bad = self._doc([self._added('J', 'TEST1_A')],
+                        [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'O', sp='SP09')])
+        r = self.client.post(f'/api/documents/{bad.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('ST', r.json()['error'])
+        bad.refresh_from_db()
+        self.assertEqual(bad.status, 'draft')
+
+        good = self._doc([self._added('J', 'TEST1_A')],
+                         [self._row('j1', 'TEST1_A', 'O'), self._row('j2', 'ETC', 'X', sp='SP09', noc='미진행')])
+        r = self.client.post(f'/api/documents/{good.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_resubmit_api_blocks(self):
+        self.client.force_authenticate(user=self.requester)
+        bad = self._doc([self._added('J', 'TEST1_A')], [self._row('j1', 'TEST1_A', 'X')], status='rejected')
+        r = self.client.post(f'/api/documents/{bad.id}/resubmit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('ST', r.json()['error'])
+
+
 class HasPpidPlelTest(TestCase):
     """RequestDocument.has_ppid_plel — E(MASK) 단계 생성 판정 (2026-08부터 비활성 행도 저장되므로
     여기서 직접 걸러야 한다).
@@ -1297,13 +1423,15 @@ class PEStageReviewerFlowTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
-        self.client.force_authenticate(user=self.r_user)
-        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
-            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
+        # claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 R 없이 PL 합의 직후 3구역이 열리므로 R 지정·합의를 건너뛴다
+        if not doc.skip_r_stage():
+            self.client.force_authenticate(user=self.r_user)
+            r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+                'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+            }, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
+            r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
 
         doc.refresh_from_db()
         return doc
@@ -1448,6 +1576,18 @@ class PEStageReviewerFlowTest(TestCase):
             self.assertEqual(n.subject, f'[P 완료 통보] {doc.title}')
             self.assertEqual(len(n.recipients), 1, '팀별로 분리 발송되어 한 통에 다른 팀이 섞이지 않아야 한다')
 
+    # claude 수정 (2026-10-19): J 단계가 없는 'Overlay만 변경' 단독 문서는 P 완료 통보가 TE_O 에게만 가는지 고정
+    def test_p_completion_skips_te_j_when_overlay_only(self):
+        """'Overlay만 변경' 단독 문서는 J 단계가 없으므로 P 완료 통보를 TE_J 에게 보내지 않는다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        notis = list(MailNotification.objects.filter(document=doc, event_type='notify_p_completed'))
+        self.assertEqual(len(notis), 1, 'TE_O 1통만 나가야 한다')
+        self.assertEqual(notis[0].recipients, [self.o_user.mail])
+
     def test_notify_rjo_completed_sent_when_r_j_o_all_done(self):
         """(2026-09) 2구역 R + 3구역 J·O 가 모두 완료되면 TE_P 팀 전원에게 참고 통보가 간다."""
         doc = self._advance_to_parallel()  # R 은 이미 완료된 상태로 진입
@@ -1541,19 +1681,20 @@ class PEStageReviewerFlowTest(TestCase):
             '2회차 R+J+O 완료 시점에 2번째 통보가 나가야 한다',
         )
 
-    def test_notify_rjo_completed_sent_with_r_o_only_when_j_skipped(self):
-        """'기타 목적이 Overlay 변경뿐인 문서'는 J 단계 자체가 없다 — R+O 완료만으로 통보한다."""
+    # claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 R·J 모두 없어 R/J/O 완료 통보를 보내지 않는다(사용자 결정)
+    def test_notify_rjo_completed_not_sent_when_overlay_only(self):
+        """'기타 목적이 Overlay 변경뿐인 문서'는 J 와 2구역(R) 모두 없다 — O 가 끝나도 R/J/O 완료 통보는 없다."""
         doc = self._advance_to_parallel(other_purpose=['Overlay 변경'])
-        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent__in=('J', 'R'), round=1).exists())
 
         self.client.force_authenticate(user=self.o_user)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
-        self.assertTrue(
+        self.assertFalse(
             MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed').exists(),
-            'J가 없는 문서는 R+O 완료만으로 통보가 나가야 한다',
+            'R·J 가 없는 문서는 R/J/O 완료 통보를 보내지 않는다',
         )
 
     def test_p_reviewer_loginids_denied_before_claim(self):
@@ -1906,7 +2047,7 @@ class PEStageReviewerFlowTest(TestCase):
     # ----- 기타 목적 'Overlay 변경' 단독: 일반 경로에서 J 를 뺀다 -----
 
     def test_j_step_not_created_when_other_purpose_is_overlay_only(self):
-        """기타 목적이 'Overlay 변경' 하나뿐이면 R 합의 시 J 단계를 만들지 않는다."""
+        """기타 목적이 'Overlay 변경' 하나뿐이면 3구역을 열 때 J 단계를 만들지 않는다."""
         doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
         self.assertFalse(
             ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
@@ -1966,6 +2107,96 @@ class PEStageReviewerFlowTest(TestCase):
 
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved', 'J 가 없는 경로도 P·O 합의로 승인돼야 한다')
+
+    # ----- claude 수정 (2026-10-19): 'Overlay만 변경' 단독은 2구역(R)도 빼고 PL 합의 직후 3구역을 연다 -----
+
+    def test_r_step_not_created_when_overlay_only(self):
+        """PL 합의 직후 R 없이 3구역(P·O·RA)이 열린다 — R/RV·J step 은 만들지 않는다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+        agents = set(ApprovalStep.objects.filter(document=doc, round=1).values_list('agent', flat=True))
+        self.assertFalse(agents & {'R', 'RV', 'J'}, f'R·RV·J 가 없어야 한다: {agents}')
+        self.assertTrue({'P', 'O'} <= agents, f'P·O 는 열려야 한다: {agents}')
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+        self.assertEqual(p_step.action, 'pending')
+        self.assertIsNotNone(p_step.due_date, '기한은 PL 합의 시각 기준으로 잡혀야 한다')
+        self.assertEqual(doc.status, 'under_review')
+
+    def test_r_step_not_created_for_legacy_overlay_value(self):
+        """구 저장값 'Overlay 변경' 단독 문서도 R 없이 3구역이 열린다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY_LEGACY])
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='P', round=1).exists())
+
+    def test_r_step_created_when_overlay_selected_with_others(self):
+        """다른 기타 목적을 함께 골랐으면(일반 경로) PL 합의 후 R 이 그대로 생성된다."""
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': {
+                'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY, 'STEPSEQ 변경'],
+            }, 'jayerRows': []}),
+        )
+        self.client.force_authenticate(user=self.requester)
+        self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='P', round=1).exists())
+
+    def test_in_progress_overlay_doc_with_r_step_keeps_r(self):
+        """R step 이 이미 생성된 진행 중 문서(배포 이전 상태)는 그대로 R 을 거친다 — 단계 생성 시점 판정."""
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1',
+            status='under_review',
+            additional_notes=self._json.dumps({'detail': {
+                'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY],
+            }, 'jayerRows': []}),
+        )
+        ApprovalStep.objects.create(document=doc, agent='PL', action='approved', round=1,
+                                    assignee=self.pl_user, acted_at=timezone.now())
+        ApprovalStep.objects.create(document=doc, agent='R', action='pending', round=1)
+        self.assertIn('R', mailer.route_agents_for(doc), 'R 이 진행 중인 회차는 결재선에 R 이 남아야 한다')
+
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        agents = set(ApprovalStep.objects.filter(document=doc, round=1).values_list('agent', flat=True))
+        self.assertTrue({'P', 'O'} <= agents, f'R 합의 후 3구역이 열려야 한다: {agents}')
+        self.assertNotIn('J', agents)
+
+    def test_route_and_reject_mail_exclude_r_when_overlay_only(self):
+        """결재선에서 R·RV 가 빠지고(PL 단계 포함), 3구역 반려 시 TE_R 에 반려 메일이 가지 않는다."""
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': {
+                'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY],
+            }, 'jayerRows': []}),
+        )
+        self.client.force_authenticate(user=self.requester)
+        self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        route = mailer.route_agents_for(doc)
+        self.assertNotIn('R', route, 'PL 단계에서도 R 은 결재선에 없어야 한다')
+        self.assertNotIn('RV', route)
+
+        self.client.force_authenticate(user=self.pl_user)
+        self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/', {'agent': 'O', 'comment': '반려'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        _individual, teams = mailer.resolve_reject_recipients(doc)
+        self.assertNotIn('R', teams, f'TE_R 은 반려 메일 대상이 아니어야 한다: {teams}')
+        self.assertIn('P', teams, '아직 합의하지 않은 P 팀은 반려 메일을 받아야 한다')
 
     def test_general_route_not_approved_while_p_reviewer_pending(self):
         """P 담당자만 합의하고 검토자(PV)가 남아 있으면 J·O 가 끝나도 승인되지 않는다."""
@@ -8388,6 +8619,25 @@ class RSkipStageIntegrationTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
+    # claude 수정 (2026-10-19): R 을 생략한 회차에서 반려하면 TE_R 에 반려 메일이 가지 않는지 고정(발견 보고 ①)
+    def test_reject_in_r_skipped_round_excludes_te_r_from_mail(self):
+        detail = {'line': 'L1', 'process_id': 'PID-1'}
+        doc = self._make_doc(detail, [{'id': 'j1', 'pp': 'NORMAL'}], [{'id': 'o1', 'st': 'O'}])
+        self._submit_and_reach_zone3(doc)
+        self._claim_and_reject('O', self.o_user, doc)
+        self._resubmit(doc)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=2).exists())
+
+        self._claim_and_reject('O', self.o_user, doc)
+        doc.refresh_from_db()
+        self.assertNotIn('R', mailer.route_agents_for(doc))
+        _individual, teams = mailer.resolve_reject_recipients(doc)
+        self.assertNotIn('R', teams, f'R 이 없던 회차의 반려 메일은 TE_R 에 가지 않아야 한다: {teams}')
+        self.assertIn('J', teams, '아직 합의하지 않은 J 팀은 반려 메일을 받아야 한다')
+
     def test_o_reject_changed_map_info_keeps_r_on_resubmit(self):
         detail = {'line': 'L1', 'process_id': 'PID-1', 'map_type': 'NEW'}
         jayer_rows = [{'id': 'j1', 'pp': 'NORMAL'}]
@@ -8617,6 +8867,120 @@ class MapInfoLockedFieldCoverageTest(TestCase):
         doc = self._make_locked_doc(base)
         res = self._patch_detail(doc, base, {'customer_requirement': 'AFTER'})
         self.assertEqual(res.status_code, 200, res.content)
+
+
+# claude 수정 (2026-10-19): 지난 회차 R/고정 후결자 합의 이력 기준 잠금 + 요청 목적·라인~조리법 잠금 회귀 테스트
+@override_settings(POST_APPROVER_LOGINID='fixed_ra')
+class MapInfoLockAfterApprovalHistoryTest(TestCase):
+    """지난 회차를 포함해 R(+RV) 또는 고정 후결자 합의 이력이 있는 문서는 반려·중단 후 편집에서
+    MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 바꿀 수 없다(PATCH 400).
+
+    재현 상황(사용자 보고): 3회차에 R 합의 → 이후 회차에서 반려 → 재상신 편집 중 제품 이름을
+    지웠다 다시 입력 → MAP 목적이 NEW 에서 EXISTING 으로 바뀐 채 상신됐다.
+    """
+
+    BASE_DETAIL = {
+        'request_purpose': '신규', 'line': '라인1', 'process_selection': 'PROC_A',
+        'partid_selection': 'ABCD1234-X1', 'process_id': 'PID-1', 'map_type': 'NEW',
+        'customer_requirement': 'BEFORE',
+    }
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='mlh_a', mail='mlh_a@company.com', role='NONE')
+        self.r_user = UserProfile.objects.create(loginid='mlh_r', mail='mlh_r@company.com', role='TE_R')
+        self.fixed_ra = UserProfile.objects.create(loginid='fixed_ra', mail='fixed_ra@company.com', role='NONE')
+        self.extra_ra = UserProfile.objects.create(loginid='extra_ra', mail='extra_ra@company.com', role='NONE')
+
+    def _doc(self, status='rejected'):
+        payload = {'detail': dict(self.BASE_DETAIL), 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        return RequestDocument.objects.create(
+            title='잠금 이력 테스트', requester=self.author, requester_name='작성자',
+            requester_email='mlh_a@company.com', requester_department='개발팀',
+            product_name='ABCD1234-X1', status=status,
+            additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _r_approved_in_round3_then_rejected_in_round5(self, doc):
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=3, assignee=self.r_user)
+        ApprovalStep.objects.create(document=doc, agent='P', action='rejected', round=3)
+        ApprovalStep.objects.create(document=doc, agent='R', action='rejected', round=5, assignee=self.r_user)
+
+    def _patch(self, doc, overrides):
+        payload = {'detail': {**self.BASE_DETAIL, **overrides}, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        self.client.force_authenticate(user=self.author)
+        return self.client.patch(
+            f'/api/documents/{doc.id}/',
+            {'additional_notes': json.dumps(payload, ensure_ascii=False)},
+            format='json',
+        )
+
+    def test_map_type_change_rejected_after_r_approval_in_earlier_round(self):
+        """사용자 보고 상황 — 지난 회차(3회차) R 합의 후 반려된 문서에서 NEW→EXISTING 은 400."""
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        res = self._patch(doc, {'map_type': 'EXISTING'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_step1_lock_fields_rejected(self):
+        for field, value in (
+            ('request_purpose', 'Only MAP'), ('line', '라인2'), ('process_selection', 'PROC_B'),
+            ('partid_selection', 'EFGH5678-Y1'), ('process_id', 'PID-2'),
+        ):
+            doc = self._doc()
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            res = self._patch(doc, {field: value})
+            self.assertEqual(res.status_code, 400, f'field={field} {res.content}')
+
+    def test_unlocked_field_change_allowed(self):
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        res = self._patch(doc, {'customer_requirement': 'AFTER'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_locked_in_every_editable_status(self):
+        for status in ('rejected', 'under_review', 'submitted', 'pause'):
+            doc = self._doc(status=status)
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            self.assertTrue(doc_permissions.map_info_locked(doc), f'status={status}')
+        for status in ('draft', 'approved'):
+            doc = self._doc(status=status)
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            self.assertFalse(doc_permissions.map_info_locked(doc), f'status={status}')
+
+    def test_not_locked_without_r_approval(self):
+        """대조군 — R 이 반려만 했고 합의한 적이 없으면 잠그지 않는다."""
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='R', action='rejected', round=1, assignee=self.r_user)
+        res = self._patch(doc, {'map_type': 'EXISTING', 'partid_selection': 'EFGH5678-Y1'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_not_locked_when_rv_did_not_approve_in_same_round(self):
+        """R 은 합의했지만 같은 회차 RV 가 반려했다면 R 단계는 완료되지 않은 것이다."""
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=1, assignee=self.r_user)
+        ApprovalStep.objects.create(document=doc, agent='RV', action='rejected', round=1, assignee=self.r_user)
+        self.assertFalse(doc_permissions.map_info_locked(doc))
+
+    def test_locked_by_fixed_post_approver_approval(self):
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='RA', action='approved', round=1, assignee=self.fixed_ra)
+        self.assertTrue(doc_permissions.map_info_locked(doc))
+
+    def test_not_locked_by_extra_post_approver_approval(self):
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='RA', action='approved', round=1, assignee=self.extra_ra)
+        self.assertFalse(doc_permissions.map_info_locked(doc))
+
+    def test_detail_response_exposes_lock_flag(self):
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        self.client.force_authenticate(user=self.author)
+        res = self.client.get(f'/api/documents/{doc.id}/')
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        self.assertTrue(body['map_info_locked'])
 
 
 class FormOptionsLineProcessProductProcessIdTest(TestCase):
@@ -9818,7 +10182,7 @@ class OidcCallbackValidationTest(TestCase):
                 self.assertIn(name, '\n'.join(logs.output))
 
 
-# claude 수정 (2026-10-15): 흐름도 Step 목록 API 가 (layerid, stepseq) 쌍을 stepseq 자연 정렬로 돌려주는지 검증.
+# claude 수정 (2026-10-19): 흐름도 Step 목록 API 가 (layerid, stepseq) 쌍을 stepseq 순서로 돌려주는지 + 자릿수가 다른 숫자는 앞 4자리부터 비교하는지 검증.
 class FormOptionsLayerIdsStepseqTest(TestCase):
     """흐름도 Step 목록(/form-options/layer-ids/) — layerid 와 stepseq 를 함께, stepseq 순서로 준다."""
 
@@ -9842,6 +10206,18 @@ class FormOptionsLayerIdsStepseqTest(TestCase):
             {'layerid': 'L02', 'stepseq': 'AAAA10'},
             {'layerid': 'L01', 'stepseq': 'AAAA12'},
         ])
+
+    def test_digits_of_different_length_compare_leading_four_first(self):
+        from .models import PhotoStepS1
+        base = dict(processid='PRC2', descript='d', recipeid='r', areaname='a', eqptype='PMAINF')
+        # 1235 > 1234|5 > 1234|0 — 자릿수가 많아도 앞 4자리가 작으면 앞에 온다
+        PhotoStepS1.objects.create(stepseq='BBBB1235', layerid='L03', **base)
+        PhotoStepS1.objects.create(stepseq='BBBB12345', layerid='L02', **base)
+        PhotoStepS1.objects.create(stepseq='BBBB1234', layerid='L01', **base)
+        PhotoStepS1.objects.create(stepseq='BBBB12341', layerid='L04', **base)
+        res = self.client.get('/api/form-options/layer-ids/?line=line1&process=PRC2')
+        self.assertEqual([o['stepseq'] for o in json.loads(res.content)['options']],
+                         ['BBBB1234', 'BBBB12341', 'BBBB12345', 'BBBB1235'])
 
     def test_unknown_line_or_missing_process_is_empty(self):
         for url in ('/api/form-options/layer-ids/?line=line2&process=PRC1', '/api/form-options/layer-ids/?line=line1'):

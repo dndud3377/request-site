@@ -1,6 +1,7 @@
 # ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 
 import datetime
+from decimal import Decimal
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -474,6 +475,65 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             pass
         return None
 
+    # claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표가 정한 J/O st 를 서버에서도 검증한다(API 직접 호출 대비)
+    def _validate_ref_doc_st(self, document):
+        """참조 요청서 '없음' 변경전/변경후 표 ↔ J/O 표 검증. 문제 있으면 error 문자열, 없으면 None.
+
+        대상: detail.merge_ref_mode == 'none' 이고 확정(merge_applied)됐으며 기타 목적에 Merge 사용 목적
+        (Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경, 구 값 'Overlay 변경' 포함)이 있는 문서.
+        프론트 `RequestPage/helpers.ts` 의 checkManualPairsAgainstLayers·computeRefDocStTargets 와 같은 규칙이다.
+          - 변경전/변경후 유효 행(한쪽이라도 값이 있는 행)이 1건 이상
+          - 구분(pair.table — 프론트가 PP 접두사로 판정해 저장한 값)의 표에서 변경전 값은 없고, 변경후 값은 있어야 한다
+          - 변경후 값과 4값(process_id·SP·SD·PP, 앞뒤 공백·대소문자 무시)이 같은 J/O 행은 st 'O', 나머지 J/O 행은 st 'X'
+          - st 'O' 가 될 행의 요청 기준(new_or_copy)은 기등록/layer삭제/미진행일 수 없다
+        4칸이 다 차지 않은 쪽은 대조하지 않는다(프론트 4칸 필수 검사가 막는다).
+        """
+        MERGE_PURPOSES = ('Layer 추가/삭제', 'STEPSEQ 변경') + RequestDocument.OTHER_PURPOSE_OVERLAY_VALUES
+        NOC_SPECIAL = ('기등록', 'layer삭제', '미진행')
+        FIELDS = ('process_id', 'sp', 'sd', 'pp')
+        data = document.get_detail()
+        detail = data.get('detail', {}) or {}
+        if detail.get('merge_ref_mode') != 'none' or not detail.get('merge_applied'):
+            return None
+        if not any(p in MERGE_PURPOSES for p in (detail.get('other_purpose') or [])):
+            return None
+
+        def side_values(info):
+            return [str((info or {}).get(f) or '').strip() for f in FIELDS]
+
+        def key_of(info):
+            return '||'.join(v.upper() for v in side_values(info))
+
+        rows = {'J': data.get('jayerRows') or [], 'O': data.get('oayerRows') or []}
+        table_keys = {t: {key_of(r) for r in rs} for t, rs in rows.items()}
+        after_keys = {'J': set(), 'O': set()}
+        valid_count = 0
+        for pair in (detail.get('merge_pairs') or []):
+            before, after = pair.get('before'), pair.get('after')
+            if not any(side_values(before)) and not any(side_values(after)):
+                continue
+            valid_count += 1
+            table = pair.get('table')
+            if table not in table_keys:
+                continue
+            if all(side_values(before)) and key_of(before) in table_keys[table]:
+                return '변경전 값이 이미 J-ayer/O-ayer 표에 있는 행이 있습니다. 참조 요청서를 수정하세요.'
+            if all(side_values(after)):
+                if key_of(after) not in table_keys[table]:
+                    return '변경후 값이 J-ayer/O-ayer 표에 없는 행이 있습니다. 참조 요청서를 수정하세요.'
+                after_keys[table].add(key_of(after))
+        if valid_count == 0:
+            return '참조 요청서(변경전/변경후)를 1건 이상 입력해야 상신할 수 있습니다.'
+
+        for table, rs in rows.items():
+            for r in rs:
+                target_o = key_of(r) in after_keys[table]
+                if target_o and r.get('new_or_copy') in NOC_SPECIAL:
+                    return 'layer 추가 행은 기등록/layer삭제/미진행을 요청기준이 될 수 없습니다. 변경을 원하시면 참조 요청서를 수정하세요.'
+                if str(r.get('st') or '').strip() != ('O' if target_o else 'X'):
+                    return 'J-ayer/O-ayer 표의 ST 가 참조 요청서 내용과 다릅니다. STEP1 에서 참조 요청서를 다시 확정하세요.'
+        return None
+
     def _validate_post_approvers(self, document):
         """C가문(only_prodc=YES) 또는 '연구소 제품' 문서는 상신 시 추가 후결자
         (detail.post_approvers)를 1명 이상 지정해야 한다. 문제 있으면 error 문자열, 없으면 None.
@@ -593,6 +653,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -702,6 +766,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -804,6 +872,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -884,6 +956,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         # 문서 내용 검증은 상신과 동일하게 적용한다(결재선 관련 검증만 생략).
         err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_ref_doc_st(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2703,9 +2779,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return
         # (2026-09) resubmit() 이 조건 성립 시 표시해 둔 회차라면 R을 만들지 않고
         # 곧바로 3구역을 연다 — _should_skip_r_stage 참고. 1회용 플래그라 바로 소진한다.
-        if document.r_skip_round == round_no:
+        # claude 수정 (2026-10-19): 'Overlay만 변경' 단독(skip_r_stage)도 R 없이 곧바로 3구역을 연다
+        skip_r_round = document.r_skip_round == round_no
+        if skip_r_round:
             document.r_skip_round = None
             document.save(update_fields=['r_skip_round'])
+        if skip_r_round or document.skip_r_stage():
             self._advance_to_parallel(document, step, round_no)
             return
         # R 생성(중복 방지: 이미 있으면 재생성하지 않음)
@@ -3670,13 +3749,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         review_items_sync.confirm(reviewer, bool(request.data.get('confirmed', True)))
         return self._review_items_response(document, request)
 
+    # claude 수정 (2026-10-19): 잠금 범위(요청 목적·라인~조리법 포함)·조건(지난 회차 합의 이력) 확대에 맞춰 설명·거부 문구 갱신
     def update(self, request, *args, **kwargs):
         """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403.
 
-        R(+RV) 합의 완료 후 중단(pause)된 문서는 MAP 정보가 잠긴다(`doc_permissions.
-        map_info_locked`) — R이 이미 검토를 마친 MAP 정보를 되돌아가 바꾸지 못하게 한다
-        (2026-09, `docs/APPROVAL.md` Case M 참고). 프론트가 이미 read-only 로 막아도
-        직접 API 호출로 우회할 수 있으므로 백엔드에서도 거부한다.
+        지난 회차를 포함해 R(+RV) 또는 고정 후결자 합의 이력이 있는 문서는 MAP 정보와
+        요청 목적·라인~조리법이 잠긴다(`doc_permissions.map_info_locked`) — 합의된 MAP 정보를
+        반려·중단 후 편집에서 바꾸지 못하게 한다(`docs/APPROVAL.md` Case M 참고). 프론트가 이미
+        read-only 로 막아도 직접 API 호출로 우회할 수 있으므로 백엔드에서도 거부한다.
         """
         document = self.get_object()
         if not self._can_edit(request.user, document):
@@ -3691,7 +3771,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     new_detail = None
                 if new_detail is not None and document.changed_map_info_fields(new_detail):
                     return Response(
-                        {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보를 수정할 수 없습니다.'},
+                        {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다.'},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
         return super().update(request, *args, **kwargs)
@@ -4374,15 +4454,33 @@ def form_options_bb_external(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
+# 흐름도 Step stepseq 숫자 비교에서 먼저 보는 앞자리 수 (프론트 helpers.ts STEPSEQ_LEAD_DIGITS 와 같은 값)
+STEPSEQ_LEAD_DIGITS = 4
+
+
 def _natural_key(s: str) -> list:
     """'{문자}{숫자}' 패턴(예: A1, B10)을 숫자 인식 오름차순으로 정렬하기 위한 키."""
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s or '')]
 
 
-# claude 수정 (2026-10-15): 흐름도 Step 을 stepseq 순서로 검증하려고 layerid 만이 아니라 (layerid, stepseq) 쌍을 stepseq 자연 정렬로 돌려준다.
+# claude 수정 (2026-10-19): stepseq 숫자 자릿수가 서로 달라도(AAAA1235 vs AAAA12345) 앞 4자리 → 나머지 자리 순으로 비교하는 흐름도 Step 전용 정렬 키.
+def _stepseq_sort_key(s: str) -> list:
+    """흐름도 Step 목록 정렬 키 — 숫자 부분을 '앞 4자리.나머지 자리' 소수로 바꿔 비교한다.
+
+    AAAA1234 → 1234.0, AAAA12345 → 1234.5, AAAA1235 → 1235.0 이므로 AAAA1234 < AAAA12345 < AAAA1235.
+    문자 부분은 _natural_key 와 같이 대소문자 구분 없이 비교한다.
+    프론트 순서 검증(RequestPage/helpers.ts splitStepseq)과 같은 규칙이다.
+    """
+    return [
+        Decimal(f'{c[:STEPSEQ_LEAD_DIGITS]}.{c[STEPSEQ_LEAD_DIGITS:] or 0}') if c.isdigit() else c.lower()
+        for c in re.split(r'(\d+)', s or '')
+    ]
+
+
+# claude 수정 (2026-10-19): (layerid, stepseq) 쌍의 정렬 키를 _natural_key → _stepseq_sort_key 로 바꿔 숫자 자릿수가 달라도 앞 4자리부터 비교한다(2026-10-15 도입).
 @require_GET
 def form_options_layer_ids(request):
-    """line + process → 중복 없는 {layerid, stepseq} 목록 (stepseq 자연 정렬).
+    """line + process → 중복 없는 {layerid, stepseq} 목록 (stepseq 정렬 — 숫자는 앞 4자리 → 나머지 자리 순, _stepseq_sort_key).
 
     같은 layerid 가 여러 stepseq 에 있으면 stepseq 마다 한 항목씩 나온다.
     """
@@ -4410,7 +4508,7 @@ def form_options_layer_ids(request):
             .values('layerid', 'stepseq')
             .distinct()
         )
-        sorted_rows = sorted(rows, key=lambda r: (_natural_key(r['stepseq']), r['layerid']))
+        sorted_rows = sorted(rows, key=lambda r: (_stepseq_sort_key(r['stepseq']), r['layerid']))
         return JsonResponse({'options': [{'layerid': r['layerid'], 'stepseq': r['stepseq']} for r in sorted_rows]})
     except Exception as e:
         return JsonResponse({'options': []})

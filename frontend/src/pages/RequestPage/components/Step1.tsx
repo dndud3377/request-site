@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, LayerStepOption, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, MERGE_REF_MODE_ENABLED, MERGE_ENABLED_PURPOSES, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
 import { ManualPairsLayerCheck, PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
@@ -17,6 +17,8 @@ interface Step1Props {
   bbEntriesRequired: boolean;
   /** '연구소 제품'을 고를 수 있는가 — 요청 목적이 Only MAP 일 때만 참 */
   isLabProductAllowed: boolean;
+  /** R/고정 후결자 합의 이력이 있어 요청 목적·라인·조합법·제품 이름·조리법을 바꿀 수 없는가 (map_info_locked) */
+  mapInfoLocked: boolean;
   lineOptions: string[];
   processOptions: string[];
   productOptions: string[];
@@ -41,6 +43,8 @@ interface Step1Props {
   handleRequestPurposeSelect: (val: string) => void;
   /** 'Overlay만 변경' 단독 규칙과 충돌하는 상세 목적 클릭 — 확인 모달을 띄운다(conflicts = 해제될 기존 항목) */
   requestOverlayExclusive: (clicked: string, conflicts: string[]) => void;
+  // claude 수정 (2026-10-19): 참조 요청서 '없음' 표가 정한 상세 목적(null 이면 자동 선택 없음) — 버튼 잠금 판정용
+  autoOtherPurpose: string[] | null;
   handleRefDocSelect: (label: string) => void;
   handleMergeClick: () => void;
   handleMergeReselect: () => void;
@@ -63,6 +67,9 @@ interface Step1Props {
   handleBaTableChange: (pairId: string, table: MergeTable) => void;
   handleBaAddRow: () => void;
   handleBaResetRow: (pairId: string) => void;
+  /** claude 수정 (2026-10-20): '없음' 변경전/변경후 표 확정 — 확정 시점에 J/O 표의 st 를 정한다 */
+  handleBaConfirm: () => void;
+  handleBaEdit: () => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
   handleFlowStepSelect: (rowId: string, field: 'step_from' | 'step_to', index: number) => void;
@@ -97,6 +104,7 @@ const Step1: React.FC<Step1Props> = ({
   isOnlyMap,
   bbEntriesRequired,
   isLabProductAllowed,
+  mapInfoLocked,
   lineOptions,
   processOptions,
   productOptions,
@@ -119,6 +127,7 @@ const Step1: React.FC<Step1Props> = ({
   handlePartidSelectionBlur,
   handleRequestPurposeSelect,
   requestOverlayExclusive,
+  autoOtherPurpose,
   handleRefDocSelect,
   handleMergeClick,
   handleMergeReselect,
@@ -139,6 +148,8 @@ const Step1: React.FC<Step1Props> = ({
   handleBaTableChange,
   handleBaAddRow,
   handleBaResetRow,
+  handleBaConfirm,
+  handleBaEdit,
   handleFlowChange,
   handleFlowStepBlur,
   handleFlowStepSelect,
@@ -191,6 +202,20 @@ const Step1: React.FC<Step1Props> = ({
   const mergeModeLocked = disableOptional || (isMergeDone && !isMergeNone);
   // Merge 사용 목적(Layer 추가/삭제·STEPSEQ 변경·Overlay 변경)을 하나라도 골랐으면 블록을 1개만 노출한다.
   const showMergeBlock = isMergePurposeSelected(detail.other_purpose);
+  // claude 수정 (2026-10-19): 참조 요청서 '있음'(Merge) 잠금 — '있음' 라디오·참조 검색칸·Merge·재선택을 회색으로 잠그고
+  // 마우스를 올리면 '기능 수정 중' 툴팁을 띄운다. 잠긴 버튼은 이벤트를 받지 않으므로 감싼 span 에 툴팁을 단다.
+  const refMergeLocked = !MERGE_REF_MODE_ENABLED;
+  const refMergeLockedTitle = refMergeLocked ? t('request.merge_ref_locked') : undefined;
+  const lockedWrapStyle = refMergeLocked ? { display: 'inline-flex', cursor: 'not-allowed' } : undefined;
+  const lockedBtnStyle = { opacity: 0.4, cursor: 'not-allowed', ...(refMergeLocked ? { pointerEvents: 'none' as const, filter: 'grayscale(1)' } : {}) };
+  // claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정이 상세 목적을 정하는 동안(autoOtherPurpose ≠ null)
+  // Merge 사용 목적 세 버튼을 잠근다. 'Overlay만 변경' 단독이 정해졌으면 다른 목적도 곧바로 해제되므로 모든 버튼을 잠근다.
+  const isAutoPurposeLocked = (val: string): boolean =>
+    !!autoOtherPurpose
+    && ((MERGE_ENABLED_PURPOSES as readonly string[]).includes(val) || autoOtherPurpose.some(isOverlayPurpose));
+  // 잠긴 버튼은 마우스 이벤트를 받지 않게 해 감싼 span 의 툴팁이 뜨게 한다.
+  const autoLockedWrapStyle = { display: 'inline-flex', cursor: 'not-allowed' };
+  const autoLockedBtnStyle = { pointerEvents: 'none' as const };
 
   return (
     <div className="form-section">
@@ -205,6 +230,12 @@ const Step1: React.FC<Step1Props> = ({
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.line')} / {t('request.process_selection')}</span>
           <GuideBadge fk="step1_line_process" tk={t('guide.feat.step1_line_process' as never)} />
         </div>
+        {/* claude 수정 (2026-10-19): R/고정 후결자 합의 이력이 있으면 라인~조리법·요청 목적을 잠근다(MAP 정보 잠금과 같은 조건) */}
+        {mapInfoLocked && (
+          <p className="form-hint full-width" style={{ color: 'var(--text-muted)', margin: 0 }}>
+            🔒 {t('request.step1_locked_notice')}
+          </p>
+        )}
         <div className="full-width flex-row" data-tour="line-fields">
           <FormSelect
             label={t('request.line')}
@@ -216,6 +247,7 @@ const Step1: React.FC<Step1Props> = ({
             required
             error={errors.line}
             className="flex-col"
+            disabled={mapInfoLocked}
           />
           <AutocompleteInput
             label={t('request.process_selection')}
@@ -224,6 +256,7 @@ const Step1: React.FC<Step1Props> = ({
             onChange={(v) => handleDetailSet('process_selection', v)}
             required
             error={errors.process_selection}
+            disabled={mapInfoLocked}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
@@ -235,7 +268,7 @@ const Step1: React.FC<Step1Props> = ({
             required
             error={errors.partid_selection}
             hideErrorMessage={!!detail.partid_selection.trim()}
-            disabled={productOptionsBroad.length === 0}
+            disabled={mapInfoLocked || productOptionsBroad.length === 0}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
@@ -246,6 +279,7 @@ const Step1: React.FC<Step1Props> = ({
             placeholder={t('request.select_placeholder')}
             required
             error={errors.process_id}
+            disabled={mapInfoLocked}
             style={{ flex: 1 }}
           />
         </div>
@@ -269,8 +303,8 @@ const Step1: React.FC<Step1Props> = ({
                 key={val}
                 type="button"
                 className={`map-type-btn${detail.request_purpose === val ? ' active' : ''}`}
-                onClick={() => { if (canSelectPurpose) handleRequestPurposeSelect(val); }}
-                disabled={!canSelectPurpose}
+                onClick={() => { if (canSelectPurpose && !mapInfoLocked) handleRequestPurposeSelect(val); }}
+                disabled={!canSelectPurpose || mapInfoLocked}
               >
                 {val}
               </button>
@@ -286,36 +320,40 @@ const Step1: React.FC<Step1Props> = ({
               <label className="form-label">{t('request.other_purpose')}<GuideBadge fk="step1_other_purpose" tk={t('guide.feat.step1_other_purpose' as never)} /></label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 4 }}>
                 {/* claude 수정 (2026-10-15): 'Overlay만 변경'은 단독 선택만 허용 — 충돌하면 확인 모달을 거친다. 구 값 'Overlay 변경'도 같은 버튼으로 표시·해제 */}
+                {/* claude 수정 (2026-10-19): 참조 요청서 '없음' 표가 상세 목적을 정하는 동안 해당 버튼을 잠그고 툴팁으로 안내한다 */}
                 {OPTION_OTHER_PURPOSE.map((val) => {
                   const isOverlayBtn = isOverlayPurpose(val);
                   const selected = isOverlayBtn
                     ? detail.other_purpose.some(isOverlayPurpose)
                     : detail.other_purpose.includes(val);
+                  const autoLocked = isAutoPurposeLocked(val);
                   return (
-                    <button
-                      key={val}
-                      type="button"
-                      className={`map-type-btn${selected ? ' active' : ''}`}
-                      onClick={() => {
-                        if (otherPurposeDisabled(val)) return;
-                        if (selected) {
-                          handleDetailSet(
-                            'other_purpose',
-                            detail.other_purpose.filter((v) => (isOverlayBtn ? !isOverlayPurpose(v) : v !== val))
-                          );
-                          return;
-                        }
-                        const conflicts = overlayExclusiveConflicts(detail.other_purpose, val);
-                        if (conflicts.length > 0) {
-                          requestOverlayExclusive(val, conflicts);
-                          return;
-                        }
-                        handleDetailSet('other_purpose', [...detail.other_purpose, val]);
-                      }}
-                      disabled={otherPurposeDisabled(val)}
-                    >
-                      {val}
-                    </button>
+                    <span key={val} title={autoLocked ? t('request.other_purpose_auto_locked') : undefined} style={autoLocked ? autoLockedWrapStyle : undefined}>
+                      <button
+                        type="button"
+                        className={`map-type-btn${selected ? ' active' : ''}`}
+                        style={autoLocked ? autoLockedBtnStyle : undefined}
+                        onClick={() => {
+                          if (otherPurposeDisabled(val) || autoLocked) return;
+                          if (selected) {
+                            handleDetailSet(
+                              'other_purpose',
+                              detail.other_purpose.filter((v) => (isOverlayBtn ? !isOverlayPurpose(v) : v !== val))
+                            );
+                            return;
+                          }
+                          const conflicts = overlayExclusiveConflicts(detail.other_purpose, val);
+                          if (conflicts.length > 0) {
+                            requestOverlayExclusive(val, conflicts);
+                            return;
+                          }
+                          handleDetailSet('other_purpose', [...detail.other_purpose, val]);
+                        }}
+                        disabled={otherPurposeDisabled(val) || autoLocked}
+                      >
+                        {val}
+                      </button>
+                    </span>
                   );
                 })}
               </div>
@@ -333,24 +371,32 @@ const Step1: React.FC<Step1Props> = ({
                   {([
                     { value: 'ref' as MergeRefMode, label: t('request.merge_mode_ref') },
                     { value: 'none' as MergeRefMode, label: t('request.merge_mode_none') },
-                  ]).map((opt) => (
-                    <label key={opt.value} className="merge-mode-option">
-                      <input
-                        type="radio"
-                        name="merge_ref_mode"
-                        value={opt.value}
-                        checked={detail.merge_ref_mode === opt.value}
-                        disabled={mergeModeLocked}
-                        onChange={() => handleMergeModeSelect(opt.value)}
-                      />
-                      {opt.label}
-                    </label>
-                  ))}
+                  ]).map((opt) => {
+                    const optLocked = refMergeLocked && opt.value === 'ref';
+                    return (
+                      <label
+                        key={opt.value}
+                        className="merge-mode-option"
+                        title={optLocked ? refMergeLockedTitle : undefined}
+                        style={optLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                      >
+                        <input
+                          type="radio"
+                          name="merge_ref_mode"
+                          value={opt.value}
+                          checked={detail.merge_ref_mode === opt.value}
+                          disabled={mergeModeLocked || optLocked}
+                          onChange={() => handleMergeModeSelect(opt.value)}
+                        />
+                        {opt.label}
+                      </label>
+                    );
+                  })}
                 </div>
-                {/* claude 수정 (2026-10-15): 'Overlay만 변경'은 참조 요청서 Merge('있음') 또는 '없음' 확정이 필수 — 미확정 오류 표시 */}
+                {/* claude 수정 (2026-10-19): Merge 사용 목적 전체(Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경)는 참조 요청서 Merge('있음') 또는 '없음' 확정이 필수 — 미확정 오류 표시 */}
                 {errors.merge_ref_doc && !isMergeDone && <span className="form-error">{errors.merge_ref_doc}</span>}
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1 }} title={refMergeLockedTitle}>
                     <AutocompleteInput
                       label={t('request.merge_ref_doc')}
                       value={isMergeNone ? t('request.merge_ref_none') : (isMergeDone ? detail.merge_ref_doc_label : refDocLabel)}
@@ -361,31 +407,38 @@ const Step1: React.FC<Step1Props> = ({
                       }}
                       onSelect={handleRefDocSelect}
                       placeholder={t('request.merge_ref_placeholder')}
-                      disabled={disableOptional || isMergeDone || isMergeNone}
+                      disabled={disableOptional || isMergeDone || isMergeNone || refMergeLocked}
                     />
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={disableOptional || isMergeDone || (!isMergeNone && refDocId === null)}
-                    style={disableOptional || isMergeDone || (!isMergeNone && refDocId === null) ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                    onClick={handleMergeClick}
-                  >
-                    {t('request.merge_button')}
-                  </button>
-                  {/* 재선택: Merge 결과·매핑을 비우고 J/O 표를 Merge 직전으로 되돌린다 */}
-                  {isMergeDone && (
+                  <span title={refMergeLockedTitle} style={lockedWrapStyle}>
                     <button
                       type="button"
-                      className="btn btn-secondary"
-                      onClick={handleMergeReselect}
-                      title={hasMergeSnapshot ? undefined : t('request.merge_reselect_no_snapshot')}
+                      className="btn btn-primary"
+                      disabled={disableOptional || isMergeDone || (!isMergeNone && refDocId === null) || refMergeLocked}
+                      style={disableOptional || isMergeDone || (!isMergeNone && refDocId === null) || refMergeLocked ? lockedBtnStyle : undefined}
+                      onClick={handleMergeClick}
                     >
-                      ↻ {t('request.merge_reselect')}
+                      {t('request.merge_button')}
                     </button>
+                  </span>
+                  {/* 재선택: Merge 결과·매핑을 비우고 J/O 표를 Merge 직전으로 되돌린다 */}
+                  {isMergeDone && (
+                    <span title={refMergeLockedTitle} style={lockedWrapStyle}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={handleMergeReselect}
+                        disabled={refMergeLocked}
+                        style={refMergeLocked ? lockedBtnStyle : undefined}
+                        title={refMergeLocked || hasMergeSnapshot ? undefined : t('request.merge_reselect_no_snapshot')}
+                      >
+                        ↻ {t('request.merge_reselect')}
+                      </button>
+                    </span>
                   )}
                 </div>
-                {isMergeDone && (
+                {/* '있음' 잠금 중에는 '재선택을 누르세요' 안내가 맞지 않아 숨긴다 */}
+                {isMergeDone && !refMergeLocked && (
                   <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     ⓘ {t(isMergeNone ? 'request.merge_none_done' : 'request.merge_already_done')}
                   </div>
@@ -410,6 +463,9 @@ const Step1: React.FC<Step1Props> = ({
                     onTableChange={handleBaTableChange}
                     onAddRow={handleBaAddRow}
                     onResetRow={handleBaResetRow}
+                    confirmed={!!detail.merge_confirmed}
+                    onConfirm={handleBaConfirm}
+                    onEdit={handleBaEdit}
                   />
                 )}
               </div>

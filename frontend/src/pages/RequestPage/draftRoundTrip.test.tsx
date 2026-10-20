@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom';
 import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
+import { MERGE_PP_PREFIXES } from './constants';
 
 // claude 수정 (2026-10-15): '다음'/'이전' 버튼 문구가 i18n 으로 바뀌어, jsdom 기본 언어(en)가 아닌 한국어로 고정한다.
 beforeAll(async () => { await i18n.changeLanguage('ko'); });
@@ -147,23 +148,26 @@ const fixtureDetail = {
   // 판정 키워드(PLEL)가 있는 문서에서 상신자가 직접 '비대상'을 고른 상태.
   // (키워드가 없으면 규칙상 'NA' 가 되는 것이 정상이므로 픽스처를 규칙에 맞춘다)
   validation_system: 'NO',
-  merge_ref_doc_id: 77,
-  merge_ref_doc_label: '참조 요청서 제목',
-  merge_ref_mode: 'ref',
+  // claude 수정 (2026-10-19): 참조 요청서 '있음' 잠금 중에는 '있음' 문서가 열리자마자 '없음'으로 바뀐다 —
+  // 왕복 비교가 그 변환에 흔들리지 않도록 지금 저장될 수 있는 형태('없음' 확정)로 둔다.
+  merge_ref_doc_id: null,
+  merge_ref_doc_label: '',
+  merge_ref_mode: 'none',
   merge_applied: true,
   // 행 id·판정은 표를 직접 편집하기 위해 필요한 값이라 왕복에서 유지돼야 한다
   // (id 가 없는 구버전 문서는 로드 시 백필되므로 여기서는 신규 형태를 그대로 쓴다).
+  // '없음' 규칙(PP 접두사·J 표 대조)을 통과하는 layer 삭제 행 — 단계 이동 테스트가 STEP1 에서 막히지 않게 한다.
   merge_pairs: [{
-    id: 'pair_J_b1__J_a1',
+    id: 'pair_manual_1',
     table: 'J',
-    beforeId: 'J_b1',
-    before: { id: 'J_b1', table: 'jayer', process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01' },
-    afterId: 'J_a1',
-    after: { id: 'J_a1', table: 'jayer', process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02' },
-    kind: 'changed',
+    beforeId: null,
+    before: { process_id: PROCESS_ID, sp: 'SP09', sd: 'SD09', pp: `${MERGE_PP_PREFIXES.J[0]}_09`, layerid: 'L09' },
+    afterId: null,
+    after: null,
+    kind: 'deleted',
   }],
-  merge_unmatched_before: [{ id: 'J_b2', table: 'jayer', process_id: PROCESS_ID, sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03' }],
-  merge_unmatched_after: [{ id: 'J_a2', table: 'jayer', process_id: PROCESS_ID, sp: 'SP04', sd: 'SD04', pp: 'PP04', layerid: 'L04' }],
+  merge_unmatched_before: [],
+  merge_unmatched_after: [],
   adi_cd_before: [{ id: 'adi1', step_id: 'S1', step_desc: 'D1' }],
   adi_cd_after: [{ id: 'adi2', step_id: 'S2', step_desc: 'D2' }],
 };
@@ -303,7 +307,9 @@ describe('임시저장 왕복 — 불러온 값이 그대로 다시 저장되는
       ...fixtureDoc,
       additional_notes: JSON.stringify({
         ...fixtureNotes,
-        detail: { ...fixtureDetail, merge_unmatched_before: [], merge_unmatched_after: [] },
+        // claude 수정 (2026-10-20): Merge 사용 목적은 STEP1 에서 참조 요청서 확정을 거쳐야 넘어가므로 Merge 와 무관한 목적으로 바꾼다
+        // (확정하면 픽스처 J/O 행의 st 가 바뀐다 — 이 테스트는 원본 위치만 본다).
+        detail: { ...fixtureDetail, other_purpose: ['FirstA 변경'], merge_unmatched_before: [], merge_unmatched_after: [] },
       }),
     };
     await renderLoadedPage();
@@ -388,6 +394,9 @@ describe('Only MAP · MAP 삭제 — MAP 정보(2단계)가 마지막 단계', (
         detail: {
           ...fixtureDetail,
           request_purpose: purpose,
+          // claude 수정 (2026-10-20): Only MAP·MAP 삭제는 상세 목적을 쓰지 않는다(화면에서 고르면 초기화된다) — Merge 사용 목적이 남아 있으면
+          // STEP1 참조 요청서 확정 모달에 걸리므로 비운다.
+          other_purpose: [],
           merge_unmatched_before: [],
           merge_unmatched_after: [],
         },

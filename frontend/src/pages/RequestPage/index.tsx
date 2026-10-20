@@ -79,7 +79,9 @@ import {
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
   isNocSpecial,
+  ST_O,
   ST_X,
+  isStO,
   isRowInactive,
   makeTourDetail,
   makeTourJayerRows,
@@ -97,6 +99,7 @@ import {
   VS_NA,
   VS_UNSELECTED,
   isMergePurposeSelected,
+  MERGE_REF_MODE_ENABLED,
   isOverlayPurpose,
   MERGE_UNREGISTERED_ID,
   ADI_CD_CHANGE_PURPOSE,
@@ -113,11 +116,12 @@ import {
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
-  requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
+  requiresBbEntries, findBbEntryViolations, findStNocMismatchViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
-  syncManualPairTable, checkManualPairsAgainstLayers,
+  syncManualPairTable, checkManualPairsAgainstLayers, deriveAutoOtherPurpose, sameOtherPurpose,
+  computeRefDocStTargets, isRefDocStApplied,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
@@ -333,8 +337,10 @@ export default function RequestPage(): React.ReactElement {
   /**
    * 비교 결과·스냅샷·참조 문서 기록을 모두 지운다(J/O 표는 건드리지 않는다).
    * 조리법 변경·Merge 목적 전체 해제·재선택에서 공통으로 쓴다.
+   * claude 수정 (2026-10-19): 기본 모드를 신규 문서 기본값(INITIAL_DETAIL)과 맞춘다 — '있음' 잠금 중에는 'none'.
+   * claude 수정 (2026-10-20): '없음' 표 확정(merge_confirmed)도 함께 푼다 — 표가 비면 확정할 내용이 없다.
    */
-  const clearMergeComparison = (nextMode: MergeRefMode = 'ref') => {
+  const clearMergeComparison = (nextMode: MergeRefMode = INITIAL_DETAIL.merge_ref_mode) => {
     setMergeSnapshot(null);
     setBaSelBefore(null);
     setBaSelAfter(null);
@@ -342,6 +348,7 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => (
       prev.merge_ref_doc_id === null
         && !prev.merge_applied
+        && !prev.merge_confirmed
         && prev.merge_ref_mode === nextMode
         && (prev.merge_pairs?.length ?? 0) === 0
         && (prev.merge_unmatched_before?.length ?? 0) === 0
@@ -353,6 +360,7 @@ export default function RequestPage(): React.ReactElement {
           merge_ref_doc_label: '',
           merge_ref_mode: nextMode,
           merge_applied: false,
+          merge_confirmed: false,
           merge_pairs: [],
           merge_unmatched_before: [],
           merge_unmatched_after: [],
@@ -512,6 +520,8 @@ export default function RequestPage(): React.ReactElement {
   const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
   const [bbResetConfirm, setBbResetConfirm] = useState(false);
   const [specialCareConfirm, setSpecialCareConfirm] = useState(false);
+  // claude 수정 (2026-10-20): STEP1 '다음' 시 참조 요청서 '없음' 표 미확정 확인 모달
+  const [refDocConfirmOpen, setRefDocConfirmOpen] = useState(false);
   // STEP4(O-layer)→STEP5(Backbone) 전환 관문 — Jayer/Oayer '요청 기준'으로 계산한 요청 목적이
   // 현재 값과 다를 때, 계산된 값을 담아 모달을 띄운다. null 이면 닫힘.
   const [purposeMismatchConfirm, setPurposeMismatchConfirm] = useState<string | null>(null);
@@ -954,6 +964,30 @@ export default function RequestPage(): React.ReactElement {
     }
   }, [detail.other_purpose]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // claude 수정 (2026-10-19): 참조 요청서 '있음'(Merge) 잠금 중에는 Merge 사용 목적을 고르면 곧바로 '없음'으로 확정해
+  // 변경전/변경후 표를 연다(빈 행 1개로 시작). 임시저장·반려된 '있음' 문서도 여기서 '없음'으로 바뀌며,
+  // 변경전/변경후 행과 J/O 표는 그대로 두고 매핑 대기 목록만 비운다 — 매핑 표가 숨겨져 풀 수 없는데 상신을 막기 때문이다.
+  useEffect(() => {
+    if (MERGE_REF_MODE_ENABLED || !isMergePurposeSelected(detail.other_purpose)) return;
+    if (detail.merge_ref_mode === 'none' && detail.merge_applied) return;
+    setMergeSnapshot(null);
+    setBaSelBefore(null);
+    setBaSelAfter(null);
+    setBaSameCount(0);
+    setDetail((prev) => ({
+      ...prev,
+      merge_ref_doc_id: null,
+      merge_ref_doc_label: '',
+      merge_ref_mode: 'none',
+      merge_applied: true,
+      // claude 수정 (2026-10-20): '없음'으로 바뀐 표는 아직 확정 전이다(확정해야 J/O st 가 정해진다)
+      merge_confirmed: false,
+      merge_pairs: prev.merge_pairs.length > 0 ? prev.merge_pairs.map(syncManualPairTable) : [emptyMergePair()],
+      merge_unmatched_before: [],
+      merge_unmatched_after: [],
+    }));
+  }, [detail.other_purpose, detail.merge_ref_mode, detail.merge_applied]);
+
 
   useEffect(() => {
     detail.bb_entries.forEach((entry) => {
@@ -1244,6 +1278,8 @@ export default function RequestPage(): React.ReactElement {
             // 모드 도입 전 문서는 모두 '참조 있음' 이다. 확정 여부는 참조 문서 id 로 판단한다.
             merge_ref_mode: parsed.detail.merge_ref_mode ?? 'ref',
             merge_applied: parsed.detail.merge_applied ?? (parsed.detail.merge_ref_doc_id != null),
+            // claude 수정 (2026-10-20): '없음' 표 확정 도입 전 문서는 값이 없다 → 미확정으로 백필(STEP1 에서 확정해야 넘어간다)
+            merge_confirmed: parsed.detail.merge_confirmed ?? false,
             // BEFORE/AFTER 비교 도입 전 문서도 같은 이유로 빈 배열 백필.
             // 행 id 도입 전 문서는 편집 키가 없으므로 로드 시 백필한다.
             // claude 수정 (2026-10-16): '없음' 모드는 구분을 PP 접두사로 맞춰 불러온다(상세보기·내보내기가 저장된 구분을 쓰므로).
@@ -1849,6 +1885,35 @@ export default function RequestPage(): React.ReactElement {
       : null),
     [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, jayerRows, oayerRows],
   );
+  // claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정이 정하는 상세 목적(null 이면 자동 선택 안 함).
+  // 구분이 O 뿐이면 'Overlay만 변경' 단독이 되어 backend skip_j_stage 로 J 단계가 빠진다. Step1 은 이 값으로 버튼을 잠근다.
+  const autoOtherPurpose = useMemo(
+    () => (detail.merge_ref_mode === 'none' && detail.merge_applied && isMergePurposeSelected(detail.other_purpose)
+      ? deriveAutoOtherPurpose(detail.merge_pairs ?? [], detail.other_purpose)
+      : null),
+    [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, detail.other_purpose],
+  );
+  useEffect(() => {
+    if (!autoOtherPurpose || sameOtherPurpose(autoOtherPurpose, detail.other_purpose)) return;
+    setDetail((prev) => ({ ...prev, other_purpose: autoOtherPurpose }));
+    if (errors['other_purpose']) setErrors((prev) => ({ ...prev, other_purpose: '' }));
+    addToast(t('request.toast_other_purpose_auto', { list: autoOtherPurpose.join(', ') }), 'info');
+  }, [autoOtherPurpose]); // eslint-disable-line react-hooks/exhaustive-deps
+  // claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표가 켜져 있는 동안 J/O 표의 st 는 표가 정한다 —
+  // '확정'을 누르는 순간 변경후 값과 같은 J/O 행은 'O', 나머지는 모두 'X' 가 되고, 표가 켜져 있는 동안 st 를 직접 바꿀 수 없다.
+  // 상세 목적을 모두 해제하면 표가 꺼지므로 잠금만 풀린다(st 값은 그대로).
+  const refDocStLocked = detail.merge_ref_mode === 'none' && detail.merge_applied && isMergePurposeSelected(detail.other_purpose);
+  const refDocStTargets = useMemo(
+    () => (refDocStLocked ? computeRefDocStTargets(detail.merge_pairs ?? [], jayerRows, oayerRows) : null),
+    [refDocStLocked, detail.merge_pairs, jayerRows, oayerRows],
+  );
+  // 확정 뒤 J/O 표가 바뀌어(행 추가·삭제, 값 변경) 확정 때 정한 st 와 맞지 않게 되면 확정을 푼다 — STEP1 에서 다시 확정해야 한다.
+  useEffect(() => {
+    if (!refDocStTargets || !detail.merge_confirmed) return;
+    if (isRefDocStApplied(refDocStTargets, jayerRows, oayerRows)) return;
+    setDetail((prev) => ({ ...prev, merge_confirmed: false }));
+    addToast(t('request.toast_ba_confirm_released'), 'warning');
+  }, [refDocStTargets]); // eslint-disable-line react-hooks/exhaustive-deps
   // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
   const isMapReasonMode = isMapDeleteEditType(detail.map_type);
   // '연구소 제품'(Only MAP 전용) — 선택 시 기존 C가문 후결자 기능이 그대로 켜진다.
@@ -2504,6 +2569,45 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== Jayer & Oayer Handlers =====
 
+  // claude 수정 (2026-10-20): 참조 요청서 '없음' 표가 켜져 있는 동안 막는 J/O 편집 — st 변경 전체, 그리고 st 가 'O' 인 행의
+  // 요청 기준을 기등록/layer삭제/미진행으로 바꾸는 것(바꾸면 st 가 'X' 가 된다). 막았으면 true.
+  const blockRefDocStChange = (field: string, value: string, rowSt: string | undefined): boolean => {
+    if (!refDocStLocked) return false;
+    if (field === 'st') return true;
+    if (field === 'new_or_copy' && isNocSpecial(value) && isStO(rowSt)) {
+      addToast(t('request.ba_noc_special_conflict'), 'error');
+      return true;
+    }
+    return false;
+  };
+
+  /**
+   * claude 수정 (2026-10-20): 붙여넣기로 st 가 'O' 인 행의 요청 기준에 기등록/layer삭제/미진행이 들어왔으면 되돌린다
+   * (useCellSelection 이 이미 반영했으므로 이전 값으로 복원). 되돌린 칸을 뺀 변경 목록을 돌려준다.
+   */
+  const revertRefDocNocPaste = <Row extends { id: string; st: string; new_or_copy: string }>(
+    rows: Row[],
+    setRows: React.Dispatch<React.SetStateAction<Row[]>>,
+    changes: { rowId: string; values: Record<string, string> }[],
+  ): { rowId: string; values: Record<string, string> }[] => {
+    if (!refDocStLocked) return changes;
+    const prevNoc = new Map<string, string>();
+    changes.forEach(({ rowId, values }) => {
+      const row = rows.find((r) => r.id === rowId);
+      if (row && isNocSpecial(values.new_or_copy) && isStO(row.st)) prevNoc.set(rowId, row.new_or_copy);
+    });
+    if (prevNoc.size === 0) return changes;
+    setRows((prev) => prev.map((r) => (prevNoc.has(r.id) ? { ...r, new_or_copy: prevNoc.get(r.id)! } : r)));
+    addToast(t('request.ba_noc_special_conflict'), 'error');
+    return changes
+      .map(({ rowId, values }) => {
+        if (!prevNoc.has(rowId)) return { rowId, values };
+        const { new_or_copy: _reverted, ...rest } = values;
+        return { rowId, values: rest };
+      })
+      .filter(({ values }) => Object.keys(values).length > 0);
+  };
+
   const fetchJobFileLayerAndPopulateJayer = async (line: string, process: string) => {
     try {
       const jobFileData = await formOptionsAPI.getJobFileLayer(line, process);
@@ -2617,6 +2721,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     const changedRow = jayerRows.find(r => r.id === id);
+    if (blockRefDocStChange(field, value, changedRow?.st)) return;
     // bb 행이 J-ayer 에서 복사해 가는 값이 실제로 바뀐 경우에만 매핑을 해제한다.
     // (예전엔 컬럼을 가리지 않고 해제해, st 하나만 바꿔도 bb 재선택을 다시 해야 했다.)
     if (mappedJayerRowIds.has(id) && isBbMirroredCol(field) && changedRow?.[field] !== value) {
@@ -2697,7 +2802,8 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 붙여넣기 후 J-layer 자동채움/바코드 조회 연동
-  const handleJayerAfterPaste = (changes: { rowId: string; values: Record<string, string> }[]) => {
+  const handleJayerAfterPaste = (pastedChanges: { rowId: string; values: Record<string, string> }[]) => {
+    const changes = revertRefDocNocPaste(jayerRows, setJayerRows, pastedChanges);
     // 붙여넣기로 bb 반영 컬럼이 바뀐 행만 매핑 해제(원본 목록 복귀)
     unmapIfBbValueChanged(changes);
     changes.forEach(({ rowId, values }) => {
@@ -2786,7 +2892,8 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 붙여넣기 후 O-layer 자동채움(바코드 없음 — step=layer 자동만)
-  const handleOayerAfterPaste = (changes: { rowId: string; values: Record<string, string> }[]) => {
+  const handleOayerAfterPaste = (pastedChanges: { rowId: string; values: Record<string, string> }[]) => {
+    const changes = revertRefDocNocPaste(oayerRows, setOayerRows, pastedChanges);
     changes.forEach(({ rowId, values }) => {
       if ('product_name' in values && values.product_name) {
         setOayerRows((rows) => rows.map((r) => {
@@ -2876,7 +2983,8 @@ export default function RequestPage(): React.ReactElement {
   const isLayerCellLocked = (row: { st?: string; new_or_copy?: string; loaded?: boolean }, col: string): boolean => {
     // new_or_copy 는 st==='X' 인 행에서도 필수값이라 잠그지 않는다.
     if (col === 'new_or_copy') return false;
-    if (col === 'st') return isNocSpecial(row.new_or_copy);
+    // claude 수정 (2026-10-20): 참조 요청서 '없음' 표가 켜져 있으면 st 는 표가 정하므로 붙여넣기·Delete 로도 바꿀 수 없다.
+    if (col === 'st') return refDocStLocked || isNocSpecial(row.new_or_copy);
     return isRowInactive(row.st) || row.new_or_copy === '기등록'
       || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
   };
@@ -2892,11 +3000,18 @@ export default function RequestPage(): React.ReactElement {
   // 참여행(활성 && 기등록/layer삭제/미진행 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, O 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
+    if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // layerids는 "이 클릭이 반영된 뒤"의 참여 상태 기준으로 계산한다 — 클릭 이전 상태로 계산하면
     // st 필드 버튼 자체가 참여 여부를 뒤집는 클릭인 경우(예: 전체 X 다음 전체 O) 자기모순으로 빈 집합이
     // 되어 반대편 표로 전파되지 않는다.
-    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: value } : r);
+    // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP·ITEM_ID 를
+    // 비우고 bb 매핑을 푼다(ST X 에는 신규/차용을 쓸 수 없으므로 X 용 요청 기준을 다시 고르게 한다).
+    const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
+    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field)
+      ? { ...r, [field]: value, ...(clearedIds.includes(r.id) ? stClearExtra(field, value, true) : {}) }
+      : r);
     setJayerRows(updatedRows);
+    unmapIfMapped(clearedIds);
     const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
     if (targetIds.size > 0) {
@@ -2905,6 +3020,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
+    if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
     setJayerRows(updatedRows);
     const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
@@ -2942,6 +3058,7 @@ export default function RequestPage(): React.ReactElement {
   // 필터 조건에 맞는(아직 활성인) 행의 st를 'X'로 실제 기록한다 — 일회성 적용(되돌리는 토글이 아님).
   // st='X' 전환과 동일하게 new_or_copy/product_name/step/item_id를 초기화하고 bb 매핑을 해제한다.
   const handleJayerApplyFilter = (filterId: string) => {
+    if (refDocStLocked) return; // claude 수정 (2026-10-20): 필터 적용은 st 를 'X' 로 바꾸므로 참조 요청서 표가 켜져 있으면 막는다
     const filter = jayerFilterSets.find((f) => f.id === filterId);
     if (!filter) return;
     const matchedIds: string[] = [];
@@ -2957,6 +3074,7 @@ export default function RequestPage(): React.ReactElement {
   // ===== Oayer Handlers =====
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
     const changedRow = oayerRows.find(r => r.id === id);
+    if (blockRefDocStChange(field, value, changedRow?.st)) return;
     // 교차 동기화(O→J) 여부: 소스 행이 참여행이고, 전파할 값이 특수값(기등록/layer삭제/미진행)이 아닐 때만
     // J-layer로 전파를 검토한다(같은 O-layer 안에서는 더 이상 전파하지 않는다).
     const layerid = changedRow?.layerid?.trim();
@@ -3026,7 +3144,11 @@ export default function RequestPage(): React.ReactElement {
   // 참여행(활성 && 기등록/layer삭제/미진행 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 O 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, J 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
-    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: value } : r);
+    if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
+    // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP 를 비운다
+    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field)
+      ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) }
+      : r);
     setOayerRows(updatedRows);
     const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
@@ -3036,6 +3158,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
+    if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
     setOayerRows(updatedRows);
     const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
@@ -3072,6 +3195,7 @@ export default function RequestPage(): React.ReactElement {
 
   // 필터 조건에 맞는(아직 활성인) 행의 st를 'X'로 실제 기록한다 — 일회성 적용(되돌리는 토글이 아님).
   const handleOayerApplyFilter = (filterId: string) => {
+    if (refDocStLocked) return; // claude 수정 (2026-10-20): 필터 적용은 st 를 'X' 로 바꾸므로 참조 요청서 표가 켜져 있으면 막는다
     const filter = oayerFilterSets.find((f) => f.id === filterId);
     if (!filter) return;
     let matchedCount = 0;
@@ -3978,23 +4102,38 @@ export default function RequestPage(): React.ReactElement {
     rows: { id: string; st: string; new_or_copy: string }[]
   ) => {
     const violations = findEmptyStNocViolations(rows);
-    if (violations.length === 0) return;
-    violations.forEach((id) => {
-      newErrors[`${table}_stnoc_${id}_st`] = t('request.stnoc_field_error');
-      newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_field_error');
-    });
-    const msg = t(`request.${table}_stnoc_required` as never, { count: violations.length }) as string;
-    newErrors[`${table}_stnoc_required`] = msg;
-    errorMessages.push(msg);
+    if (violations.length > 0) {
+      violations.forEach((id) => {
+        newErrors[`${table}_stnoc_${id}_st`] = t('request.stnoc_field_error');
+        newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_field_error');
+      });
+      const msg = t(`request.${table}_stnoc_required` as never, { count: violations.length }) as string;
+      newErrors[`${table}_stnoc_required`] = msg;
+      errorMessages.push(msg);
+    }
+    // claude 수정 (2026-10-20): ST 와 요청 기준이 맞지 않는 행(ST O 계열+기등록/layer삭제/미진행, ST X+신규/차용)도 막는다 —
+    // 드롭다운은 ST 에 맞는 값만 보여주지만 타이핑·붙여넣기·예전 문서로 들어온 값을 잡는다.
+    const mismatches = findStNocMismatchViolations(rows);
+    if (mismatches.length > 0) {
+      mismatches.forEach((id) => {
+        newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_mismatch_field_error');
+      });
+      const msg = t(`request.${table}_stnoc_mismatch` as never, { count: mismatches.length }) as string;
+      newErrors[`${table}_stnoc_mismatch`] = msg;
+      errorMessages.push(msg);
+    }
   };
 
   /**
    * BEFORE/AFTER 게이트 — AFTER 항목이 하나라도 짝 없이 남아 있으면 진행을 막는다.
    * (BEFORE 잔여는 허용한다. 임시저장은 이 검증을 타지 않는다)
    */
+  // claude 수정 (2026-10-20): requireConfirmed — 최종 상신 검증에서는 '없음' 표 확정까지 요구한다
+  // (STEP1 '다음'은 확정 모달로 처리하므로 요구하지 않는다).
   const addBaGateError = (
     newErrors: Partial<Record<string, string>>,
-    errorMessages: string[]
+    errorMessages: string[],
+    requireConfirmed: boolean = false,
   ) => {
     const pending = detail.merge_unmatched_after?.length ?? 0;
     if (pending > 0) {
@@ -4005,19 +4144,20 @@ export default function RequestPage(): React.ReactElement {
     // 표를 직접 채울 수 있으므로 확정한 짝도 검사한다 —
     // 미등록이 아닌 쪽은 4칸 필수, 양쪽 미등록인 빈 행은 남길 수 없다.
     // '없음' 으로 확정했으면 유효 행이 1건 이상이어야 한다.
-    // claude 수정 (2026-10-15): 'Overlay만 변경'(구 값 포함)은 변경 내용 누락 방지를 위해 참조 요청서가 필수다 —
-    // '있음'이면 참조 요청서를 골라 Merge 해야 하고, '있음'·'없음' 모두 변경전/변경후 유효 행이 1건 이상이어야 한다.
-    const overlayRequired = detail.other_purpose.some(isOverlayPurpose);
+    // claude 수정 (2026-10-19): 참조 요청서 필수 규칙을 'Overlay만 변경' 전용에서 Merge 사용 목적 전체
+    // (Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경)로 통일 — '있음'이면 참조 요청서를 골라 Merge 해야 하고,
+    // '있음'·'없음' 모두 변경전/변경후 유효 행이 1건 이상이어야 한다.
+    const mergeRequired = isMergePurposeSelected(detail.other_purpose);
     if (!detail.merge_applied && detail.merge_ref_doc_id === null) {
-      if (overlayRequired) {
-        const msg = t('request.ba_gate_overlay_merge_required');
+      if (mergeRequired) {
+        const msg = t('request.ba_gate_merge_required');
         newErrors['merge_ref_doc'] = msg;
         errorMessages.push(msg);
       }
       return;
     }
     const { incompleteCells, blankRows, validCount } = validateMergePairs(detail.merge_pairs ?? []);
-    if ((detail.merge_ref_mode === 'none' || overlayRequired) && validCount === 0) {
+    if ((detail.merge_ref_mode === 'none' || mergeRequired) && validCount === 0) {
       const msg = t('request.ba_gate_manual_empty');
       newErrors['merge_pairs'] = msg;
       errorMessages.push(msg);
@@ -4048,7 +4188,69 @@ export default function RequestPage(): React.ReactElement {
         newErrors[key] = msg;
         errorMessages.push(msg);
       });
+      // claude 수정 (2026-10-20): 상신 전에는 '없음' 표를 확정해 J/O st 가 정해져 있어야 한다.
+      // 확정한 뒤에도 'O' 행의 요청 기준이 기등록/layer삭제/미진행이면 막는다(안전망 — 화면에서는 바꿀 수 없다).
+      if (requireConfirmed && refDocStLocked) {
+        if (!detail.merge_confirmed) {
+          const msg = t('request.ba_gate_unconfirmed');
+          newErrors['merge_confirm'] = msg;
+          errorMessages.push(msg);
+        } else if ((refDocStTargets?.nocConflicts.length ?? 0) > 0) {
+          const msg = t('request.ba_noc_special_conflict');
+          newErrors['merge_noc_conflict'] = msg;
+          errorMessages.push(msg);
+        }
+      }
     }
+  };
+
+  /**
+   * claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표 확정.
+   * 표 검사(1건 이상·4칸·PP 구분·J/O 표 대조)를 통과하고 'O' 가 될 행의 요청 기준이 기등록/layer삭제/미진행이 아니면
+   * 변경후 값과 같은 J/O 행은 st='O', 나머지는 st='X' 로 바꾼다. 'X' 가 되는 활성 행은 st 를 'X' 로 바꿀 때와 같이
+   * 요청 기준·제품 이름·STEP(·ITEM_ID)을 비우고 bb 매핑을 푼다. 확정했으면 true.
+   */
+  const runRefDocConfirm = (): boolean => {
+    const gateErrors: Partial<Record<string, string>> = {};
+    const gateMessages: string[] = [];
+    addBaGateError(gateErrors, gateMessages);
+    if (gateMessages.length > 0) {
+      setErrors((prev) => ({ ...prev, ...gateErrors }));
+      gateMessages.forEach((msg) => addToast(msg, 'error'));
+      scrollToFirstError(1);
+      return false;
+    }
+    const targets = computeRefDocStTargets(detail.merge_pairs ?? [], jayerRows, oayerRows);
+    if (targets.nocConflicts.length > 0) {
+      addToast(t('request.ba_noc_special_conflict'), 'error');
+      return false;
+    }
+    unmapIfMapped(jayerRows.filter((r) => targets.jayer[r.id] === ST_X && !isRowInactive(r.st)).map((r) => r.id));
+    setJayerRows((rows) => rows.map((r) => {
+      const target = targets.jayer[r.id];
+      if (target === ST_O) return r.st === ST_O ? r : { ...r, st: ST_O };
+      if (target !== ST_X || isRowInactive(r.st)) return r;
+      return { ...r, st: ST_X, ...stClearExtra('st', ST_X, true) };
+    }));
+    setOayerRows((rows) => rows.map((r) => {
+      const target = targets.oayer[r.id];
+      if (target === ST_O) return r.st === ST_O ? r : { ...r, st: ST_O };
+      if (target !== ST_X || isRowInactive(r.st)) return r;
+      return { ...r, st: ST_X, ...stClearExtra('st', ST_X, false) };
+    }));
+    setDetail((prev) => ({ ...prev, merge_confirmed: true }));
+    setErrors((prev) => ({ ...prev, merge_confirm: '', merge_noc_conflict: '' }));
+    addToast(t('request.toast_ba_confirmed'), 'success');
+    return true;
+  };
+
+  const handleBaConfirm = () => {
+    runRefDocConfirm();
+  };
+
+  // claude 수정 (2026-10-20): '변경' — 확정을 풀어 표를 다시 편집한다. st 는 다시 확정할 때까지 그대로 두고 계속 잠근다.
+  const handleBaEdit = () => {
+    setDetail((prev) => ({ ...prev, merge_confirmed: false }));
   };
 
   /**
@@ -4188,7 +4390,7 @@ export default function RequestPage(): React.ReactElement {
       if (flowRowIncomplete) {
         errorMessages.push(t('request.flow_row_incomplete'));
       }
-      addBaGateError(newErrors, errorMessages);
+      addBaGateError(newErrors, errorMessages, currentStep === lastStep);
       addAdiCdGateError(newErrors, errorMessages);
     }
 
@@ -4470,7 +4672,7 @@ export default function RequestPage(): React.ReactElement {
       addStNocError(newErrors, errorMessages, 'jayer', jayerRows);
       addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
       addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
-      addBaGateError(newErrors, errorMessages);
+      addBaGateError(newErrors, errorMessages, true);
       addAdiCdGateError(newErrors, errorMessages);
       // Validation System 미선택도 여기서 한 번 더 막는다 — 상신 검증은 validate(lastStep) 하나만
       // 도는 탓에, STEP3 게이트를 거치지 않고 온 문서가 미선택 상태로 상신되면 안 된다.
@@ -4486,10 +4688,14 @@ export default function RequestPage(): React.ReactElement {
     // 사용자가 고칠 수 있는 곳이 STEP1 뿐이므로 그리로 돌려보낸다(다른 오류가 섞여 있으면
     // 그 오류는 현재 단계에서 고쳐야 하므로 이동하지 않는다).
     const bbOnly = newErrors['bb_entries'] !== undefined && Object.keys(newErrors).length === 1;
+    // claude 수정 (2026-10-20): 참조 요청서 미확정도 STEP1 에서만 고칠 수 있다 — 미확정 오류가 있고 나머지도
+    // STEP1 항목(Backbone 조합 영역·참조 요청서 표)뿐이면 STEP1 로 돌려보낸다.
+    const refDocUnconfirmed = newErrors['merge_confirm'] !== undefined
+      && Object.keys(newErrors).every((key) => key === 'bb_entries' || key.startsWith('merge_'));
     return {
       valid: Object.keys(newErrors).length === 0,
       errors: errorMessages,
-      redirectStep: bbOnly && currentStep !== 1 ? 1 : undefined,
+      redirectStep: (bbOnly || refDocUnconfirmed) && currentStep !== 1 ? 1 : undefined,
     };
   };
 
@@ -4682,6 +4888,13 @@ export default function RequestPage(): React.ReactElement {
       }
       // 검증은 통과했으나 사용자 확인이 필요한 관문. 확인 후 원래 목적지까지 이어서 가야 하므로
       // 목적지를 보관하고, 관문이 있는 단계로 먼저 이동해 둔다(취소하면 그 단계에 머문다).
+      // claude 수정 (2026-10-20): 참조 요청서 '없음' 표를 확정하지 않았으면 확정 모달을 먼저 띄운다 — 확인하면 확정 후 이어서 이동한다.
+      if (s === 1 && refDocStLocked && !detail.merge_confirmed) {
+        if (s !== step) setStep(s);
+        setPendingStepTarget(target);
+        setRefDocConfirmOpen(true);
+        return;
+      }
       if (s === 1 && !ackedStepGatesRef.current.specialCare && !detail.customer_requirement.trim()) {
         setPendingStepTarget(target);
         setSpecialCareConfirm(true);
@@ -4758,6 +4971,19 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleNextStep = () => startStepMove(step + 1);
+
+  // claude 수정 (2026-10-20): 확정 모달의 '확인' — 확정에 성공하면 바뀐 st·확정 값이 반영된 다음 렌더에서 원래 목적지로 이어서 이동한다
+  // (같은 핸들러 안에서 이동하면 이전 렌더의 J/O 표로 뒤 단계를 검증하게 된다). 실패하면 STEP1 에 머물고 오류를 보여준다.
+  const refDocResumeTargetRef = useRef<number | null>(null);
+  const handleRefDocConfirmProceed = () => {
+    if (runRefDocConfirm()) refDocResumeTargetRef.current = pendingStepTarget ?? step + 1;
+  };
+  useEffect(() => {
+    if (!detail.merge_confirmed || refDocResumeTargetRef.current === null) return;
+    const target = refDocResumeTargetRef.current;
+    refDocResumeTargetRef.current = null;
+    goToStep(target);
+  }, [detail.merge_confirmed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrevStep = () => startStepMove(step - 1);
 
@@ -5055,6 +5281,8 @@ export default function RequestPage(): React.ReactElement {
           isOnlyMap={isStep1OnlyScope}
           bbEntriesRequired={requiresBbEntries(jayerRows)}
           isLabProductAllowed={isOnlyMap}
+          // claude 수정 (2026-10-19): MAP 정보 잠금 시 Step1 의 요청 목적·라인~조리법도 함께 잠근다
+          mapInfoLocked={mapInfoLocked}
           lineOptions={lineOptions}
           processOptions={processOptions}
           productOptions={productOptions}
@@ -5077,6 +5305,7 @@ export default function RequestPage(): React.ReactElement {
           handlePartidSelectionBlur={handlePartidSelectionBlur}
           handleRequestPurposeSelect={handleRequestPurposeSelect}
           requestOverlayExclusive={(clicked, conflicts) => setOverlayExclusiveConfirm({ clicked, conflicts })}
+          autoOtherPurpose={autoOtherPurpose}
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
           handleMergeReselect={() => setMergeReselectConfirm(true)}
@@ -5097,6 +5326,8 @@ export default function RequestPage(): React.ReactElement {
           handleBaTableChange={handleBaTableChange}
           handleBaAddRow={handleBaAddRow}
           handleBaResetRow={handleBaResetRow}
+          handleBaConfirm={handleBaConfirm}
+          handleBaEdit={handleBaEdit}
           handleFlowChange={handleFlowChange}
           handleFlowStepBlur={handleFlowStepBlur}
           handleFlowStepSelect={handleFlowStepSelect}
@@ -5173,6 +5404,7 @@ export default function RequestPage(): React.ReactElement {
       {step === 3 && (
         <Step2
           jayerRows={jayerRows}
+          stLocked={refDocStLocked}
           jayerSortBySp={jayerSortBySp}
           setJayerSortBySp={setJayerSortBySp}
           jayerFilterSets={jayerFilterSets}
@@ -5200,6 +5432,7 @@ export default function RequestPage(): React.ReactElement {
       {step === 4 && (
         <Step3
           oayerRows={oayerRows}
+          stLocked={refDocStLocked}
           oayerSortBySp={oayerSortBySp}
           setOayerSortBySp={setOayerSortBySp}
           oayerFilterSets={oayerFilterSets}
@@ -6234,6 +6467,16 @@ export default function RequestPage(): React.ReactElement {
           </div>
         </Modal>
       )}
+
+      {/* claude 수정 (2026-10-20): 참조 요청서 '없음' 표 미확정 상태로 STEP1 '다음' — 확인하면 확정하고 이어서 이동 */}
+      <ConfirmModal
+        isOpen={refDocConfirmOpen}
+        onClose={() => setRefDocConfirmOpen(false)}
+        onConfirm={handleRefDocConfirmProceed}
+        title={t('request.ba_confirm_modal_title')}
+        message={t('request.ba_confirm_modal_msg')}
+        confirmLabel={t('request.ba_confirm')}
+      />
 
       <ConfirmModal
         isOpen={specialCareConfirm}

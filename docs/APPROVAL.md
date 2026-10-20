@@ -169,8 +169,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > `P·PV·J·O·R·RV`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
-> **예외 — 기타 목적 'Overlay만 변경' 단독 (2026-08, 2026-10-15 이름·저장값 변경)**: `RequestDocument.skip_j_stage()`가 참이면
-> **일반 경로에서 J 단계를 아예 만들지 않는다**(`PL → R → P ∥ O ∥ [E] ∥ RA`). 판정은
+> **예외 — 기타 목적 'Overlay만 변경' 단독 (2026-08, 2026-10-15 이름·저장값 변경, 2026-10-19 R 제외)**: `RequestDocument.skip_j_stage()`가 참이면
+> **일반 경로에서 J 단계를 아예 만들지 않는다**. (2026-10-19) 같은 조건(`skip_r_stage()`)으로 **2구역(R/RV)도
+> 만들지 않아** 경로는 `PL(+SA) → P(+PV) ∥ O ∥ [E(+EV)] ∥ RA` 다(아래 "2구역(R) 제외" 항목). 판정은
 > `detail.other_purpose` 가 **이 항목 한 개뿐**일 때만 참이다 — 다른 기타 목적을
 > 함께 골랐으면(예: `Overlay 변경 + STEPSEQ 변경`) 그 목적의 검토가 남아 있으므로 J 를 유지한다
 > (상수 `RequestDocument.OTHER_PURPOSE_OVERLAY`, 프론트 `RequestPage/constants.ts` 의
@@ -191,7 +192,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > - **검토 항목**: J 단계 전용 기능이므로 이 문서는 `fill_from_master()` 로 채우지 않는다
 >   (J step 이 없으면 `review_items.is_stage_open()` 이 항상 거짓이라 화면도 닫힌다).
 > - **메일**: `mailer.ROUTE_AGENTS_NO_J` — 반려 시 잔여 결재선 수신자와 '결재 경로' 카드에서
->   J 가 함께 빠진다. **결재 상세 '결재 경로' 탭**은 J 행을 `해당없음`으로 표시한다
+>   J 가 함께 빠진다. (2026-10-19) P 완료 통보(`notify_p_completed`)도 같은 기준으로 TE_J 를 빼고 TE_O 에게만 보낸다
+>   (`docs/MAIL.md` §3 표). **결재 상세 '결재 경로' 탭**은 J 행을 `해당없음`으로 표시한다
 >   (E·RA 와 같은 na 분기 — 없으면 '대기'로 영구 표시된다). 결재현황 목록 그리드의 J 칸은
 >   step 이 없으면 자동으로 `해당없음` 이 되어 별도 처리가 없다.
 > - 테스트: `test_j_step_not_created_when_other_purpose_is_overlay_only`,
@@ -199,6 +201,25 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 >   `test_overlay_only_document_approved_without_j`
 > - ⚠️ 판정은 **단계 생성 시점**에 이뤄진다 — 이미 J step 이 생성된 기존 문서는 영향이 없고,
 >   재상신(round+1)하면 새 회차부터 규칙이 적용된다.
+> - **(2026-10-19) 2구역(R) 제외** — 관련 없는 RFG 팀이 결재하지 않도록 R(+RV)도 뺐다(사용자 요청).
+>   - **생성**: `_open_stage_after_pl` 이 `document.skip_r_stage()`(= `skip_j_stage()` 와 같은 조건)이면
+>     R 을 만들지 않고 PL(+SA) 전원 합의 직후 `_advance_to_parallel` 로 3구역을 연다 — 반려 후 재상신 R 생략
+>     (Case T)과 같은 분기다. 3구역 기한 기준일은 PL 전원 합의 시각(P 4영업일, O·E·RA 6영업일).
+>   - **진행 중 문서**: 판정은 J 와 같이 **단계 생성 시점**이다. 배포 시점에 PL 단계였던 문서는 PL 합의가
+>     끝날 때 R 없이 진행되고, **R step 이 이미 생성된 문서는 그대로 R 을 거친다**(사용자 결정).
+>   - **구역 정의(`pause_zones`)는 바꾸지 않았다** — R 이 진행 중인 기존 문서의 중단·재개·철회 판정이 깨지지
+>     않게 하기 위해서다(Case T 와 동일). 2구역이 비어 있을 뿐이다.
+>   - **메일**: `mailer.route_agents_for` 가 현재 회차에 R step 이 없으면 R·RV 를 뺀다(PL 단계 포함) —
+>     반려 메일에 TE_R 이 빠지고 결재 경로 카드에도 R 이 나오지 않는다. R 이 이미 생성된 회차는 R 을 유지한다.
+>   - **화면**: 결재 상세 '결재 경로' 탭의 R 행은 '2구역' 머리글 아래 `해당없음`(PL 단계부터, 그 회차에 R step 이
+>     없을 때). 결재현황 목록 그리드는 Case T 와 같이 R 없는 회차를 그대로 처리한다(변경 없음).
+>   - **R/J/O 완료 통보(`notify_rjo_completed`)는 보내지 않는다** — R·J 가 모두 없어 조건이 성립하지 않으며,
+>     그대로 두기로 했다(사용자 결정, `docs/MAIL.md`).
+>   - MAP 정보 잠금(`has_map_info_approval`)은 고정 후결자 합의 이력으로 그대로 동작한다.
+>   - 테스트: `test_r_step_not_created_when_overlay_only`, `test_r_step_not_created_for_legacy_overlay_value`,
+>     `test_r_step_created_when_overlay_selected_with_others`, `test_in_progress_overlay_doc_with_r_step_keeps_r`,
+>     `test_route_and_reject_mail_exclude_r_when_overlay_only`, `test_notify_rjo_completed_not_sent_when_overlay_only`,
+>     프론트 `PagedDetailView.overlayOnlyRoute.test.tsx`, 러너 `R-10`·`R-11`·`X-07`.
 
 ### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
@@ -206,8 +227,12 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   상신할 수 있다(그 외 403). draft 를 **볼 수 있는 사람**과 **상신할 수 있는 사람**을 분리하기 위해
   조회 스코프와 별개로 검사한다. `resubmit` 도 같은 규칙이다(반려 문서는 의뢰자·지정 PL·공유 그룹 멤버·MASTER).
 - **검증 순서**(하나라도 걸리면 400, 이 시점까지 DB 변경 없음): 지정 PL 파싱·검증 →
-  `_validate_bb_mapping` → `_validate_post_approvers` → `_resolve_sales_agreers` →
+  `_validate_bb_mapping` → `_validate_ref_doc_st` → `_validate_post_approvers` → `_resolve_sales_agreers` →
   `_validate_sales_agreers`. 통과 후 한 트랜잭션에서 상태 전이 + step 생성이 이뤄진다.
+  **(2026-10-20 추가)** `_validate_ref_doc_st`: 참조 요청서 '없음' 변경전/변경후 표가 켜진 문서(`merge_ref_mode=='none'`·
+  `merge_applied`·Merge 사용 목적 선택)는 변경후 값과 4값이 같은 J/O 행만 st 'O', 나머지는 'X' 여야 하고 'O' 행의 요청 기준이
+  기등록/layer삭제/미진행이면 안 된다(변경전 없음·변경후 있음·유효 행 1건 이상도 함께 검사). submit·resubmit·requester-resubmit·
+  direct-approve 4곳(`_validate_bb_mapping` 과 같은 곳)에서 호출하며 peer-submit 에는 없다. 상세는 `docs/REQUEST.md` §4.1 2026-10-20 항목.
   **(2026-10-14 삭제)** `_validate_bb_mapping` 직후에 있던 J/O-layer 'SD 첫 숫자 ↔ Layer 일치' 검사
   (`layer_sd_check.validate_document`)를 submit·resubmit·requester-resubmit·direct-approve·peer-submit
   모두에서 없앴다 — SD 와 Layer 가 달라도 상신된다(`docs/REQUEST.md` §4.1 2026-10-14 SD-Layer 삭제 항목).
@@ -239,6 +264,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   추가로 **E**(due: 6영업일, 병렬)는 `plel` 인 의뢰서에만 생성한다.
 - ✅ **(2026-08) 기타 목적 'Overlay만 변경'(구 값 'Overlay 변경') 단독이면 J 를 생성하지 않는다**(`document.skip_j_stage()`).
   J 도착 메일과 검토 항목 채우기(`fill_from_master`)도 함께 건너뛴다 — 위 예외 항목 참조.
+  **(2026-10-19)** 이 문서는 R 자체가 없어(`skip_r_stage()`) 이 Case 를 거치지 않고, 같은 병렬 생성이
+  PL(+SA) 전원 합의 시점(`_open_stage_after_pl`)에 일어난다. R step 이 이미 생성된 진행 중 문서만 이 Case 를 탄다.
 - ✅ **(2026-08) J 도 이 시점에 생성**된다(예전엔 P 완료 후 생성). J 도착 메일(`stage_arrival(J)`)도
   여기서 발송되며, 수신자도 **미배정 시 TE_J 팀 전원**으로 바뀌었다(예전엔 고정 주소 1곳).
   J 가 팀원 누구나 선점하는 병렬 단계가 됐는데 대표 주소로만 보내면 자기 차례를 알 수 없다.
@@ -593,6 +620,13 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
     - 구현: `views.py` `resume()`, 마이그레이션 불필요(기존 필드만 사용).
   - ✅ **재개 알림도 같은 구역 전체(2026-09)**: 중단 중엔 결재 액션이 막혀 있어(아래 "동결") 구역 구성이 바뀌지 않으므로, 재개 시점의 pending 단계에 `_pause_zone_step_ids`(위 "중단 요청"과 동일 로직)를 적용하면 **중단 요청 메일을 받았던 사람 전원이 재개 알림도 받는다**(별도 이력 추적 없이 구역 재계산만으로 성립). 위 초기화로 재개 시점엔 이미 구역 전체가 pending이라, 이 시점엔 사실상 위 초기화 대상과 같은 집합이 된다.
   - ✅ **MAP 정보 잠금(2026-09)**: R(+RV) 단계가 **이미 합의(approved)를 마친 뒤에 중단**됐다면(경로 무관 — 일반/Only MAP 은 2구역 완료, 'MAP 삭제'는 R이 3구역 소속이라 다른 병렬 단계보다 먼저 끝났을 수도 있음, `RequestDocument.is_r_stage_completed`), 재개 전 편집에서 **MAP 정보(StepMap 소유 필드, `RequestDocument.MAP_INFO_FIELDS`) 를 바꿀 수 없다**(`doc_permissions.map_info_locked`). R 이 이미 검토를 마친 MAP 정보를 되돌아가 바꾸는 걸 막기 위해서다. R 단계 자체가 없는 'ADI CD 변경'은 대상이 아니다(MAP 정보 필드 자체가 없음). 프론트(`StepMap`, `map_info_locked` 응답 필드)는 read-only 처리 + 안내 문구로 막고, 백엔드(`RequestDocumentViewSet.update`)는 값이 실제로 달라지면 400 으로 재차 거부한다(직접 API 호출 우회 방지).
+    - **(2026-10-19 확대 — 중단 전용 → 수정 가능 상태 전체, 지난 회차 합의 이력 기준)**: 3회차에 R 합의 → 이후 반려 → 재상신 편집 중 제품 이름을 지웠다 다시 입력하자 MAP 목적이 NEW 에서 EXISTING 으로 바뀌어 상신된 사례(사용자 보고)가 있었다. 사용자 결정에 따라 아래처럼 바꿨다.
+      - **조건**: 지난 회차를 포함해 **R(+RV) 전원 합의 회차가 하나라도 있거나, 고정 후결자(`settings.POST_APPROVER_LOGINID`) RA 가 합의한 적이 있으면** 잠근다(`RequestDocument.has_map_info_approval` — `approval_steps.all()` prefetch 캐시만 사용). 이후 회차에서 R 이 직접 반려해도 잠금은 풀리지 않는다(MAP 을 바꿔야 하면 MAP 삭제 후 새 요청서).
+      - **상태**: `pause` 뿐 아니라 `rejected`·`under_review`·`submitted` 에도 적용(`doc_permissions.MAP_INFO_LOCK_STATUSES`). `draft`·`approved`(MASTER 수정)는 대상이 아니다.
+      - **범위**: MAP 정보에 더해 의뢰 상세의 **요청 목적·라인·조합법·제품 이름·조리법**도 잠근다(`RequestDocument.MAP_LOCK_STEP1_FIELDS`). 라인/제품이 바뀌면 StepMap 이 초기화되고 EXISTING 이 자동 재매칭되며, 조합법·조리법을 바꾸면 제품 이름이 지워지기 때문이다. 프론트는 `Step1` 의 해당 입력·버튼을 disabled + 안내 문구(`request.step1_locked_notice`), 백엔드 `update` 는 값이 달라지면 400.
+      - **R 이 나중 회차에 다시 열리는 경우(검토 결과)**: 일반 경로는 고정 후결자 반려, 또는 P/J/O/E·비고정 RA 반려 후 Jayer·조합법·조리법이 바뀐 재상신이면 R 이 다시 생성돼 R 이 반려할 수 있다(`_should_skip_r_stage`). Only MAP·MAP 삭제의 재상신과 PL 단계 중 작성자 재상신(`requester_resubmit`)은 항상 R 이 다시 생성된다. 이때도 MAP 정보는 잠겨 있으므로 R 반려 사유가 MAP 변경이면 MAP 삭제 후 새 요청서로 처리한다.
+      - 판정 함수 `is_r_stage_completed`(현재 회차 기준)는 더 이상 잠금 판정에 쓰이지 않는다(남겨 둠).
+      - 상세·검증·알려진 한계는 `docs/REQUEST.md` "기능 변경 (2026-10-19 — MAP 정보 잠금 확대)" 참조.
   - ✅ **마감 기한 연장(2026-07)**: 재개 시 **멈춘 기간(중단 확정 `confirmed_at` ~ 재개일, 달력일)만큼** 현재 회차 pending 단계의 `due_date` 를 뒤로 민다. 중단 동안 남은 기한이 깎이지 않는다.
   - ✅ **변경 이력 기록(2026-08)**: 재개 전 `/request` 편집에서 내용을 고쳤다면 **수정 전 스냅샷이 `additional_notes.history[]`에 남는다**(`RequestPage/index.tsx` `buildEnrichedForm`의 `shouldAddHistory`가 `isRejected || isPause`). 종전엔 재상신(`isRejected`)일 때만 이력을 쌓아, 중단 후 재개하며 수정한 내용은 상세보기 '이력 확인'에서 전혀 비교할 수 없었다(회차도 안 올라가므로 다른 방법으로도 알 수 없음).
   - ✅ **목록 표시**: PAUSE 동안 결재현황/홈 목록의 '최종 완료예정' 칸은 날짜 대신 **`중단`**(회색)으로 표시한다(기한이 지난 것처럼 빨갛게 보이지 않도록). `ApprovalPage`·`HomePage` 공통. **(2026-08)** '현재 단계 완료예정' 컬럼 자체가 사라졌고(§3.5), 병렬 단계 중단은 그리드 6칸을 전부 `PAUSE` 뱃지로 덮는다(§3.3.2).
@@ -927,7 +961,7 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 - **권한**: 의뢰자 본인 또는 MASTER만(`doc_permissions.can_requester_resubmit`) — 지정 PL·공유
   그룹 멤버는 대상이 아니다(그쪽은 기존 `peer_submit`, Case D를 그대로 쓴다).
 - **동작**: `resubmit`(Case I)과 거의 동일하다 — 문서 내용은 사전에 `/request` 편집에서
-  update됨. 지정 PL 파싱·검증(`_resolve_designated_pls`) → `_validate_bb_mapping` →
+  update됨. 지정 PL 파싱·검증(`_resolve_designated_pls`) → `_validate_bb_mapping` → `_validate_ref_doc_st`(2026-10-20) →
   `_validate_post_approvers` → `_resolve_sales_agreers`/`_validate_sales_agreers` 통과 후,
   `_max_round + 1`로 새 회차에 지정 PL 전원 + SA 전원의 pending step을 생성한다. **이전 회차
   step은 이력으로 남고, 새 회차가 조회 대상이 되면서 자동으로 무효화**된다(round 승격 자체가
@@ -979,6 +1013,16 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 - ⚠️ **알려진 부수효과**: R이 생략된 회차는 `_is_r_zone_complete`가 항상 거짓이 되어, "R+J+O
   완료 시 P팀 참고 통보"(`notify_rjo_completed`) 메일이 그 회차엔 발송되지 않는다(R 자체가
   없으므로 자연스러운 결과).
+- 🐛→✅ **(2026-10-19) R 생략 회차의 반려 메일이 TE_R 에도 가던 문제**: 반려 수신자 산출
+  (`mailer._remaining_stage_team_groups`)이 결재선에서 "아직 합의하지 않은 단계"를 고르는데, R step 이 없는
+  회차에서도 R 이 결재선에 남아 있어 TE_R 팀 전원이 반려 메일을 받았다. 이제 `mailer.route_agents_for` 가
+  `is_r_skipped(현재 회차)` 이면 R·RV 를 뺀다('Overlay만 변경' 단독 문서의 R 제외와 같은 함수).
+  R 생략이 확정되기 전(그 회차 PL 단계)은 3구역이 아직 없어 그대로 R 을 결재선에 둔다 — PL 단계 반려는
+  팀 브로드캐스트 대상이 아니라 영향이 없다. 테스트: `RSkipStageIntegrationTest.test_reject_in_r_skipped_round_excludes_te_r_from_mail`.
+- ⚠️ **알려진 제약(기록만, 2026-10-19 사용자 결정)**: R 이 없는 회차에서 그 회차의 RA 가 0명이면(고정 후결자
+  `POST_APPROVER_LOGINID` 미설정 + 추가 후결자 없음) 진행 중 후결자 추가가 "R 합의 이후에만…" 400 으로 막히고,
+  결재 경로 변경도 RA step 을 만들지 않는다(`_post_approver_due_date` 가 R 합의일만 기준으로 쓴다).
+  운영은 고정 후결자가 항상 있어 실제로 발생하지 않는다. 'Overlay만 변경' 단독 문서도 같다.
 - 테스트: `backend/api/tests.py::ShouldSkipRStageTest`, `RSkipStageIntegrationTest`
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)

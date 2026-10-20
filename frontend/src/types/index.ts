@@ -250,7 +250,8 @@ export interface RequestDocument {
   withdraw_request?: WithdrawRequestInfo | null; // 확인 대기 중인 철회 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
   post_approver_fixed_name?: string | null;    // 고정 후결자(.env) 표시 이름 — RA 단계 생성 전 결재 경로 탭 미리보기용
-  map_info_locked?: boolean;                   // R(+RV) 합의 완료 후 중단(pause)된 문서 — 편집 화면 MAP 정보 read-only(2026-09)
+  // claude 수정 (2026-10-19): 잠금 조건(지난 회차 포함 R/고정 후결자 합의 이력)·범위(요청 목적·라인~조리법) 확대
+  map_info_locked?: boolean;                   // R(+RV)/고정 후결자 합의 이력이 있는 문서 — 편집 화면 MAP 정보·요청 목적·라인~조리법 read-only
   review_items?: ReviewItem[];                 // J-ayer 검토 항목 (상세 응답)
   my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
   my_mark_category?: number | null;            // 내 개인 마킹 범주 id (목록 응답, 표시 없으면 null). 다른 사용자에게는 노출되지 않는다.
@@ -640,6 +641,9 @@ export interface DetailFormState {
   merge_ref_mode: MergeRefMode;
   // 확정 여부. 'none' 은 문서 id 가 없어 merge_ref_doc_id 로 판단할 수 없으므로 별도 플래그를 둔다.
   merge_applied: boolean;
+  // claude 수정 (2026-10-20): '없음' 변경전/변경후 표를 '확정'했는가 — 확정 시점에 J/O 표의 st 를 정한다.
+  // 이 필드 도입 전 문서에는 키가 없다(없으면 미확정).
+  merge_confirmed?: boolean;
 
   // 참조 요청서 Merge 의 변경전/변경후 비교 결과. 확정된 짝과 아직 짝이 없는 행을 나눠 저장해
   // 임시저장 후 재진입에도 화면이 그대로 복원된다(상세 페이지 표시에도 merge_pairs 를 쓴다).

@@ -123,14 +123,24 @@ ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA', 'P', 'PV', 'J', 'O', 'R', 'RV')
 # E(MASK)·EV 와 후결자(RA)도 생성되지 않으므로 경로에서 빠진다.
 ROUTE_AGENTS_ADI_CD = ('SA', 'P', 'PV', 'J')
 ROUTE_AGENTS_DEFAULT = ('SA', 'R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
-# 기타 목적이 'Overlay 변경' 하나뿐인 의뢰서는 일반 경로에서 J 만 빠진다(나머지는 동일).
+# 기타 목적이 'Overlay 변경' 하나뿐인 의뢰서는 일반 경로에서 J 가 빠진다
+# (2구역 R·RV 도 빠지지만, R 이 이미 생성된 진행 중 회차가 있어 회차 기준으로 route_agents_for 가 뺀다).
 ROUTE_AGENTS_NO_J = tuple(a for a in ROUTE_AGENTS_DEFAULT if a != 'J')
+# 2구역(R 담당자·검토자) 단계 — R 없이 진행하는 회차에서 결재선에서 뺀다.
+R_ZONE_AGENTS = ('R', 'RV')
 
 
+# claude 수정 (2026-10-19): R 없이 진행하는 회차('Overlay만 변경' 단독 / 반려 후 재상신 R 생략)는 R·RV 를 결재선에서 뺀다 — TE_R 반려 메일 제외
 def route_agents_for(document):
     """의뢰서의 요청 목적에 맞는 결재선(라우팅) 단계 목록을 돌려준다.
 
     경로 카드 표시와 반려 수신자 산출이 같은 규칙을 쓰도록 여기에 모은다.
+
+    일반 경로에서 현재 회차가 2구역(R) 없이 진행되면 R·RV 를 뺀다 — 그 회차에 결재선이 없는
+    TE_R 팀이 반려 메일을 받지 않게 하기 위해서다.
+    - 'Overlay만 변경' 단독(`skip_r_stage`): 현재 회차에 R step 이 없으면 뺀다(PL 단계 포함).
+      R 이 이미 생성된 진행 중 회차는 그대로 R 을 거치므로 유지한다.
+    - 반려 후 재상신 R 생략(`is_r_skipped`): R 없이 3구역이 열린 회차면 뺀다.
     """
     if document.is_map_delete_edit():
         return ROUTE_AGENTS_MAP_DELETE_EDIT
@@ -138,9 +148,14 @@ def route_agents_for(document):
         return ROUTE_AGENTS_ONLY_MAP
     if document.is_adi_cd_change():
         return ROUTE_AGENTS_ADI_CD
-    if document.skip_j_stage():
-        return ROUTE_AGENTS_NO_J
-    return ROUTE_AGENTS_DEFAULT
+    route = ROUTE_AGENTS_NO_J if document.skip_j_stage() else ROUTE_AGENTS_DEFAULT
+    max_round = _current_round(document)
+    has_r = max_round is not None and ApprovalStep.objects.filter(
+        document=document, round=max_round, agent__in=R_ZONE_AGENTS,
+    ).exists()
+    if (document.skip_r_stage() and not has_r) or (max_round is not None and document.is_r_skipped(max_round)):
+        route = tuple(a for a in route if a not in R_ZONE_AGENTS)
+    return route
 
 # 메일 본문 '결재 경로' 카드에 실릴 수 있는 전체 agent 유니버스. 웹 '결재 경로' 탭과 같은
 # 목록을 쓴다(검토자 RV/PV/EV 는 담당 단계 바로 뒤). 실제 표시 순서는 문서별
@@ -1367,9 +1382,14 @@ def enqueue_notify_p_completed(document):
     도착 통보가 중복이 됐고, 대신 P 진행 상황을 알 수 있도록 이 완료 통보에 합류시켰다.
     TE_O·TE_J 는 서로 다른 팀이라 한 통에 묶지 않고 각각 별도 메일로, 순서대로(겹치지
     않게) 보낸다.
+
+    결재 경로에 J 가 없는 문서('Overlay만 변경' 단독 — `ROUTE_AGENTS_NO_J`)는 TE_J 가 할 일이
+    없으므로 TE_O 에게만 보낸다(반려 수신자 산출과 같은 `route_agents_for` 기준).
     """
+    # claude 수정 (2026-10-19): J 단계가 없는 문서(Overlay만 변경 단독)에는 TE_J 에게 P 완료 통보를 보내지 않는다
+    team_keys = ('O', 'J') if 'J' in route_agents_for(document) else ('O',)
     notis = []
-    for team_key in ('O', 'J'):
+    for team_key in team_keys:
         recipients = _apply_redirect(_team_emails(team_key), document)
         notis.append(_enqueue(document, 'notify_p_completed', recipients, agent=team_key, dispatch=False))
     _dispatch_batch(notis)

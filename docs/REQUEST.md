@@ -53,7 +53,7 @@ pages/RequestPage/
 | 분류 | export |
 |---|---|
 | 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
-| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
+| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_REF_MODE_ENABLED`(2026-10-19 '있음' 잠금 플래그), `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE`, `OTHER_PURPOSE_LAYER`·`OTHER_PURPOSE_STEPSEQ`(2026-10-19 상세 목적 자동 선택 값) |
 | ADI CD | `ADI_CD_CHANGE_PURPOSE`(2026-08-20 요청 목적으로 승격 — 이전 이름 `OTHER_PURPOSE_ADI_CD`), `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL`, `mapInfoDefaults`(StepMap 소유 필드 전체를 초기값으로) |
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
@@ -77,7 +77,7 @@ pages/RequestPage/
 | 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations`, `computeExpectedRequestPurpose` |
 | 3-way Merge | `MergeComparableRow`(타입), `MergeStats`(타입), `computeLayerMerge` |
 | BEFORE/AFTER 비교 | `BaComparableRow`(타입), `toMergeRowInfo`, `BeforeAfterResult`(타입), `computeBeforeAfter` |
-| 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs` |
+| 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs`, `deriveAutoOtherPurpose`·`sameOtherPurpose`(2026-10-19 표 → 상세 목적 자동 선택) |
 | Validation System | `isValidationKeywordRow`, `isValidationTarget`, `autoValidationSystem` |
 | ADI CD 붙여넣기 | `parseClipboardTable`, `AdiCdHeaderMatch`(타입), `detectAdiCdHeader`, `AdiCdPasteDecision`(타입), `decideAdiCdPaste`, `buildAdiCdRows`, `AdiCdValidationResult`(타입), `validateAdiCdRows` |
 | ADI CD 행 수 동일·적용 대상 | `balanceAdiCdRows`, `AdiCdTargetsValidation`(타입), `validateAdiCdTargets`(2026-08-21 신설 — '동일 변경 적용 대상' 표 검증) |
@@ -288,6 +288,294 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-10-20 — J/O-ayer 표 ST ↔ 요청 기준 짝 규칙 + '전체 X' 값 초기화)
+
+- **의도(사용자)**: ST 와 요청 기준(`new_or_copy`)이 맞지 않는 조합(ST O + 기등록/layer삭제/미진행, ST X + 신규/차용)이 **저장·상신되지 않게** 한다.
+  **모든 의뢰서**의 J/O 표에 적용한다(참조 요청서 유무 무관 — 사용자 결정). 백엔드는 바꾸지 않았다(사용자 결정: 프론트 차단).
+- **규칙(`helpers.ts` `nocOptionsForSt`)**:
+  | ST | 요청 기준 드롭다운 |
+  |---|---|
+  | `O`, `O (D)` (사용자 결정: O 계열) | 신규, 차용 |
+  | `X` | 기등록, layer삭제, 미진행 |
+  | 미선택(`''`) | 5개 전체 — 기등록/layer삭제/미진행을 고르면 **기존대로 ST 가 X** 가 된다 |
+  `Step2.tsx`(J)·`Step3.tsx`(O) 의 요청 기준 `AutocompleteInput` `options` 를 `nocOptionsForSt(row.st)` 로 바꿨다(로컬 `NEW_OR_COPY_OPTIONS` 삭제).
+- **차단(`helpers.ts` `findStNocMismatchViolations`, `index.tsx` `addStNocError`)**: 드롭다운 밖 경로(직접 타이핑·엑셀 붙여넣기·예전 임시저장/반려 문서)로 들어온 불일치 행을
+  STEP3·STEP4 '다음'과 최종 상신(`validate(5)`)에서 막는다(사용자 결정). 요청 기준 칸 빨간 테두리(기존 키 `{table}_stnoc_{id}_new_or_copy`) +
+  토스트 **`request.jayer_stnoc_mismatch`/`oayer_stnoc_mismatch`**(`{{count}}`행), 칸 오류 문구 `request.stnoc_mismatch_field_error`.
+  ST·요청 기준 중 하나라도 비어 있는 행은 기존 공란 검사(`findEmptyStNocViolations`)가 잡으므로 이 검사에서는 뺀다. 목록에 없는 값(오타)은 대상이 아니다. 임시저장은 막지 않는다.
+- **'전체 X' 값 초기화(발견 보고 → 사용자 결정 2)**: 툴바 '전체 X' 가 ST 만 바꾸고 요청 기준을 남겨 신규/차용 행이 모두 불일치가 되던 문제 —
+  한 행씩 X 로 바꿀 때(`handleJayerChange`)와 같이 **활성이던 행**의 요청 기준·제품 이름·STEP(J 는 ITEM_ID 도)을 비우고 J 는 bb 매핑을 푼다
+  (`handleJayerSetAll`/`handleOayerSetAll`). 이미 X 였던 행은 건드리지 않는다.
+- **참조 요청서 확정과의 관계**: 확정으로 X 가 된 행은 요청 기준이 비워지고(2026-10-20 확정 기능), 이제 기등록/layer삭제/미진행 중에서만 고른다.
+  ST 가 바뀌지 않으므로 X 행에서 요청 기준을 바꿔도 O 로 바뀌지 않는다(실행 확인).
+- **영향(기존 동작 변화)**: X 행에 신규/차용이 저장된 임시저장·반려 문서는 STEP3/4 '다음'·상신에서 막힌다 — 요청 기준을 기등록/layer삭제/미진행으로 바꿔야 한다.
+  결재 진행 중 문서·결재 흐름·백엔드 무변경.
+- **i18n**(ko/en 동시 3개): `request.stnoc_mismatch_field_error`, `request.jayer_stnoc_mismatch`, `request.oayer_stnoc_mismatch`.
+- **테스트**: `tsc --noEmit` 0 / 프론트 40 suites·555 tests 통과 — 신규 `stNocRule.test.tsx` 8건(구현 파일을 되돌리면 7건 실패, 나머지 1건은 기존 동작 대조군),
+  `helpers.test.ts` 2건. 백엔드 무변경.
+- **수동 시나리오**(`http://localhost:10011`):
+  1. [의뢰서 작성 → STEP3 J-ayer 표] ST 가 O 인 행의 요청 기준 칸 클릭 → [기대: 드롭다운에 신규·차용만.]
+  2. [ST 칸을 X 로 변경] → [기대: 요청 기준이 비워지고, 칸을 누르면 기등록·layer삭제·미진행만.]
+  3. ['+ 행 추가'로 만든 ST 빈 행의 요청 기준 칸 클릭] → [기대: 5개 모두. '미진행' 선택 → ST 가 X 로 바뀐다.]
+  4. [ST X 행의 요청 기준 칸에 '신규'를 직접 타이핑(또는 엑셀에서 붙여넣기) → '다음'] → [기대: STEP3 에 머물고 요청 기준 칸 빨간 테두리 +
+     "J-ayer 표 1행의 요청 기준이 ST 와 맞지 않습니다 — ST 가 O 이면 신규/차용, X 이면 미진행/기등록/layer삭제만 쓸 수 있습니다." 토스트.]
+  5. [툴바 '전체 X'] → [기대: 모든 행 ST X, 요청 기준·제품 이름·STEP·ID 가 비워지고 Backbone 매핑이 풀린다. 요청 기준 칸은 기등록·layer삭제·미진행만.]
+  6. [STEP4 O-ayer 표에서 1~5 반복] → [기대: 같은 동작(O 는 ID 칸 없음).]
+  7. [예전에 ST X + 차용으로 임시저장한 문서 열기 → STEP3 '다음'] → [기대: 4 와 같은 오류. 요청 기준을 미진행 등으로 바꾸면 통과.]
+  8. [언어 English 로 4 반복] → [기대: "… row(s) have a request basis that does not match ST …". 키 문자열이 보이면 실패.]
+  - 실패 신호: ST O 행 드롭다운에 기등록 등이 보임 / 불일치인데 STEP4 로 넘어감 / '전체 X' 후 신규·차용 값이 남음.
+
+### 기능 추가 (2026-10-20 — 참조 요청서 '없음': 변경전/변경후 표 '확정' → J/O 표 ST 결정·잠금 + 상신 서버 검증)
+
+- **의도(사용자)**: 참조 요청서(변경전/변경후 표)가 켜져 있으면 J-ayer/O-ayer 표의 ST 는 참조 요청서 내용으로 정해져야 한다.
+  변경후(추가·변경) 값과 같은 행만 ST=O, 참조 요청서에 없는 행은 모두 ST=X. 사용자가 ST 를 바꿀 수 없고, 바꾸려면 참조 요청서를 고친다.
+  입력 도중 값이 지워지는 문제를 막으려고 **즉시 계산이 아니라 '확정' 버튼을 누르는 순간 계산**한다(사용자 결정).
+- **적용 범위**: `merge_ref_mode==='none' && merge_applied && isMergePurposeSelected(other_purpose)`(사용자 결정: '없음'만). 프론트 `refDocStLocked`.
+- **검증(기존 그대로)**: 판정 추가 → 변경후 값이 표에 있어야, 변경 → 변경전 없음·변경후 있음, 삭제 → 변경전 없음(`checkManualPairsAgainstLayers`, 2026-10-16).
+- **ST 계산(`helpers.ts` `computeRefDocStTargets`)**: 구분(PP 접두사)의 표에서 변경후 4값(process_id·SP·SD·PP, 공백·대소문자 무시)과 같은 행 → `'O'`
+  (`'O (D)'` 도 `'O'` 로 — 사용자 결정), 그 밖의 J/O 행 → `'X'`. 다른 구분 표는 전부 X(예: J 행만 있으면 O-ayer 표 전체 X — 사용자 결정).
+  삭제 행만 있으면 J/O 전부 X. `'O'` 가 될 행의 요청 기준이 기등록/layer삭제/미진행이면 `nocConflicts`.
+- **확정/변경(`BeforeAfterPanel.tsx`, `index.tsx` `runRefDocConfirm`)**:
+  - 표 아래 **[✔ 확정]**: 기존 표 검사(`addBaGateError`)를 통과하고 `nocConflicts` 가 없으면 ST 를 반영한다.
+    X 가 되는 활성 행은 ST 를 X 로 바꿀 때와 같이 **요청 기준·제품 이름·STEP(·ITEM_ID) 초기화 + bb 매핑 해제**(사용자 결정: 기존과 동일).
+    `detail.merge_confirmed=true`(저장됨), 토스트 `request.toast_ba_confirmed`. 표는 읽기 전용(셀·행 추가·↺·✕·붙여넣기 잠금) + 안내 `request.ba_confirmed_notice`.
+  - 확정 후 **[변경]**: `merge_confirmed=false` → 표 편집 가능. ST 는 다시 확정할 때까지 그대로 두고 계속 잠근다.
+  - 요청 기준 충돌 시 에러 토스트 **`request.ba_noc_special_conflict`**("layer 추가 행은 기등록/layer삭제/미진행을 요청기준이 될 수 없습니다. 변경을 원하시면 참조 요청서를 수정하세요.").
+- **STEP1 '다음'(`goToStep`)**: 표가 켜져 있고 미확정이면 모달(`request.ba_confirm_modal_title`/`ba_confirm_modal_msg` "아직 확정이 되지 않았습니다. 현재 참조요청서의 내용을 확정하시겠습니까").
+  확정 → `runRefDocConfirm` 성공 시 다음 렌더에서 원래 목적지로 이동(`refDocResumeTargetRef`), 실패 시 STEP1 에 머물고 오류 표시. 취소 → STEP1.
+  표가 비었거나(빈 행만) 오류가 있으면 기존 관문(`ba_gate_manual_empty` 등)이 먼저 막는다(모달 전에 `validate(1)`).
+- **확정 자동 해제(사용자 결정 A-1)**: 확정 후 J/O 표가 바뀌어 지금 ST 가 확정 결과와 어긋나면(`isRefDocStApplied` false — 행 추가, 대상 행 삭제·값 변경 등)
+  `merge_confirmed=false` + warning 토스트 `request.toast_ba_confirm_released`. 대상이 아닌 X 행을 지우는 것처럼 ST 가 어긋나지 않는 변화는 확정을 유지한다.
+  조리법 변경(J/O 재조회)·상세 목적 해제는 `clearMergeComparison` 이 확정까지 함께 푼다.
+- **최종 상신(사용자 결정 B-1)**: `validate(lastStep)` 에서 미확정이면 `request.ba_gate_unconfirmed` 오류(`merge_confirm`). 오류가 STEP1 항목(참조 요청서·Backbone)뿐이면 STEP1 로 이동.
+  확정 상태라도 `nocConflicts` 가 있으면 같은 충돌 문구로 막는다(안전망).
+- **ST 잠금(표가 켜져 있는 동안 — 확정 여부 무관)**: ST 칸(`Step2`/`Step3` `stLocked`, 툴팁 `request.st_locked_by_ref_doc`), ST 전체 O/X/초기화, 필터 적용 버튼,
+  셀 붙여넣기·Delete 의 ST 열(`isLayerCellLocked`), J↔O 동기화로 ST 가 바뀌는 것(ST 변경 자체를 막음),
+  ST 가 O 인 행의 요청 기준을 기등록/layer삭제/미진행으로 바꾸는 입력·붙여넣기(되돌리고 에러 토스트). ST 가 X 인 행의 요청 기준은 자유롭게 바꿀 수 있다.
+  상세 목적을 해제하면 잠금만 풀리고 ST 값은 그대로다(사용자 결정).
+- **백엔드(`views.py` `_validate_ref_doc_st`, 사용자 결정: 구분은 저장된 `pair.table`)**: submit·resubmit·requester-resubmit·direct-approve 에서
+  `_validate_bb_mapping` 직후 호출. 유효 행 1건 이상 / 변경전 없음 / 변경후 있음 / 대상 행 ST=='O'·나머지 ST=='X' / 대상 행 요청 기준 특수값 금지 → 어긋나면 400.
+  `merge_confirmed` 플래그는 화면용이라 보지 않는다. 임시저장(PATCH)·peer-submit 은 검사하지 않는다. 상신 후 결재 상세의 필터 적용(TE_J/O 권한)은 그대로 허용(사용자 결정).
+- **기존 문서**: `merge_confirmed` 키가 없으면 미확정으로 불러온다 → '다음'에서 확정 모달, 상신은 확정 전까지 막힌다.
+- **i18n**(ko/en 동시 10개): `request.ba_confirm`·`ba_edit`·`ba_confirmed_notice`·`ba_confirm_modal_title`·`ba_confirm_modal_msg`·`ba_gate_unconfirmed`·
+  `ba_noc_special_conflict`·`toast_ba_confirmed`·`toast_ba_confirm_released`·`st_locked_by_ref_doc`. (en 의 '확정'은 공용 '확인'(Confirm)과 겹치지 않게 "Finalize")
+- **알려진 영향**:
+  - X 가 된 행은 요청 기준이 비워지는데, 요청 기준은 X 행에도 필수(2026-09-09)라 STEP3/4 '다음'에서 X 행마다 요청 기준을 다시 채워야 한다(현재 동작 — 보고 후 결정 대기).
+  - 결재 흐름 액션·결재선 생성은 바꾸지 않았다(상신 검증만 추가).
+- **테스트**: `tsc --noEmit` 0 / 프론트 39 suites·545 tests 통과(신규 `refDocStConfirm.test.tsx` 12건, `helpers.test.ts` 8건).
+  신규 통합 테스트는 구현 파일을 되돌리면 12건 중 11건 실패(나머지 1건은 잠금 해제 대조군). 기존 테스트 중 '없음' 확정 문서가 STEP2 로 넘어가는 5개 파일은
+  확정 모달을 거치도록(또는 Merge 와 무관한 목적으로) 수정했다. 백엔드 `manage.py test api` 735건 OK(신규 `RefDocStValidationTest` 13건 — 구현을 되돌리면 13건 모두 실패).
+  결재 케이스 러너: 로컬 sqlite + `AUTH_MODE=dev` 개발 서버(`127.0.0.1:10011`)를 띄워 실행했으나 "상신에 쓸 마스터 데이터를 찾지 못했다 (… JOB FILE layer …)"로 **실행되지 않았다** — 개발환경에서 확인 필요.
+- **수동 시나리오**(PP 접두사 `TEST1`=J, `TEST2`=O):
+  1. [`/request` → STEP1] 라인·조합법·제품 이름·조리법 선택(J/O 표 자동 조회) → 상세 목적 **Layer 추가/삭제** → 변경후 칸에 J-ayer 표에 있는 행 값 입력(PP 는 `TEST1…`)
+     → [기대: 표 아래 '+ 행 추가' 옆 **✔ 확정** 버튼.]
+  2. ['다음 →'] → [기대: "아직 확정이 되지 않았습니다. 현재 참조요청서의 내용을 확정하시겠습니까" 모달. 취소 → STEP1 그대로.]
+  3. [다시 '다음 →' → 모달 '확정'] → [기대: "참조 요청서 내용을 확정했습니다." 토스트 후 STEP2. STEP3 J-ayer 표: 입력한 행만 ST=O, 나머지 ST=X(회색, 요청 기준·제품 이름 비어 있음). O-ayer 표는 전부 X.]
+  4. [STEP3 ST 칸·'전체 O/X/초기화'·필터 버튼에 마우스] → [기대: 회색, 툴팁 "ST 는 참조 요청서(변경전/변경후 표)로 정해집니다. 변경을 원하시면 참조 요청서를 수정하세요.", 클릭해도 무반응.]
+  5. [ST=O 행의 요청 기준을 '기등록'으로] → [기대: 에러 토스트 "layer 추가 행은 기등록/layer삭제/미진행을 요청기준이 될 수 없습니다…", 값은 그대로. ST=X 행은 '미진행' 등 선택 가능.]
+  6. [X 행 요청 기준을 모두 채우고 STEP4·5 진행 → 상신] → [기대: 정상 상신. 결재 상세 J/O 표의 ST 가 3 과 같다.]
+  7. [STEP1 로 돌아가 '변경' → 셀 수정 → '다음'] → [기대: 확정 모달이 다시 뜬다.]
+  8. [확정 후 STEP3 에서 '+ 행 추가'] → [기대: 경고 토스트 "J/O 표가 바뀌어 참조 요청서 확정이 해제되었습니다…", STEP1 에 다시 '✔ 확정' 버튼.]
+  9. [8 상태에서 단계 탭으로 STEP5 → 상신] → [기대: "참조 요청서가 확정되지 않았습니다. STEP1에서 확정하세요." 오류 후 STEP1 로 이동.]
+  10. [변경후 행의 대상 J 행 요청 기준이 '기등록'인 상태에서 '확정'] → [기대: 같은 충돌 에러 토스트, 확정되지 않음.]
+  11. [표에 빈 행만 있는 상태로 '다음'] → [기대: 모달 없이 "변경전/변경후 항목을 1건 이상 입력하세요."로 막힘.]
+  12. [언어 English 로 2·4 반복] → [기대: "It has not been finalized yet…", "ST is set by the reference request…". 키 문자열이 보이면 실패.]
+  - 실패 신호: 확정 전 ST 가 바뀜 / 입력 중 ST 가 바뀜 / ST 칸을 바꿀 수 있음 / 미확정인데 상신됨.
+
+### 기능 변경 (2026-10-19 — 참조 요청서 '없음': 변경전/변경후 표의 구분·판정으로 상세 목적 자동 선택 → 구분이 O 뿐이면 'Overlay만 변경'으로 경로 축소)
+
+- **의도(사용자)**: 변경전/변경후 표의 구분이 O-ayer 뿐이면 상세 목적이 'Overlay만 변경' 단독이 되어, 결재 경로가 일반 경로보다
+  축소되게 한다(backend `skip_j_stage()` — 'Overlay만 변경' **하나뿐**이면 J 단계를 만들지 않는다. 백엔드는 변경 없음).
+- **적용 범위**: 참조 요청서 **'없음' 확정 상태**(`merge_ref_mode==='none' && merge_applied`)이고 Merge 사용 목적이 하나 이상 선택돼 있을 때만(사용자 결정).
+  '있음'(Merge) 모드는 대상이 아니다.
+- **규칙(`helpers.ts` `deriveAutoOtherPurpose`)** — 판정이 '미작성'이 아니고 구분(PP 접두사)이 정해진 행만 본다.
+  | 표 상태 | 상세 목적 |
+  |---|---|
+  | 해당 행 0건(미작성 행뿐·구분 판정 불가 행뿐) | **바꾸지 않는다**(버튼도 잠그지 않는다 — 지금처럼 눌러서 표를 연다) |
+  | 구분이 **O 뿐** | **`['Overlay만 변경']` 단독** — 판정(추가·삭제·변경)과 무관. FirstA 변경 등 다른 목적도 **해제**(사용자 결정) |
+  | **J 가 하나라도** 있음(J 만 / J+O) | Overlay만 변경(구 값 'Overlay 변경' 포함) 해제 → 추가·삭제가 있으면 **Layer 추가/삭제**, 변경이 있으면 **STEPSEQ 변경**(둘 다면 둘 다). Merge 와 무관한 목적(FirstA 변경 등)은 **유지** |
+  - 구 값 'Overlay 변경'으로 저장된 문서도 O 뿐이면 새 값 'Overlay만 변경'으로 바뀐다.
+  - 구분 판정 불가(PP 접두사 미해당)·구분 불일치 행은 계산에서 빠진다 — 이런 행은 기존 '다음'·상신 관문이 막는다.
+- **반영(`index.tsx`)**: `autoOtherPurpose`(useMemo) 가 위 결과를 계산하고, 현재 값과 항목이 다를 때만(`sameOtherPurpose`) effect 가
+  `detail.other_purpose` 를 바꾸고 info 토스트 **`request.toast_other_purpose_auto`**("변경전/변경후 표에 맞춰 상세 목적을 {{list}}(으)로 바꿨습니다.")를 띄운다.
+  기존 'Overlay만 변경' 충돌 확인 모달(`overlayExclusiveConfirm`)은 거치지 않는다. 셀을 고칠 때마다 다시 계산한다.
+- **잠금(`Step1.tsx`, 사용자 결정: 표가 정하고 잠금)**: `autoOtherPurpose ≠ null` 이면 Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경 버튼을 잠근다.
+  결과가 'Overlay만 변경' 단독이면 다른 목적도 곧바로 해제되므로 **상세 목적 버튼 전체**를 잠근다.
+  마우스를 올리면 툴팁 **`request.other_purpose_auto_locked`**("변경전/변경후 표의 구분·판정에 따라 자동 선택됩니다")가 뜬다(잠긴 버튼은 `pointer-events:none`, 감싼 span 에 툴팁).
+- **i18n**: `request.other_purpose_auto_locked`, `request.toast_other_purpose_auto` ko/en 동시 추가.
+- **영향(기존 동작 변화)**:
+  - '없음'으로 임시저장·반려된 문서를 열면 표 기준으로 상세 목적이 곧바로 다시 맞춰지고 토스트가 뜬다.
+  - O 뿐이 되어 해제된 FirstA 변경 등은 나중에 J 행을 넣어도 **자동으로 되살아나지 않는다**(사용자가 다시 눌러야 한다).
+  - 표에 판정 가능한 행이 있는 동안에는 세 버튼(또는 전체)을 직접 누를 수 없다 — 바꾸려면 표를 고친다.
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 37 suites·519 tests 통과(변경 전 36·507) — 신규 `mergePurposeAutoSync.test.tsx` 7건,
+  `helpers.test.ts` `deriveAutoOtherPurpose`·`sameOtherPurpose` 5건. 백엔드 `manage.py test api` 710건 OK(백엔드 무변경).
+  결재 케이스 러너(`scripts/approval_cases`)는 개발 서버(`localhost:10011`) 접속 불가로 **실행하지 못했다** — 개발환경에서 확인 필요.
+- **수동 시나리오**:
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → 상세 목적 **Layer 추가/삭제** 클릭
+     → [기대: 변경전/변경후 표(빈 행 1개)가 열린다. 상세 목적 버튼은 아직 모두 누를 수 있다.]
+  2. [변경후 칸에 O-ayer 표에 있는 값(PP 는 O 접두사, 예: `TEST2…`) 4칸 입력]
+     → [기대: 구분 'O-ayer', 판정 '추가'. 상세 목적이 **Overlay만 변경** 하나만 선택되고 토스트 "…상세 목적을 Overlay만 변경(으)로 바꿨습니다."
+       상세 목적 버튼이 모두 회색, 마우스를 올리면 "변경전/변경후 표의 구분·판정에 따라 자동 선택됩니다". 실패 신호: Layer 추가/삭제가 남아 있음.]
+  3. ['행 추가' → 변경전·변경후 모두 J-ayer 값(PP 는 J 접두사) 입력]
+     → [기대: Overlay만 변경 해제, **STEPSEQ 변경** 선택(판정 '변경'). Merge 와 무관한 버튼(FirstA 변경 등)은 다시 누를 수 있다.]
+  4. [J 행의 변경전 칸을 비워 판정을 '추가'로] → [기대: **Layer 추가/삭제**로 바뀐다. J 행 하나는 '변경', 다른 하나는 '추가'면 둘 다 선택.]
+  5. [J 행을 삭제(초기화)해 O 행만 남김] → [기대: 다시 Overlay만 변경 단독.]
+  6. [3단계에서 FirstA 변경을 함께 고른 뒤 J 행을 지워 O 만 남김] → [기대: FirstA 변경도 해제되고 Overlay만 변경 단독.]
+  7. [O 뿐인 상태로 끝까지 작성 → 상신 → 결재 현황 → 의뢰서 행 클릭 → '결재 경로' 탭]
+     → [기대: **J(JOB) 단계가 없다**(일반 경로 대비 축소). 실패 신호: J 단계가 보임.]
+  8. [J 가 섞인 상태로 상신 → '결재 경로' 탭] → [기대: J 단계가 있다(일반 경로).]
+  9. [표가 빈 행(미작성)뿐인 상태] → [기대: 상세 목적이 바뀌지 않고 버튼도 잠기지 않는다.]
+  10. [언어 English 로 2 반복] → [기대: "Detail purpose changed to Overlay만 변경 to match the Before/After table." 키 문자열이 보이면 실패.]
+
+### 기능 변경 (2026-10-19 — 참조 요청서 '있음'(Merge) 잠금: 상세 목적을 누르면 변경전/변경후 표가 바로 열린다)
+
+- **의도(사용자)**: 참조할 승인 요청서가 아직 거의 없고, '있음/없음' 선택과 Merge 단계가 사용자에게 번거롭고 혼란스럽다.
+  참조 요청서 Merge 는 **삭제하지 않고 당분간 막아 둔다**(나중에 다시 쓸 수 있게). Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경을
+  누르면 바로 변경전/변경후 표를 채울 수 있게 한다.
+- **잠금 플래그**: `constants.ts` **`MERGE_REF_MODE_ENABLED = false`**. `true` 로 바꾸면 잠금 전 동작(기본 '있음', Merge·재선택, '없음'↔'있음' 전환 모달)으로 돌아간다.
+  Merge 계산(`computeLayerMerge`·`computeBeforeAfter`)·재선택·매핑 코드와 i18n 키는 모두 그대로 남겼다.
+  - 신규 문서 기본값 `INITIAL_DETAIL.merge_ref_mode` 는 잠금 중 `'none'`. `clearMergeComparison()` 의 기본 모드도 이 값을 따른다.
+- **자동 확정(`index.tsx` effect)**: 잠금 중 Merge 사용 목적이 선택돼 있는데 '없음' 확정(`merge_ref_mode==='none' && merge_applied`)이 아니면
+  즉시 '없음'으로 확정한다 → `merge_applied=true`, 행이 없으면 빈 행 1개, `merge_ref_doc_id=null`, `merge_unmatched_before/after=[]`, `mergeSnapshot=null`.
+  신규 선택·임시저장 재진입·반려 재작성 모두 같은 경로다. 목적을 모두 해제하면 기존대로 비교 상태를 비운다.
+- **예전 '있음'(Merge) 문서(사용자 결정: 표 내용 유지)**: 변경전/변경후 행(`merge_pairs`)과 J/O 표는 그대로 두고 '없음'으로 바뀐다.
+  행 구분은 PP 접두사로 다시 맞춘다(`syncManualPairTable`). **매핑 대기 목록(`merge_unmatched_*`)은 비운다** — 매핑 표는 '없음'에서 숨겨져
+  사용자가 풀 수 없는데 `ba_gate_ng` 가 상신을 막기 때문이다. 이후 '없음' 규칙(PP 접두사·J/O 표 대조·1건 이상)을 그대로 받으므로
+  Merge 로 만든 행이 규칙에 맞지 않으면 사용자가 고쳐야 다음 단계로 간다.
+- **UI(`Step1.tsx`, 사용자 결정: 숨기지 않고 회색 잠금)**: '참조 요청서 있음' 라디오, 참조 요청서 검색칸, Merge, 재선택을 회색으로 잠근다.
+  마우스를 올리면 툴팁 **`request.merge_ref_locked`**("기능 수정 중" / "Feature under revision")이 뜬다.
+  잠긴 버튼은 마우스 이벤트를 받지 않아 버튼을 감싼 `span` 에 `title` 을 단다. '없음'은 항상 체크된다.
+  '재선택을 누르세요' 안내(`request.merge_none_done`)는 잠금 중에는 숨긴다.
+- **i18n**: `request.merge_ref_locked` ko/en 동시 추가.
+- **'없음' 변경전/변경후 표 정리(사용자 결정, `BeforeAfterPanel.tsx` — `manualOnly` 일 때만)**:
+  - **layer 컬럼 제거**: 머리글·셀 모두 그리지 않는다(한쪽 4칸: 조리법·SP·SD·PP). layer 값은 참조 요청서에서만 오는 읽기 전용이라 '없음'에서는 항상 비어 있었다.
+    저장 데이터의 `layerid` 필드는 그대로 둔다(예전 '있음' 문서 값 보존). 이 셀에만 쓰던 CSS `.ba-cell-readonly-locked` 는 삭제.
+  - **머리글**: "변경전 (참조 요청서)"/"변경후 (현재 요청서)" → **`request.ba_before_col_manual`/`ba_after_col_manual`**("변경전"/"변경후", en "Before"/"After") ko/en 동시 추가.
+  - **Merge 요약 줄**("변경 없음 N건 · 확정 N건 · 매핑 대기 N건") 숨김.
+  - '있음' 모드 표는 그대로(layer 컬럼·요약 줄·기존 머리글 유지) — `overlayRefDocRequired.test.tsx` 에 회귀 테스트 1건, `refMergeLocked.test.tsx` 에 '없음' 표 테스트 1건 추가.
+  - **붙여넣기 안내**: '없음' 표에는 layer 컬럼이 없어 "layer 는 입력 대상이 아닙니다." 문장을 뺀 **`request.ba_paste_hint_manual`** 을 쓴다(ko/en 동시 추가, '있음'은 기존 `ba_paste_hint`).
+  - **상세보기·엑셀 내보내기도 같은 규칙(사용자 결정)**: `detail.merge_ref_mode === 'none'` 문서는 `PagedDetailView` `MergePairsTable`(prop `manualOnly`)과
+    `detailExport.ts`(의뢰 상세 시트 변경전/변경후 표)에서 layer 컬럼을 빼고 머리글을 `ba_before_col_manual`/`ba_after_col_manual` 로 쓴다.
+    모드 값이 없는 예전 문서·'있음' 문서는 종전대로(layer 컬럼·"(참조 요청서)" 머리글). 이미 상신된 '있음' 문서는 작성 화면을 거치지 않으므로 '있음' 표 그대로 보인다.
+  - **ADI CD 엑셀 머리글**: 참조 요청서 개념이 없는데 `ba_before_col`("변경전 (참조 요청서)")을 쓰던 것을 `ba_before_col_manual`/`ba_after_col_manual` 로 바꿨다
+    (예: "STEP_ID(변경전)"). 화면(`AdiCdPanel`)은 원래 별도 키라 변경 없음.
+  - 테스트: `components/PagedDetailView.mergeManual.test.tsx` 3건, `utils/detailExport.mergeManual.test.ts` 3건 신규. 변경 전 코드로는 '없음'·ADI CD 4건이 실패함을 확인.
+- **백엔드**: 변경 없음(참조 요청서 검증은 원래 프론트에만 있다).
+- **가이드 투어 문구(사용자 결정: 변경)**: 단계 가이드 `guide.tour.step.groups.s1g3`('변경전/변경후 입력' — 목적 선택 시 표가 바로 열리고 Merge 는 기능 수정 중),
+  `s1g3b`('변경전/변경후 직접 작성' — PP 접두사 구분 판정·변경전/변경후 대조 규칙), 전체 가이드 자막 `guide.tour.steps.request.flow.ref_doc_merge` 를 ko/en 동시에 바꿨다.
+  블록 제목 `guide.feat.step1_ref_doc_merge`('참조 요청서 Merge')는 화면 라벨이라 그대로 둔다.
+- **잠긴 버튼 색**: Merge·재선택은 `opacity` 만으로는 옅은 파랑으로 보여 `filter: grayscale(1)` 을 더해 회색으로 보이게 했다.
+- **테스트**: 신규 `refMergeLocked.test.tsx` 5건(목적 클릭 → 표 즉시 표시 / 잠금·툴팁 / '있음' 클릭 무반응 / 예전 '있음' 문서 변환·저장 / 변환 후 '없음' 규칙 적용).
+  `overlayRefDocRequired.test.tsx` 는 `MERGE_REF_MODE_ENABLED=true` 로 mock 해 잠금 해제 시 회귀 테스트로 유지한다.
+  `noneModeLayerCheck.test.tsx` 의 '있음 모드는 검사하지 않는다' 1건은 잠금 동작('없음'으로 바뀌어 검사됨)으로 교체했다.
+  `draftRoundTrip`·`jayerOayerRowRemove` 픽스처는 '없음' 규칙을 통과하는 행으로 바꿨다. Merge 는 이 두 테스트의 검증 대상이 아니다.
+- **수동 시나리오**(PP 접두사는 `MERGE_PP_PREFIXES` 현재 값 — `TEST1`=J, `TEST2`=O):
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → [상세 목적 **Layer 추가/삭제** 클릭]
+     → [기대: '참조 요청서 Merge' 블록이 열리고 '참조 요청서 없음'이 체크돼 있다. 아래에 변경전/변경후 표(빈 행 1개)와 "참조 요청서 없음: 구분은 PP 접두사로…" 안내가 바로 보인다.
+     실패 신호: 'Merge' 버튼을 눌러야 표가 열림 / '있음'이 체크됨.]
+  2. ['참조 요청서 있음' 라디오, 참조 요청서 검색칸('없음' 표시), 'Merge'·'↻ 재선택' 버튼에 각각 마우스 올리기]
+     → [기대: 모두 회색이며 "기능 수정 중" 툴팁이 뜬다. 클릭해도 아무 일이 없다(모달 없음). 실패 신호: 툴팁 없음 / 클릭 시 모드 변경 모달.]
+  3. [STEPSEQ 변경, Overlay만 변경으로 바꿔 1~2 반복] → [기대: 같은 동작.]
+  4. [빈 행 그대로 '다음 →'] → [기대: "변경전/변경후 항목을 1건 이상 입력하세요." 로 막힌다. 행을 '없음' 규칙대로 채우면 STEP2 로 간다.]
+  5. [잠금 전 '참조 요청서 있음'으로 Merge 해 임시저장(또는 반려)된 문서 열기]
+     → [기대: '없음'이 체크돼 있고 Merge 로 만들어졌던 변경전/변경후 행이 그대로 보인다. 구분 칸은 드롭다운 없이 PP 접두사로 판정한 값이다.
+     '다음 →' 시 '없음' 규칙 오류가 있으면 해당 문구로 막힌다. 실패 신호: 행이 사라짐 / "매핑 대기 N건" 오류로 막힘.]
+  6. [상세 목적을 모두 해제 → 다시 Layer 추가/삭제 클릭] → [기대: 빈 행 1개 표가 다시 바로 열린다.]
+  7. [STEP 1 제목 '📋 의뢰 상세' 옆 가이드 투어 배지 → '다음'으로 3/8·4/8 단계] → [기대: 제목 '변경전/변경후 입력' / '변경전/변경후 직접 작성' 과 위 설명 문구.
+     실패 신호: "기존 승인 요청서를 참조해 비교·병합" 문구가 남아 있음.]
+  8. [1 의 변경전/변경후 표 머리글 확인] → [기대: '변경전'/'변경후' 아래에 조리법·SP·SD·PP 4칸씩만 있고 Layer 칸이 없다. 표 위 "변경 없음 0건 · 확정 1건 · 매핑 대기 0건" 줄이 없다.
+     실패 신호: Layer 칸 / "(참조 요청서)" 머리글 / 요약 줄이 보임.]
+  9. [8 의 표 아래 안내] → [기대: "엑셀에서 4열(process_id·SP·SD·PP)을 복사해 붙여넣으면 여러 행이 한 번에 입력됩니다." 까지만 있고 "layer 는 입력 대상이 아닙니다." 가 없다.]
+  10. ['없음'으로 상신한 문서 → 결재 현황(또는 이력 조회)에서 행 클릭 → 상세 '의뢰 상세' 탭의 "변경전 / 변경후 — 확정된 짝"]
+      → [기대: 작성 화면과 같이 '변경전'/'변경후' 아래 조리법·SP·SD·PP 4칸, Layer 칸 없음. 같은 화면 엑셀 내보내기 → 의뢰 상세 시트 머리글이 "PP(변경전)" 형태이고 "Layer(…)" 열이 없다.
+      실패 신호: Layer 칸 / "(참조 요청서)" 머리글.]
+  11. [ADI CD 변경 문서 → 상세 → 엑셀 내보내기 → 의뢰 상세 시트] → [기대: 머리글 "STEP_ID(변경전)"·"STEP_ID(변경후)". 실패 신호: "STEP_ID(변경전 (참조 요청서))".]
+
+### 기능 변경 (2026-10-19 — MAP 정보 잠금 확대: R/고정 후결자 합의 이력이 있으면 MAP 정보 + 요청 목적·라인~조리법 수정 불가)
+
+- **배경(사용자 보고)**: MAP 목적 NEW 로 상신해 3회차에 R 이 합의한 요청서가 이후 반려됐고, 재상신 편집에서 제품 이름을 지웠다
+  다시 입력하자 Step1 라인/제품 변경 시 EXISTING 자동 재매칭(2026-10-05 "Step1 라인/제품이 바뀌면 EXISTING 자동 매칭을 무조건 다시 판별")이
+  StepMap 을 초기화하고 EXISTING 으로 채워, NEW 였던 요청서가 EXISTING 으로 상신됐다.
+  기존 MAP 정보 잠금은 **중단(pause) 상태 + 현재 회차 R 합의**일 때만 걸려 이 경우를 막지 못했다.
+- **의도(사용자)**: R 이 한 번 합의한 MAP 정보는 그대로 남아야 한다. MAP 을 바꾸려면 MAP 삭제 후 다시 올리고,
+  라인·제품이 바뀌면 기존 요청서를 고치지 말고 새 요청서를 작성한다.
+- **동작(사용자 결정)**:
+  - 잠금 조건: 지난 회차 포함 **R(+RV) 전원 합의 회차가 있거나 고정 후결자 합의가 있었던** 문서(`RequestDocument.has_map_info_approval`).
+    이후 R 이 직접 반려해도 잠금은 유지된다.
+  - 적용 상태: `rejected`·`under_review`·`submitted`·`pause`(`doc_permissions.MAP_INFO_LOCK_STATUSES`). `draft`·`approved` 는 대상 아님.
+  - 잠그는 필드: MAP 정보(`MAP_INFO_FIELDS`, 기존과 동일) + **요청 목적·라인·조합법·제품 이름·조리법**(`MAP_LOCK_STEP1_FIELDS`).
+    조합법·조리법도 함께 잠그는 이유: 조합법을 바꾸면 제품 이름이 지워지고(`index.tsx` 조합법 변경 effect), 조리법을 바꾸면
+    기존 제품이 목록에 없을 때 제품 이름이 지워져, 잠긴 제품 이름을 다시 입력할 수 없게 되기 때문이다.
+  - 화면: `Step1` 의 라인 select·조합법/제품 이름/조리법 입력·요청 목적 버튼 disabled + 안내 문구 `request.step1_locked_notice`(ko/en),
+    StepMap 은 기존 read-only + `request.map_info_locked_notice` 그대로. 입력 자체가 막히므로 EXISTING 자동 재매칭 effect 가 돌 일이 없다.
+  - 서버: `RequestDocumentViewSet.update` 가 잠긴 문서에서 위 필드 값이 하나라도 달라지면 400
+    (`MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다.`).
+- **영향 파일**: `backend/api/models.py`, `doc_permissions.py`, `views.py`, `serializers.py`, `tests.py`,
+  `frontend/src/pages/RequestPage/components/Step1.tsx`, `index.tsx`, `mapInfoLockStep1.test.tsx`(신규), `types/index.ts`, `locales/ko.json`·`en.json`.
+  마이그레이션 없음.
+- **검증**:
+  - 백엔드 `manage.py test api` **708건 OK**. 신규 `MapInfoLockAfterApprovalHistoryTest` 9건 — 구현을 `git stash` 로 되돌리면 5건 실패(대조군 4건만 통과).
+  - 프론트 `npm test` **33 suites·486건 통과**(신규 `mapInfoLockStep1.test.tsx` 3건 포함) — Step1/index 변경을 되돌리면 잠금 테스트 1건 실패.
+    `tsc --noEmit` 에러 0.
+  - 원격 세션에서 sqlite + `AUTH_MODE=dev` 로 백엔드·프론트 개발 서버를 띄우고 Playwright 로 수정 전/후 화면을 캡처:
+    수정 전엔 제품 이름을 지웠다 같은 값을 다시 입력하면 MAP 목적이 EXISTING 으로 바뀌었고, 수정 후엔 입력이 잠겨 NEW 가 유지됐다.
+    잠긴 문서를 바꾼 값 없이 임시저장하면 PATCH 200.
+  - 결재 케이스 러너: 로컬 sqlite 환경에 JOB FILE layer 마스터 데이터가 없어 실행 불가(`상신에 쓸 마스터 데이터를 찾지 못했다`) —
+    결재 액션·결재선 생성 로직은 바꾸지 않았다.
+- **⚠️ 알려진 한계(확인됨, 미수정 — 사용자 결정: 운영 DB 영향 0건이라 기록만 남김, 2026-10-19)**:
+  편집 화면이 구버전 문서를 불러올 때 일부 MAP 필드를 백필한다(`index.tsx` 로드 — `map_change_reason` 키 없음/null → `''`,
+  `prodc_scope` 키 없음 → `''`, 값이 비었는데 C가문 리전 값이 있으면 → `top`/`only_top`/`only_bottom` 추정). 잠긴 문서가 이런 형태면
+  사용자가 아무것도 바꾸지 않아도 서버(`changed_map_info_fields`)가 "값이 달라졌다"고 보고 임시저장·재상신이 400 으로 막힌다.
+  - 재현(로컬 sqlite): `map_change_reason` 키 없음 문서, `prodc_scope` 키 없음 + 리전 값 있는 문서 모두 임시저장 PATCH 400
+    (토스트 "오류가 발생했습니다."). 같은 문서가 수정 전 코드에서는 반려 상태라 잠금 대상이 아니었다(수정 전 False / 수정 후 True).
+    `prodc_scope` 는 리전 값이 없어도 **키가 없으면** 막힌다(저장값 없음 ≠ 보낸 값 `''`).
+  - **운영 DB 확인 결과(사용자, 2026-10-19)**: 전체 318건 중 `map_change_reason` 키 없음/null **0건**,
+    `prodc_scope` 키 없음 0건·null 0건(`""` 314건, `"top"` 4건 — `top` 4건은 저장값 그대로 다시 보내므로 문제 없음),
+    빈 `prodc_scope` 이면서 리전 값이 있는 문서 0건, `additional_notes`/`detail` 무결성 문제 0건.
+    → **현재 이 문제로 막히는 문서는 0건**이다.
+  - 앞으로도 새로 생기지 않는다: 현재 화면은 새 의뢰서의 `INITIAL_DETAIL` 에 두 키를 `''` 로 두고 저장 때마다 함께 저장한다.
+    다시 문제가 될 수 있는 경우는 **편집 로드 시 백필하는 새 MAP 필드를 추가할 때**다 — 그때는 잠긴 기존 문서가 같은 이유로 막히므로
+    서버 비교(`changed_map_info_fields`)에서 해당 키를 함께 처리해야 한다.
+  - 영향 문서 조회용 스크립트(조회 전용)는 저장소에 넣지 않았다 — 조건: 상태 rejected/under_review/submitted/pause +
+    R(+RV) 전원 합의 또는 고정 후결자 합의 이력 + 위 백필 대상 키가 없거나 값이 바뀌는 문서.
+- **수동 검증 시나리오**:
+  1. [결재 현황 → R 이 합의한 적이 있고 이후 반려된 의뢰서 → '수정·재상신'] → [기대: 의뢰 상세 상단에 🔒 "RFG(R) 또는 고정 후결자 합의가
+     완료된 요청서는 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다…" 문구, 라인·조합법·제품 이름·조리법 입력과 요청 목적
+     버튼이 회색으로 클릭/입력 불가.] 실패 신호: 제품 이름 칸에 커서가 들어가 지울 수 있음.
+  2. [1번 이어서 '다음'(또는 위저드의 'MAP 정보')] → [기대: 🔒 "RFG(R) 검토가 완료되어 MAP 정보는 더 이상 수정할 수 없습니다." 문구,
+     MAP 목적이 상신 당시 값(예: NEW) 그대로이고 모든 입력이 흐리게 잠김.] 실패 신호: MAP 목적이 EXISTING 으로 바뀌어 있음.
+  3. [1번 문서에서 J-ayer 등 잠기지 않은 항목만 고친 뒤 임시저장/재상신] → [기대: 정상 저장·재상신, 상세보기 MAP 정보 탭의 MAP 목적은 그대로.]
+  4. [R 이 아직 합의한 적이 없는 반려 문서(PL 반려 또는 R 반려만 있는 문서) → 수정·재상신] → [기대: 잠금 문구 없음, 라인~조리법·요청 목적·MAP 정보 모두 수정 가능(기존과 동일).]
+  5. [R 합의 후 중단된 문서 → 재개 전 수정] → [기대: 1·2번과 같은 잠금.]
+  6. [언어 English 로 1번 반복] → [기대: "Request purpose, line, combination method, product name and cooking method can no longer be edited…". 키 문자열이 보이면 실패.]
+
+### 기능 변경 (2026-10-19 — 참조 요청서 필수 규칙을 Merge 사용 목적 전체로 통일)
+
+- **의도(사용자)**: 참조 요청서 블록이 열리는 상세 목적이면 어느 것이든 '참조 요청서 있음'(Merge) 또는 '없음'(직접 입력)
+  중 하나를 반드시 확정해 변경 내용을 남기게 한다. 지금까지는 'Overlay만 변경'만 필수였고 Layer 추가/삭제·STEPSEQ 변경은 선택사항이었다.
+- **규칙(STEP1 '다음' 관문 + 최종 상신 검증, `index.tsx` `addBaGateError`)** — 판정 기준을 `isOverlayPurpose` 에서
+  **`isMergePurposeSelected(detail.other_purpose)`**(Layer 추가/삭제·STEPSEQ 변경·Overlay만 변경, 구 값 'Overlay 변경' 포함)로 바꿨다.
+  - '참조 요청서 있음'(기본 선택 유지 — 사용자 결정)인데 Merge 하지 않았으면 차단 → **`request.ba_gate_merge_required`**(토스트 + 라디오 아래 인라인 `.form-error`).
+  - '있음'·'없음' 모두 변경전/변경후 **유효 행 1건 이상**(사용자 결정: 세 목적 모두) → 기존 `request.ba_gate_manual_empty`.
+    Merge 결과 비교 행이 0건이면 '행 추가'로 직접 채운다.
+  - Merge 를 쓰지 않는 상세 목적(FirstA 변경·공법 추가/변경·B 변경 등)은 지금처럼 참조 요청서와 무관하다.
+- **i18n**: `request.ba_gate_overlay_merge_required`("Overlay만 변경은 …") → 공통 키 **`request.ba_gate_merge_required`** 로 교체(ko/en 동시, 옛 키 삭제 — 다른 사용처 없음).
+- **영향(기존 동작 변화)**: Layer 추가/삭제·STEPSEQ 변경으로 참조 요청서 없이 임시저장했거나 반려된 문서는 상신·재상신 시
+  최종 검증(`validate(lastStep)`)에서도 막힌다 — Merge 하거나 '없음'을 확정해야 한다. 이미 상신된 진행 중 문서의 결재에는 영향 없음.
+  **백엔드 검증은 추가하지 않았다**(기존과 동일 — API 직접 호출은 막지 않음). 결재 경로·백엔드 무변경.
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 32 suites·491 tests 통과. `overlayRefDocRequired.test.tsx` 에 두 목적별 4건씩 8건 +
+  비 Merge 목적 1건 추가(기존 'Layer 추가/삭제는 선택사항' 테스트는 새 규칙과 반대라 교체). 변경 전 `index.tsx` 로는 신규 차단 테스트 4건이 실패함을 확인.
+- **수동 시나리오**:
+  1. [`/request` 의뢰서 작성 → STEP 1] → 라인·조합법·제품 이름·조리법 선택 → 상세 목적 **Layer 추가/삭제** 클릭
+     → [기대: 참조 요청서 Merge 블록이 열리고 '참조 요청서 있음'이 선택돼 있다.]
+  2. [아무것도 하지 않고 '다음 →'] → [기대: STEP1 에 머물고 토스트와 라디오 아래 빨간 문구 "참조 요청서가 필요합니다 — …". 실패 신호: STEP2 로 넘어감.]
+  3. [참조 요청서 검색 → 선택 → Merge → 확인 → 비교 행이 0건이면 '다음 →'] → [기대: "변경전/변경후 항목을 1건 이상 입력하세요." → '행 추가'로 채운 뒤 '다음 →' → STEP2.]
+  4. ['재선택' → '참조 요청서 없음' → 모달 확인 → 행을 채움 → '다음 →'] → [기대: STEP2 로 이동.]
+  5. [상세 목적을 **STEPSEQ 변경**으로 바꿔 2~4 반복] → [기대: 같은 결과.]
+  6. [상세 목적을 **FirstA 변경**만 남기고 '다음 →'] → [기대: 참조 요청서 블록이 없고 막히지 않는다.]
+  7. [이전에 Layer 추가/삭제로 참조 요청서 없이 임시저장한 문서 열기 → STEP5 에서 상신] → [기대: 상신이 막히고 같은 오류. 실패 신호: 그대로 상신됨.]
+  8. [언어 English 로 2 반복] → [기대: "A reference request is required — …". 키 문자열이 보이면 실패.]
+
 ### 기능 추가 (2026-10-16 — 참조 요청서 '없음': 변경전/변경후 표를 J/O 표와 대조 + PP 접두사로 구분 자동 판정)
 
 - **의도(사용자)**: '참조 요청서 없음'으로 직접 입력한 변경전/변경후 값이 실제 J-ayer/O-ayer 표와 맞는지 검증한다.
@@ -355,13 +643,15 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     (사용자 결정: '있음'·'없음' 모두 1건 이상 — 기존에는 '없음'만 검사). Merge 결과 비교 행이 0건이면 '행 추가'로 직접 채운다.
   - 기존 관문(AFTER 미매핑·미입력 칸·양쪽 미등록 행)은 그대로.
   - **Layer 추가/삭제·STEPSEQ 변경은 지금처럼 선택사항**(사용자 결정: 범위는 Overlay만 변경만).
+    → **(2026-10-19) 세 목적 모두 필수로 통일됐다** — 위 2026-10-19 항목 참조. 오류 키도 `request.ba_gate_merge_required` 로 바뀌었다.
 - **'없음' → '있음' 전환(`Step1.tsx` `mergeModeLocked`)**: 기존에는 '없음'으로 확정하면(`merge_applied=true`) 라디오가 잠겨
   '재선택'을 눌러야만 '있음'으로 바꿀 수 있었다. 이제 '없음' 확정 상태에서는 라디오가 열려 있고, '있음'을 누르면 기존
   '참조 요청서 모드 변경' 확인 모달(`request.merge_mode_change_confirm`)이 뜬다 → 확인 시 변경전/변경후 내용을 비우고 '있음'(미Merge)으로,
   취소 시 그대로. 모든 Merge 사용 목적에 공통이다(블록 공용).
   - '있음'으로 **Merge 확정한 뒤**에는 기존대로 라디오가 잠기고 '재선택'으로만 해제한다(요청 범위 밖이라 변경 없음).
-- **알려진 한계(기존 동작, 변경 없음)**: 최종 상신 버튼은 마지막 STEP 만 검증하고 STEP1 관문은 '다음'으로 넘어갈 때 검사한다
-  (기존 참조 요청서 관문과 동일). 이번 변경 전에 Overlay 문서를 STEP5까지 진행해 임시저장한 경우 STEP1 을 다시 지나지 않으면 이 관문에 걸리지 않는다.
+- **검증 시점(2026-10-19 정정)**: 이 관문(`addBaGateError`)은 STEP1 '다음'뿐 아니라 **최종 상신 검증(`validate(5)`)에서도 다시 돈다**
+  (`index.tsx` STEP5 블록 — "초안 복원 등으로 STEP 1 검증을 건너뛴 경우를 대비한 최종 안전망"). 따라서 이번 변경 전에 STEP5까지 진행해
+  임시저장한 Overlay 문서도 상신할 때 막힌다. (처음 작성 때는 "STEP1 을 다시 지나지 않으면 걸리지 않는다"고 적었으나 코드와 달라 정정했다.)
   백엔드에는 참조 요청서 검증이 없다(API 직접 호출은 막지 않음).
 - **i18n**: `request.ba_gate_overlay_merge_required` ko/en 동시 추가.
 - **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 28 suites·431 tests 통과 — 신규 `overlayRefDocRequired.test.tsx` 11건
@@ -5881,6 +6171,36 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   3. [한 행에서 끝을 시작보다 앞 번호의 접미 stepseq 로 선택] → [기대 결과: "Step 끝의 stepseq가 시작보다 앞섭니다…".]
 - ⚠️ **주의**: 이미 저장된 임시저장·반려 문서 중 알파벳 접미 stepseq 행은 지금까지 검증 없이 통과했으므로, 다시 열어 "다음" 을 누르면
   겹침·역순에 걸릴 수 있다(의도된 동작).
+
+### 기능 개선 (2026-10-19 — 흐름도 Step: 숫자 자릿수가 다른 stepseq 는 앞 4자리부터 비교)
+
+- **의도**: 마스터 DB 에 숫자 자릿수가 서로 다른 stepseq(`AAAA1235` 와 `AAAA12345`)가 섞여 있어, Step 목록이 숫자 전체 크기로
+  정렬되면서 공정 순서와 다르게 보였다(`AAAA1235` 가 `AAAA12345` 보다 앞). 목록 정렬과 순서 검증 모두 같은 규칙으로 바꾼다.
+- **규칙(사용자 결정)**: 숫자의 **앞 4자리**를 먼저 비교하고, 같으면 **5번째 자리부터** 이어서 비교한다(없으면 0 으로 본다).
+  - 즉 숫자를 `앞4자리.나머지` 소수로 본다: `AAAA1234` → 1234.0, `AAAA12341` → 1234.1, `AAAA12345` → 1234.5, `AAAA1235` → 1235.0.
+  - 결과 순서: `AAAA1234 < AAAA12341 < AAAA12345 < AAAA1235 < AAAA1240`.
+  - 4자리 미만 숫자는 실제 데이터에 없다(사용자 확인) — 들어오면 있는 그대로(`9` → 9.0) 비교된다.
+  - 접두어별 묶음 정렬(AAAA 전체 → BBBB 전체)은 그대로 둔다(사용자 결정 2026-10-19).
+- **구현**
+  - 백엔드 `views.py`: 흐름도 Step 목록 전용 정렬 키 `_stepseq_sort_key`(숫자 부분 → `Decimal('앞4자리.나머지')`) 추가,
+    `form_options_layer_ids` 정렬에 사용. 상수 `STEPSEQ_LEAD_DIGITS = 4`.
+    `_natural_key` 는 그대로이며 PhotoStep 변경 이력의 추가·삭제 목록 정렬은 바뀌지 않는다.
+  - 프론트 `RequestPage/helpers.ts` `splitStepseq`: `num` 을 같은 규칙의 소수로 계산(반환형 `{prefix, num}` 그대로 — `findFlowStepOrderErrors` 등 호출부 무변경).
+    상수 `STEPSEQ_LEAD_DIGITS`(`constants.ts`). API 응답 형식·저장 형식·i18n 변경 없음.
+- **테스트**: `backend/api/tests.py` `FormOptionsLayerIdsStepseqTest` 1건(`BBBB1234 → 12341 → 12345 → 1235` 순서),
+  `helpers.test.ts` 2건(`splitStepseq` 값, 자릿수가 다른 stepseq 의 역순·겹침 판정). 수정 전 코드에서 새 테스트가 실패하는 것을 확인했다.
+  백엔드 `manage.py test api` 711건, 프론트 33 suites / 496건 통과, `tsc --noEmit` 에러 0.
+  실제 화면(개발 서버 + 임시 sqlite DB)에서 목록 순서(`L01 AAAA1234 → L04 AAAA12341 → L02 AAAA12345 → L03 AAAA1235 → L05 AAAA1240`)와
+  1행 `AAAA1234~AAAA1235` → 2행 시작 `AAAA12345` 겹침 오류를 스크린샷으로 확인했다.
+- **수동 검증 시나리오** (`/request` → 새 의뢰서 → STEP1, 상단 라인·조합법·제품 이름·조리법 선택; 마스터 DB 에 자릿수가 다른 stepseq 가 있는 조합 필요):
+  1. [흐름도 1행 위치·제품 이름·조리법 입력 → Step 시작 칸 클릭] → [기대 결과: `…1234`, `…12341`, `…12345`, `…1235` 순서로 보인다.
+     실패 신호: `…1235` 가 `…12345` 보다 위에 있다.]
+  2. [1행 Step 을 `…1234 ~ …1235` 로 선택 → "+ 행 추가" → 2행 같은 위치·제품·조리법 → 2행 Step 시작을 같은 접두어의 `…12345` 로 선택 후 다른 칸 클릭]
+     → [기대 결과: 2행 Step 시작 칸 빨간 테두리 + "1행 Step 구간(…1234~…1235)과 겹칩니다…" 토스트. "다음" 도 막힌다.] ※ 수정 전에는 통과됐다.
+  3. [한 행 Step 을 `…12345 ~ …1235` 로 선택] → [기대 결과: 오류 없음.] [반대로 `…1235 ~ …12345`] → [기대 결과: "Step 끝의 stepseq가 시작보다 앞섭니다…".]
+- ⚠️ **주의**
+  - 이미 저장된 임시저장·반려 문서도 다시 열어 "다음" 을 누르면 새 규칙으로 검증된다 — 예전 규칙으로 통과하던 행(예: 1행 `…12345~…12399`, 2행 시작 `…1235`)이 겹침으로 막힐 수 있다(의도된 동작).
+  - 뒤에 0 만 더 붙은 값(`…1234` 와 `…12340`)은 같은 번호로 본다 — 1행 끝 `…1234`, 2행 시작 `…12340` 이면 경계 겹침 오류.
 
 ### 기능 추가 (2026-10-19 — 상세 보기 '모든 이력 확인' + 이력 추적이 없던 항목 추적)
 - **배경**: 상세 보기의 '이력 확인'은 결재 진행 중 화면에서 **직전 회차와만** 비교한다. 그래서 값이 되돌아온 변경(A→B→A)과

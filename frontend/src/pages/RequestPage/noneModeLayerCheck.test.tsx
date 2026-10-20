@@ -5,6 +5,7 @@
  * - 행의 구분(J/O)은 PP 접두사로 자동 판정한다(드롭다운 없음). 판정 불가·구분 불일치는 '다음'을 막는다.
  * - 변경전 값은 그 구분의 표에 없어야, 변경후 값은 있어야 한다. 어기면 '다음'을 막는다.
  * - '있음' 모드는 검사하지 않고 구분 드롭다운도 그대로다.
+ *   → (2026-10-19) '있음' 잠금으로 '있음' 문서도 '없음'으로 바뀌어 검사를 받는다.
  */
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
@@ -179,18 +180,31 @@ async function clickNext() {
   await flush(3);
 }
 
+// claude 수정 (2026-10-20): '없음' 변경전/변경후 표가 미확정이면 STEP1 '다음'에서 확정 모달이 뜬다 —
+// 모달 문구를 확인하고 '확정'을 눌러 확정한 뒤 이어서 이동한다.
+async function confirmRefDocModal() {
+  expect(document.body.textContent).toContain(i18n.t('request.ba_confirm_modal_msg'));
+  const btn = Array.from(document.querySelectorAll('.modal-footer button'))
+    .find((b) => b.textContent?.includes(i18n.t('request.ba_confirm'))) as HTMLButtonElement | undefined;
+  if (!btn) throw new Error('참조 요청서 확정 모달의 확정 버튼을 찾지 못했다');
+  await act(async () => { btn.click(); });
+  await flush(3);
+}
+
 describe("참조 요청서 '없음' — 변경전/변경후 ↔ J/O 표 대조", () => {
   beforeEach(() => { localStorage.clear(); });
 
   it('변경전은 표에 없고 변경후는 표에 있으면 넘어간다(J)', async () => {
     await renderStep1(noneDetail(manualPair(side(J_OUT), side(J_IN))));
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 
   it('O 접두사 행은 O 표와 대조한다', async () => {
     await renderStep1(noneDetail(manualPair(side(O_OUT), side(O_IN), 'J')));
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 
@@ -253,14 +267,16 @@ describe("참조 요청서 '없음' — 변경전/변경후 ↔ J/O 표 대조",
     expect(errorToasts()).toContain(i18n.t('request.ba_gate_none_after_missing', { count: 1 }));
   });
 
-  it("'있음' 모드는 J/O 표와 대조하지 않고 구분 드롭다운도 그대로다", async () => {
-    // 같은 값이라도 '있음'(Merge 확정)이면 검사 대상이 아니다.
+  // claude 수정 (2026-10-19): '있음'(Merge) 잠금 — '있음'으로 저장된 문서도 '없음'으로 바뀌어 같은 대조 검사를 받는다
+  // (잠금 전 '있음' 모드는 검사하지 않고 구분 드롭다운을 보여 줬다).
+  it("'있음'으로 저장된 문서도 '없음'으로 바뀌어 J/O 표와 대조하고 구분 드롭다운이 없다", async () => {
     await renderStep1({
       merge_ref_doc_id: 77, merge_ref_doc_label: '참조 요청서 제목', merge_ref_mode: 'ref', merge_applied: true,
       merge_pairs: [manualPair(side('PP01'), side(J_OUT))], merge_unmatched_before: [], merge_unmatched_after: [],
     });
-    expect(divisionCell().querySelector('select')).not.toBeNull();
+    expect(divisionCell().querySelector('select')).toBeNull();
     await clickNext();
-    expect(onStep1()).toBe(false);
+    expect(onStep1()).toBe(true);
+    expect(errorToasts()).toContain(i18n.t('request.ba_gate_none_pp_unknown', { count: 1 }));
   });
 });

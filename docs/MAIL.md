@@ -57,7 +57,7 @@ False)을 신설했다. 켠 TE_P 사용자는 `submit`/`resubmit` 시점에 통�
 ### R/J/O 완료 → P 팀 통보 신설 + 라인 필터 전면 적용 (2026-09)
 1. **R/J/O 완료 통보 신설** — 2구역 R(+RV)과 3구역 J·O 가 현재 회차 기준으로 모두 합의를
    마치면 `notify_rjo_completed`로 **TE_P 팀 전원**에게 참고용 통보 메일을 발송한다(§3 표,
-   §3.5, §4 표). 'Overlay 변경' 단독 목적이라 J 가 없는 문서는 R+O 완료만으로 충족하고,
+   §3.5, §4 표). 'Overlay 변경' 단독 목적 문서는 (2026-10-19) R·J 가 모두 없어 대상이 아니고,
    Only MAP·MAP 삭제·ADI CD 변경처럼 이 R/J/O 조합 자체가 성립하지 않는 문서 유형은 대상이
    아니다. 반려 후 재상신으로 새 회차가 열려도 이전 회차의 J/O 합의 이력이 새 회차 판정에
    섞이지 않는다(회차 스코프 판정).
@@ -90,7 +90,7 @@ P/O/J/E 각각에게 개별 메일을 보내는 것(`_advance_to_parallel`)과 �
 
 | 함수 | 개인 수신자 | 팀별 분리 대상 |
 |---|---|---|
-| `enqueue_notify_p_completed` | 없음 | TE_O, TE_J 각각 별도 메일 |
+| `enqueue_notify_p_completed` | 없음 | TE_O, TE_J 각각 별도 메일 (결재 경로에 J 가 없는 'Overlay만 변경' 단독 문서는 TE_O 만, 2026-10-19) |
 | `enqueue_rejected` | 작성자+기합의자+미합의 RA/SA(반려 단계에 따라 미합의 PL) | `resolve_reject_recipients`가 돌려주는 잔여 결재선 팀별로 각각 별도 메일(§3.1) |
 | `enqueue_withdraw_completed` | 지정 PL+통보처+RA/SA+작성자 | `resolve_withdraw_completed_recipients`가 돌려주는 실제 진행된 팀별로 각각 별도 메일(§3.2) |
 | `enqueue_withdraw_requested`/`enqueue_withdraw_cancelled` | 확인 대상 단계 중 담당자 배정된 개인들 | `resolve_withdraw_target_recipients`가 돌려주는 미배정 팀별로 각각 별도 메일(§3.2) |
@@ -203,8 +203,8 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | approved | (완료) | **현재(최종) 회차 결재 경로에 참여했던 전원**(assignee 배정된 모든 단계, 중복 제거) — 2026-07부터 "작성자 그룹 멤버" 방식에서 변경. ⚠️ **'나만의 그룹'은 더 이상 어떤 메일의 수신자 기준도 아니다**(2026-08 문서 정정 — 코드에는 이미 없었는데 모델 docstring·가이드 문구에만 남아 있었다) |
 | notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`). 통보처는 개별 검색·주소록 불러오기 외에 **'나만의 그룹' 일괄 추가**(2026-08)로도 채울 수 있으나, 저장 포맷이 같아 발송 로직은 동일하다. **+ '상신 받기'를 켠 TE_P 사용자 전원**(2026-08 신설, §3.3) |
 | notify_approved | (완료) | **통보처 전원**(`detail.notifiers`) |
-| notify_p_completed | (P 단계 완료, 2026-08 추가) | **TE_O 팀 전원 + TE_J 팀 전원** — 결재 권한과 무관한 참고 통보. P 담당자+검토자(PV) 전원 합의로 P 단계가 완료되는 시점(`_notify_after_p_review`)에 발송. TE_O·TE_J 는 서로 다른 팀이라 **한 통이 아니라 각각 별도 메일**로, 순서대로(겹치지 않게) 발송한다(2026-09 개편). 수신자 중복은 `_apply_redirect` 가 팀별로 각각 제거한다 |
-| notify_rjo_completed | (R/J/O 완료, 2026-09 신설) | **TE_P 팀 전원** — 결재 권한과 무관한 참고 통보. 2구역 R(+RV, 지정됐으면) 과 3구역 J·O 가 **현재(최신) 회차 기준으로** 모두 합의를 마친 시점(`views.py _is_r_zone_complete` + 기존 `j_approved`/`o_approved` 판정, `agent in ('J','O')` 액션 시점에만 확인)에 발송. 단일 팀 대상이라 팀별 분리 없이 즉시 발송한다(`mailer.enqueue_notify_rjo_completed`). 'Overlay 변경' 단독 목적이라 J 단계가 아예 없는 문서(`skip_j_stage()`)는 R+O 완료만으로 충족한다. Only MAP·MAP 삭제·ADI CD 변경 문서는 이 R/J/O 조합 자체가 성립하지 않는 경로라 대상이 아니다 |
+| notify_p_completed | (P 단계 완료, 2026-08 추가) | **TE_O 팀 전원 + TE_J 팀 전원** — 결재 권한과 무관한 참고 통보. P 담당자+검토자(PV) 전원 합의로 P 단계가 완료되는 시점(`_notify_after_p_review`)에 발송. TE_O·TE_J 는 서로 다른 팀이라 **한 통이 아니라 각각 별도 메일**로, 순서대로(겹치지 않게) 발송한다(2026-09 개편). 수신자 중복은 `_apply_redirect` 가 팀별로 각각 제거한다. **(2026-10-19) 결재 경로에 J 가 없는 문서**('Overlay만 변경' 단독 — `route_agents_for()` 가 `ROUTE_AGENTS_NO_J`)는 TE_J 가 할 일이 없으므로 **TE_O 1통만** 보낸다(반려 수신자 산출과 같은 기준) |
+| notify_rjo_completed | (R/J/O 완료, 2026-09 신설) | **TE_P 팀 전원** — 결재 권한과 무관한 참고 통보. 2구역 R(+RV, 지정됐으면) 과 3구역 J·O 가 **현재(최신) 회차 기준으로** 모두 합의를 마친 시점(`views.py _is_r_zone_complete` + 기존 `j_approved`/`o_approved` 판정, `agent in ('J','O')` 액션 시점에만 확인)에 발송. 단일 팀 대상이라 팀별 분리 없이 즉시 발송한다(`mailer.enqueue_notify_rjo_completed`). 'Overlay 변경' 단독 목적 문서는 (2026-10-19) R·J 가 모두 없어 통보하지 않는다(R step 이 이미 생성된 진행 중 문서만 R+O 완료로 충족). Only MAP·MAP 삭제·ADI CD 변경 문서는 이 R/J/O 조합 자체가 성립하지 않는 경로라 대상이 아니다 |
 
 ### 3.0 라인별 메일 수신 설정 (mail_lines) — 모든 의뢰서 메일에 적용 (2026-08 신설)
 
@@ -267,6 +267,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 ```
 
 - **결재선(라우팅)**: 일반 문서 `R·RV·P·PV·O·E·EV·J·RA` / Only MAP 문서 `R·RV·RA`(P/O/E/J 없음). `E`계열은 `has_ppid_plel()`인 의뢰서에만 포함된다. PL 은 위 표대로 별도 규칙이라 이 라우팅에서 제외한다.
+- **(2026-10-19) R 없이 진행하는 회차는 `R·RV` 를 뺀다**(`mailer.route_agents_for`) — 'Overlay만 변경' 단독 문서(`skip_r_stage()`, 현재 회차에 R step 이 없을 때 — PL 단계 포함)와 반려 후 재상신 R 생략 회차(`is_r_skipped`). 그 회차에 결재선이 없던 **TE_R 팀은 반려 메일을 받지 않는다**(예전엔 R step 이 없어도 "아직 합의 안 한 단계"로 잡혀 TE_R 전원이 받았다). R step 이 이미 생성된 진행 중 회차는 R 을 유지한다. '결재 경로' 카드도 같은 함수를 써 R 행이 나오지 않는다.
 - **검토자(RV/PV/EV)**: 지정됐을 때만 생성되는 선택 단계라, 해당 step 이 실제로 없으면 결재선에 없는 것으로 본다. 이들은 각각 담당자와 같은 팀(`TE_R`/`TE_P`/`TE_E`) 소속이므로 팀 조회 한 번에 함께 잡히고, 기존 dedup 으로 **중복 발송되지 않는다**.
 - **후결자(RA)**: 역할(role)로 판별되지 않으므로 팀 조회 대신 `post_approver_users()`(고정 후결자 + C가문 추가 후결자)로 예정자 전원을 구한다. 결재 단계 생성(`views`)과 같은 함수를 공유한다.
 
@@ -362,7 +363,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | 판정 시점 | `approve-step` 에서 `agent`가 `J` 또는 `O`일 때만 확인한다(`views.py approve_step`, 일반 경로 `else` 분기). R 은 J·O 보다 먼저 병렬 진입의 관문 역할을 하므로(J·O 는 R 합의 시점에 이미 병렬로 생성됨) 이 조합에서 R 이 가장 나중에 끝나는 경우는 없다 |
 | 완료 판정 | R 완료 = R 담당자 합의 + (RV 지정됐으면 RV 도 합의, `views._is_r_zone_complete`). J·O 완료 = 기존 `all_approved` 판정에 이미 쓰이던 `j_approved`/`o_approved`(회차 스코프) 그대로 재사용 |
 | 회차 기준 | **반드시 현재(최신) 회차만** 본다 — `j_approved`/`o_approved`/`_is_r_zone_complete` 모두 `round=current_round` 로 조회한다. 반려로 새 회차가 열리면 이전 회차의 J·O 합의 이력은 새 회차 판정에 전혀 섞이지 않는다(재상신 시 J·O 단계 자체가 새 회차에 다시 생성되므로 구조적으로도 섞일 수 없다) |
-| J 가 없는 문서 | '기타 목적이 Overlay만 변경(구 값 Overlay 변경)뿐'인 문서(`skip_j_stage()`)는 J 단계 자체가 없다 — 이 경우 **R+O 완료만으로 충족**한다(기존 `all_approved`의 `j_approved` 판정과 동일 취급) |
+| J 가 없는 문서 | '기타 목적이 Overlay만 변경(구 값 Overlay 변경)뿐'인 문서(`skip_j_stage()`)는 J 단계 자체가 없다. **(2026-10-19) 이 문서는 2구역 R 도 없어(`skip_r_stage()`) `_is_r_zone_complete` 가 항상 거짓 → 통보를 보내지 않는다**(사용자 결정). R step 이 이미 생성된 진행 중 문서만 예전처럼 R+O 완료로 충족한다 |
 | 대상 외 문서 유형 | Only MAP(P·J·O 없음)·MAP 삭제(R 이 3구역으로 이동, 별도 판정 분기)·ADI CD 변경(R·O 없음)은 이 R/J/O 조합이 성립하지 않는 경로라 통보 자체가 발생하지 않는다(별도 가드 불필요 — 해당 분기에 도달하지 않음) |
 | 수신자 | **TE_P 팀 전원**(`_team_emails('P')`). 단일 팀이라 팀별 분리 없이 즉시 발송(`mailer.enqueue_notify_rjo_completed`) |
 | 라인 필터(§3.0) | 다른 결재 알림과 동일하게 적용됨(`_apply_redirect(recipients, document)`) |
@@ -475,7 +476,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | `delete` (삭제) | ✅ | `document_deleted`: withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients`) 재사용(개인 1통 + 진행된 팀별 각 1통). 삭제 전 적재 + `@transaction.atomic` 추가(2026-09) |
 | `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
 | `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(위와 동일) |
-| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나면 **TE_O·TE_J 에게 notify_p_completed 발송**(2026-09부터 TE_O·TE_J 각각 별도 메일 2통, 순서대로 발송). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨). **(2026-08) 이 시점의 J 생성·J 도착 메일은 R 합의 시점으로 이동**했다 |
+| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나면 **TE_O·TE_J 에게 notify_p_completed 발송**(2026-09부터 TE_O·TE_J 각각 별도 메일 2통, 순서대로 발송. 2026-10-19부터 'Overlay만 변경' 단독 문서는 J 가 없어 TE_O 1통만). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨). **(2026-08) 이 시점의 J 생성·J 도착 메일은 R 합의 시점으로 이동**했다 |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
 | `approve-step` agent=J/O (R+J+O 모두 완료, 2026-09 신설) | 🟡 | 2구역 R(+RV)과 3구역 J·O 가 **현재 회차 기준으로 모두** 합의를 마친 시점에만 `notify_rjo_completed`(TE_P 팀 전원) 발송. J 또는 O 둘 중 나머지가 아직이면 무메일. §3.5 참고 |
