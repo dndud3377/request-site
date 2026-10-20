@@ -121,7 +121,7 @@ import {
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   syncManualPairTable, checkManualPairsAgainstLayers, deriveAutoOtherPurpose, sameOtherPurpose,
-  computeRefDocStTargets, isRefDocStApplied,
+  computeRefDocStTargets, isRefDocStApplied, findRefDocNocConflictPairIds,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
@@ -1884,6 +1884,14 @@ export default function RequestPage(): React.ReactElement {
       ? checkManualPairsAgainstLayers(detail.merge_pairs ?? [], jayerRows, oayerRows)
       : null),
     [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, jayerRows, oayerRows],
+  );
+  // claude 수정 (2026-10-20): 요청 기준 충돌 오류(merge_noc_conflict)가 났을 때 지금도 충돌 중인 변경후 행 — 셀 빨간 표시용.
+  // 오류가 난 뒤에만 표시하고, 충돌을 고치면 바로 사라진다.
+  const baNocConflictPairIds = useMemo(
+    () => new Set(errors.merge_noc_conflict
+      ? findRefDocNocConflictPairIds(detail.merge_pairs ?? [], jayerRows, oayerRows)
+      : []),
+    [errors.merge_noc_conflict, detail.merge_pairs, jayerRows, oayerRows],
   );
   // claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정이 정하는 상세 목적(null 이면 자동 선택 안 함).
   // 구분이 O 뿐이면 'Overlay만 변경' 단독이 되어 backend skip_j_stage 로 J 단계가 빠진다. Step1 은 이 값으로 버튼을 잠근다.
@@ -4221,8 +4229,12 @@ export default function RequestPage(): React.ReactElement {
       return false;
     }
     const targets = computeRefDocStTargets(detail.merge_pairs ?? [], jayerRows, oayerRows);
+    // claude 수정 (2026-10-20): 요청 기준 충돌도 다른 오류처럼 표 아래 문구 + 충돌 행 변경후 칸 빨간 표시 후 그 칸으로 이동한다.
     if (targets.nocConflicts.length > 0) {
-      addToast(t('request.ba_noc_special_conflict'), 'error');
+      const msg = t('request.ba_noc_special_conflict');
+      setErrors((prev) => ({ ...prev, merge_noc_conflict: msg }));
+      addToast(msg, 'error');
+      scrollToFirstError(1);
       return false;
     }
     unmapIfMapped(jayerRows.filter((r) => targets.jayer[r.id] === ST_X && !isRowInactive(r.st)).map((r) => r.id));
@@ -5043,13 +5055,14 @@ export default function RequestPage(): React.ReactElement {
 
   // 이력 바로 등록 — 상신과 동일한 문서 내용 검증을 통과해야 날짜 모달이 열린다.
   // (결재선 관련 입력인 지정 PL·후결자·통보자는 결재를 돌리지 않으므로 요구하지 않는다.)
+  // claude 수정 (2026-10-20): 상신과 같이 마지막 단계(lastStep) 기준으로 검증하고(ADI CD 변경=STEP1, Only MAP·MAP 삭제=STEP2),
+  // 입력칸이 있는 단계로 보낸 뒤 그 칸으로 이동한다.
   const handleDirectHistoryClick = () => {
-    const result = validate(5);
-    // claude 수정 (2026-10-20): 상신과 같이 입력칸이 있는 단계로 보낸 뒤 그 칸으로 이동한다.
+    const result = validate(lastStep);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
       if (result.redirectStep) setStep(result.redirectStep);
-      scrollToFirstError(result.redirectStep ?? 5);
+      scrollToFirstError(result.redirectStep ?? lastStep);
       return;
     }
     setDirectSubmittedAt(todayISO());
@@ -5313,6 +5326,7 @@ export default function RequestPage(): React.ReactElement {
           oayerRows={oayerRows}
           baSameCount={baSameCount}
           baManualCheck={baManualCheck}
+          baNocConflictPairIds={baNocConflictPairIds}
           baSelBefore={baSelBefore}
           baSelAfter={baSelAfter}
           handleBaSelect={handleBaSelect}
