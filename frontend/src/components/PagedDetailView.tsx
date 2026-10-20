@@ -818,8 +818,8 @@ const buildFinalItems: GroupBuilder = (d, t) => [
   { label: t('request.final_gds'), value: fmtFinalEntries(d?.final_entries), kind: 'table', table: buildFinalTable(d?.final_entries) },
 ];
 
-// claude 수정 (2026-10-19): 이력 추적이 없던 표 블록(ADI CD 스텝·적용 대상, 병합 결과)과 MAP 삭제 이유의
-// 이력용 값 생성기. 화면 표와 같은 열 구성으로 만들어, 화면에 보이는 값이 같으면 변경으로 잡지 않는다.
+// claude 수정 (2026-10-20): 이력 추적이 없던 표 블록(ADI CD 스텝·적용 대상, 병합 결과)과 MAP 삭제 이유의
+// 이력용 값 생성기(인자 any → 구체 타입). 화면 표와 같은 열 구성으로 만들어, 화면에 보이는 값이 같으면 변경으로 잡지 않는다.
 const MERGE_HISTORY_FIELDS: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
 const MERGE_FIELD_COUNT = MERGE_HISTORY_FIELDS.length;
 
@@ -828,7 +828,7 @@ const mergeFieldLabel = (f: keyof MergeRowInfo, t: TFunction): string => t((
 ) as never);
 
 /** 병합 결과(변경전/변경후 확정 짝) — MergePairsTable 과 같은 열(구분 · 변경전 5열 · 변경후 5열 · 판정). */
-const buildMergePairsTable = (pairs: any, t: TFunction): DiffTable | null => {
+const buildMergePairsTable = (pairs: MergePair[] | undefined, t: TFunction): DiffTable | null => {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
   const side = (info: MergeRowInfo | null): string[] => (info
     ? MERGE_HISTORY_FIELDS.map((f) => String(info[f] ?? ''))
@@ -840,7 +840,7 @@ const buildMergePairsTable = (pairs: any, t: TFunction): DiffTable | null => {
       ...MERGE_HISTORY_FIELDS.map((f) => t('request.all_history_col_after', { col: mergeFieldLabel(f, t) })),
       t('request.ba_kind'),
     ],
-    rows: (pairs as MergePair[]).map((pair) => [
+    rows: pairs.map((pair) => [
       t(pair.table === 'J' ? 'request.jayer' : 'request.oayer'),
       ...side(pair.before),
       ...side(pair.after),
@@ -853,7 +853,7 @@ const buildMergePairsTable = (pairs: any, t: TFunction): DiffTable | null => {
  * ADI CD 변경 스텝(변경전/변경후) — 같은 인덱스끼리 짝이라 한 행에 전/후를 나란히 둔다.
  * 표시 대상 행은 AdiCdStepsTable 과 같은 기준(양쪽 다 비어 있는 행만 제외)이다.
  */
-const buildAdiCdStepsTable = (d: any, t: TFunction): DiffTable | null => {
+const buildAdiCdStepsTable = (d: Partial<DetailFormState> | undefined, t: TFunction): DiffTable | null => {
   const balanced = balanceAdiCdRows(d?.adi_cd_before ?? [], d?.adi_cd_after ?? []);
   const isUsed = (s: AdiCdStep): boolean => !!s.unregistered || !!s.step_id.trim() || !!s.step_desc.trim();
   const cells = (s: AdiCdStep): string[] => (s.unregistered ? [t('request.adi_cd_unregistered'), ''] : [s.step_id, s.step_desc]);
@@ -877,8 +877,8 @@ const buildAdiCdStepsTable = (d: any, t: TFunction): DiffTable | null => {
  * ADI CD 동일 변경 적용 대상 — AdiCdTargetsCell 과 같은 (조리법, 제품 이름) 목록.
  * 카드는 추가 대상이 있을 때만 보이므로 추가 대상이 없으면 표도 없다(첫 대상=문서 자신의 값은 기본 정보에서 따로 추적).
  */
-const buildAdiCdTargetsTable = (d: any, t: TFunction): DiffTable | null => {
-  if (!Array.isArray(d?.adi_cd_extra_targets) || d.adi_cd_extra_targets.length === 0) return null;
+const buildAdiCdTargetsTable = (d: Partial<DetailFormState> | undefined, t: TFunction): DiffTable | null => {
+  if (!d || !Array.isArray(d.adi_cd_extra_targets) || d.adi_cd_extra_targets.length === 0) return null;
   const targets = buildAdiCdTargets(d);
   if (targets.length === 0) return null;
   return {
@@ -888,7 +888,7 @@ const buildAdiCdTargetsTable = (d: any, t: TFunction): DiffTable | null => {
 };
 
 /** MAP 삭제 이유는 서식 있는 글(HTML)이라 이력에서는 서식을 뺀 글자로 비교·표시한다. */
-const htmlToText = (html: any): string => {
+const htmlToText = (html: string | undefined): string => {
   if (!html) return '';
   const normalized = String(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n');
   return (new DOMParser().parseFromString(normalized, 'text/html').body.textContent ?? '').trim();
@@ -898,7 +898,7 @@ const htmlToText = (html: any): string => {
 const tableSig = (table: DiffTable | null): string => (table ? JSON.stringify(table) : '');
 
 /** '모든 이력 확인'의 Map Option 값 — R 탭 Map Option 블록(mapOptionDefs)과 같은 목록. 켜진 옵션 이름을 나열한다. */
-const MAP_OPTION_HISTORY_KEYS: [string, string][] = [
+const MAP_OPTION_HISTORY_KEYS: [keyof DetailFormState, string][] = [
   ['photo_backside', 'request.map_opt_photo_backside'], ['eds_backside', 'request.map_opt_eds_backside'],
   ['tsv', 'request.map_opt_tsv'], ['rf', 'request.map_opt_rf'], ['fullchip', 'request.map_opt_fullchip'],
   ['split', 'request.map_opt_split'], ['st', 'request.map_opt_st'], ['ecc', 'request.map_opt_ecc'],
@@ -1321,7 +1321,7 @@ function computeTableEverChanged<T extends { id: string }>(
 }
 
 // ===== 모든 이력 확인 (탭 단위 · 전 회차 변경 모음) =====
-// claude 수정 (2026-10-19): 직전 회차만 보던 '이력 확인'과 별개로, 탭 하나의 변경을 인접 회차 구간
+// claude 수정 (2026-10-20): (any → 구체 타입) 직전 회차만 보던 '이력 확인'과 별개로, 탭 하나의 변경을 인접 회차 구간
 // (1차→2차, 2차→3차 …, 직전→현재)마다 모아 보여주는 창. 값이 되돌아온 변경(A→B→A)과 지워진 행도 보인다.
 
 /** 탭 export 옆 '모든 이력 확인' 버튼을 다는 탭 식별자 */
@@ -1338,12 +1338,12 @@ interface RowHistorySpec {
 interface TabHistorySpec {
   title: string;
   /** 탭의 표 밖 항목. 회차마다 항목 수·순서가 같아야 한다(블록 빌더와 같은 전제). */
-  items?: (d: any) => DiffItem[];
+  items?: (d: Partial<DetailFormState>) => DiffItem[];
   rows?: RowHistorySpec;
 }
 
 interface ItemChange { label: string; kind?: DiffItem['kind']; before: DiffItem; after: DiffItem; }
-interface RowChange { kind: RowChangeKind; rowLabel: string; before: Record<string, any> | null; after: Record<string, any> | null; }
+interface RowChange { kind: RowChangeKind; rowLabel: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null; }
 
 const ROW_CHANGE_TONE: Record<RowChangeKind, { text: string; bg: string; labelKey: string }> = {
   added:   { text: '#155724', bg: 'rgba(21,87,36,0.12)', labelKey: 'request.all_history_row_added' },
@@ -1414,7 +1414,7 @@ function TabAllHistoryModal({ spec, rounds, onClose }: {
     return <span style={{ whiteSpace: 'pre-wrap' }}>{item.value || '-'}</span>;
   };
 
-  const cell = (f: DiffField, row: Record<string, any> | null): string => (row ? String(row[f.key] ?? '') : noRowMark(t));
+  const cell = (f: DiffField, row: Record<string, unknown> | null): string => (row ? String(row[f.key] ?? '') : noRowMark(t));
 
   const renderRowChange = (c: RowChange, key: string): React.ReactNode => {
     const tone = ROW_CHANGE_TONE[c.kind];
@@ -1716,10 +1716,10 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   /** 이력 UI 를 띄울 회차가 있는지 — 재상신이 한 번도 없으면 비교 대상 자체가 없다. */
   const hasRounds = history.length > 0;
 
-  // claude 수정 (2026-10-19): 새로 추적하는 항목(Inter·ADI CD·병합 결과 등)은 저장 필드가 아니라 **화면 표시값**으로
+  // claude 수정 (2026-10-20): (any → Partial<DetailFormState>) 새로 추적하는 항목(Inter·ADI CD·병합 결과 등)은 저장 필드가 아니라 **화면 표시값**으로
   // 비교한다 — 화면에 안 보이는 잔여 값 때문에 아무것도 안 고쳤는데 변경으로 잡히는 것을 막는다.
   /** 표시값 기준 회차 간 변경 여부 — 진행 중=직전 회차 대비 / 이력 조회=한 번이라도. */
-  const isValueChanged = (sig: (d: any) => string): boolean => (historyMode
+  const isValueChanged = (sig: (d: Partial<DetailFormState>) => string): boolean => (historyMode
     ? roundSnaps.some((r, i) => i > 0 && sig(r.detail) !== sig(roundSnaps[i - 1].detail))
     : (!!prevSnap && sig(detail) !== sig(prevSnap.detail)));
 
@@ -2192,7 +2192,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
       : <FieldGroupHistoryModal title={title} rows={toDiffRows(prevSnap?.detail, detail, build, t)} onClose={onClose} />;
   };
 
-  // claude 수정 (2026-10-19): 이력 추적이 없던 항목(Inter·MAP 삭제 이유·ADI CD 스텝/적용 대상·병합 결과)에 이력 추가.
+  // claude 수정 (2026-10-20): 이력 추적이 없던 항목(Inter·MAP 삭제 이유·ADI CD 스텝/적용 대상·병합 결과)에 이력 추가(any → 구체 타입).
   const [interHistOpen, setInterHistOpen] = useState(false);
   const [mapReasonHistOpen, setMapReasonHistOpen] = useState(false);
   const [adiTargetsHistOpen, setAdiTargetsHistOpen] = useState(false);
@@ -2202,12 +2202,11 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   /** Inter(3번) — 화면 표시 문구 그대로. YES 가 아니면 빈 값(화면은 회색 '없음'). */
   const buildInterValue = (d: Partial<DetailFormState>): string => {
     if (d.inter !== 'YES') return '';
-    const dd = d as any;
-    const parts = dd.in_apply
+    const parts = d.in_apply
       ? [
           t('approval.inter_applied'),
-          dd.in_apply === 'O' ? t('request.in_apply_o') : t('request.in_apply_x'),
-          dd.inter_select ? t(`request.map_opt_inter_${dd.inter_select}` as never) : null,
+          d.in_apply === 'O' ? t('request.in_apply_o') : t('request.in_apply_x'),
+          d.inter_select ? t(`request.map_opt_inter_${d.inter_select}` as never) : null,
         ]
       : [
           t('approval.inter_applied'),
@@ -2216,10 +2215,10 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
         ];
     return parts.filter(Boolean).join(' / ');
   };
-  const buildMapReasonText = (d: any): string => htmlToText(d?.map_change_reason);
-  const buildAdiTargets = (d: any): DiffTable | null => buildAdiCdTargetsTable(d, t);
-  const buildAdiSteps = (d: any): DiffTable | null => buildAdiCdStepsTable(d, t);
-  const buildMergePairs = (d: any): DiffTable | null => buildMergePairsTable(d?.merge_pairs, t);
+  const buildMapReasonText = (d: Partial<DetailFormState> | undefined): string => htmlToText(d?.map_change_reason);
+  const buildAdiTargets = (d: Partial<DetailFormState> | undefined): DiffTable | null => buildAdiCdTargetsTable(d, t);
+  const buildAdiSteps = (d: Partial<DetailFormState> | undefined): DiffTable | null => buildAdiCdStepsTable(d, t);
+  const buildMergePairs = (d: Partial<DetailFormState> | undefined): DiffTable | null => buildMergePairsTable(d?.merge_pairs, t);
 
   const interChanged = isValueChanged(buildInterValue);
   const adiTargetsChanged = isValueChanged((d) => tableSig(buildAdiTargets(d)));
@@ -2230,7 +2229,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
    * 표 블록(ADI CD 스텝·적용 대상, 병합 결과) 이력 모달 — 흐름도 이력(renderFlowHistory)과 같은 방식으로
    * 표 전체를 구간별로 쌓는다. 진행 중은 변경 전/후, 이력 조회는 회차별.
    */
-  const renderTableBlockHistory = (label: string, build: (d: any) => DiffTable | null, onClose: () => void): React.ReactNode => {
+  const renderTableBlockHistory = (label: string, build: (d: Partial<DetailFormState> | undefined) => DiffTable | null, onClose: () => void): React.ReactNode => {
     if (!hasRounds) return null;
     const sections = historyMode
       ? roundSnaps.map((r) => ({ label: r.label, timestamp: r.timestamp, table: build(r.detail), tone: 'neutral' as const }))
@@ -2269,13 +2268,13 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
     color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1,
   };
 
-  // claude 수정 (2026-10-19): 탭별 '모든 이력 확인' — 탭마다 비교할 항목·표를 정의한다. 값 생성기는 각 탭의
+  // claude 수정 (2026-10-20): (any → 구체 타입) 탭별 '모든 이력 확인' — 탭마다 비교할 항목·표를 정의한다. 값 생성기는 각 탭의
   // '이력 확인'과 같은 함수를 쓴다. 화면 표시 조건(MAP 목적 등)과 무관하게 저장값이 바뀌었으면 모두 보여준다.
   const [allHistTab, setAllHistTab] = useState<AllHistoryTabKey | null>(null);
 
   const textItem = (labelKey: string, value: string): DiffItem => ({ label: t(labelKey as never), value });
   const tableItem = (labelKey: string, table: DiffTable | null): DiffItem => ({ label: t(labelKey as never), value: tableSig(table), kind: 'table', table });
-  const buildMapOptionValue = (d: any): string => MAP_OPTION_HISTORY_KEYS
+  const buildMapOptionValue = (d: Partial<DetailFormState> | undefined): string => MAP_OPTION_HISTORY_KEYS
     .filter(([k]) => d?.[k] === MAP_OPTION_ACTIVE)
     .map(([, labelKey]) => t(labelKey as never))
     .join(', ');
