@@ -13,14 +13,15 @@ import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
 import { MERGE_PP_PREFIXES, ADI_CD_CHANGE_PURPOSE } from './constants';
-import { errorKeyStep, errorRedirectStep } from './helpers';
+import { errorKeyStep, errorRedirectStep, findRefDocNocConflictPairIds } from './helpers';
 
 // jest.mock 팩토리는 호이스팅되어 `mock` 접두사 변수만 참조할 수 있다.
 const mockState: {
   captured: unknown | null;
   doc: unknown;
   optionsFor: (line: string) => string[];
-} = { captured: null, doc: null, optionsFor: () => [] };
+  role: string;
+} = { captured: null, doc: null, optionsFor: () => [], role: 'PL' };
 
 // RichTextEditor 는 tiptap(ESM) 을 끌어와 jest 가 파싱하지 못한다. 값 전달만 되면 충분하므로 대체한다.
 jest.mock('../../components/RichTextEditor', () => ({
@@ -30,7 +31,8 @@ jest.mock('../../components/RichTextEditor', () => ({
 
 jest.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({
-    currentUser: { name: '홍길동', email: 'hong@example.com', department: '개발팀', username: 'hong', role: 'PL' },
+    // '이력 바로 등록' 버튼은 MASTER 에게만 보인다 — 테스트마다 역할을 바꾼다.
+    currentUser: { name: '홍길동', email: 'hong@example.com', department: '개발팀', username: 'hong', role: mockState.role },
   }),
 }));
 
@@ -286,6 +288,7 @@ describe('검증 오류 → 오류 위치로 이동 + 빨간 표시', () => {
     mockState.doc = fixtureDoc;
     mockState.optionsFor = optionsFor;
     mockState.captured = null;
+    mockState.role = 'PL';
     scrolled.length = 0;
     localStorage.clear();
   });
@@ -349,6 +352,46 @@ describe('검증 오류 → 오류 위치로 이동 + 빨간 표시', () => {
     expect(Array.from(box.querySelectorAll('.form-error')).some((e) => e.textContent === msg)).toBe(true);
     expect(scrolled).toContain(box);
   });
+
+  // claude 수정 (2026-10-20): 참조 요청서 '확정'에서 요청 기준 충돌이 나면 충돌 행 변경후 칸을 빨간 표시하고 그 칸으로 이동한다.
+  it("참조 요청서 '확정' 시 요청 기준 충돌이 나면 표 아래 문구 + 충돌 행 변경후 칸 빨간 표시 후 그 칸으로 이동한다", async () => {
+    const J_PP = `${MERGE_PP_PREFIXES.J[0]}_NEW`;
+    const conflictRow = { ...MANUAL_J_FILLED, pp: J_PP, st: 'X', new_or_copy: '기등록', product_name: '', step: '' };
+    const pairs = [{
+      id: 'pair_conflict', table: 'J', beforeId: null, before: null, afterId: null,
+      after: { process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: J_PP, layerid: '' }, kind: 'added',
+    }];
+    mockState.doc = docWith({ other_purpose: ['Layer 추가/삭제'], merge_pairs: pairs }, [LOADED_J, conflictRow]);
+    const { container } = await renderPage();
+    const block = container.querySelector('[data-tour="ref-doc-merge"]')!;
+    expect(block.querySelectorAll('.field-error-target')).toHaveLength(0);
+    await clickNext(container, i18n.t('request.ba_confirm'));
+    const msg = i18n.t('request.ba_noc_special_conflict');
+    expect(toastsOf('error')).toContain(msg);
+    expect(Array.from(block.querySelectorAll('.form-error')).some((e) => e.textContent === msg)).toBe(true);
+    const cells = Array.from(block.querySelectorAll('input.field-error-target')) as HTMLInputElement[];
+    expect(cells.map((c) => c.value)).toEqual([PROCESS_ID, 'SP02', 'SD02', J_PP]);
+    expect(cells.every((c) => c.title === msg)).toBe(true);
+    expect(scrolled.some((el) => el.contains(cells[0]))).toBe(true);
+  });
+
+  // claude 수정 (2026-10-20): '이력 바로 등록'도 상신처럼 마지막 단계 기준으로 검증한다 — ADI CD 변경은 STEP1 이 마지막이라
+  // 쓰지 않는 Backbone 매핑(STEP5) 검사로 막히면 안 된다.
+  it("ADI CD 변경 문서의 '이력 바로 등록'은 STEP5 Backbone 매핑 검사로 막히지 않는다", async () => {
+    mockState.role = 'MASTER';
+    mockState.doc = {
+      ...fixtureDoc,
+      additional_notes: JSON.stringify({
+        ...fixtureNotes,
+        detail: { ...fixtureDetail, request_purpose: ADI_CD_CHANGE_PURPOSE, other_purpose: [] },
+        bbRows: [],
+      }),
+    };
+    const { container } = await renderPage();
+    await clickNext(container, i18n.t('request.direct_history'));
+    expect(toastsOf('error')).toBe('');
+    expect(document.body.textContent).toContain(i18n.t('request.direct_history_submitted_at'));
+  });
 });
 
 describe('errorRedirectStep — 입력칸이 있는 단계로 보내기', () => {
@@ -374,5 +417,19 @@ describe('errorRedirectStep — 입력칸이 있는 단계로 보내기', () => 
     expect(errorRedirectStep(['oayer_noc_required', 'validation_system'], 5)).toBe(3);
     expect(errorRedirectStep(['oayer_stnoc_required'], 5)).toBe(4);
     expect(errorRedirectStep(['bb_entries', 'jayer_noc_required'], 3)).toBeUndefined();
+  });
+});
+
+describe('findRefDocNocConflictPairIds — 요청 기준 충돌 행', () => {
+  const J_PP = `${MERGE_PP_PREFIXES.J[0]}_NEW`;
+  const after = { process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: J_PP, layerid: '' };
+  const pair = { id: 'p1', table: 'J' as const, beforeId: null, before: null, afterId: null, after, kind: 'added' as const };
+  const row = (new_or_copy: string) => ({ id: 'j9', process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: J_PP, st: 'X', new_or_copy });
+
+  it('변경후 값과 같은 J 행의 요청 기준이 기등록/layer삭제/미진행이면 그 행 id 를, 신규면 빈 목록을 돌려준다', () => {
+    expect(findRefDocNocConflictPairIds([pair], [row('기등록')], [])).toEqual(['p1']);
+    expect(findRefDocNocConflictPairIds([pair], [row('미진행')], [])).toEqual(['p1']);
+    expect(findRefDocNocConflictPairIds([pair], [row('신규')], [])).toEqual([]);
+    expect(findRefDocNocConflictPairIds([pair], [], [row('기등록')])).toEqual([]);
   });
 });
