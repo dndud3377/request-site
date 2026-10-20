@@ -180,18 +180,31 @@ async function clickNext() {
   await flush(3);
 }
 
+// claude 수정 (2026-10-20): '없음' 변경전/변경후 표가 미확정이면 STEP1 '다음'에서 확정 모달이 뜬다 —
+// 모달 문구를 확인하고 '확정'을 눌러 확정한 뒤 이어서 이동한다.
+async function confirmRefDocModal() {
+  expect(document.body.textContent).toContain(i18n.t('request.ba_confirm_modal_msg'));
+  const btn = Array.from(document.querySelectorAll('.modal-footer button'))
+    .find((b) => b.textContent?.includes(i18n.t('request.ba_confirm'))) as HTMLButtonElement | undefined;
+  if (!btn) throw new Error('참조 요청서 확정 모달의 확정 버튼을 찾지 못했다');
+  await act(async () => { btn.click(); });
+  await flush(3);
+}
+
 describe("참조 요청서 '없음' — 변경전/변경후 ↔ J/O 표 대조", () => {
   beforeEach(() => { localStorage.clear(); });
 
   it('변경전은 표에 없고 변경후는 표에 있으면 넘어간다(J)', async () => {
     await renderStep1(noneDetail(manualPair(side(J_OUT), side(J_IN))));
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 
   it('O 접두사 행은 O 표와 대조한다', async () => {
     await renderStep1(noneDetail(manualPair(side(O_OUT), side(O_IN), 'J')));
     await clickNext();
+    await confirmRefDocModal();
     expect(onStep1()).toBe(false);
   });
 
