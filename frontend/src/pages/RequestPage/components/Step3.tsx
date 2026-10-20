@@ -3,11 +3,10 @@ import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey, TbvtlvNoteRow } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId, isRowInactive, isNocSpecial } from '../constants';
-import { isValidationKeywordRow } from '../helpers';
+import { isValidationKeywordRow, nocOptionsForSt } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
 const ST_OPTIONS = ['O', 'O (D)', 'X'];
-const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제', '미진행'];
 
 // TBV/TLV 좌표 표 셀 스타일 (작성 화면·상세 화면 공용 톤)
 const tbvThHeadStyle: React.CSSProperties = {
@@ -290,7 +289,8 @@ const Step3: React.FC<Step3Props> = ({
                         <AutocompleteInput
                           value={row.new_or_copy}
                           onChange={(v) => handleOayerChange(row.id, 'new_or_copy', v)}
-                          options={NEW_OR_COPY_OPTIONS}
+                          // claude 수정 (2026-10-20): ST 가 O 계열이면 신규/차용, X 면 기등록/layer삭제/미진행, 미선택이면 전체
+                          options={nocOptionsForSt(row.st)}
                           inputStyle={{
                             backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
                             ...(nocError ? { border: '1px solid var(--danger)' } : {}),
