@@ -1044,6 +1044,7 @@
     "col_submitted": "Submitted",
     "col_approved": "Approval Date",
     "col_rejected": "Rejected Date",
+    "col_sort_hint": "Click to sort (ascending → descending → default)",
     "delete": "Delete",
     "delete_title": "Delete Document",
     "delete_confirm": "Delete the document \"{{title}}\"? This action cannot be undone.",
