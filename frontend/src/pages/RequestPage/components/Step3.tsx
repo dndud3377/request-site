@@ -46,6 +46,8 @@ interface Step3Props {
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
+  /** claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표가 켜져 있어 st 를 표가 정하는가 — st 칸·st 일괄 버튼·필터 적용을 잠근다 */
+  stLocked: boolean;
 }
 
 const Step3: React.FC<Step3Props> = ({
@@ -74,8 +76,12 @@ const Step3: React.FC<Step3Props> = ({
   cellSel,
   GuideTourBadge,
   GuideBadge,
+  stLocked,
 }) => {
   const { t } = useTranslation();
+  // claude 수정 (2026-10-20): 잠긴 버튼·칸은 마우스 이벤트를 받지 않게 해 감싼 요소의 툴팁이 뜨게 한다.
+  const stLockTitle = stLocked ? t('request.st_locked_by_ref_doc') : undefined;
+  const stLockStyle = stLocked ? { pointerEvents: 'none' as const, opacity: 0.4 } : undefined;
   const renderedOayerRows = [...oayerRows].sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder);
   const renderedOayerIds = renderedOayerRows.map(r => r.id);
   const tbvtlvSdOptions = Array.from(
@@ -173,11 +179,11 @@ const Step3: React.FC<Step3Props> = ({
       {oayerInfoTab === 'table' && (
         <>
           <div className="wizard-table-toolbar">
-            <div className="wizard-table-toolbar-group">
+            <div className="wizard-table-toolbar-group" title={stLockTitle} style={stLocked ? { cursor: 'not-allowed' } : undefined}>
               <span className="wizard-table-toolbar-label">{t('request.col_st_o')}:</span>
-              <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
-              <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
-              <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('st')}>{t('request.btn_reset')}</button>
+              <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleOayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
+              <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleOayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
+              <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleOayerResetField('st')}>{t('request.btn_reset')}</button>
             </div>
             <div className="wizard-table-toolbar-group">
               <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
@@ -195,15 +201,18 @@ const Step3: React.FC<Step3Props> = ({
             </div>
             <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
               {oayerFilterSets.map(fs => (
-                <button
-                  key={fs.id}
-                  type="button"
-                  className="th-header-btn"
-                  title={t('request.filter_apply_hint' as never) as string}
-                  onClick={() => handleOayerApplyFilter(fs.id)}
-                >
-                  {fs.label}
-                </button>
+                <span key={fs.id} title={stLockTitle} style={stLocked ? { display: 'inline-flex', cursor: 'not-allowed' } : undefined}>
+                  <button
+                    type="button"
+                    className="th-header-btn"
+                    title={stLocked ? undefined : t('request.filter_apply_hint' as never) as string}
+                    disabled={stLocked}
+                    style={stLockStyle}
+                    onClick={() => handleOayerApplyFilter(fs.id)}
+                  >
+                    {fs.label}
+                  </button>
+                </span>
               ))}
               <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
             </div>
@@ -260,15 +269,16 @@ const Step3: React.FC<Step3Props> = ({
                       <td {...cellProps('sd', greyBg ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                       <td {...cellProps('layerid', greyBg ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                       <td {...cellProps('pp', greyBg ? regBg : undefined)}><input value={row.pp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                      <td {...cellProps('st', greyBg ? regBg : undefined)} className={stError ? 'field-error-target' : undefined}>
+                      <td {...cellProps('st', greyBg ? regBg : undefined)} className={stError ? 'field-error-target' : undefined} title={stLockTitle}>
                         <AutocompleteInput
                           value={row.st}
                           onChange={(v) => handleOayerChange(row.id, 'st', v)}
                           options={ST_OPTIONS}
                           // 기등록/layer삭제/미진행 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
-                          disabled={isNocSpecial(row.new_or_copy)}
+                          disabled={isNocSpecial(row.new_or_copy) || stLocked}
                           inputStyle={{
                             backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
+                            ...(stLocked ? { pointerEvents: 'none' as const } : {}),
                             ...(stError ? { border: '1px solid var(--danger)' } : {}),
                           }}
                           dropdownFontSize="0.7rem"
