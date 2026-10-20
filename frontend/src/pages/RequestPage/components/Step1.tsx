@@ -55,6 +55,8 @@ interface Step1Props {
   baSameCount: number;
   // claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — PP 접두사 구분·J/O 표 대조 결과(그대로 전달만 한다)
   baManualCheck: ManualPairsLayerCheck | null;
+  /** claude 수정 (2026-10-20): 요청 기준 충돌을 일으키는 변경후 행 id(그대로 전달만 한다) */
+  baNocConflictPairIds: Set<string>;
   baSelBefore: string | null;
   baSelAfter: string | null;
   handleBaSelect: (side: BaSide, id: string) => void;
@@ -136,6 +138,7 @@ const Step1: React.FC<Step1Props> = ({
   oayerRows,
   baSameCount,
   baManualCheck,
+  baNocConflictPairIds,
   baSelBefore,
   baSelAfter,
   handleBaSelect,
@@ -453,6 +456,7 @@ const Step1: React.FC<Step1Props> = ({
                     sameCount={baSameCount}
                     manualOnly={isMergeNone}
                     manualCheck={baManualCheck}
+                    nocConflictPairIds={baNocConflictPairIds}
                     selBefore={baSelBefore}
                     selAfter={baSelAfter}
                     onSelect={handleBaSelect}
