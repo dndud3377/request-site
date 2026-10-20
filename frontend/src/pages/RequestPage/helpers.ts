@@ -4,6 +4,7 @@ import {
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
   MERGE_ENABLED_PURPOSES, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, STEPSEQ_LEAD_DIGITS,
+  ERROR_KEY_STEPS, ERROR_KEY_DEFAULT_STEP,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -294,6 +295,33 @@ export const findNocBorrowItemIdViolations = (
   rows
     .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim())
     .map((r) => r.id);
+
+/**
+ * claude 수정 (2026-10-20): O-ayer 표('table' 탭)에 표시되는 오류가 있는가 — ST/요청 기준 미입력·불일치, 차용 필수칸.
+ * validate(4)·validate(5) 가 O-ayer 표에 거는 검사와 같은 판정이어야 한다(어긋나면 오류가 없는 탭으로 전환된다).
+ */
+export const hasOayerTableErrors = (
+  rows: { id: string; st: string; new_or_copy: string; product_name: string; step: string }[]
+): boolean =>
+  findEmptyStNocViolations(rows).length > 0
+  || findStNocMismatchViolations(rows).length > 0
+  || findNocBorrowViolations(rows).length > 0;
+
+/** claude 수정 (2026-10-20): 검증 오류 키의 입력칸이 있는 단계 (ERROR_KEY_STEPS 를 위에서부터 맞춰 본다) */
+export const errorKeyStep = (key: string): number => {
+  const rule = ERROR_KEY_STEPS.find((r) => r.keys.includes(key) || r.prefixes.some((p) => key.startsWith(p)));
+  return rule ? rule.step : ERROR_KEY_DEFAULT_STEP;
+};
+
+/**
+ * claude 수정 (2026-10-20): 검증에 막혔을 때 보낼 단계. 현재 단계에 고칠 오류가 하나라도 있으면 그대로 머문다(undefined).
+ * 없으면 오류가 있는 단계 중 가장 앞 단계 — 입력칸이 화면에 없으면 그 칸으로 이동해 표시할 수 없기 때문이다.
+ */
+export const errorRedirectStep = (errorKeys: string[], currentStep: number): number | undefined => {
+  const steps = errorKeys.map(errorKeyStep);
+  if (steps.length === 0 || steps.includes(currentStep)) return undefined;
+  return Math.min(...steps);
+};
 
 /** item_id 바코드 후보 라벨 끝의 " [날짜]"를 제거한다 (form_options_barcode 가 붙이는 형식과 짝을 맞춤). */
 export const stripDateBracket = (label: string): string => label.replace(/\s*\[[^\]]*\]\s*$/, '');
