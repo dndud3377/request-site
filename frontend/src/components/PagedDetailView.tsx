@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, LayerFilterSet, ColorFilterSet } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, LayerFilterSet, ColorFilterSet } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -822,25 +822,29 @@ const buildFinalItems: GroupBuilder = (d, t) => [
 ];
 
 // claude 수정 (2026-10-20): 이력 추적이 없던 표 블록(ADI CD 스텝·적용 대상, 병합 결과)과 MAP 삭제 이유의
-// 이력용 값 생성기(인자 any → 구체 타입). 화면 표와 같은 열 구성으로 만들어, 화면에 보이는 값이 같으면 변경으로 잡지 않는다.
+// 이력용 값 생성기(인자 any → 구체 타입, '없음' 병합 문서는 화면처럼 Layer 열 제외). 화면 표와 같은 열 구성으로 만들어,
+// 화면에 보이는 값이 같으면 변경으로 잡지 않는다.
 const MERGE_HISTORY_FIELDS: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
-const MERGE_FIELD_COUNT = MERGE_HISTORY_FIELDS.length;
+/** '없음'(참조 요청서 없이 직접 입력) 문서 — MergePairsTable 의 manualOnly 와 같이 layer 열이 없다. */
+const MERGE_HISTORY_FIELDS_MANUAL: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp'];
+const MERGE_REF_MODE_NONE: MergeRefMode = 'none';
 
 const mergeFieldLabel = (f: keyof MergeRowInfo, t: TFunction): string => t((
   f === 'process_id' ? 'request.process_id' : f === 'layerid' ? 'request.col_layer' : `request.col_${f}`
 ) as never);
 
-/** 병합 결과(변경전/변경후 확정 짝) — MergePairsTable 과 같은 열(구분 · 변경전 5열 · 변경후 5열 · 판정). */
-const buildMergePairsTable = (pairs: MergePair[] | undefined, t: TFunction): DiffTable | null => {
+/** 병합 결과(변경전/변경후 확정 짝) — MergePairsTable 과 같은 열(구분 · 변경전 · 변경후 · 판정, '없음' 문서는 layer 제외). */
+const buildMergePairsTable = (pairs: MergePair[] | undefined, manualOnly: boolean, t: TFunction): DiffTable | null => {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
+  const fields = manualOnly ? MERGE_HISTORY_FIELDS_MANUAL : MERGE_HISTORY_FIELDS;
   const side = (info: MergeRowInfo | null): string[] => (info
-    ? MERGE_HISTORY_FIELDS.map((f) => String(info[f] ?? ''))
-    : [t('request.ba_unregistered'), ...Array(MERGE_FIELD_COUNT - 1).fill('')]);
+    ? fields.map((f) => String(info[f] ?? ''))
+    : [t('request.ba_unregistered'), ...Array(fields.length - 1).fill('')]);
   return {
     headers: [
       t('request.ba_table_division'),
-      ...MERGE_HISTORY_FIELDS.map((f) => t('request.all_history_col_before', { col: mergeFieldLabel(f, t) })),
-      ...MERGE_HISTORY_FIELDS.map((f) => t('request.all_history_col_after', { col: mergeFieldLabel(f, t) })),
+      ...fields.map((f) => t('request.all_history_col_before', { col: mergeFieldLabel(f, t) })),
+      ...fields.map((f) => t('request.all_history_col_after', { col: mergeFieldLabel(f, t) })),
       t('request.ba_kind'),
     ],
     rows: pairs.map((pair) => [
@@ -2221,7 +2225,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const buildMapReasonText = (d: Partial<DetailFormState> | undefined): string => htmlToText(d?.map_change_reason);
   const buildAdiTargets = (d: Partial<DetailFormState> | undefined): DiffTable | null => buildAdiCdTargetsTable(d, t);
   const buildAdiSteps = (d: Partial<DetailFormState> | undefined): DiffTable | null => buildAdiCdStepsTable(d, t);
-  const buildMergePairs = (d: Partial<DetailFormState> | undefined): DiffTable | null => buildMergePairsTable(d?.merge_pairs, t);
+  const buildMergePairs = (d: Partial<DetailFormState> | undefined): DiffTable | null => buildMergePairsTable(d?.merge_pairs, d?.merge_ref_mode === MERGE_REF_MODE_NONE, t);
 
   const interChanged = isValueChanged(buildInterValue);
   const adiTargetsChanged = isValueChanged((d) => tableSig(buildAdiTargets(d)));
