@@ -6221,6 +6221,7 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   칸 최소 폭 80px → 150px. 직접 타이핑하면 stepseq 가 비워지므로 표시도 사라지고, 목록 선택·blur 자동 판정으로 다시 채워지면 다시 보인다.
   - 공용 `AutocompleteInput` 에 선택 prop `valueHint` 추가 — 넘긴 경우에만 입력칸을 `position: relative` 래퍼로 감싸 오른쪽에 겹쳐 그린다
     (클릭 통과, 글자 겹침 방지용 오른쪽 여백). 넘기지 않는 다른 사용처는 DOM 구조가 그대로다.
+- ※ **2026-10-21 변경**: 아래 결재 상세 표·이력 확인 창·상세 내보내기의 stepseq 표기는 **되돌렸다**(Layer ID 만). 작성 화면 표시는 유지 — 아래 2026-10-21 항목 참조.
 - **결재 상세 흐름도 표**(`PagedDetailView.tsx` `FlowStepCell`): `L01 AAAA1234 ~ L03 AAAA1238` — 각 Layer 뒤에 stepseq 를 작은 회색 글씨(`.flow-step-seq`)로.
 - **흐름도 이력 확인 창 / 상세 내보내기(엑셀)**: 칸이 글자만 받으므로 `L01 (AAAA1234) ~ L03 (AAAA1238)` 처럼 일반 글씨로 표기
   (`helpers.ts` `formatFlowStepText` 공용).
@@ -6340,6 +6341,30 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   6. [재상신 이력이 없는 문서에서 '모든 이력 확인'] → [기대 결과: "재상신 이력이 없어 비교할 이전 회차가 없습니다." 한 줄.]
   7. [이력 조회 → 같은 문서 상세] → [기대 결과: 같은 버튼·같은 창. 화면 강조는 이력 조회 규칙(한 번이라도 바뀜) 그대로.]
   - 실패 신호: 버튼을 눌렀는데 아무 창도 안 뜸 / 바꾸지 않은 항목이 창에 나옴 / 기존 '이력 확인' 창 내용이 종전과 달라짐.
+
+### 기능 변경 (2026-10-21 — 결재 상세 흐름도: Step 칸에 stepseq 미표시, Layer ID 만)
+
+- **의도(사용자)**: 결재 현황 의뢰 상세 모달의 흐름도 표가 stepseq 때문에 복잡해 보인다 — 결재자에게는 Layer ID 만 보이면 된다.
+- **범위(사용자 결정)**: 결재 상세 흐름도 표 + 흐름도 '이력 확인' 창 + 상세 내보내기(엑셀). 2026-10-16 의 stepseq 표기를 이 세 곳에서 되돌린다.
+  - 표시: `L01 AAAA1234 ~ L03 AAAA1238` / `L01 (AAAA1234) ~ L03 (AAAA1238)` → 모두 `L01 ~ L03`.
+  - **유지**: 작성 화면 STEP1 의 Step 입력칸 stepseq 표시·목록의 stepseq·순서 검증, 저장 형식(`step_from_seq`/`step_to_seq` 계속 저장), 의뢰서 제목(원래 Layer 만).
+  - `PagedDetailView` 는 결재 현황·이력 조회·홈 상세 보기가 함께 쓰므로 세 화면 모두 같이 바뀐다.
+- **구현**: `RequestPage/helpers.ts` `formatFlowStepText` 가 stepseq 를 빼고 `L01 ~ L03` 만 만든다(인자 타입 `Pick<FlowChartRow, 'step_from' | 'step_to'>`).
+  `PagedDetailView.tsx` 의 `FlowStepCell`(회색 `.flow-step-seq`)을 없애고 표 Step 칸도 이 함수로 그린다. 이력 확인 창(`buildFlowTable`)·
+  `utils/detailExport.ts` 는 원래 이 함수를 쓰므로 코드 변경 없이(주석만 갱신) 함께 바뀐다. 백엔드·i18n·저장 형식 변경 없음.
+- **이력 확인 창 영향**: 회차 비교가 표시 글자 기준이므로 ① stepseq 유무만 다른 회차(이 기능 이전 문서)가 '변경됨' 으로 강조되던 것이 사라지고,
+  ② Layer 는 같고 stepseq 만 바뀐 행은 창에서 강조되지 않는다. 카드의 빨간 테두리(`computeDetailDiff`, flow_chart JSON 비교)는 종전대로다.
+- **테스트**: `helpers.test.ts` `formatFlowStepText` 2건 기대값 변경, `components/PagedDetailView.flowStepseq.test.tsx` 2건을 "stepseq 미표시" 로 변경
+  (수정 전 코드에서 4건 실패 → 수정 후 통과 확인). 프론트 43 suites / 592건 통과, `tsc --noEmit` 에러 0.
+  실제 화면(개발 서버 + 임시 sqlite DB)에서 결재 현황 → 의뢰 상세 흐름도 표·이력 확인 창을 수정 전/후 스크린샷으로 비교했고,
+  `export` 로 받은 엑셀 흐름도 Step 열이 `L01 ~ L03` 인 것을 확인했다.
+- **수동 검증 시나리오**:
+  1. [결재 현황 → stepseq 를 골라 작성한 의뢰서의 제목 클릭 → '의뢰 상세' 탭 흐름도 표] → [기대 결과: Step 칸이 `L01 ~ L03` 처럼 Layer ID 만.
+     실패 신호: Layer 뒤에 작은 회색 `AAAA1234` 가 보인다.]
+  2. [흐름도를 바꿔 재상신한 문서에서 흐름도 카드의 '이력 확인'] → [기대 결과: 변경 전/후 표의 Step 칸이 `L01 ~ L03`(괄호 stepseq 없음).]
+  3. [같은 상세 화면 `export`] → [기대 결과: 엑셀 흐름도 표 Step 열이 `L01 ~ L03`.]
+  4. [이력 조회 / 홈에서 같은 문서 상세 보기] → [기대 결과: 1과 같이 Layer ID 만.]
+  5. [`/request` → STEP1 흐름도 Step 칸에서 Layer 선택] → [기대 결과: 입력칸 오른쪽 작은 회색 stepseq 는 **그대로** 보인다(변경 없음).]
 
 ## 5. 검증 방법
 ```bash
