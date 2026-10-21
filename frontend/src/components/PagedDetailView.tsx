@@ -73,20 +73,6 @@ function renderWithHighlightedNumbers(value: string): React.ReactNode {
   }, []);
 }
 
-// claude 수정 (2026-10-16): 흐름도 표 Step 칸 — 각 Layer 뒤에 stepseq 를 작은 회색 글씨로 붙인다(stepseq 가 없는 예전 문서는 Layer 만).
-function FlowStepCell({ row }: { row: FlowChartRow }) {
-  const part = (layer: string, seq: string | undefined) => (
-    <>
-      {layer}
-      {seq && <span className="flow-step-seq" style={{ marginLeft: 4, fontSize: '0.85em', color: 'var(--text-muted)' }}>{seq}</span>}
-    </>
-  );
-  const from = row.step_from ? part(row.step_from, row.step_from_seq) : null;
-  const to = row.step_to ? part(row.step_to, row.step_to_seq) : null;
-  if (from && to) return <>{from}{' ~ '}{to}</>;
-  return from ?? to ?? null;
-}
-
 function FlowChartTable({
   rows,
   currentLine,
@@ -115,7 +101,8 @@ function FlowChartTable({
               <td>{r.location}</td>
               <td>{r.product_name}</td>
               <td>{r.process_id}</td>
-              <td><FlowStepCell row={r} /></td>
+              {/* claude 수정 (2026-10-21): Step 칸에 stepseq 를 표시하지 않고 Layer ID 만 보인다(상세 표가 복잡해 보여서). */}
+              <td>{formatFlowStepText(r)}</td>
             </tr>
           );
         })}
@@ -2140,7 +2127,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
 
   // ===== 흐름도 이력 (블록 단위 — 표 전체를 회차/전후로 대조한다) =====
   const flowChanged = changedFields.has('flow_chart');
-  // claude 수정 (2026-10-16): 이력 확인 창 Step 칸에 stepseq 를 일반 글씨로 함께 표기(formatFlowStepText).
+  // claude 수정 (2026-10-21): 이력 확인 창 Step 칸도 표와 같이 Layer ID 만 표기(formatFlowStepText — stepseq 제외).
   /** 흐름도 한 회차분을 원본 표와 같은 열 구성의 표 데이터로 만든다. */
   const buildFlowTable = (d: any): DiffTable | null => {
     const rows: FlowChartRow[] = d?.flow_chart ?? [];

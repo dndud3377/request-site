@@ -1427,15 +1427,19 @@ describe('흐름도 Step stepseq 검증', () => {
 });
 
 // claude 수정 (2026-10-16): 흐름도 Step 글자 표기(이력 확인 창·상세 내보내기).
+// claude 수정 (2026-10-21): stepseq 를 표기하지 않고 Layer ID 만 — 기대값 변경.
 describe('formatFlowStepText', () => {
-  it('stepseq 가 있으면 괄호로 붙이고, 없으면 layerid 만', () => {
-    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: 'AAAA1238' }))
-      .toBe('L01 (AAAA1234) ~ L03 (AAAA1238)');
+  type StepRow = Pick<FlowChartRow, 'step_from' | 'step_to' | 'step_from_seq' | 'step_to_seq'>;
+  it('stepseq 가 있어도 표기하지 않고 layerid 만', () => {
+    const both: StepRow = { step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: 'AAAA1238' };
+    const fromOnlySeq: StepRow = { step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: '' };
+    expect(formatFlowStepText(both)).toBe('L01 ~ L03');
     expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03' })).toBe('L01 ~ L03');
-    expect(formatFlowStepText({ step_from: 'L01', step_to: 'L03', step_from_seq: 'AAAA1234', step_to_seq: '' })).toBe('L01 (AAAA1234) ~ L03');
+    expect(formatFlowStepText(fromOnlySeq)).toBe('L01 ~ L03');
   });
   it('한쪽만 있으면 그 칸만, 둘 다 없으면 빈 문자열', () => {
-    expect(formatFlowStepText({ step_from: 'L01', step_to: '', step_from_seq: 'AAAA1234' })).toBe('L01 (AAAA1234)');
+    const fromOnly: StepRow = { step_from: 'L01', step_to: '', step_from_seq: 'AAAA1234' };
+    expect(formatFlowStepText(fromOnly)).toBe('L01');
     expect(formatFlowStepText({ step_from: '', step_to: '' })).toBe('');
   });
 });

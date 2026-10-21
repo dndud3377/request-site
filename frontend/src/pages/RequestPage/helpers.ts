@@ -175,13 +175,11 @@ export const findFlowStepOrderErrors = (rows: readonly FlowStepSeqRow[]): FlowSt
   return errors;
 };
 
-// claude 수정 (2026-10-16): 흐름도 Step 을 글자로만 보여주는 곳(결재 상세 이력 확인 창·상세 내보내기)에서 stepseq 를 함께 표기한다.
-/** 'L01 (AAAA1234) ~ L03 (AAAA1238)' — stepseq 가 없는 칸은 layerid 만, 한쪽만 있으면 그 칸만. */
-export const formatFlowStepText = (row: Pick<FlowChartRow, 'step_from' | 'step_to' | 'step_from_seq' | 'step_to_seq'>): string => {
-  const part = (layer: string | undefined, seq: string | undefined): string =>
-    layer ? (seq ? `${layer} (${seq})` : layer) : '';
-  const from = part(row.step_from, row.step_from_seq);
-  const to = part(row.step_to, row.step_to_seq);
+// claude 수정 (2026-10-21): 결재 상세 흐름도 표·이력 확인 창·상세 내보내기에서 stepseq 를 빼고 Layer ID 만 표기한다(상세 표가 복잡해 보여서).
+/** 'L01 ~ L03' — stepseq 는 표기하지 않는다. 한쪽만 있으면 그 칸만, 둘 다 없으면 빈 문자열. */
+export const formatFlowStepText = (row: Pick<FlowChartRow, 'step_from' | 'step_to'>): string => {
+  const from = row.step_from || '';
+  const to = row.step_to || '';
   return from && to ? `${from} ~ ${to}` : (from || to);
 };
 
