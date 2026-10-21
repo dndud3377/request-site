@@ -955,7 +955,8 @@ function JayerTable({
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
-  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.jayerRows, diffId) : null;
+  // claude 수정 (2026-10-21): 회차별 모달도 강조와 같은 내용 매칭 키로 짝짓는다.
+  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.jayerRows, diffId, LAYER_ROW_MATCH_KEYS) : null;
   const fields = toDiffFields(JAYER_DIFF_FIELDS, t);
   // 이전 회차가 있으면 버튼 열을 연다(짝 없는 신규 행도 '(없음)' 으로 열어 보여주므로).
   const hasPrev = rounds.length > 1;
@@ -1023,7 +1024,8 @@ function OayerTable({
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
-  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.oayerRows, diffId) : null;
+  // claude 수정 (2026-10-21): 회차별 모달도 강조와 같은 내용 매칭 키로 짝짓는다.
+  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.oayerRows, diffId, LAYER_ROW_MATCH_KEYS) : null;
   const fields = toDiffFields(OAYER_DIFF_FIELDS, t);
   // 이전 회차가 있으면 버튼 열을 연다(짝 없는 신규 행도 '(없음)' 으로 열어 보여주므로).
   const hasPrev = rounds.length > 1;
@@ -1208,11 +1210,17 @@ function rowContentSig(row: any, fields: DiffFieldDef[]): string {
   return JSON.stringify(fields.map((f) => String(row?.[f.key] ?? '')));
 }
 
+/** claude 수정 (2026-10-21): 행의 내용 매칭 키 하나 — 이 필드들의 값이 모두 같으면 같은 행으로 본다. */
+type RowMatchKey = readonly string[];
+
+/** J-ayer·O-ayer 표 내용 매칭 순서 — process_id+PP 로 먼저, 짝이 없으면 process_id+Layer 로 짝짓는다. */
+const LAYER_ROW_MATCH_KEYS: readonly RowMatchKey[] = [['process_id', 'pp'], ['process_id', 'layerid']];
+
 /**
  * 현재 행 ↔ 이전 회차 행 짝짓기. 세 단계를 순서대로 시도한다.
  *
  *  1. **id** — 손대지 않은 행. 겹치는 id 가 하나도 없으면(표가 통째로 재생성된 경우)
- *     위치(index)로 폴백한다.
+ *     `contentKeys` 가 있으면 내용으로(`matchPrevRowsByContent`), 없으면 위치(index)로 폴백한다.
  *  2. **sourceJayerRowId** — bb 행 전용. J-ayer 행을 고치면 그 행에 매핑된 bb 행이
  *     삭제되고(`unmapJayerRows`), 다시 지정하면 **새 id 로 만들어져 배열 끝에 붙는다**
  *     (`handleApplyMappings` → `makeBbRow`). id 로는 짝을 못 찾지만 어느 J-ayer 행에서
@@ -1221,13 +1229,16 @@ function rowContentSig(row: any, fields: DiffFieldDef[]): string {
  *     (`entryId` 는 키로 쓰지 않는다 — 지정이 바뀌면 그 값 자체가 바뀌므로 짝이 깨진다.)
  *  3. 그래도 없으면 **이번 회차에 새로 생긴 행**이다(J-ayer 신규 행에서 온 bb, 수기 추가 행 등).
  */
-function matchPrevRows<T extends { id: string }>(cur: T[], prev: T[]): Map<string, T> {
+// claude 수정 (2026-10-21): J/O 표를 다시 조회해 id 가 전부 바뀌었을 때 위치로 짝지으면 중간에 끼어든 행 아래가
+// 한 칸씩 밀려 전부 '변경'으로 잡혔다 → contentKeys 를 받으면 위치 대신 내용으로 짝짓는다(뼈찜은 넘기지 않아 위치 유지).
+function matchPrevRows<T extends { id: string }>(cur: T[], prev: T[], contentKeys?: readonly RowMatchKey[]): Map<string, T> {
   const matched = new Map<string, T>();
   if (!prev || prev.length === 0) return matched;
 
   const prevById = new Map(prev.map((r) => [r.id, r]));
   const anyIdMatch = (cur ?? []).some((r) => prevById.has(r.id));
 
+  if (!anyIdMatch && contentKeys) return matchPrevRowsByContent(cur ?? [], prev, contentKeys);
   if (!anyIdMatch) {
     for (let i = 0; i < (cur ?? []).length; i++) {
       if (prev[i]) matched.set(cur[i].id, prev[i]);
@@ -1261,13 +1272,46 @@ function matchPrevRows<T extends { id: string }>(cur: T[], prev: T[]): Map<strin
   return matched;
 }
 
+/**
+ * claude 수정 (2026-10-21): 겹치는 id 가 하나도 없을 때(표 재조회) 위치 대신 쓰는 내용 짝짓기.
+ * `contentKeys` 를 앞에서부터 차례로 시도하고, 각 단계는 앞 단계에서 짝이 안 된 행끼리만 본다.
+ * 값은 앞뒤 공백을 무시하고, 키 값 중 하나라도 비면 그 단계에서는 짝짓지 않는다(빈 PP 끼리 묶이지 않게).
+ * 같은 키가 여럿이면 등장 순서대로 하나씩 짝짓는다. 끝까지 짝이 없으면 신규(현재 행) / 삭제(이전 행)다.
+ */
+function matchPrevRowsByContent<T extends { id: string }>(cur: T[], prev: T[], contentKeys: readonly RowMatchKey[]): Map<string, T> {
+  const matched = new Map<string, T>();
+  const usedPrev = new Set<T>();
+  const keyOf = (r: object, fields: RowMatchKey): string | null => {
+    const values = fields.map((f) => String((r as Record<string, unknown>)[f] ?? '').trim());
+    return values.some((v) => !v) ? null : JSON.stringify(values);
+  };
+  for (const fields of contentKeys) {
+    const leftoverByKey = new Map<string, T[]>();
+    for (const p of prev) {
+      const key = usedPrev.has(p) ? null : keyOf(p, fields);
+      if (key === null) continue;
+      const bucket = leftoverByKey.get(key);
+      if (bucket) bucket.push(p);
+      else leftoverByKey.set(key, [p]);
+    }
+    for (const row of cur) {
+      if (matched.has(row.id)) continue;
+      const key = keyOf(row, fields);
+      const p = key === null ? undefined : leftoverByKey.get(key)?.shift();
+      if (p) { matched.set(row.id, p); usedPrev.add(p); }
+    }
+  }
+  return matched;
+}
+
 function computeTableDiff<T extends { id: string }>(
   cur: T[],
   prev: T[],
-  fields: DiffFieldDef[]
+  fields: DiffFieldDef[],
+  contentKeys?: readonly RowMatchKey[]
 ): { changedIds: Set<string>; prevRowMap: Map<string, T> } {
   const changedIds = new Set<string>();
-  const prevRowMap = matchPrevRows(cur, prev);
+  const prevRowMap = matchPrevRows(cur, prev, contentKeys);
 
   if (!prev || prev.length === 0) {
     return { changedIds, prevRowMap };
@@ -1296,27 +1340,29 @@ function computeEverChangedFields(rounds: RoundSnapshot[]): Set<string> {
 
 /**
  * 현재 행 기준 회차별 값 타임라인 — 그 회차에 대응 행이 없으면 null 이다.
- * 짝짓기는 `matchPrevRows` 와 같은 규칙(id → sourceJayerRowId → 없음)이라
+ * 짝짓기는 `matchPrevRows` 와 같은 규칙(id → sourceJayerRowId → 없음, id 가 하나도 안 겹치면 내용/위치)이라
  * 강조 판정과 모달 내용이 어긋나지 않는다.
  */
+// claude 수정 (2026-10-21): J/O 표 내용 매칭 키(contentKeys)를 matchPrevRows 로 넘긴다.
 function buildRowTimeline<T extends { id: string }>(
-  cur: T[], rounds: RoundSnapshot[], pick: (r: RoundSnapshot) => T[], rowId: string,
+  cur: T[], rounds: RoundSnapshot[], pick: (r: RoundSnapshot) => T[], rowId: string, contentKeys?: readonly RowMatchKey[],
 ): { label: string; timestamp: string | null; row: T | null }[] {
   return rounds.map((r) => ({
     label: r.label,
     timestamp: r.timestamp,
-    row: matchPrevRows(cur, pick(r)).get(rowId) ?? null,
+    row: matchPrevRows(cur, pick(r), contentKeys).get(rowId) ?? null,
   }));
 }
 
 /** 이력 조회용 — 전 회차 중 한 번이라도 내용이 바뀐(또는 생겼다 사라진) 행 id 를 모은다. */
+// claude 수정 (2026-10-21): J/O 표 내용 매칭 키(contentKeys)를 buildRowTimeline 으로 넘긴다.
 function computeTableEverChanged<T extends { id: string }>(
-  cur: T[], rounds: RoundSnapshot[], pick: (r: RoundSnapshot) => T[], fields: DiffFieldDef[],
+  cur: T[], rounds: RoundSnapshot[], pick: (r: RoundSnapshot) => T[], fields: DiffFieldDef[], contentKeys?: readonly RowMatchKey[],
 ): Set<string> {
   const changedIds = new Set<string>();
   if (rounds.length < 2) return changedIds;
   for (const row of cur ?? []) {
-    const timeline = buildRowTimeline(cur, rounds, pick, row.id);
+    const timeline = buildRowTimeline(cur, rounds, pick, row.id, contentKeys);
     for (let i = 1; i < timeline.length; i++) {
       const a = timeline[i - 1].row;
       const b = timeline[i].row;
@@ -1340,6 +1386,8 @@ type RowChangeKind = 'added' | 'changed' | 'removed';
 interface RowHistorySpec {
   pick: (r: RoundSnapshot) => Array<{ id: string }>;
   defs: DiffFieldDef[];
+  /** claude 수정 (2026-10-21): 겹치는 id 가 없을 때의 내용 매칭 키 — J/O 만 넘긴다(뼈찜은 위치 폴백 유지). */
+  matchKeys?: readonly RowMatchKey[];
 }
 
 interface TabHistorySpec {
@@ -1374,8 +1422,11 @@ function computeItemChanges(prevItems: DiffItem[], curItems: DiffItem[]): ItemCh
  * 한 구간의 행 변경 — 신규(짝 없음) · 변경(표시 컬럼 값이 다름) · 삭제(이전 회차 행이 현재 회차의 어느 행과도 짝이 안 됨).
  * 행 번호는 신규·변경은 그 회차 표의 위치, 삭제는 이전 회차 표의 위치다.
  */
-function computeRowChanges(prev: Array<{ id: string }>, cur: Array<{ id: string }>, defs: DiffFieldDef[], t: TFunction): RowChange[] {
-  const matched = matchPrevRows(cur, prev);
+// claude 수정 (2026-10-21): J/O 표 내용 매칭 키(contentKeys)를 matchPrevRows 로 넘긴다.
+function computeRowChanges(
+  prev: Array<{ id: string }>, cur: Array<{ id: string }>, defs: DiffFieldDef[], t: TFunction, contentKeys?: readonly RowMatchKey[],
+): RowChange[] {
+  const matched = matchPrevRows(cur, prev, contentKeys);
   const usedPrev = new Set(Array.from(matched.values()));
   const changes: RowChange[] = [];
   cur.forEach((row, i) => {
@@ -1468,7 +1519,7 @@ function TabAllHistoryModal({ spec, rounds, onClose }: {
   const sections = rounds.slice(1).map((cur, idx) => {
     const prev = rounds[idx];
     const itemChanges = spec.items ? computeItemChanges(spec.items(prev.detail), spec.items(cur.detail)) : [];
-    const rowChanges = spec.rows ? computeRowChanges(spec.rows.pick(prev), spec.rows.pick(cur), spec.rows.defs, t) : [];
+    const rowChanges = spec.rows ? computeRowChanges(spec.rows.pick(prev), spec.rows.pick(cur), spec.rows.defs, t, spec.rows.matchKeys) : [];
     return { prev, cur, itemChanges, rowChanges };
   });
 
@@ -1736,20 +1787,20 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
     : (prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>());
 
   const { changedIds: prevChangedJayerIds, prevRowMap: prevJayerMap } = prevSnap
-    ? computeTableDiff(jayer, prevSnap.jayerRows ?? [], JAYER_DIFF_FIELDS)
+    ? computeTableDiff(jayer, prevSnap.jayerRows ?? [], JAYER_DIFF_FIELDS, LAYER_ROW_MATCH_KEYS)
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, JayerRow>() };
   const { changedIds: prevChangedOayerIds, prevRowMap: prevOayerMap } = prevSnap
-    ? computeTableDiff(oayer, prevSnap.oayerRows ?? [], OAYER_DIFF_FIELDS)
+    ? computeTableDiff(oayer, prevSnap.oayerRows ?? [], OAYER_DIFF_FIELDS, LAYER_ROW_MATCH_KEYS)
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, OayerRow>() };
   const { changedIds: prevChangedBbIds, prevRowMap: prevBbMap } = prevSnap
     ? computeTableDiff(bb, prevSnap.bbRows ?? [], BB_DIFF_FIELDS)
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, BbTableRow>() };
 
   const changedJayerIds = historyMode
-    ? computeTableEverChanged(jayer, roundSnaps, (r) => r.jayerRows, JAYER_DIFF_FIELDS)
+    ? computeTableEverChanged(jayer, roundSnaps, (r) => r.jayerRows, JAYER_DIFF_FIELDS, LAYER_ROW_MATCH_KEYS)
     : prevChangedJayerIds;
   const changedOayerIds = historyMode
-    ? computeTableEverChanged(oayer, roundSnaps, (r) => r.oayerRows, OAYER_DIFF_FIELDS)
+    ? computeTableEverChanged(oayer, roundSnaps, (r) => r.oayerRows, OAYER_DIFF_FIELDS, LAYER_ROW_MATCH_KEYS)
     : prevChangedOayerIds;
   const changedBbIds = historyMode
     ? computeTableEverChanged(bb, roundSnaps, (r) => r.bbRows, BB_DIFF_FIELDS)
@@ -2323,10 +2374,11 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
         textItem('request.map_option_title', buildMapOptionValue(d)),
       ],
     },
-    jayer: { title: t('request.job_li'), rows: { pick: (r) => r.jayerRows, defs: JAYER_DIFF_FIELDS } },
+    // claude 수정 (2026-10-21): J/O 는 표 재조회(id 전부 바뀜) 시 내용으로 짝짓는다 — 뼈찜은 위치 폴백 유지.
+    jayer: { title: t('request.job_li'), rows: { pick: (r) => r.jayerRows, defs: JAYER_DIFF_FIELDS, matchKeys: LAYER_ROW_MATCH_KEYS } },
     oayer: {
       title: t('request.ovl_li'),
-      rows: { pick: (r) => r.oayerRows, defs: OAYER_DIFF_FIELDS },
+      rows: { pick: (r) => r.oayerRows, defs: OAYER_DIFF_FIELDS, matchKeys: LAYER_ROW_MATCH_KEYS },
       items: (d) => [
         textItem('request.partial_shot', fmtDiffVal(d?.partial_shot)),
         textItem('request.tbvtlv_thickness', fmtDiffVal(d?.tbvtlv_thickness)),
