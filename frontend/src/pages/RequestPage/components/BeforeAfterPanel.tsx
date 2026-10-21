@@ -317,6 +317,13 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
       <div className="ba-pane">
         <div className="ba-result-scroll">
           <table className="ba-table ba-result-table">
+            {/* claude 수정 (2026-10-21): 컬럼 폭 고정 — 구분·종류·버튼은 고정 폭, 데이터 칸은 남은 폭을 똑같이 나눈다 */}
+            <colgroup>
+              <col className="ba-col-division" />
+              {Array.from({ length: sideColSpan * 2 }, (_, i) => <col key={i} />)}
+              <col className="ba-col-kind" />
+              <col className="ba-col-actions" />
+            </colgroup>
             <thead>
               <tr>
                 <th rowSpan={2}>{t('request.ba_table_division')}</th>
