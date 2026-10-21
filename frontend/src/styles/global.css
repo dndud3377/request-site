@@ -5208,6 +5208,13 @@ select.form-control option {
   color: var(--text-secondary);
 }
 .ba-result-table th { position: static; }
+/* claude 수정 (2026-10-21): 변경전/변경후 표 컬럼 폭 고정 — 값 입력·배지 표시로 폭이 다시 계산돼 표가 들썩이지 않게 한다(긴 값은 칸 안에서 줄바꿈) */
+.ba-result-table { table-layout: fixed; min-width: 1000px; }
+.ba-result-table td { white-space: normal; word-break: break-all; }
+.ba-result-table .ba-cell-input { min-width: 0; }
+.ba-col-division { width: 90px; }
+.ba-col-kind { width: 110px; }
+.ba-col-actions { width: 60px; }
 .ba-pick { cursor: pointer; }
 .ba-pick:hover { background: var(--bg-card-hover); }
 /* 선택 표시는 bb 매핑(.bb-jayer-selected)과 동일하게 행 단위 테두리로 준다.
