@@ -374,7 +374,7 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
     blocks.push({ kind: 'kv', label: t('request.change_purpose_note'), value: detail.change_purpose_note });
   }
 
-  // claude 수정 (2026-10-16): 흐름도 Step 에 stepseq 를 함께 표기 — 'L01 (AAAA1234) ~ L03 (AAAA1238)'.
+  // claude 수정 (2026-10-21): 흐름도 Step 은 결재 상세 표와 같이 Layer ID 만 표기 — 'L01 ~ L03'(stepseq 제외).
   if ((detail.flow_chart?.length ?? 0) > 0) {
     const rows = (detail.flow_chart ?? []).map((r) => [
       r.location, r.product_name, r.process_id,
