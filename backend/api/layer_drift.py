@@ -71,6 +71,19 @@ ZONE3_AGENTS = ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
 # 요청 기준(new_or_copy)이 이 값인 J/O-layer 행은 변경 감지 비교에서 뺀다(배지·자동 반려 모두 없음).
 DRIFT_EXCLUDED_NEW_OR_COPY = ('layer삭제', '미진행')
 
+# claude 수정 (2026-10-22): stepseq 끝 문구로 변경 감지에서 빼는 예외 추가 — 값 변경·행 삭제·신규 추가 모두 무시
+# stepseq(sp)가 이 문구로 끝나면(대소문자 무관) J-layer/O-layer/XXXXXX 모두 변경 감지 비교에서 뺀다
+# (배지·자동 반려 모두 없음). 상신 후 마스터 DB 에 새로 생긴 행도 감지하지 않는다.
+DRIFT_IGNORED_STEPSEQ_SUFFIXES = ('XYZ',)
+
+
+def _is_ignored_stepseq(stepseq):
+    """stepseq 가 DRIFT_IGNORED_STEPSEQ_SUFFIXES 중 하나로 끝나는가(대소문자 무관)."""
+    value = str(stepseq or '').strip().upper()
+    return bool(value) and any(
+        suffix and value.endswith(suffix.upper()) for suffix in DRIFT_IGNORED_STEPSEQ_SUFFIXES
+    )
+
 LAYER_KEYS = ('jayer', 'oayer', 'extra')
 LAYER_LABELS = {'jayer': 'J-layer', 'oayer': 'O-layer', 'extra': 'XXXXXX'}
 # 반려 사유(단계 의견)에 나열하는 변경 건수 상한 — 초과분은 '외 N건' 으로 줄인다.
@@ -139,6 +152,7 @@ def _live_entry(live):
             'areaname': live.get('areaname', ''), 'layerid': live['layerid']}
 
 
+# claude 수정 (2026-10-22): DRIFT_IGNORED_STEPSEQ_SUFFIXES 로 끝나는 stepseq 를 저장값·마스터 값 양쪽에서 제외
 def _diff_rows(saved_rows, live_rows):
     """저장된 행 전체(자동채움 + 수동입력)와 현재 마스터 DB 행을 stepseq(sp) 기준으로 비교해
     `docs/CHANGE_STATUS.md`(변경 현황) 화면과 같은 {removed, added} 모양으로 반환한다.
@@ -149,16 +163,19 @@ def _diff_rows(saved_rows, live_rows):
 
     요청 기준(new_or_copy)이 DRIFT_EXCLUDED_NEW_OR_COPY(layer삭제·미진행)인 저장 행의 stepseq 는
     저장값·마스터 값 양쪽에서 빼고 비교한다 — 저장 행만 빼면 마스터에 남은 같은 stepseq 가
-    '신규 추가'로 잡히기 때문이다.
+    '신규 추가'로 잡히기 때문이다. DRIFT_IGNORED_STEPSEQ_SUFFIXES 로 끝나는 stepseq 도 같은
+    이유로 양쪽에서 뺀다.
     """
     excluded_seqs = {
         row.get('sp') for row in saved_rows
         if row.get('sp') and row.get('new_or_copy') in DRIFT_EXCLUDED_NEW_OR_COPY
     }
     saved_by_seq = {row.get('sp'): row for row in saved_rows
-                    if row.get('sp') and row.get('sp') not in excluded_seqs}
+                    if row.get('sp') and row.get('sp') not in excluded_seqs
+                    and not _is_ignored_stepseq(row.get('sp'))}
     live_by_seq = {row['stepseq']: row for row in live_rows
-                   if row.get('stepseq') and row['stepseq'] not in excluded_seqs}
+                   if row.get('stepseq') and row['stepseq'] not in excluded_seqs
+                   and not _is_ignored_stepseq(row['stepseq'])}
 
     removed = []
     added = []
@@ -181,15 +198,19 @@ def _diff_rows(saved_rows, live_rows):
     return {'removed': removed, 'added': added}
 
 
+# claude 수정 (2026-10-22): DRIFT_IGNORED_STEPSEQ_SUFFIXES 로 끝나는 stepseq 를 스냅샷·마스터 값 양쪽에서 제외
 def _diff_snapshot_rows(saved_rows, live_rows):
     """상신 시점 스냅샷(saved_rows)과 현재 마스터 DB 값(live_rows)을 stepseq 기준으로 비교한다.
 
     XXXXXX(CD) 전용 — Jayer/Oayer의 `_diff_rows()`와 달리 saved_rows도 이미 `_row_dict()`와 같은
     포맷(stepseq/descript/recipeid/areaname/layerid)이라 `_saved_entry()` 같은 포맷 변환이 필요
     없다. 비교 값은 Jayer/Oayer와 동일하게 descript/recipeid/layerid 세 컬럼만 쓴다.
+    DRIFT_IGNORED_STEPSEQ_SUFFIXES 로 끝나는 stepseq 는 `_diff_rows()` 와 같이 양쪽에서 뺀다.
     """
-    saved_by_seq = {row['stepseq']: row for row in saved_rows if row.get('stepseq')}
-    live_by_seq = {row['stepseq']: row for row in live_rows if row.get('stepseq')}
+    saved_by_seq = {row['stepseq']: row for row in saved_rows
+                    if row.get('stepseq') and not _is_ignored_stepseq(row['stepseq'])}
+    live_by_seq = {row['stepseq']: row for row in live_rows
+                   if row.get('stepseq') and not _is_ignored_stepseq(row['stepseq'])}
 
     removed = []
     added = []
