@@ -288,6 +288,60 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-10-22 — STEP2 MAP 정보: MAP 목적을 먼저 골라야 나머지 항목을 입력할 수 있다)
+
+- **배경(재현 확인)**: MAP 목적(`map_type`)을 고르기 전에도 아래 항목이 전부 열려 있었다. 그 상태에서 지도 편차·예외 구역·X표시·Map Option 을
+  입력한 뒤 CLONE/EXISTING 을 **처음** 고르면(`handleMapTypeSelect` 첫 선택 경로는 초기화하지 않는다) 값이 잠긴 채 그대로 저장됐다.
+  재현 결과: `{"map_type":"CLONE","map_change":"변경 있음","map_value_x":"12",…,"ea_change":"변경 있음","ea_value":"777","mshot_change":"삭제","tsv":"적용"}`.
+  상세 보기(`PagedDetailView` R 탭)는 CLONE/EXISTING 의 지도 편차·예외 구역을 저장값과 무관하게 "없음"으로 보여주는데, 백엔드
+  `requires_sales_agreer()` 는 저장값(예외 구역 777)으로 영업 합의자를 필수로 만든다 — 화면과 결재 판정이 어긋났다.
+- **변경(사용자 결정 — Step1 게이트와 같은 방식)**: `StepMap.tsx` 에서 MAP 목적 아래 영역 전체를 `<fieldset disabled={!detail.map_type}>` 로 묶고,
+  미선택이면 MAP 목적 버튼 아래에 안내 문구(`request.step2_map_type_gate_hint`)를 띄운다.
+  - fieldset 은 `display: contents` + 테두리·여백 0(`GATE_FIELDSET_STYLE`)이라 `form-grid` 배치·모양은 그대로다.
+  - 항목마다 `disabled` 조건을 붙이지 않고 영역 단위로 잠그므로, **이 영역에 새 입력칸을 추가해도 따로 처리 없이 함께 잠긴다.**
+    브라우저가 안쪽 input/select/button 을 모두 비활성화하므로 키보드(Tab) 입력도 막힌다(`pointer-events` 방식과 다름).
+  - MAP 목적 버튼 자체는 영역 밖이라 계속 고를 수 있다. MAP 삭제 모드는 이 영역을 원래 렌더하지 않으므로 영향이 없다.
+- **자동 선택 경로와의 연동** — 판정은 값(`detail.map_type`)만 본다. 별도 플래그가 없으므로 값이 채워지는 즉시 풀린다.
+
+  | 경로 | 동작 | 게이트 |
+  |---|---|---|
+  | 자동 MAP 매칭 → EXISTING (`index.tsx` 라인/제품 effect) | `map_type=EXISTING` + 원본 채움 | 즉시 해제. `existingAutoLocked` 는 MAP 목적 버튼·원본 2칸만 잠그므로 Final·C가문·PY·CC 는 입력 가능 |
+  | └ 응답 전에 STEP2 진입 | `map_type` 빈 값 | 잠김 → 응답 오면 해제. 그 전에 사용자가 고르면 그 값 유지(`if (prev.map_type) return prev`) |
+  | └ 조회 실패 / 미등록 제품 | `map_type` 빈 값 | 잠김. MAP 목적 버튼은 열려 있어(`existingAutoLocked` 거짓) 고르면 해제 — 막히는 상태 없음 |
+  | └ 자동 EXISTING 뒤 Step1 을 미등록 제품으로 변경 | MAP 정보 전체 초기화(`mapInfoDefaults`) | 다시 잠김(값도 초기화돼 잔존 없음) |
+  | 요청 목적 MAP 삭제 / 해제 | `map_type='삭제'` 고정 / 빈 값 | 영역 미렌더 / 다시 잠김 |
+  | 요청 목적 ADI CD 변경 | StepMap 미렌더 | 무관 |
+  | 저장 문서 다시 열기 | 저장된 `map_type` | 값 있으면 열림 |
+  | 가이드 투어(`makeTourDetail`) | `map_type='NEW'` 로 시작 | 열림 |
+
+- **변경 없음(사용자 결정)**: MAP 목적이 비어 있는데 아래 값이 이미 들어 있는 **기존 임시저장**은 그대로 둔다(다시 열면 잠긴 채 보이고,
+  MAP 목적을 고르면 그 값이 남는다 — 첫 선택 초기화는 이번 범위가 아니다). 상세 보기 R 탭 표시 개선(접기·"원본 따름")은 이 작업 후 다시 검토한다.
+- **i18n**: `request.step2_map_type_gate_hint` (ko/en 동시 추가).
+- **검증**: `tsc --noEmit` 에러 0 / 프론트 `npm test` 44 suites · 599 tests 통과 — `mapTypeGate.test.tsx` 7건 추가
+  (미선택 잠금·안내 문구 / 잠긴 상태의 Map Option·Final 클릭 미반영 / NEW·CLONE·EXISTING 직접 선택 해제 / 자동 매칭 EXISTING 에서
+  C가문 Yes·PY·CC·Final 입력 후 저장 / 자동 매칭 조회 실패 시 버튼 선택으로 해제). 게이트를 뺀 코드로 돌리면 게이트 관련 3건이 실패함을 확인.
+  개발 서버(Chromium)에서 MAP 영역 입력칸 잠김 수: 미선택 21/21 · NEW 1/21(예외 구역 값 칸은 '변경 없음'이면 원래 잠김) ·
+  CLONE 18/23 · 자동 EXISTING 35/40(열린 5칸 = C가문·PY·CC·Final YES/NO).
+- **잠긴 입력칸 모양 (후속, 사용자 결정 — 앱 전체 적용)**: 그동안 `.form-control:disabled` 전용 스타일이 없어 잠긴 드롭다운·입력칸이
+  열린 칸과 똑같이 하얗게 보였다(버튼만 회색). `global.css` 에 `.form-control:disabled { background-color: var(--bg-secondary);
+  cursor: not-allowed; opacity: 0.6 }` 를 추가해 `AutocompleteInput` 잠금 모양과 통일했다. select 화살표(`background-image`)가 지워지지
+  않도록 `background` 단축 속성이 아니라 `background-color` 만 바꾼다.
+  - 영향 범위: `.form-control` 을 `disabled` 로 쓰는 모든 화면(의뢰서 작성 Step1·StepMap·C가문 행, 결재 현황·권한 관리·VOC·가이드·홈의
+    모달/필터 등). 동작은 그대로이고 모양만 바뀐다. 의뢰서 작성 Step1 첫 화면(라인 선택 전)에서는 아직 입력할 수 없는 14칸이 회색으로 보인다.
+  - `mapInfoLocked`(R 합의 후 중단 문서)처럼 영역 전체에 이미 흐림(opacity 0.6)이 걸린 곳의 잠긴 칸은 두 번 흐려져 더 옅게 보인다
+    (`AutocompleteInput` 잠긴 칸도 원래 같은 동작).
+- **수동 검증 시나리오** (`http://localhost:10011`):
+  1. [의뢰서 작성 → Step1 에서 MAP 이 **등록되지 않은** 라인·제품 선택 → '다음'] → [기대: MAP 목적 아래에 "MAP 목적을 먼저 선택하면
+     나머지 항목을 입력할 수 있습니다." 문구. Final YES/NO·Map Option 버튼이 회색이고, 드롭다운을 눌러도 열리지 않는다.
+     실패 신호: 지도 편차 드롭다운이 열리거나 Map Option 이 눌린다.]
+  2. [1번 화면에서 NEW 클릭] → [기대: 문구가 사라지고 모든 항목을 입력할 수 있다.]
+  3. [1번 화면에서 CLONE 클릭] → [기대: 문구가 사라지고 원본 위치·원본 제품·Final·Only C가문 제품을 입력할 수 있다.
+     지도 편차·예외 구역·X표시·3번·Map Option 은 기존처럼 잠겨 있다.]
+  4. [의뢰서 작성 → Step1 에서 MAP 이 **등록된** 라인·제품 선택 → '다음'] → [기대: EXISTING 이 자동 선택되고 문구가 없다. MAP 목적 버튼·
+     원본 2칸은 잠기고, Final YES 클릭·GDS 추가, Only C가문 제품 Yes → PY 적용 여부·CC 적용 여부 선택이 된다.
+     실패 신호: EXISTING 이 선택됐는데 Final·C가문이 잠겨 있다.]
+  5. [요청 목적 'MAP 삭제' 선택 → '다음'] → [기대: 기존과 같이 '삭제'가 선택된 채 MAP 삭제 이유 입력칸만 보인다(문구 없음).]
+
 ### UI 변경 (2026-10-21 — 참조 요청서 변경전/변경후 표 컬럼 폭 고정)
 
 - **배경(사용자)**: 변경전/변경후 표에 값을 입력하거나 '미등록' 칸을 펼치거나 종류·구분 배지가 생기면 컬럼 폭이 다시 계산돼 표가 들썩였다.

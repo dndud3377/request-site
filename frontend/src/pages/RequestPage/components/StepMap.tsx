@@ -14,6 +14,9 @@ import MshotImageUpload from './MshotImageUpload';
 
 const SELECT_W = '300px';
 
+// claude 수정 (2026-10-22): MAP 목적 게이트용 fieldset — 잠금(disabled)만 하위로 전달하고 form-grid 배치·모양은 바꾸지 않는다
+const GATE_FIELDSET_STYLE: React.CSSProperties = { display: 'contents', border: 0, margin: 0, padding: 0, minWidth: 0 };
+
 /** 이유 입력칸 고정 높이 — 내용이 길어지면 이 안에서만 스크롤한다 */
 const REASON_EDITOR_HEIGHT = 640;
 
@@ -197,6 +200,12 @@ const StepMap: React.FC<StepMapProps> = ({
             })}
           </div>
           {errors.map_type && <span className="form-error">{errors.map_type}</span>}
+          {/* claude 수정 (2026-10-22): MAP 목적 미선택 시 아래 항목이 잠긴 이유를 Step1 게이트와 같은 모양으로 안내 */}
+          {!detail.map_type && (
+            <span style={{ display: 'block', marginTop: 6, fontSize: '12px', color: 'var(--text-muted)' }}>
+              {t('request.step2_map_type_gate_hint')}
+            </span>
+          )}
         </div>
 
         {/* 삭제 이유 — MAP 삭제 전용. 이 모드에서는 아래 MAP 블록을 전부 숨기고 이 칸만 남긴다. */}
@@ -223,7 +232,10 @@ const StepMap: React.FC<StepMapProps> = ({
         {/* ▼▼ 아래는 모두 MAP 삭제('삭제')에서 렌더하지 않는다 —
                이유 입력칸 하나만 남기는 것이 이 모드의 요구사항이다.
                validate(2) 도 같은 조건으로 이 항목들의 검증을 건너뛴다(짝을 맞춰야 함). ▼▼ */}
-        {!isMapReasonMode && (<>
+        {/* claude 수정 (2026-10-22): MAP 목적(map_type)을 고르기 전에는 아래 항목을 전부 잠근다 — 잠기기 전에 넣은 값이
+            CLONE/EXISTING 으로 바뀐 뒤 잠긴 채 저장되던 경로를 막는다. 판정은 값(map_type)만 보므로 자동 매칭 EXISTING 도
+            값이 채워지는 즉시 풀린다. fieldset 으로 묶어 이 영역에 새 항목이 추가돼도 따로 처리 없이 함께 잠긴다. */}
+        {!isMapReasonMode && (<fieldset disabled={!detail.map_type} style={GATE_FIELDSET_STYLE}>
         {/* 원본 위치/Part ID (CLONE·EXISTING 공용) — isMapRegistered 로 잠그지 않는다.
             단 자동 MAP 매칭으로 정해진 EXISTING(existingAutoLocked)은 수정할 수 없다. */}
         {isMapRegisteredType(detail.map_type) && (
@@ -757,7 +769,7 @@ const StepMap: React.FC<StepMapProps> = ({
             </div>
           );
         })()}
-        </>)}
+        </fieldset>)}
 
       </div>
     </div>
