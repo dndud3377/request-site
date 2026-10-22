@@ -528,6 +528,14 @@ img {
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
 }
 
+/* claude 수정 (2026-10-22): 잠긴 입력칸·드롭다운이 열린 칸과 똑같이 보이던 문제 — AutocompleteInput 잠금 모양과 통일.
+   select 의 화살표(background-image)를 지우지 않도록 background 단축 속성 대신 background-color 만 바꾼다. */
+.form-control:disabled {
+  background-color: var(--bg-secondary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 textarea.form-control {
   resize: vertical;
   min-height: 100px;
