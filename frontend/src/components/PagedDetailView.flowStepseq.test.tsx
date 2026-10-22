@@ -1,6 +1,6 @@
 /**
- * claude 수정 (2026-10-16): 결재 상세 — 흐름도 표 Step 칸에 stepseq 를 작은 회색 글씨로, 이력 확인 창에는 일반 글씨로 함께 보여준다.
- * stepseq 가 없는 예전 문서 행은 Layer ID 만 보인다.
+ * claude 수정 (2026-10-21): 결재 상세 — 흐름도 표·이력 확인 창의 Step 칸에 stepseq 를 표시하지 않고 Layer ID 만 보인다
+ * (2026-10-16 의 stepseq 표기를 되돌림). stepseq 가 저장된 행과 없는 예전 행이 똑같이 Layer ID 만 보여야 한다.
  */
 import React, { useState } from 'react';
 import { render, fireEvent } from '@testing-library/react';
@@ -44,24 +44,23 @@ const flowTableRows = (container: HTMLElement): HTMLTableRowElement[] => {
   return Array.from(flowTable.querySelectorAll('tbody tr'));
 };
 
-describe('결재 상세 흐름도 — Step stepseq 표시', () => {
-  it('stepseq 가 있으면 Layer 뒤에 작은 회색 글씨로, 없으면 Layer 만 보인다', () => {
+describe('결재 상세 흐름도 — Step 에 stepseq 미표시', () => {
+  it('stepseq 가 저장된 행도 없는 행도 Layer 만 보인다', () => {
     const { container } = render(<Harness doc={makeDoc([newRow, oldRow])} />);
     const [r1, r2] = flowTableRows(container);
     const stepCell1 = r1.querySelectorAll('td')[3];
-    expect(Array.from(stepCell1.querySelectorAll('.flow-step-seq')).map((s) => s.textContent)).toEqual(['AAAA1234', 'AAAA1238']);
-    expect(stepCell1.textContent).toBe('L01AAAA1234 ~ L03AAAA1238');
+    expect(stepCell1.textContent).toBe('L01 ~ L03');
     const stepCell2 = r2.querySelectorAll('td')[3];
-    expect(stepCell2.querySelectorAll('.flow-step-seq').length).toBe(0);
     expect(stepCell2.textContent).toBe('L09 ~ L10');
   });
 
-  it('이력 확인 창의 Step 칸은 "L01 (AAAA1234) ~ L03 (AAAA1238)" 처럼 일반 글씨로 보인다', () => {
+  it('이력 확인 창의 Step 칸도 stepseq 없이 "L01 ~ L03" 으로 보인다', () => {
     const prev = { detail: { ...baseDetail, flow_chart: [oldRow] }, jayerRows: [], oayerRows: [], bbRows: [], timestamp: '2026-10-15T00:00:00Z' };
     const { getAllByText } = render(<Harness doc={makeDoc([newRow], [prev])} />);
     fireEvent.click(getAllByText(i18n.t('request.history_check_btn'))[0]);
     const cells = Array.from(document.querySelectorAll('td')).map((td) => td.textContent ?? '');
-    expect(cells).toContain('L01 (AAAA1234) ~ L03 (AAAA1238)');
+    expect(cells).toContain('L01 ~ L03');
     expect(cells).toContain('L09 ~ L10');
+    expect(cells.some((c) => c.includes('AAAA1234'))).toBe(false);
   });
 });

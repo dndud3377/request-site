@@ -116,12 +116,12 @@ import {
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
-  requiresBbEntries, findBbEntryViolations, findStNocMismatchViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
+  requiresBbEntries, findBbEntryViolations, findStNocMismatchViolations, hasOayerTableErrors, errorRedirectStep, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   syncManualPairTable, checkManualPairsAgainstLayers, deriveAutoOtherPurpose, sameOtherPurpose,
-  computeRefDocStTargets, isRefDocStApplied,
+  computeRefDocStTargets, isRefDocStApplied, findRefDocNocConflictPairIds,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra, layerRowHasInput,
@@ -1884,6 +1884,14 @@ export default function RequestPage(): React.ReactElement {
       ? checkManualPairsAgainstLayers(detail.merge_pairs ?? [], jayerRows, oayerRows)
       : null),
     [detail.merge_ref_mode, detail.merge_applied, detail.merge_pairs, jayerRows, oayerRows],
+  );
+  // claude 수정 (2026-10-20): 요청 기준 충돌 오류(merge_noc_conflict — 상신 안전망)가 났을 때 지금도 충돌 중인 변경후 행 — 셀 빨간 표시용.
+  // 오류가 난 뒤에만 표시하고, 충돌을 고치면 바로 사라진다. ('확정'은 충돌 행의 요청 기준을 비우고 진행하므로 이 오류를 내지 않는다.)
+  const baNocConflictPairIds = useMemo(
+    () => new Set(errors.merge_noc_conflict
+      ? findRefDocNocConflictPairIds(detail.merge_pairs ?? [], jayerRows, oayerRows)
+      : []),
+    [errors.merge_noc_conflict, detail.merge_pairs, jayerRows, oayerRows],
   );
   // claude 수정 (2026-10-19): 참조 요청서 '없음' 표의 구분·판정이 정하는 상세 목적(null 이면 자동 선택 안 함).
   // 구분이 O 뿐이면 'Overlay만 변경' 단독이 되어 backend skip_j_stage 로 J 단계가 빠진다. Step1 은 이 값으로 버튼을 잠근다.
@@ -4308,7 +4316,7 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
-  // redirectStep: 오류를 고칠 수 있는 단계가 currentStep 이 아닐 때만 채워진다(현재는 Backbone 조합 영역 → STEP1).
+  // redirectStep: 오류를 고칠 수 있는 단계가 currentStep 이 아닐 때만 채워진다(오류 키 → 단계는 constants.ts ERROR_KEY_STEPS).
   const validate = (currentStep: number): { valid: boolean; errors: string[]; redirectStep?: number } => {
     const newErrors: Partial<Record<string, string>> = {};
     const errorMessages: string[] = [];
@@ -4691,18 +4699,13 @@ export default function RequestPage(): React.ReactElement {
     }
 
     setErrors(newErrors);
-    // Backbone 조합 영역은 STEP1 에만 입력칸이 있다. 다른 단계에서 이 오류 하나로만 막혔다면
-    // 사용자가 고칠 수 있는 곳이 STEP1 뿐이므로 그리로 돌려보낸다(다른 오류가 섞여 있으면
-    // 그 오류는 현재 단계에서 고쳐야 하므로 이동하지 않는다).
-    const bbOnly = newErrors['bb_entries'] !== undefined && Object.keys(newErrors).length === 1;
-    // claude 수정 (2026-10-20): 참조 요청서 미확정도 STEP1 에서만 고칠 수 있다 — 미확정 오류가 있고 나머지도
-    // STEP1 항목(Backbone 조합 영역·참조 요청서 표)뿐이면 STEP1 로 돌려보낸다.
-    const refDocUnconfirmed = newErrors['merge_confirm'] !== undefined
-      && Object.keys(newErrors).every((key) => key === 'bb_entries' || key.startsWith('merge_'));
+    // claude 수정 (2026-10-20): 현재 단계에 고칠 오류가 하나도 없으면(입력칸이 다른 단계에만 있으면) 오류가 있는
+    // 가장 앞 단계로 돌려보낸다 — 그래야 그 칸으로 이동해 빨간 표시를 보여줄 수 있다. 기존의 Backbone 조합 영역·
+    // 참조 요청서 미확정 → STEP1 이동도 이 규칙에 포함된다. 현재 단계 오류가 섞여 있으면 이동하지 않는다.
     return {
       valid: Object.keys(newErrors).length === 0,
       errors: errorMessages,
-      redirectStep: (bbOnly || refDocUnconfirmed) && currentStep !== 1 ? 1 : undefined,
+      redirectStep: errorRedirectStep(Object.keys(newErrors), currentStep),
     };
   };
 
@@ -4838,15 +4841,17 @@ export default function RequestPage(): React.ReactElement {
   // atStep: 오류가 발생한 단계. 탭 클릭으로 여러 단계를 건너뛸 때는 setStep 직후 호출되는데
   // 그 시점의 `step` state 는 아직 갱신 전이라 신뢰할 수 없어, 대상 단계를 인자로 받는다.
   // (기본값이 `step` 이므로 인자 없이 부르는 기존 호출부는 동작이 완전히 동일하다.)
+  // claude 수정 (2026-10-20): O-ayer 표 오류가 있으면 'table' 탭으로 되돌린다(정보 탭을 보던 중이면 표가 화면에 없어
+  // 맨 위로만 올라갔다). 강조 상자는 가장 가까운 [data-error-box] 또는 .form-group 이다.
   const scrollToFirstError = (atStep: number = step) => {
-    // O-ayer 표(oayer_noc_*)는 'table' 탭, Partial Shot 은 'info' 탭 — 에러가 있는 탭으로만 전환한다.
+    // O-ayer 표(ST/요청 기준·차용 필수칸)는 'table' 탭, Partial Shot 은 'info' 탭 — 표 오류가 있으면 표 탭이 우선이다.
     // (validate()가 방금 setErrors 했더라도 이 시점의 `errors` state는 아직 갱신 전이라 신뢰할 수 없어,
     //  동일한 소스 값으로 직접 재계산한다.)
     if (atStep === 4) {
-      const oViolations = findNocBorrowViolations(oayerRows);
       // validate(4) 의 우회 조건과 반드시 같은 판정이어야 한다 — 어긋나면 없는 오류로 탭이 전환된다.
       const partialShotMissing = !isMapOnlyScope && !detail.partial_shot?.trim();
-      if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
+      if (hasOayerTableErrors(oayerRows)) setOayerInfoTab('table');
+      else if (partialShotMissing) setOayerInfoTab('info');
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
     setTimeout(() => {
@@ -4857,7 +4862,7 @@ export default function RequestPage(): React.ReactElement {
         return;
       }
       const isTableCellTarget = errorEl.classList.contains('field-error-target');
-      const container = (errorEl.closest('.form-group') ?? errorEl.parentElement ?? errorEl) as HTMLElement;
+      const container = (errorEl.closest('[data-error-box], .form-group') ?? errorEl.parentElement ?? errorEl) as HTMLElement;
       container.scrollIntoView({ behavior: 'smooth', block: 'center' });
       if (!isTableCellTarget) {
         container.classList.add('field-error-flash');
@@ -4887,7 +4892,7 @@ export default function RequestPage(): React.ReactElement {
       const result = validate(s);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
-        // Backbone 조합 영역만 막았다면 입력칸이 있는 STEP1 로 되돌려 보낸다(확인 모달 없이 즉시).
+        // 현재 단계에 고칠 오류가 없으면 입력칸이 있는 단계로 되돌려 보낸다(확인 모달 없이 즉시).
         const errorStep = result.redirectStep ?? s;
         if (errorStep !== step) setStep(errorStep);
         scrollToFirstError(errorStep);
@@ -5000,7 +5005,7 @@ export default function RequestPage(): React.ReactElement {
     const result = validate(lastStep);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
-      // 상신에서도 Backbone 조합 영역만 막았다면 고칠 수 있는 STEP1 로 이동시킨다.
+      // 상신에서도 마지막 단계에 고칠 오류가 없으면 입력칸이 있는 단계로 이동시킨다.
       if (result.redirectStep) setStep(result.redirectStep);
       scrollToFirstError(result.redirectStep ?? 5);
       return;
@@ -5053,11 +5058,14 @@ export default function RequestPage(): React.ReactElement {
 
   // 이력 바로 등록 — 상신과 동일한 문서 내용 검증을 통과해야 날짜 모달이 열린다.
   // (결재선 관련 입력인 지정 PL·후결자·통보자는 결재를 돌리지 않으므로 요구하지 않는다.)
+  // claude 수정 (2026-10-20): 상신과 같이 마지막 단계(lastStep) 기준으로 검증하고(ADI CD 변경=STEP1, Only MAP·MAP 삭제=STEP2),
+  // 입력칸이 있는 단계로 보낸 뒤 그 칸으로 이동한다.
   const handleDirectHistoryClick = () => {
-    const result = validate(5);
+    const result = validate(lastStep);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
-      scrollToFirstError();
+      if (result.redirectStep) setStep(result.redirectStep);
+      scrollToFirstError(result.redirectStep ?? lastStep);
       return;
     }
     setDirectSubmittedAt(todayISO());
@@ -5321,6 +5329,7 @@ export default function RequestPage(): React.ReactElement {
           oayerRows={oayerRows}
           baSameCount={baSameCount}
           baManualCheck={baManualCheck}
+          baNocConflictPairIds={baNocConflictPairIds}
           baSelBefore={baSelBefore}
           baSelAfter={baSelAfter}
           handleBaSelect={handleBaSelect}

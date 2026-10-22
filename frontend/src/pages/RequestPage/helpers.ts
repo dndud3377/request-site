@@ -4,6 +4,7 @@ import {
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
   MERGE_ENABLED_PURPOSES, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, STEPSEQ_LEAD_DIGITS,
+  ERROR_KEY_STEPS, ERROR_KEY_DEFAULT_STEP,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -174,13 +175,11 @@ export const findFlowStepOrderErrors = (rows: readonly FlowStepSeqRow[]): FlowSt
   return errors;
 };
 
-// claude 수정 (2026-10-16): 흐름도 Step 을 글자로만 보여주는 곳(결재 상세 이력 확인 창·상세 내보내기)에서 stepseq 를 함께 표기한다.
-/** 'L01 (AAAA1234) ~ L03 (AAAA1238)' — stepseq 가 없는 칸은 layerid 만, 한쪽만 있으면 그 칸만. */
-export const formatFlowStepText = (row: Pick<FlowChartRow, 'step_from' | 'step_to' | 'step_from_seq' | 'step_to_seq'>): string => {
-  const part = (layer: string | undefined, seq: string | undefined): string =>
-    layer ? (seq ? `${layer} (${seq})` : layer) : '';
-  const from = part(row.step_from, row.step_from_seq);
-  const to = part(row.step_to, row.step_to_seq);
+// claude 수정 (2026-10-21): 결재 상세 흐름도 표·이력 확인 창·상세 내보내기에서 stepseq 를 빼고 Layer ID 만 표기한다(상세 표가 복잡해 보여서).
+/** 'L01 ~ L03' — stepseq 는 표기하지 않는다. 한쪽만 있으면 그 칸만, 둘 다 없으면 빈 문자열. */
+export const formatFlowStepText = (row: Pick<FlowChartRow, 'step_from' | 'step_to'>): string => {
+  const from = row.step_from || '';
+  const to = row.step_to || '';
   return from && to ? `${from} ~ ${to}` : (from || to);
 };
 
@@ -294,6 +293,33 @@ export const findNocBorrowItemIdViolations = (
   rows
     .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim())
     .map((r) => r.id);
+
+/**
+ * claude 수정 (2026-10-20): O-ayer 표('table' 탭)에 표시되는 오류가 있는가 — ST/요청 기준 미입력·불일치, 차용 필수칸.
+ * validate(4)·validate(5) 가 O-ayer 표에 거는 검사와 같은 판정이어야 한다(어긋나면 오류가 없는 탭으로 전환된다).
+ */
+export const hasOayerTableErrors = (
+  rows: { id: string; st: string; new_or_copy: string; product_name: string; step: string }[]
+): boolean =>
+  findEmptyStNocViolations(rows).length > 0
+  || findStNocMismatchViolations(rows).length > 0
+  || findNocBorrowViolations(rows).length > 0;
+
+/** claude 수정 (2026-10-20): 검증 오류 키의 입력칸이 있는 단계 (ERROR_KEY_STEPS 를 위에서부터 맞춰 본다) */
+export const errorKeyStep = (key: string): number => {
+  const rule = ERROR_KEY_STEPS.find((r) => r.keys.includes(key) || r.prefixes.some((p) => key.startsWith(p)));
+  return rule ? rule.step : ERROR_KEY_DEFAULT_STEP;
+};
+
+/**
+ * claude 수정 (2026-10-20): 검증에 막혔을 때 보낼 단계. 현재 단계에 고칠 오류가 하나라도 있으면 그대로 머문다(undefined).
+ * 없으면 오류가 있는 단계 중 가장 앞 단계 — 입력칸이 화면에 없으면 그 칸으로 이동해 표시할 수 없기 때문이다.
+ */
+export const errorRedirectStep = (errorKeys: string[], currentStep: number): number | undefined => {
+  const steps = errorKeys.map(errorKeyStep);
+  if (steps.length === 0 || steps.includes(currentStep)) return undefined;
+  return Math.min(...steps);
+};
 
 /** item_id 바코드 후보 라벨 끝의 " [날짜]"를 제거한다 (form_options_barcode 가 붙이는 형식과 짝을 맞춤). */
 export const stripDateBracket = (label: string): string => label.replace(/\s*\[[^\]]*\]\s*$/, '');
@@ -971,6 +997,29 @@ export const computeRefDocStTargets = (
       return [r.id, hit ? ST_O : ST_X];
     }));
   return { jayer: targetsOf('J', jayerRows), oayer: targetsOf('O', oayerRows), nocConflicts };
+};
+
+/**
+ * claude 수정 (2026-10-20): 요청 기준 충돌(nocConflicts)을 일으키는 변경후/변경전 표 행(pair) id 목록 — 그 행의 변경후 칸을 빨간 표시한다.
+ * 충돌 판정은 computeRefDocStTargets 를 그대로 쓰고, 충돌한 J/O 행과 변경후 4값이 같은 행을 찾는다.
+ */
+export const findRefDocNocConflictPairIds = (
+  pairs: MergePair[],
+  jayerRows: RefDocStRow[],
+  oayerRows: RefDocStRow[]
+): string[] => {
+  const { nocConflicts } = computeRefDocStTargets(pairs, jayerRows, oayerRows);
+  const conflictKeys: Record<MergeTable, Set<string>> = { J: new Set(), O: new Set() };
+  nocConflicts.forEach(({ table, id }) => {
+    const row = (table === 'J' ? jayerRows : oayerRows).find((r) => r.id === id);
+    if (row) conflictKeys[table].add(manualLayerKey(row));
+  });
+  return (pairs ?? [])
+    .filter((pair) => {
+      const { table } = resolveManualPairTable(pair);
+      return !!table && isMergeSideComplete(pair.after) && conflictKeys[table].has(manualLayerKey(pair.after));
+    })
+    .map((pair) => pair.id);
 };
 
 /** 지금 J/O 표의 st 가 확정 결과와 모두 같은가 — 다르면 확정 뒤 J/O 표가 바뀐 것이다(확정 해제 판단용). */

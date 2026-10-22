@@ -75,7 +75,8 @@ const Step2: React.FC<Step2Props> = ({
           <GuideBadge fk="step3_jayer_table" tk={t('guide.feat.step3_jayer_table' as never)} />
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-tour="validation-system">
+          {/* claude 수정 (2026-10-20): Validation System 미선택 오류도 이 칸으로 이동해 빨간 상자로 강조되도록 문구를 보여 준다 */}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-tour="validation-system" data-error-box>
             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {t('request.validation_system')}
             </span>
@@ -85,6 +86,7 @@ const Step2: React.FC<Step2Props> = ({
               onChange={onValidationSystemChange}
             />
             {vsNotApplicable && <ValidationSystemBadge value={VS_NA} />}
+            {errors.validation_system && <span className="form-error">{errors.validation_system}</span>}
           </span>
           <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
             {t('request.active_total_count', { active: jayerRows.filter(r => !isRowInactive(r.st)).length, total: jayerRows.length })}

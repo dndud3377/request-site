@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, LayerStepOption, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, MERGE_REF_MODE_ENABLED, MERGE_ENABLED_PURPOSES, isOverlayPurpose, overlayExclusiveConflicts } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected, MERGE_REF_MODE_ENABLED, MERGE_ENABLED_PURPOSES, isOverlayPurpose, overlayExclusiveConflicts, MERGE_PANEL_ERROR_KEYS } from '../constants';
 import { ManualPairsLayerCheck, PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
@@ -55,6 +55,8 @@ interface Step1Props {
   baSameCount: number;
   // claude 수정 (2026-10-16): 참조 요청서 '없음' 모드 — PP 접두사 구분·J/O 표 대조 결과(그대로 전달만 한다)
   baManualCheck: ManualPairsLayerCheck | null;
+  /** claude 수정 (2026-10-20): 요청 기준 충돌을 일으키는 변경후 행 id(그대로 전달만 한다) */
+  baNocConflictPairIds: Set<string>;
   baSelBefore: string | null;
   baSelAfter: string | null;
   handleBaSelect: (side: BaSide, id: string) => void;
@@ -136,6 +138,7 @@ const Step1: React.FC<Step1Props> = ({
   oayerRows,
   baSameCount,
   baManualCheck,
+  baNocConflictPairIds,
   baSelBefore,
   baSelAfter,
   handleBaSelect,
@@ -360,8 +363,9 @@ const Step1: React.FC<Step1Props> = ({
             </div>
 
             {/* 참조 요청서 Merge — Layer 추가/삭제·STEPSEQ 변경·Overlay 변경 공용 (여러 개를 골라도 1개만) */}
+            {/* claude 수정 (2026-10-20): 오류 시 이 블록만 빨간 상자로 강조(data-error-box) + 표 칸에 표시되지 않는 오류를 표 아래 문구로 보여 준다 */}
             {showMergeBlock && (
-              <div data-tour="ref-doc-merge">
+              <div data-tour="ref-doc-merge" data-error-box>
                 <div className="form-label" style={{ marginBottom: 6 }}>
                   {t('guide.feat.step1_ref_doc_merge')}
                   <GuideBadge fk="step1_ref_doc_merge" tk={t('guide.feat.step1_ref_doc_merge' as never)} />
@@ -452,6 +456,7 @@ const Step1: React.FC<Step1Props> = ({
                     sameCount={baSameCount}
                     manualOnly={isMergeNone}
                     manualCheck={baManualCheck}
+                    nocConflictPairIds={baNocConflictPairIds}
                     selBefore={baSelBefore}
                     selAfter={baSelAfter}
                     onSelect={handleBaSelect}
@@ -468,12 +473,16 @@ const Step1: React.FC<Step1Props> = ({
                     onEdit={handleBaEdit}
                   />
                 )}
+                {isMergeDone && MERGE_PANEL_ERROR_KEYS.map((key) => errors[key] && (
+                  <span key={key} className="form-error" style={{ display: 'block' }}>{errors[key]}</span>
+                ))}
               </div>
             )}
 
             {/* ADI CD 변경: 동일 변경 적용 대상(제품 이름/조리법 추가 선택) */}
+            {/* claude 수정 (2026-10-20): ADI CD 오류도 해당 표로 이동해 빨간 상자로 강조되도록 문구(.form-error)를 표 아래에 보여 준다 */}
             {isAdiCdSelected && (
-              <div data-tour="adi-cd-targets">
+              <div data-tour="adi-cd-targets" data-error-box>
                 <AdiCdTargetsPanel
                   firstPartidSelection={detail.partid_selection}
                   firstProcessId={detail.process_id}
@@ -486,12 +495,13 @@ const Step1: React.FC<Step1Props> = ({
                   onAdd={handleAdiCdTargetAdd}
                   onDelete={handleAdiCdTargetDelete}
                 />
+                {errors.adi_cd_extra_targets && <span className="form-error">{errors.adi_cd_extra_targets}</span>}
               </div>
             )}
 
             {/* ADI CD 변경: 변경전/변경후 스텝 표 */}
             {isAdiCdSelected && (
-              <div data-tour="adi-cd">
+              <div data-tour="adi-cd" data-error-box>
                 <div className="form-label" style={{ marginBottom: 6 }}>
                   {t('guide.feat.step1_adi_cd_change')}
                   <GuideBadge fk="step1_adi_cd_change" tk={t('guide.feat.step1_adi_cd_change' as never)} />
@@ -505,6 +515,8 @@ const Step1: React.FC<Step1Props> = ({
                   onPasteRaw={handleAdiCdPasteRaw}
                   onToggleUnregistered={handleAdiCdToggleUnregistered}
                 />
+                {errors.adi_cd_before && <span className="form-error" style={{ display: 'block' }}>{errors.adi_cd_before}</span>}
+                {errors.adi_cd_after && <span className="form-error" style={{ display: 'block' }}>{errors.adi_cd_after}</span>}
               </div>
             )}
 
