@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>CLONE·EXISTING 가독성 개선</title>
+<title>CLONE·EXISTING R 탭 개선</title>
 <style>
   /* 앱(frontend/src/styles/global.css) 라이트 테마 토큰을 그대로 가져왔다 — 앱에 다크 테마가 없으므로 목업도 라이트 고정 */
   :root {
@@ -17,11 +17,9 @@
     --text-secondary: #334f7a;
     --text-muted: #6b85ae;
     --border: #c9d9f0;
-    --border-light: #dce8fb;
     --warning: #d97706;
     --warning-light: rgba(217, 119, 6, 0.1);
-    --success: #059669;
-    --success-light: rgba(5, 150, 105, 0.1);
+    --danger: #dc3545;
     --purple: #7c3aed;
     --purple-light: rgba(124, 58, 237, 0.1);
     --radius-sm: 6px;
@@ -40,274 +38,299 @@
   h2 { font-size: 1.1rem; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
   .lead { color: var(--text-secondary); margin: 0 0 18px; }
   code { background: var(--bg-secondary); padding: 1px 6px; border-radius: 4px; font-size: 0.85em; }
+  .note { font-size: 0.82rem; color: var(--text-muted); }
 
-  /* ===== 개선 항목 목록 ===== */
-  .ideas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
-  .idea { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; }
-  .idea b { display: block; margin-bottom: 4px; }
-  .idea p { margin: 0; font-size: 0.84rem; color: var(--text-secondary); }
-  .badge {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
-    background: var(--purple); color: #fff; font-size: 0.72rem; font-weight: 700;
-    margin-right: 6px; vertical-align: middle; flex: 0 0 auto;
-  }
+  /* ===== 규칙 카드 ===== */
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .rule { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; }
+  .rule b { display: block; margin-bottom: 4px; }
+  .rule p { margin: 0; font-size: 0.84rem; color: var(--text-secondary); }
 
   /* ===== 케이스 선택 ===== */
-  .case-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 16px; }
+  .case-group { font-size: 0.78rem; color: var(--text-muted); font-weight: 700; margin: 10px 0 4px; }
+  .case-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
   .case-tabs button {
     border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary);
     border-radius: 999px; padding: 6px 14px; font-size: 0.85rem; cursor: pointer; font-family: inherit;
   }
   .case-tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .case-desc { margin: 12px 0 16px; font-size: 0.86rem; color: var(--text-secondary); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; }
 
   /* ===== 현재 vs 개선 ===== */
   .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
   @media (max-width: 1100px) { .compare { grid-template-columns: minmax(0, 1fr); } }
-  .col-title { font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .col-title { font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .col-title .tag { font-size: 0.72rem; padding: 2px 10px; border-radius: 999px; font-weight: 700; }
   .tag.now { background: var(--warning-light); color: var(--warning); }
   .tag.new { background: var(--purple-light); color: var(--purple); }
+  .col-title .count { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; }
 
-  /* ===== 모달 재현 (PagedDetailView.tsx 스타일 값 그대로) ===== */
-  .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(37,99,235,.12); overflow: hidden; }
-  .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--border); }
-  .modal-head h3 { min-width: 0; margin: 0; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .modal-body { padding: 14px 18px 18px; }
-  .status { background: var(--warning-light); color: var(--warning); border-radius: 999px; padding: 4px 12px; font-size: 0.78rem; font-weight: 700; margin-bottom: 12px; }
-  .tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
-  .tabs span { padding: 8px 14px; font-size: 0.86rem; color: var(--text-muted); white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-  .tabs span.on { color: var(--accent); font-weight: 700; border-bottom-color: var(--accent); }
-
+  /* ===== R 탭 카드 재현 (PagedDetailView.tsx 스타일 값 그대로) ===== */
   .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; }
   .section-title {
     font-size: 0.85rem; font-weight: 700; color: var(--accent); letter-spacing: 0.05em;
     border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 12px;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
   }
-  .btn-sm { border: 1px solid var(--border); background: var(--bg-card); border-radius: var(--radius-sm); padding: 2px 10px; font-size: 0.74rem; color: var(--text-secondary); font-weight: 600; margin-left: 6px; }
+  .btn-sm { border: 1px solid var(--border); background: var(--bg-card); border-radius: var(--radius-sm); padding: 2px 10px; font-size: 0.74rem; color: var(--text-secondary); font-weight: 600; margin-left: 6px; white-space: nowrap; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   .chip { flex: 1 1 0; min-width: 100px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; text-align: center; position: relative; }
   .chip.wide { flex: 2 1 0; min-width: 180px; text-align: left; }
   .chip.auto { flex: 1 1 auto; min-width: 200px; text-align: left; display: flex; align-items: flex-start; }
+  .chip.block { flex: 1 1 auto; min-width: 200px; text-align: left; }
   .label { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 3px; font-weight: 500; }
   .value { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); white-space: pre-wrap; line-height: 1.5; }
   .none { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
+  .num { color: var(--danger); font-weight: 800; }
   .seg { flex: 0 0 auto; padding-right: 12px; border-right: 1px solid var(--border); margin-right: 12px; }
   .seg:last-child { border-right: none; margin-right: 0; padding-right: 0; }
   .seg.grow { flex: 1; }
   .gds { display: inline-block; background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 700; margin: 2px 4px 0 0; }
+  .opt { display: inline-block; padding: 4px 14px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 0.85rem; font-weight: 500; margin: 4px 8px 0 0; }
+  .red { color: var(--danger); }
 
-  /* 개선안 표시용 번호 배지(목업에서만 — 실제 화면에는 넣지 않는다) */
-  .mark { position: absolute; top: -9px; left: -9px; z-index: 1; margin: 0; box-shadow: 0 0 0 2px var(--bg-card); }
-  .marked { outline: 2px dashed rgba(124,58,237,.45); outline-offset: 2px; }
+  /* 개선안 — ⚠ 잠긴 항목에 저장된 값 */
+  .locked-val { border-color: var(--warning); }
+  .warn { color: var(--warning); font-weight: 700; cursor: help; }
+  /* 개선안 — 기본값인 잠긴 항목 요약 줄 */
+  .inherit { border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 0.84rem; color: var(--text-muted); background: var(--bg-card); }
+  .inherit b { color: var(--text-secondary); font-weight: 700; margin-right: 6px; }
 
-  /* ① 요약 배너 */
-  .banner { position: relative; display: flex; gap: 10px; align-items: flex-start; background: var(--accent-light); border: 1px solid rgba(37,99,235,.35); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; font-size: 0.86rem; color: var(--text-secondary); }
-  .banner .type { flex: 0 0 auto; background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 10px; font-weight: 700; font-size: 0.78rem; }
-  .banner .type.existing { background: var(--success); }
-  .banner strong { color: var(--text-primary); }
-
-  /* ② 원본 → 대상 */
-  .route { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .route .box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 10px; }
-  .route .box small { display: block; font-size: 0.68rem; color: var(--text-muted); font-weight: 500; }
-  .route .arrow { color: var(--accent); font-weight: 700; font-size: 1.1rem; }
-  .same { display: inline-block; background: var(--success-light); color: var(--success); border-radius: 999px; padding: 1px 10px; font-size: 0.76rem; font-weight: 700; margin-left: 4px; }
-
-  /* ③④ 원본 따름 접기 */
-  details.inherit { position: relative; background: var(--bg-card); border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 8px; }
-  details.inherit summary { cursor: pointer; font-size: 0.85rem; color: var(--text-secondary); list-style: none; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  details.inherit summary::-webkit-details-marker { display: none; }
-  details.inherit summary::before { content: '▸'; color: var(--text-muted); }
-  details.inherit[open] summary::before { content: '▾'; }
-  details.inherit summary b { color: var(--text-primary); }
-  details.inherit summary .names { color: var(--text-muted); font-size: 0.8rem; }
-  .inherit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 8px; }
-  .inherit-grid div { background: var(--bg-secondary); border-radius: var(--radius-sm); padding: 6px 10px; }
-  .inherit-val { font-size: 0.82rem; color: var(--text-muted); font-weight: 600; }
-
-  /* ===== 하단 설명 ===== */
+  /* ===== 하단 표 ===== */
   table.ref { width: 100%; border-collapse: collapse; background: var(--bg-card); font-size: 0.84rem; }
   table.ref th, table.ref td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
   table.ref th { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 700; }
   .scroll-x { overflow-x: auto; }
   ul.q { margin: 0; padding-left: 20px; }
   ul.q li { margin-bottom: 6px; }
-  .note { font-size: 0.82rem; color: var(--text-muted); }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <h1>CLONE·EXISTING 상신서 — 의뢰 상세 모달 'R' 탭 가독성 개선안</h1>
+  <h1>CLONE·EXISTING 상신서 — 의뢰 상세 모달 'R' 탭 표시 개선안 (v2)</h1>
   <p class="lead">
     결재 현황 → 의뢰서 행 클릭 → 의뢰 상세 모달 → <b>'R'</b> 탭. 왼쪽은 <b>현재 코드</b>(<code>PagedDetailView.tsx</code>)가 그리는 화면을 그대로 옮긴 것이고,
-    오른쪽은 개선안 ①~⑤를 모두 반영한 화면이다. 위 버튼으로 케이스를 바꿔 볼 수 있다. 보라색 번호 배지와 점선은 설명용 표시이며 실제 화면에는 넣지 않는다.
+    오른쪽은 개선안이다. MAP 목적·원본 위치·원본 제품 이름 칸과 기존 칩 모양은 바꾸지 않고, <b>잠긴 항목을 어떻게 보여줄지</b>만 바꾼다.
+    NEW·MAP 삭제·ADI CD 변경 문서는 바뀌지 않는다.
   </p>
 
-  <div class="ideas">
-    <div class="idea"><b><span class="badge">1</span>상단 요약 배너</b><p>MAP 목적과 "아래 잠긴 항목은 원본 MAP을 따른다"는 사실을 맨 위 한 줄로 먼저 알린다.</p></div>
-    <div class="idea"><b><span class="badge">2</span>원본 → 대상 칸</b><p>원본 위치·원본 제품 두 칸을 <code>원본 → 이번 의뢰</code> 한 칸으로 합친다. 원본과 대상이 같으면 "동일" 표시.</p></div>
-    <div class="idea"><b><span class="badge">3</span>잠긴 항목 접기</b><p>"없음" 칸 5~6개를 한 줄로 접고, 펼치면 항목별로 볼 수 있게 한다.</p></div>
-    <div class="idea"><b><span class="badge">4</span>"없음" → "원본 따름"</b><p>잠긴 항목 문구를 "원본 따름"으로 통일한다. X표시처럼 진한 "없음"으로 나오던 항목도 같은 모양으로 맞춘다.</p></div>
-    <div class="idea"><b><span class="badge">5</span>입력 항목 한 줄 압축</b><p>Only C가문 제품 · PY 적용 여부 · Final/GDS 를 한 칸에 나란히 놓는다.</p></div>
+  <div class="rules">
+    <div class="rule"><b>① 잠기지 않는 항목 — 지금 그대로</b><p>MAP 목적 · 원본 위치 · 원본 제품 이름 · Only C가문 제품 · PY 적용 여부 · Final/GDS</p></div>
+    <div class="rule"><b>② 잠기는 항목이 기본값 — 칸 생략 + 요약 한 줄</b><p>지도 편차 · 예외 구역 · X표시 · C가문 세부 정보 · 3번 · Map Option 중 기본값인 것은 칸을 그리지 않고 맨 아래 한 줄에 이름만 모은다.</p></div>
+    <div class="rule"><b>③ 잠기는 항목에 값이 있음 — 실제 값 + <span class="warn">⚠</span></b><p>기본값이 아니거나 회차 사이에 바뀐 항목은 NEW 문서와 같은 칸으로 실제 값을 보여준다(변경 강조·이력 확인 그대로). 절대 "없음"으로 가리지 않는다.</p></div>
+    <div class="rule"><b>④ 목록에 없는 항목 — 항상 표시</b><p>접기 대상은 위 6개를 이름으로 나열한 목록뿐이다. 나중에 추가된 기능이 이 목록에 없으면 접히지 않고 그대로 보인다.</p></div>
   </div>
 
   <h2>케이스별 비교</h2>
-  <div class="case-tabs" id="caseTabs"></div>
+  <div class="case-group">새로 작성한 문서 (MAP 목적 게이트 적용 후 — 잠긴 항목은 항상 기본값)</div>
+  <div class="case-tabs" id="tabsNew"></div>
+  <div class="case-group">값이 남아 있는 기존 문서 (게이트 적용 전 작성 / 기존 임시저장)</div>
+  <div class="case-tabs" id="tabsLegacy"></div>
+  <div class="case-group">회귀 확인 — 바뀌지 않아야 하는 문서</div>
+  <div class="case-tabs" id="tabsReg"></div>
+  <div class="case-desc" id="caseDesc"></div>
   <div class="compare">
     <div>
-      <div class="col-title"><span class="tag now">현재</span>현재 코드 기준</div>
+      <div class="col-title"><span class="tag now">현재</span>현재 코드 기준 <span class="count" id="nowCount"></span></div>
       <div id="nowView"></div>
     </div>
     <div>
-      <div class="col-title"><span class="tag new">개선안</span>①~⑤ 모두 반영</div>
+      <div class="col-title"><span class="tag new">개선안</span>값 기반 접기 <span class="count" id="newCount"></span></div>
       <div id="newView"></div>
     </div>
   </div>
+  <p class="note"><span class="warn">⚠</span> 에 마우스를 올리면 안내 문구가 보인다(목업은 브라우저 기본 툴팁). 요약 줄 문구 "원본 MAP 기준 (입력 없음)"은 가안이다.</p>
+
+  <h2>잠긴 항목의 "기본값" 판정</h2>
+  <div class="scroll-x">
+  <table class="ref">
+    <tr><th>항목</th><th>기본값으로 보는 조건 (모두 만족)</th><th>저장 필드</th><th>현재 표시 (CLONE·EXISTING)</th></tr>
+    <tr><td>지도 편차 변경</td><td>일반: 변경 없음 + X·Y·사유 비어 있음<br>C가문: 북·남 모두 변경 없음 + 리전 X·Y·사유 비어 있음</td><td><code>map_change</code> <code>map_value_x/y</code> <code>map_reason</code> <code>map_change_top/bottom</code> <code>map_value_x/y_top/bottom</code></td><td>저장값과 무관하게 회색 "없음"</td></tr>
+    <tr><td>예외 구역 변경</td><td>변경 없음 (자동으로 채워지는 300/500 값은 보지 않음)</td><td><code>ea_change</code> <code>ea_value</code></td><td>저장값과 무관하게 회색 "없음"</td></tr>
+    <tr><td>X표시 변경 여부</td><td>없음 + 첨부 이미지 없음</td><td><code>mshot_change</code> <code>mshot_image_copy*</code></td><td>실제 값(엑셀은 강제 "없음")</td></tr>
+    <tr><td>C가문 세부 정보</td><td>제품 해당 위치·상/중/하판 값 모두 비어 있음 (Only C가문 제품 Yes 일 때만 대상)</td><td><code>prodc_scope</code> <code>prodc_*</code></td><td>저장값과 무관하게 회색 "없음"</td></tr>
+    <tr><td>3번</td><td>NO</td><td><code>inter</code> <code>in_apply</code> <code>inter_select</code></td><td>실제 값</td></tr>
+    <tr><td>Map Option 선택</td><td>10개 모두 미적용</td><td><code>photo_backside</code> … <code>hpkglabelheight</code></td><td>실제 값</td></tr>
+  </table>
+  </div>
+  <p class="note">회차 사이에 값이 바뀐 항목은 기본값이어도 접지 않는다(변경 강조·이력 확인을 보여야 하므로). 판정 함수는 상세 모달과 엑셀 export 가 함께 쓰도록 한 파일에 둔다.</p>
 
   <h2>현재 화면이 그려지는 코드 위치</h2>
   <div class="scroll-x">
   <table class="ref">
-    <tr><th>화면 요소</th><th>현재 동작</th><th>코드</th><th>개선안</th></tr>
-    <tr><td>MAP 목적 / 원본 위치 / 원본 제품 이름</td><td>가운데 정렬 칩 3개. 원본 칩은 CLONE·EXISTING 이고 값이 있을 때만 표시</td><td><code>PagedDetailView.tsx:2578-2588</code></td><td>①②</td></tr>
-    <tr><td>지도 편차 변경 · 예외 구역 변경</td><td><code>isMapRegisteredDetail</code> 이면 저장값과 상관없이 회색 "없음"(PlaceholderChip)</td><td><code>:2626-2631</code>, <code>:1995-2002</code></td><td>③④</td></tr>
-    <tr><td>X표시 변경 여부</td><td>작성 화면(StepMap)에서 잠겨 있지만 저장된 기본값 "없음"을 <b>진한 실제 값</b>으로 표시</td><td><code>:2670-2747</code></td><td>③④</td></tr>
-    <tr><td>Only C가문 제품 / PY 적용 여부 / C가문 세부 정보</td><td>Yes/No·PY 는 실제 값. C가문 Yes 일 때 세부 정보는 회색 "없음"</td><td><code>:2749-2795</code></td><td>③④⑤</td></tr>
-    <tr><td>Final / GDS version</td><td>값 하나짜리 칸이 한 줄 전체를 차지. YES 면 GDS 칩</td><td><code>:2797-2835</code></td><td>⑤</td></tr>
-    <tr><td>3번(Inter) · Map Option 선택</td><td>값이 없으면 회색 "없음". CLONE·EXISTING 에서도 판정 없이 저장값을 그대로 보여준다</td><td><code>:2866-2955</code></td><td>③④</td></tr>
+    <tr><th>화면 요소</th><th>코드 (<code>PagedDetailView.tsx</code>)</th><th>개선안에서</th></tr>
+    <tr><td>MAP 목적 / 원본 위치 / 원본 제품 이름</td><td><code>:2578-2588</code></td><td>변경 없음</td></tr>
+    <tr><td>지도 편차 · 예외 구역 강제 "없음"</td><td><code>:2626-2631</code> (<code>isMapRegisteredDetail</code>)</td><td>판정 함수 기반으로 교체 — 기본값이면 생략, 아니면 <code>:2635</code> 의 일반 칩 경로로 표시</td></tr>
+    <tr><td>X표시 변경 여부</td><td><code>:2670-2747</code></td><td>기본값이면 생략</td></tr>
+    <tr><td>C가문 세부 정보 강제 "없음"</td><td><code>:2778-2785</code></td><td>기본값이면 칸 생략, 아니면 <code>buildProdcInfo</code> 표시</td></tr>
+    <tr><td>3번 · Map Option</td><td><code>:2866-2955</code></td><td>기본값이면 생략</td></tr>
+    <tr><td>엑셀 export</td><td><code>utils/detailExport.ts:438-520</code></td><td>같은 판정 함수 사용(결정 필요)</td></tr>
   </table>
   </div>
-  <p class="note">줄 번호는 2026-10-22 기준 브랜치 코드. 작성 화면 잠금 근거: <code>StepMap.tsx</code> 의 <code>disabled={isMapRegistered}</code>(지도 편차·예외 구역·X표시·3번·Map Option), <code>prodcLocked</code>(C가문 세부). Final·PY 적용 여부·C가문 Yes/No·원본 위치/제품은 잠기지 않는다.</p>
 
-  <h2>구현 전에 정해야 할 것</h2>
+  <h2>정해야 할 것</h2>
   <ul class="q">
-    <li><b>3번·Map Option 에 실제 값이 있을 때</b> — 지금은 CLONE·EXISTING 이어도 저장값을 그대로 보여준다. 접기(③)에 넣으면 값이 있어도 "원본 따름"으로 가려진다. 값이 있으면 접기에서 빼고 실값 칩으로 보여줄지, 지도 편차처럼 무조건 "원본 따름"으로 할지 정해야 한다. (map_type 을 CLONE 으로 바꿀 때 이 값들이 초기화되는지는 이번에 확인하지 못했다.)</li>
-    <li><b>X표시를 "원본 따름"으로 바꿀 때</b> — 지금은 회차 간 변경 강조와 '이력 확인'이 이 칸에 붙어 있다. 잠긴 항목이라 변경될 일이 없다고 보고 강조를 같이 없앨지 정해야 한다.</li>
-    <li><b>접기 기본 상태</b> — 목업은 접힌 상태로 시작한다. 검토자가 항목명을 한눈에 봐야 하면 펼친 상태로 시작하는 쪽이 낫다.</li>
-    <li><b>export(엑셀)</b> — <code>utils/detailExport.ts:438</code> 이 같은 판정(<code>isMapRegisteredDetail</code>)을 쓴다. "원본 따름" 문구를 엑셀에도 맞출지 정해야 한다.</li>
-    <li><b>② 의 "동일" 판정</b> — 작성 화면의 EXISTING 자동 매칭 잠금(<code>existingAutoLocked</code>: 원본 위치 = 라인, 원본 제품 = 제품 이름 앞 코드 8자)과 같은 규칙을 쓰는 것을 전제로 그렸다.</li>
-    <li>새 문구("원본 따름", 배너 문장 등)는 <code>ko.json</code>/<code>en.json</code> 에 키를 함께 추가한다(규칙 G).</li>
+    <li><b>요약 줄 문구</b> — 가안 "🔒 원본 MAP 기준 (입력 없음): …".</li>
+    <li><b>⚠ 표시</b> — 잠긴 항목에 값이 있을 때 실제 값과 함께 ⚠ 를 붙일지(추천), 실제 값만 보여줄지.</li>
+    <li><b>엑셀 export</b> — 1) 같은 규칙(추천) 2) X표시 불일치만 수정 3) 그대로.</li>
   </ul>
 
 </div>
 
 <script>
-  // 2026-10-21 개발환경에서 실제로 상신해 스크린샷으로 확인한 5건과 같은 값
-  const BASIC = { line: 'L01', process: 'PROC_A', partid: 'PART_X01', processId: 'PID_0001' };
+  const BASE = {
+    line: 'L01', partid: 'PART_X01',
+    map_change: '변경 없음', map_value_x: '', map_value_y: '', map_reason: '',
+    map_change_top: '변경 없음', map_value_x_top: '', map_value_y_top: '',
+    map_change_bottom: '변경 없음', map_value_x_bottom: '', map_value_y_bottom: '',
+    ea_change: '변경 없음', ea_value: '300', mshot_change: '없음',
+    only_prodc: 'No', py_apply: '', prodc_scope: '',
+    prodc_top_line: '', prodc_top_process: '', prodc_top_product: '', prodc_middle_use: '',
+    prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
+    prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
+    inter: 'NO', in_apply: '', inter_select: '', inter_xs: '미적용', inter_ys: '미적용',
+    opts: [], final_yn: 'NO', gds: [],
+  };
   const CASES = [
-    { key: 'C1', label: 'C1 · 일반 · CLONE · C가문 No', purpose: '신규', mapType: 'CLONE', srcLine: 'L02', srcPart: 'PART_SRC01', prodc: 'No', py: '', final: 'NO', gds: [] },
-    { key: 'C2', label: 'C2 · 일반 · CLONE · C가문 Yes', purpose: '신규', mapType: 'CLONE', srcLine: 'L02', srcPart: 'PART_SRC01', prodc: 'Yes', py: 'Yes', final: 'YES', gds: ['GDS_A1', 'GDS_B2'] },
-    { key: 'E1', label: 'E1 · 일반 · EXISTING · C가문 No', purpose: '신규', mapType: 'EXISTING', srcLine: 'L01', srcPart: 'PART_X01', prodc: 'No', py: '', final: 'NO', gds: [] },
-    { key: 'E2', label: 'E2 · 일반 · EXISTING · C가문 Yes', purpose: '신규', mapType: 'EXISTING', srcLine: 'L01', srcPart: 'PART_X01', prodc: 'Yes', py: 'No', final: 'YES', gds: ['GDS_C3'] },
-    { key: 'M1', label: 'M1 · Only MAP · CLONE · C가문 No', purpose: 'Only MAP', mapType: 'CLONE', srcLine: 'L03', srcPart: 'PART_SRC02', prodc: 'No', py: '', final: 'NO', gds: [] },
+    { key: 'C1', group: 'new', label: 'C1 · CLONE · C가문 No', desc: '일반 · CLONE · C가문 No · Final NO',
+      d: { map_type: 'CLONE', source_line: 'L02', source_partid: 'PART_SRC01' } },
+    { key: 'C2', group: 'new', label: 'C2 · CLONE · C가문 Yes', desc: '일반 · CLONE · C가문 Yes(PY O) · Final YES',
+      d: { map_type: 'CLONE', source_line: 'L02', source_partid: 'PART_SRC01', only_prodc: 'Yes', py_apply: 'O', ea_value: '500', final_yn: 'YES', gds: ['GDS_A1', 'GDS_B2'] } },
+    { key: 'E1', group: 'new', label: 'E1 · EXISTING · C가문 No', desc: '일반 · EXISTING(자동 매칭) · C가문 No · Final NO',
+      d: { map_type: 'EXISTING', source_line: 'L01', source_partid: 'PART_X01' } },
+    { key: 'E2', group: 'new', label: 'E2 · EXISTING · C가문 Yes', desc: '일반 · EXISTING(자동 매칭) · C가문 Yes(PY X) · Final YES',
+      d: { map_type: 'EXISTING', source_line: 'L01', source_partid: 'PART_X01', only_prodc: 'Yes', py_apply: 'X', ea_value: '500', final_yn: 'YES', gds: ['GDS_C3'] } },
+    { key: 'M1', group: 'new', label: 'M1 · Only MAP · CLONE', desc: 'Only MAP · CLONE · C가문 No · Final NO',
+      d: { map_type: 'CLONE', source_line: 'L03', source_partid: 'PART_SRC02' } },
+    { key: 'L1', group: 'legacy', label: 'L1 · CLONE · 값 남음', desc: '2026-10-22 재현 데이터와 같은 값 — MAP 목적을 고르기 전에 지도 편차·예외 구역·X표시·Map Option 을 입력한 뒤 CLONE 을 고른 문서. 예외 구역 777 때문에 영업 합의자 단계가 생긴다.',
+      d: { map_type: 'CLONE', source_line: 'L02', source_partid: 'PART_SRC01', map_change: '변경 있음', map_value_x: '12', map_value_y: '-3', map_reason: '편차사유', ea_change: '변경 있음', ea_value: '777', mshot_change: '삭제', opts: ['4번'] } },
+    { key: 'L2', group: 'legacy', label: 'L2 · EXISTING · C가문 값 남음', desc: 'NEW 로 C가문 세부·북쪽 지도 편차·3번을 입력해 둔 임시저장(가정)을 EXISTING 으로 저장한 문서.',
+      d: { map_type: 'EXISTING', source_line: 'L01', source_partid: 'PART_X01', only_prodc: 'Yes', py_apply: 'O', ea_value: '500',
+           prodc_scope: 'top', prodc_top_line: 'L01', prodc_top_process: 'PROC_A', prodc_top_product: 'PART_X01',
+           map_change_top: '변경 있음', map_value_x_top: '5', map_reason: '상판 보정', inter: 'YES', in_apply: 'O', inter_select: 'xs',
+           final_yn: 'YES', gds: ['GDS_D4'] } },
+    { key: 'N1', group: 'reg', label: 'N1 · NEW 문서', desc: 'NEW 문서는 개선안에서도 지금과 똑같이 보여야 한다(대상 아님).',
+      d: { map_type: 'NEW', map_change: '변경 있음', map_value_x: '10', map_value_y: '20', map_reason: '보정', opts: ['4번', '7번'] } },
   ];
 
+  const MAP_NO_CHANGE = '변경 없음';
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const NONE = '<span class="none">없음</span>';
-  const mark = (n) => `<span class="badge mark">${n}</span>`;
+  const hl = (s) => esc(s).replace(/-?\d+(?:\.\d+)?(?:um|mm)/g, (m) => `<span class="num">${m}</span>`);
+  const WARN_TIP = '작성 화면에서 잠긴 항목이지만 저장된 값이 있습니다';
+  const warn = `<span class="warn" title="${WARN_TIP}">⚠ </span>`;
 
-  const shell = (c, inner) => `
-    <div class="modal">
-      <div class="modal-head"><h3>${esc(BASIC.line)}(${esc(c.purpose)})_MAP(${c.mapType})_${BASIC.process}_${BASIC.partid}_${BASIC.processId}_요청서_261021</h3><span class="none">✕</span></div>
-      <div class="modal-body">
-        <div class="status">검토중</div>
-        <div class="tabs"><span>의뢰 상세</span><span class="on">R</span><span>J-ayer 정보</span><span>O-ayer 정보</span><span>뼈찜 정보</span><span>기타</span><span>결재 경로</span></div>
-        <div class="card">
-          <div class="section-title"><span>🗺️ R</span><span><span class="btn-sm">📊 export</span><span class="btn-sm">🕘 모든 이력 확인</span></span></div>
-          ${inner}
-        </div>
-      </div>
-    </div>`;
+  // ===== 표시 문자열 — PagedDetailView 의 build* 함수와 같은 형식 =====
+  const isProdc = (d) => d.only_prodc === 'Yes';
+  function buildMapValue(d) {
+    if (isProdc(d)) {
+      const line = (r, label) => d[`map_change_${r}`] === MAP_NO_CHANGE
+        ? `[${label}] ${MAP_NO_CHANGE}`
+        : `[${label}] X: ${d[`map_value_x_${r}`] ? d[`map_value_x_${r}`] + 'um' : '-'} / Y: ${d[`map_value_y_${r}`] ? d[`map_value_y_${r}`] + 'um' : '-'}`;
+      return `${line('top', '북쪽')}\n${line('bottom', '남쪽')}${d.map_reason ? ` / 사유: ${d.map_reason}` : ''}`;
+    }
+    return `변경: ${d.map_change}` + (d.map_value_x ? ` / X: ${d.map_value_x}um` : '') + (d.map_value_y ? ` / Y: ${d.map_value_y}um` : '') + (d.map_reason ? ` / 사유: ${d.map_reason}` : '');
+  }
+  const buildEaValue = (d) => `변경: ${d.ea_change}` + (d.ea_value ? ` / 값: ${d.ea_value}mm` : '');
+  function buildProdcInfo(d) {
+    const scope = { top: '북쪽', middle: '중간', bottom: '남쪽', only_top: 'ONLY 북쪽', only_bottom: 'ONLY 남쪽' }[d.prodc_scope] || '';
+    const lines = [];
+    if (scope) lines.push(`[제품 해당 위치] ${scope}`);
+    const plate = (r, label) => { if (d[`prodc_${r}_line`] || d[`prodc_${r}_process`] || d[`prodc_${r}_product`]) lines.push(`[${label}] ${d[`prodc_${r}_line`] || '-'} / ${d[`prodc_${r}_process`] || '-'} / ${d[`prodc_${r}_product`] || '-'}`); };
+    plate('top', '상판'); plate('bottom', '하판');
+    return lines.join('\n');
+  }
+  function buildInterValue(d) {
+    if (d.inter !== 'YES') return '';
+    const sel = { xs: 'Xs', ys: 'Ys', xys: 'XYs', none: '없음' }[d.inter_select];
+    return ['INTER 적용', d.in_apply === 'O' ? 'IN 적용 O' : 'IN 적용 X', sel].filter(Boolean).join(' / ');
+  }
+
+  // ===== 개선안 — 잠긴 항목의 기본값 판정(유틸 파일로 뺄 함수) =====
+  const LOCKED_ITEMS = [
+    { key: 'map', label: '지도 편차 변경', isDefault: (d) => isProdc(d)
+        ? ['top', 'bottom'].every((r) => (d[`map_change_${r}`] || MAP_NO_CHANGE) === MAP_NO_CHANGE && !d[`map_value_x_${r}`] && !d[`map_value_y_${r}`]) && !d.map_reason
+        : (d.map_change || MAP_NO_CHANGE) === MAP_NO_CHANGE && !d.map_value_x && !d.map_value_y && !d.map_reason },
+    { key: 'ea', label: '예외 구역 변경', isDefault: (d) => d.ea_change !== '변경 있음' },
+    { key: 'mshot', label: 'X표시 변경 여부', isDefault: (d) => (d.mshot_change || '없음') === '없음' },
+    { key: 'prodc', label: 'C가문 세부 정보', applies: isProdc, isDefault: (d) => !buildProdcInfo(d) },
+    { key: 'inter', label: '3번', isDefault: (d) => d.inter !== 'YES' },
+    { key: 'opts', label: 'Map Option 선택', isDefault: (d) => d.opts.length === 0 },
+  ];
+
+  // ===== 공통 칩 =====
+  const chipMap = (d, w) => `<div class="chip wide${w ? ' locked-val' : ''}"><div class="label">${w ? warn : ''}지도 편차 변경</div><div class="value">${(isProdc(d) || d.map_change !== MAP_NO_CHANGE) ? hl(buildMapValue(d)) : esc(buildMapValue(d))}</div></div>`;
+  const chipEa = (d, w) => `<div class="chip wide${w ? ' locked-val' : ''}"><div class="label">${w ? warn : ''}예외 구역 변경</div><div class="value">${d.ea_change !== MAP_NO_CHANGE ? hl(buildEaValue(d)) : esc(buildEaValue(d))}</div></div>`;
+  const rowMshot = (d, w) => `<div class="row"><div class="chip auto${w ? ' locked-val' : ''}"><div class="seg"><div class="label">${w ? warn : ''}X표시 변경 여부</div><div class="value">${esc(d.mshot_change)}</div></div>${d.mshot_change === '삭제' ? '<div class="seg grow"><div class="label red">삭제 안내</div><div class="value red">특정 제품 삭제 필요</div></div>' : ''}</div></div>`;
+  const rowFinal = (d) => `<div class="row"><div class="chip auto"><div class="seg"><div class="label">Final</div><div class="value">${d.final_yn}</div></div>${d.final_yn === 'YES' && d.gds.length ? `<div class="seg grow"><div class="label" style="margin-bottom:6px">GDS version</div>${d.gds.map((g) => `<span class="gds">${esc(g)}</span>`).join('')}</div>` : ''}</div></div>`;
+  const rowInter = (d, w) => `<div class="row"><div class="chip block${w ? ' locked-val' : ''}"><div class="label">${w ? warn : ''}3번</div><div class="value">${buildInterValue(d) ? esc(buildInterValue(d)) : NONE}</div></div></div>`;
+  const rowOpts = (d, w) => `<div class="row"><div class="chip block${w ? ' locked-val' : ''}"><div class="label">${w ? warn : ''}Map Option 선택</div><div>${d.opts.length ? d.opts.map((o) => `<span class="opt">${esc(o)}</span>`).join('') : NONE}</div></div></div>`;
+  const rowType = (d, reg) => `<div class="row"><div class="chip"><div class="label">MAP 목적</div><div class="value">${d.map_type}</div></div>${reg && d.source_line ? `<div class="chip"><div class="label">원본 위치</div><div class="value">${esc(d.source_line)}</div></div>` : ''}${reg && d.source_partid ? `<div class="chip"><div class="label">원본 제품 이름</div><div class="value">${esc(d.source_partid)}</div></div>` : ''}</div>`;
+  const card = (inner) => `<div class="card"><div class="section-title"><span>🗺️ R</span><span><span class="btn-sm">📊 export</span><span class="btn-sm">🕘 모든 이력 확인</span></span></div>${inner}</div>`;
+  const isReg = (d) => d.map_type === 'CLONE' || d.map_type === 'EXISTING';
 
   // ===== 현재 코드가 그리는 화면 =====
-  function renderNow(c) {
-    const isProdc = c.prodc === 'Yes';
-    const gds = c.final === 'YES' && c.gds.length
-      ? `<div class="seg grow"><div class="label" style="margin-bottom:6px">GDS version</div>${c.gds.map((g) => `<span class="gds">${esc(g)}</span>`).join('')}</div>` : '';
-    return shell(c, `
-      <div class="row">
-        <div class="chip"><div class="label">MAP 목적</div><div class="value">${c.mapType}</div></div>
-        <div class="chip"><div class="label">원본 위치</div><div class="value">${esc(c.srcLine)}</div></div>
-        <div class="chip"><div class="label">원본 제품 이름</div><div class="value">${esc(c.srcPart)}</div></div>
-      </div>
-      <div class="row">
-        <div class="chip wide"><div class="label">지도 편차 변경</div><div class="value">${NONE}</div></div>
-        <div class="chip wide"><div class="label">예외 구역 변경</div><div class="value">${NONE}</div></div>
-      </div>
-      <div class="row"><div class="chip auto"><div class="seg"><div class="label">X표시 변경 여부</div><div class="value">없음</div></div></div></div>
-      <div class="row"><div class="chip auto">
-        <div class="seg"><div class="label">Only C가문 제품</div><div class="value">${c.prodc}</div></div>
-        ${isProdc ? `<div class="seg"><div class="label">PY 적용 여부</div><div class="value">${c.py}</div></div>
-                     <div class="seg grow"><div class="label">C가문 세부 정보</div><div class="value">${NONE}</div></div>` : ''}
-      </div></div>
-      <div class="row"><div class="chip auto"><div class="seg"><div class="label">Final</div><div class="value">${c.final}</div></div>${gds}</div></div>
-      <div class="row"><div class="chip auto" style="display:block"><div class="label">3번</div><div class="value">${NONE}</div></div></div>
-      <div class="row"><div class="chip auto" style="display:block"><div class="label">Map Option 선택</div><div style="margin-top:4px">${NONE}</div></div></div>
-    `);
+  function renderNow(d) {
+    const reg = isReg(d);
+    let h = rowType(d, reg);
+    if (reg) {
+      h += `<div class="row"><div class="chip wide"><div class="label">지도 편차 변경</div><div class="value">${NONE}</div></div><div class="chip wide"><div class="label">예외 구역 변경</div><div class="value">${NONE}</div></div></div>`;
+    } else {
+      h += `<div class="row">${chipMap(d, false)}${chipEa(d, false)}</div>`;
+    }
+    h += rowMshot(d, false);
+    let prodc = `<div class="seg"><div class="label">Only C가문 제품</div><div class="value">${d.only_prodc}</div></div>`;
+    if (isProdc(d)) {
+      prodc += `<div class="seg"><div class="label">PY 적용 여부</div><div class="value">${d.py_apply}</div></div>`;
+      if (reg) prodc += `<div class="seg grow"><div class="label">C가문 세부 정보</div><div class="value">${NONE}</div></div>`;
+      else if (buildProdcInfo(d)) prodc += `<div class="seg grow"><div class="label">C가문 세부 정보</div><div class="value">${esc(buildProdcInfo(d))}</div></div>`;
+    }
+    h += `<div class="row"><div class="chip auto">${prodc}</div></div>`;
+    h += rowFinal(d) + rowInter(d, false) + rowOpts(d, false);
+    return card(h);
   }
 
-  // ===== 개선안 ①~⑤ =====
-  function renderNew(c) {
-    const isClone = c.mapType === 'CLONE';
-    const isProdc = c.prodc === 'Yes';
-    // ② '동일' 판정 — StepMap 의 existingAutoLocked 와 같은 규칙(원본 위치 = 라인, 원본 제품 = 제품 이름 앞 코드 8자)
-    const srcCode = (BASIC.partid.split('-')[0] || '').trim().toUpperCase().slice(0, 8);
-    const same = c.srcLine === BASIC.line && c.srcPart === srcCode;
-
-    const banner = isClone
-      ? `<span class="type">CLONE</span><span>기존 MAP <strong>${esc(c.srcLine)} · ${esc(c.srcPart)}</strong> 을(를) <strong>차용</strong>합니다. 아래 '원본 따름' 항목은 원본 MAP 설정을 그대로 가져오므로 이 의뢰서에서 입력하지 않았습니다.</span>`
-      : `<span class="type existing">EXISTING</span><span>이미 등록된 MAP <strong>${esc(c.srcLine)} · ${esc(c.srcPart)}</strong> 을(를) <strong>그대로 사용</strong>합니다. 아래 '원본 따름' 항목은 등록된 MAP 설정을 따르므로 이 의뢰서에서 입력하지 않았습니다.</span>`;
-
-    const route = same
-      ? `<div class="route"><div class="box"><small>원본 = 이번 의뢰</small>${esc(c.srcLine)} · ${esc(c.srcPart)}</div><span class="same">동일 · 자동 매칭</span></div>`
-      : `<div class="route">
-           <div class="box"><small>원본</small>${esc(c.srcLine)} · ${esc(c.srcPart)}</div>
-           <span class="arrow">→</span>
-           <div class="box"><small>이번 의뢰</small>${esc(BASIC.line)} · ${esc(BASIC.partid)}</div>
-         </div>`;
-
-    const inherited = ['지도 편차 변경', '예외 구역 변경', 'X표시 변경 여부'];
-    if (isProdc) inherited.push('C가문 세부 정보');
-    inherited.push('3번', 'Map Option 선택');
-
-    const gds = c.final === 'YES' && c.gds.length ? ` ${c.gds.map((g) => `<span class="gds">${esc(g)}</span>`).join('')}` : '';
-
-    return shell(c, `
-      <div class="banner marked">${mark(1)}${banner}</div>
-      <div class="row">
-        <div class="chip" style="flex:0 0 130px"><div class="label">MAP 목적</div><div class="value">${c.mapType}</div></div>
-        <div class="chip wide marked" style="flex:4 1 0">${mark(2)}<div class="label">원본 → 대상</div>${route}</div>
-      </div>
-      <div class="row">
-        <div class="chip auto marked">${mark(5)}
-          <div class="seg"><div class="label">Only C가문 제품</div><div class="value">${c.prodc}</div></div>
-          ${isProdc ? `<div class="seg"><div class="label">PY 적용 여부</div><div class="value">${c.py}</div></div>` : ''}
-          <div class="seg grow"><div class="label">Final</div><div class="value">${c.final}${gds}</div></div>
-        </div>
-      </div>
-      <details class="inherit marked">${mark('3·4')}
-        <summary><b>🔒 원본 따름 ${inherited.length}개</b><span class="names">${inherited.join(' · ')}</span></summary>
-        <div class="inherit-grid">
-          ${inherited.map((n) => `<div><div class="label">${n}</div><div class="inherit-val">원본 따름</div></div>`).join('')}
-        </div>
-      </details>
-    `);
+  // ===== 개선안 =====
+  function renderNew(d) {
+    if (!isReg(d)) return renderNow(d);
+    const state = Object.fromEntries(LOCKED_ITEMS.filter((i) => !i.applies || i.applies(d)).map((i) => [i.key, i.isDefault(d)]));
+    const shown = (k) => k in state && !state[k];
+    let h = rowType(d, true);
+    if (shown('map') || shown('ea')) h += `<div class="row">${shown('map') ? chipMap(d, true) : ''}${shown('ea') ? chipEa(d, true) : ''}</div>`;
+    if (shown('mshot')) h += rowMshot(d, true);
+    let prodc = `<div class="seg"><div class="label">Only C가문 제품</div><div class="value">${d.only_prodc}</div></div>`;
+    if (isProdc(d)) {
+      prodc += `<div class="seg"><div class="label">PY 적용 여부</div><div class="value">${d.py_apply}</div></div>`;
+      if (shown('prodc')) prodc += `<div class="seg grow"><div class="label">${warn}C가문 세부 정보</div><div class="value">${esc(buildProdcInfo(d))}</div></div>`;
+    }
+    h += `<div class="row"><div class="chip auto${shown('prodc') ? ' locked-val' : ''}">${prodc}</div></div>`;
+    h += rowFinal(d);
+    if (shown('inter')) h += rowInter(d, true);
+    if (shown('opts')) h += rowOpts(d, true);
+    const folded = LOCKED_ITEMS.filter((i) => i.key in state && state[i.key]).map((i) => i.label);
+    if (folded.length) h += `<div class="inherit"><b>🔒 원본 MAP 기준 (입력 없음):</b>${folded.join(' · ')}</div>`;
+    return card(h);
   }
 
-  const tabs = document.getElementById('caseTabs');
+  const countRows = (html) => { const t = document.createElement('div'); t.innerHTML = html; return t.querySelectorAll('.card > .row, .card > .inherit').length; };
   function show(key) {
     const c = CASES.find((x) => x.key === key);
-    document.getElementById('nowView').innerHTML = renderNow(c);
-    document.getElementById('newView').innerHTML = renderNew(c);
-    [...tabs.children].forEach((b) => b.classList.toggle('active', b.dataset.key === key));
+    const d = { ...BASE, ...c.d };
+    const now = renderNow(d); const next = renderNew(d);
+    document.getElementById('nowView').innerHTML = now;
+    document.getElementById('newView').innerHTML = next;
+    document.getElementById('nowCount').textContent = `(${countRows(now)}줄)`;
+    document.getElementById('newCount').textContent = `(${countRows(next)}줄)`;
+    document.getElementById('caseDesc').textContent = c.desc;
+    document.querySelectorAll('.case-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.key === key));
   }
+  const holders = { new: 'tabsNew', legacy: 'tabsLegacy', reg: 'tabsReg' };
   CASES.forEach((c) => {
     const b = document.createElement('button');
     b.textContent = c.label; b.dataset.key = c.key;
     b.addEventListener('click', () => show(c.key));
-    tabs.appendChild(b);
+    document.getElementById(holders[c.group]).appendChild(b);
   });
   show('C2');
 </script>
