@@ -322,8 +322,14 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   C가문 Yes·PY·CC·Final 입력 후 저장 / 자동 매칭 조회 실패 시 버튼 선택으로 해제). 게이트를 뺀 코드로 돌리면 게이트 관련 3건이 실패함을 확인.
   개발 서버(Chromium)에서 MAP 영역 입력칸 잠김 수: 미선택 21/21 · NEW 1/21(예외 구역 값 칸은 '변경 없음'이면 원래 잠김) ·
   CLONE 18/23 · 자동 EXISTING 35/40(열린 5칸 = C가문·PY·CC·Final YES/NO).
-- **참고(기존 스타일)**: `.form-control:disabled` 전용 스타일이 없어 잠긴 드롭다운·입력칸은 열린 칸과 똑같이 하얗게 보인다
-  (버튼은 회색). 이번 변경 이전부터 CLONE/EXISTING 잠금 칸도 같은 모양이다 — 안내 문구로 잠김 이유를 알린다.
+- **잠긴 입력칸 모양 (후속, 사용자 결정 — 앱 전체 적용)**: 그동안 `.form-control:disabled` 전용 스타일이 없어 잠긴 드롭다운·입력칸이
+  열린 칸과 똑같이 하얗게 보였다(버튼만 회색). `global.css` 에 `.form-control:disabled { background-color: var(--bg-secondary);
+  cursor: not-allowed; opacity: 0.6 }` 를 추가해 `AutocompleteInput` 잠금 모양과 통일했다. select 화살표(`background-image`)가 지워지지
+  않도록 `background` 단축 속성이 아니라 `background-color` 만 바꾼다.
+  - 영향 범위: `.form-control` 을 `disabled` 로 쓰는 모든 화면(의뢰서 작성 Step1·StepMap·C가문 행, 결재 현황·권한 관리·VOC·가이드·홈의
+    모달/필터 등). 동작은 그대로이고 모양만 바뀐다. 의뢰서 작성 Step1 첫 화면(라인 선택 전)에서는 아직 입력할 수 없는 14칸이 회색으로 보인다.
+  - `mapInfoLocked`(R 합의 후 중단 문서)처럼 영역 전체에 이미 흐림(opacity 0.6)이 걸린 곳의 잠긴 칸은 두 번 흐려져 더 옅게 보인다
+    (`AutocompleteInput` 잠긴 칸도 원래 같은 동작).
 - **수동 검증 시나리오** (`http://localhost:10011`):
   1. [의뢰서 작성 → Step1 에서 MAP 이 **등록되지 않은** 라인·제품 선택 → '다음'] → [기대: MAP 목적 아래에 "MAP 목적을 먼저 선택하면
      나머지 항목을 입력할 수 있습니다." 문구. Final YES/NO·Map Option 버튼이 회색이고, 드롭다운을 눌러도 열리지 않는다.
