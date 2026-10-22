@@ -5788,11 +5788,18 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   | 일반 | PL·SA 검토 / R·RV 결재 중 | R(+RV) 합의 → P/PV·J·O·E/EV·RA 생성 |
   | 일반(R 생략 재상신) | PL·SA 검토 중 | PL 전원 합의 직후 |
   | ADI CD 변경 (XXXXXX 만 비교) | PL·SA 검토 중 | PL·SA 합의 → P·J 병렬 생성 |
+  | 일반 + 기타 목적 'Overlay만 변경' 단독 (2026-10-22 추가) | PL·SA 검토 중 (2구역 없음) | PL·SA 합의 → P/PV·O·E/EV·RA 생성 (J 없음) |
   | Only MAP · MAP 삭제 | **변경 감지 대상 아님** — 모든 구역에서 배지·자동 반려 없음 | — |
 
   Only MAP · MAP 삭제 제외는 이번 변경이 아니라 기존(2026-09) `compute_document_layer_drift` 분기
   (`is_only_map() or is_map_delete_edit()` → 빈 diff)에 의한 것이다. 2026-10-04 정정: 이 절 최초 작성 시 두 유형도
   3구역에서 반려된다고 잘못 적었다 — 실제 실행(3구역까지 진행 + 마스터 변경 + 3주기)으로 반려·배지 모두 없음을 확인했다.
+
+  'Overlay만 변경' 단독 행은 2026-10-19 경로 변경(R·J 단계 생략) 이후 표에 빠져 있던 것을 2026-10-22 에 추가했다(코드 변경 없음).
+  **J 단계가 없어도 J-layer 를 비교하고 자동 반려한다** — 사용자 결정(2026-10-22): J-layer 가 바뀌었으면 요청서의 J-layer 표도
+  고쳐서 재상신해야 한다. P·J·O 합의 판정(`is_pjo_agreed`)은 문서에 없는 J 를 빼고 P/PV·O 만 보므로, P/PV·O 가 전원 합의했으면
+  배지만 뜬다. 실행 확인(프로젝트 밖 재현 테스트, 3주기): P·O 대기 → `rejected`(반려 단계 P, 의견 `[자동반려] … J-layer STEP …`) /
+  P·O 합의 → `under_review` + 배지 / P 합의·O 대기 → `rejected`.
 
 - **적용 위치**: `auto_reject_document()` 안(문서 행 잠금 후, 철회 대기 판정 다음)에서 건너뛴다 — 스케줄러
   (`recompute_all_in_progress`)와 철회 취소(`auto_reject_if_confirmed`) 두 경로가 모두 거친다. 배지
