@@ -227,6 +227,10 @@ export const VS_UNSELECTED = '';
 /** 판정 키워드를 포함한 pp 셀 배경색 */
 export const VALIDATION_CELL_COLOR = '#fff9c4';
 
+// claude 수정 (2026-10-22): 이 문구가 pp 에 든 J-ayer 행은 ID 바코드가 없을 수도 있어 차용이어도 item_id 필수에서 뺀다.
+/** pp 에 이 문구 중 하나라도 포함되면(대소문자 무관·부분 일치) 차용 행이어도 item_id(ID) 필수 검사를 건너뛴다 */
+export const ITEM_ID_OPTIONAL_PP_KEYWORDS: readonly string[] = ['PPTT'];
+
 // 엑셀식 붙여넣기용 편집 가능 컬럼 순서(표 표시 순서와 동일). No/체크박스/Update(읽기전용) 제외.
 export const JAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', 'st', 'new_or_copy', 'product_name', 'step', 'item_id'] as const;
 export const OAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', 'st', 'new_or_copy', 'product_name', 'step'] as const;

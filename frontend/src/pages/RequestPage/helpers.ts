@@ -4,7 +4,7 @@ import {
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
   MERGE_ENABLED_PURPOSES, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, STEPSEQ_LEAD_DIGITS,
-  ERROR_KEY_STEPS, ERROR_KEY_DEFAULT_STEP,
+  ERROR_KEY_STEPS, ERROR_KEY_DEFAULT_STEP, ITEM_ID_OPTIONAL_PP_KEYWORDS,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -286,12 +286,20 @@ export const findNocBorrowViolations = (
     .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
     .map((r) => r.id);
 
-/** new_or_copy='차용' 활성 행 중 item_id 공란인 행 id 목록 (item_id 는 J-ayer 전용 필드라 O-ayer 는 대상 아님) */
+// claude 수정 (2026-10-22): pp 에 ID 선택 입력 문구가 든 행은 ID 바코드가 없을 수도 있어 item_id 필수에서 제외.
+/** pp 에 ID 선택 입력 문구(ITEM_ID_OPTIONAL_PP_KEYWORDS)가 포함되는가 — 대소문자 무관·부분 일치 */
+export const isItemIdOptionalPp = (pp: string | undefined): boolean => {
+  const v = (pp ?? '').toLowerCase();
+  return !!v && ITEM_ID_OPTIONAL_PP_KEYWORDS.some((k) => !!k && v.includes(k.toLowerCase()));
+};
+
+/** new_or_copy='차용' 활성 행 중 item_id 공란인 행 id 목록 (item_id 는 J-ayer 전용 필드라 O-ayer 는 대상 아님).
+ *  pp 에 ITEM_ID_OPTIONAL_PP_KEYWORDS 문구가 든 행은 제외한다(product_name·step 필수는 findNocBorrowViolations 가 그대로 검사). */
 export const findNocBorrowItemIdViolations = (
-  rows: { id: string; st: string; new_or_copy: string; item_id: string }[]
+  rows: { id: string; st: string; new_or_copy: string; item_id: string; pp: string }[]
 ): string[] =>
   rows
-    .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim())
+    .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim() && !isItemIdOptionalPp(r.pp))
     .map((r) => r.id);
 
 /**

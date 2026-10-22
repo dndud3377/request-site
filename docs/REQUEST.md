@@ -4526,6 +4526,11 @@ direct-approve)는 그대로다.
   - **검증 시점**: 기존 `product_name`·`step` 검증과 동일하게 J-ayer step3→4 전환 시, 그리고 상신 시 최종 안전망에서 함께 검사한다(`index.tsx`).
   - **에러 표시**: `jayer_noc_${id}_item_id` 키로 ID 셀(`<td>`)에 `field-error-target` 클래스 + `AutocompleteInput`의 `inputStyle`로 빨간 테두리를 표시한다(`st`/`new_or_copy` 드롭다운 셀과 동일 패턴). 토스트 카운트(`jayer_noc_required`)는 product_name/step/item_id 위반을 합쳐 **행 단위 중복 없이** 집계한다.
   - **문구**: `jayer_noc_required`/`jayer_noc_field_error`(ko/en) 문구에 "ID"를 추가해 제품 이름·STEP·ID 셋 중 무엇이든 비어 있으면 안내하도록 갱신했다. `oayer_noc_*` 문구는 변경하지 않았다(item_id 대상 아님).
+  - **예외 (2026-10-22 — PPID 문구로 ID 필수 면제)**: J-ayer 행의 `pp`(PPID)에 `ITEM_ID_OPTIONAL_PP_KEYWORDS`(`constants.ts`, 초기값 `['PPTT']`) 중 하나라도 포함되면(**대소문자 무관·부분 일치**, 판정 `isItemIdOptionalPp` — `helpers.ts`), 차용 행이어도 `findNocBorrowItemIdViolations` 가 그 행을 위반에서 뺀다. 그런 PPID 는 ID 바코드가 있을 수도 없을 수도 있어 필수가 아니기 때문이다.
+    - **면제 범위는 ID 하나뿐**: 같은 행의 제품 이름·STEP 필수(`findNocBorrowViolations`)는 그대로 검사한다.
+    - **검사만 통과**: 화면 표시(ID 칸 스타일·안내 문구)와 ko/en 문구는 바꾸지 않았다. 문구를 넣으면 ID 칸이 빨간 테두리로 막히지 않을 뿐이다.
+    - **문구 관리**: 코드 상수로 고정한다. 문구 추가·수정은 `ITEM_ID_OPTIONAL_PP_KEYWORDS` 배열을 직접 고친다(관리 화면 없음).
+    - **백엔드 영향 없음**: item_id 필수 검사는 프론트에만 있다(백엔드에는 차용 item_id 검증이 없음).
 
 ### 추가 변경 이력 (2026-07 — MAP/예외구역 숫자 입력 + TBV/TLV 개편)
 
