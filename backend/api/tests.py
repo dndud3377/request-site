@@ -9771,6 +9771,85 @@ class LayerDriftAutoRejectTest(TestCase):
         self.assertIn('STEP S2', self.zone3_step.comment)
         self.assertNotIn('STEP S1', self.zone3_step.comment)
 
+    # ----- stepseq 끝 문구(DRIFT_IGNORED_STEPSEQ_SUFFIXES) 제외 -----
+    # claude 수정 (2026-10-22): stepseq 가 지정 문구로 끝나면 값 변경·삭제·신규 추가 모두 무시하는지 검증
+
+    def _ignored_seq(self, prefix='S1'):
+        from . import layer_drift
+        return prefix + layer_drift.DRIFT_IGNORED_STEPSEQ_SUFFIXES[0]
+
+    def _assert_ignored(self, doc):
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertFalse(doc.layer_drift_detected)
+
+    def test_ignored_suffix_value_change_is_ignored(self):
+        """끝 문구가 일치하는 stepseq 는 recipeid·layerid 가 바뀌어도 배지·반려가 없다."""
+        seq = self._ignored_seq()
+        self._master(stepseq=seq, recipeid='RNEW', layerid='LNEW')
+        doc = self._doc([self._saved(sp=seq, pp='ROLD', layerid='LOLD')])
+        self._assert_ignored(doc)
+
+    def test_ignored_suffix_is_case_insensitive(self):
+        """끝 문구는 대소문자를 구분하지 않는다."""
+        seq = self._ignored_seq().lower()
+        self._master(stepseq=seq, recipeid='RNEW')
+        doc = self._doc([self._saved(sp=seq, pp='ROLD')])
+        self._assert_ignored(doc)
+
+    def test_ignored_suffix_added_to_master_after_submit_is_ignored(self):
+        """상신 후 마스터에 끝 문구가 일치하는 stepseq 가 새로 생겨도 '신규 추가'로 잡지 않는다."""
+        self._master(stepseq='S1')
+        self._master(stepseq=self._ignored_seq('S2'))
+        doc = self._doc([self._saved(sp='S1')])
+        self._assert_ignored(doc)
+
+    def test_ignored_suffix_removed_from_master_is_ignored(self):
+        """끝 문구가 일치하는 저장 행이 마스터에서 사라져도 '행 삭제'로 잡지 않는다."""
+        self._master(stepseq='S1')
+        doc = self._doc([self._saved(sp='S1'), self._saved(sp=self._ignored_seq('S2'))])
+        self._assert_ignored(doc)
+
+    def test_suffix_not_at_end_still_rejects(self):
+        """문구가 stepseq 중간에만 있으면 제외 대상이 아니다 — 지금처럼 비교해 반려한다."""
+        seq = self._ignored_seq() + '1'
+        self._master(stepseq=seq, recipeid='RNEW')
+        doc = self._doc([self._saved(sp=seq, pp='ROLD')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_ignored_suffix_xxxxxx_added_after_snapshot_is_ignored(self):
+        """XXXXXX(CD) 도 끝 문구가 일치하는 stepseq 는 스냅샷 이후 추가돼도 감지하지 않는다."""
+        from . import layer_drift
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        self._master()
+        doc = self._doc([self._saved()])
+        layer_drift.capture_extra_layer_snapshot(doc)
+        doc.save(update_fields=['extra_layer_snapshot'])
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq=self._ignored_seq('C1'), descript='cd', recipeid='RC', areaname='A1',
+            eqptype=STEP_EXTRA_EQPTYPE, layerid='LC', updated='U1',
+        )
+        self._assert_ignored(doc)
+
+    def test_ignored_suffix_mixed_with_normal_row_rejects_on_normal_change_only(self):
+        """제외 행과 일반 행이 함께 바뀌면 일반 행 변경으로만 반려되고, 반려 의견·diff 에도 일반 행만 나온다."""
+        seq = self._ignored_seq()
+        self._master(stepseq=seq, recipeid='RNEW1')
+        self._master(stepseq='S2', recipeid='RNEW2')
+        doc = self._doc([self._saved(sp=seq, pp='ROLD1'), self._saved(sp='S2', pp='ROLD2')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.zone3_step.refresh_from_db()
+        self.assertIn('STEP S2', self.zone3_step.comment)
+        self.assertNotIn(f'STEP {seq}', self.zone3_step.comment)
+        drift = self._json.loads(doc.layer_drift_detail)
+        self.assertEqual([r['stepseq'] for r in drift['jayer']['added']], ['S2'])
+
 
 class AdiCdTargetSearchTest(TestCase):
     """ADI CD 변경 '동일 변경 적용 대상' 전체 검색 + 목록 detail_summary.adi_cd_targets (2026-10).
