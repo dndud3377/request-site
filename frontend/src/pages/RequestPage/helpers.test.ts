@@ -4,6 +4,7 @@ import {
   parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows,
   validateAdiCdTargets,
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
+  findNocBorrowViolations, isItemIdOptionalPp,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
@@ -16,6 +17,7 @@ import {
 import {
   VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES,
   OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_OVERLAY_LEGACY,
+  ITEM_ID_OPTIONAL_PP_KEYWORDS,
 } from './constants';
 import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
 
@@ -248,16 +250,53 @@ describe('findEmptyStNocViolations', () => {
 describe('findNocBorrowItemIdViolations', () => {
   it("new_or_copy='차용' 활성 행 중 item_id 가 비면 위반", () => {
     expect(findNocBorrowItemIdViolations([
-      { id: 'a', st: 'O', new_or_copy: '차용', item_id: 'IT-1' },
-      { id: 'b', st: 'O', new_or_copy: '차용', item_id: '' },
-      { id: 'c', st: 'O', new_or_copy: '신규', item_id: '' },
+      { id: 'a', st: 'O', new_or_copy: '차용', item_id: 'IT-1', pp: 'PP01' },
+      { id: 'b', st: 'O', new_or_copy: '차용', item_id: '', pp: 'PP02' },
+      { id: 'c', st: 'O', new_or_copy: '신규', item_id: '', pp: 'PP03' },
     ])).toEqual(['b']);
   });
 
   it('비활성(st===X) 행은 제외한다', () => {
     expect(findNocBorrowItemIdViolations([
-      { id: 'a', st: 'X', new_or_copy: '차용', item_id: '' },
+      { id: 'a', st: 'X', new_or_copy: '차용', item_id: '', pp: 'PP01' },
     ])).toEqual([]);
+  });
+
+  // claude 수정 (2026-10-22): pp 에 ID 선택 입력 문구(ITEM_ID_OPTIONAL_PP_KEYWORDS)가 든 차용 행은 item_id 필수 제외.
+  it('pp 에 ID 선택 입력 문구가 포함되면(부분 일치) item_id 가 비어도 위반이 아니다', () => {
+    expect(findNocBorrowItemIdViolations([
+      { id: 'a', st: 'O', new_or_copy: '차용', item_id: '', pp: `AB_${ITEM_ID_OPTIONAL_PP_KEYWORDS[0]}_01` },
+    ])).toEqual([]);
+  });
+
+  it('ID 선택 입력 문구 판정은 대소문자를 구분하지 않는다', () => {
+    expect(findNocBorrowItemIdViolations([
+      { id: 'a', st: 'O', new_or_copy: '차용', item_id: '', pp: ITEM_ID_OPTIONAL_PP_KEYWORDS[0].toLowerCase() },
+    ])).toEqual([]);
+  });
+
+  it('ID 선택 입력 문구가 없는 차용 행은 그대로 위반이다', () => {
+    expect(findNocBorrowItemIdViolations([
+      { id: 'a', st: 'O', new_or_copy: '차용', item_id: '', pp: ITEM_ID_OPTIONAL_PP_KEYWORDS[0].slice(1) },
+      { id: 'b', st: 'O', new_or_copy: '차용', item_id: '', pp: '' },
+    ])).toEqual(['a', 'b']);
+  });
+
+  it('ID 선택 입력 문구가 있어도 product_name·step 필수는 그대로 검사한다', () => {
+    const row = { id: 'a', st: 'O', new_or_copy: '차용', product_name: '', step: '', item_id: '', pp: ITEM_ID_OPTIONAL_PP_KEYWORDS[0] };
+    expect(findNocBorrowItemIdViolations([row])).toEqual([]);
+    expect(findNocBorrowViolations([row])).toEqual(['a']);
+  });
+});
+
+describe('isItemIdOptionalPp', () => {
+  it('ITEM_ID_OPTIONAL_PP_KEYWORDS 의 모든 문구를 판정한다', () => {
+    ITEM_ID_OPTIONAL_PP_KEYWORDS.forEach((k) => expect(isItemIdOptionalPp(`X_${k}_Y`)).toBe(true));
+  });
+
+  it('빈 값·undefined 는 false', () => {
+    expect(isItemIdOptionalPp('')).toBe(false);
+    expect(isItemIdOptionalPp(undefined)).toBe(false);
   });
 });
 
