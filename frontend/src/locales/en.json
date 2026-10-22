@@ -468,6 +468,7 @@
     "mshot_image_paste_hint": "Paste an image with Ctrl+V",
     "mshot_image_zoom_btn": "View enlarged image",
     "step1_purpose_gate_hint": "Select Line, Combination Method, Product Name, and Cooking Method to unlock the remaining fields.",
+    "step2_map_type_gate_hint": "Select the MAP Purpose first to unlock the remaining fields.",
     "filter_delete_all": "Delete All",
     "filter_edit_cancel": "Cancel Edit",
     "filter_default_label": "Filter",
