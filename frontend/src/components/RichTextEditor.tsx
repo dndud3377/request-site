@@ -1,11 +1,11 @@
 import React, { useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { Node as TiptapNode, Extension, mergeAttributes } from '@tiptap/core';
+import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { TextStyle, Color, FontSize, BackgroundColor, FontFamily } from '@tiptap/extension-text-style';
 import TextAlign from '@tiptap/extension-text-align';
-import Underline from '@tiptap/extension-underline';
+import { TableKit } from '@tiptap/extension-table';
 import Placeholder from '@tiptap/extension-placeholder';
 import { uploadImageAPI, uploadVideoAPI } from '../api/client';
 import { useTranslation } from 'react-i18next';
@@ -37,27 +37,17 @@ const Video = TiptapNode.create({
   },
 });
 
-// Enter 를 문단 분리 대신 한 줄 개행(<br>)으로 처리한다.
-// 단, 목록/코드블록 안에서는 기본 동작(항목 추가 등)을 유지한다.
-const EnterAsHardBreak = Extension.create({
-  name: 'enterAsHardBreak',
-  addKeyboardShortcuts() {
-    return {
-      Enter: () => {
-        const { editor } = this;
-        if (
-          editor.isActive('bulletList') ||
-          editor.isActive('orderedList') ||
-          editor.isActive('listItem') ||
-          editor.isActive('codeBlock')
-        ) {
-          return false; // 기본 Enter 동작에 위임
-        }
-        return editor.commands.setHardBreak();
-      },
-    };
-  },
-});
+// claude 수정 (2026-10-23): 저장 형식과 에디터 내부 형식을 분리해 왕복을 안정화한다.
+// getHTML()은 빈 문단을 <p></p>로 직렬화해 <br>이 빠지므로, 표시 시 라인박스가 생기지 않아
+// 빈 줄이 사라진다 → 저장할 때는 <p><br></p>로 보정한다. 반대로 <p><br></p>를 그대로 에디터에
+// 넣으면 '줄바꿈 1개가 든 문단'으로 읽혀, 글을 끝까지 지우는 순간 setContent 가 다시 돌며
+// 커서가 다음 줄로 튀고 빈 줄이 두 칸 높이가 되므로, 에디터에 넣을 때는 <p></p>로 되돌린다.
+const toStoredHtml = (html: string): string => html.replace(/<p><\/p>/g, '<p><br></p>');
+const toEditorHtml = (html: string): string => html.replace(/<p><br\s*\/?><\/p>/g, '<p></p>');
+
+// 툴바 '표' 버튼으로 삽입하는 기본 표 크기(첫 행은 머리글)
+const TABLE_INSERT_ROWS = 3;
+const TABLE_INSERT_COLS = 3;
 
 interface Props {
   value: string;
@@ -257,10 +247,13 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
     return () => document.removeEventListener('mousedown', handler);
   }, [activeColorPicker]);
 
+  // claude 수정 (2026-10-23): 엑셀·워드 표 붙여넣기 보존용 TableKit 추가, StarterKit 에 이미 있는
+  // Underline 중복 등록 제거, Enter=새 문단(Shift+Enter=줄바꿈, TipTap 기본)으로 되돌림
+  // — Enter 를 <br>로 바꾸던 확장 때문에 글 전체가 한 문단이 되어 H1·정렬이 전체에 적용됐다.
   const editor = useEditor({
     extensions: [
       StarterKit,
-      EnterAsHardBreak,
+      TableKit.configure({ table: { resizable: false } }),
       Image.configure({ inline: false, allowBase64: false }),
       Video,
       TextStyle,
@@ -269,23 +262,20 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
       BackgroundColor,
       FontFamily,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Underline,
       Placeholder.configure({ placeholder: placeholder || t('guide.editor_placeholder') }),
     ],
-    content: value,
+    content: toEditorHtml(value),
     editable: !readOnly,
     onUpdate: ({ editor }) => {
-      // getHTML()은 빈 문단을 <p></p>로 직렬화해 <br>이 빠지므로,
-      // 표시 시 라인박스가 생기지 않아 빈 줄이 사라진다. <br>을 채워 보정.
-      const html = editor.getHTML().replace(/<p><\/p>/g, '<p><br></p>');
-      onChange(html);
+      onChange(toStoredHtml(editor.getHTML()));
     },
   });
 
-  // 외부 value 변경 시 동기화
+  // claude 수정 (2026-10-23): 저장 형식끼리 비교 — 방금 onUpdate 로 내보낸 값이 되돌아왔을 때
+  // setContent 가 다시 돌아 커서가 튀지 않도록 한다. 외부 value 변경 시에만 동기화.
   React.useEffect(() => {
-    if (editor && value !== editor.getHTML()) {
-      editor.commands.setContent(value);
+    if (editor && value !== toStoredHtml(editor.getHTML())) {
+      editor.commands.setContent(toEditorHtml(value));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
@@ -305,10 +295,11 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
         const url = res.url;
         if (url) editor.chain().focus().setImage({ src: url }).run();
       } catch {
-        // 업로드 실패 시 무시
+        // claude 수정 (2026-10-23): 실패를 무시하지 않고 알린다(동영상 업로드와 동일)
+        window.alert(t('guide.image_upload_failed'));
       }
     },
-    [editor, readOnly]
+    [editor, readOnly, t]
   );
 
   const handleImageUpload = useCallback(async () => {
@@ -324,11 +315,12 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
         const url = res.url;
         if (url) editor.chain().focus().setImage({ src: url }).run();
       } catch {
-        // 업로드 실패 시 무시
+        // claude 수정 (2026-10-23): 실패를 무시하지 않고 알린다(동영상 업로드와 동일)
+        window.alert(t('guide.image_upload_failed'));
       }
     };
     input.click();
-  }, [editor]);
+  }, [editor, t]);
 
   const handleVideoUpload = useCallback(async () => {
     if (!editor) return;
@@ -527,6 +519,20 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
             >
               <span style={{ fontSize: 11 }}>{t('editor.reset_color_label')}</span>
             </ToolbarBtn>
+
+            {/* claude 수정 (2026-10-23): 표 삽입·행/열 추가·삭제. 표 밖에서 누르면 명령이 실행되지 않는다(no-op). */}
+            <Sep />
+            <ToolbarBtn
+              title={t('editor.table_insert_title')}
+              onClick={() => editor.chain().focus().insertTable({ rows: TABLE_INSERT_ROWS, cols: TABLE_INSERT_COLS, withHeaderRow: true }).run()}
+            >
+              ▦ {t('editor.table_insert_label')}
+            </ToolbarBtn>
+            <ToolbarBtn title={t('editor.table_add_row_title')} onClick={() => editor.chain().focus().addRowAfter().run()}>{t('editor.table_add_row_label')}</ToolbarBtn>
+            <ToolbarBtn title={t('editor.table_delete_row_title')} onClick={() => editor.chain().focus().deleteRow().run()}>{t('editor.table_delete_row_label')}</ToolbarBtn>
+            <ToolbarBtn title={t('editor.table_add_col_title')} onClick={() => editor.chain().focus().addColumnAfter().run()}>{t('editor.table_add_col_label')}</ToolbarBtn>
+            <ToolbarBtn title={t('editor.table_delete_col_title')} onClick={() => editor.chain().focus().deleteColumn().run()}>{t('editor.table_delete_col_label')}</ToolbarBtn>
+            <ToolbarBtn title={t('editor.table_delete_title')} onClick={() => editor.chain().focus().deleteTable().run()}>{t('editor.table_delete_label')}</ToolbarBtn>
           </div>
 
           {/* 이모티콘 팝업 */}

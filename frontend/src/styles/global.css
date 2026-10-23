@@ -3460,6 +3460,48 @@ select.form-control option {
   margin: 0.4em 0;
 }
 
+/* claude 수정 (2026-10-23): Enter=새 문단으로 바뀌어 에디터 문단 간격을 가이드 표시(0.4em)와 맞추고,
+   엑셀·워드에서 붙여넣은 표가 에디터·가이드 화면에서 칸 구분이 보이도록 테두리를 준다. */
+.ProseMirror p {
+  margin: 0.4em 0;
+}
+
+.ProseMirror table,
+.guide-content-render table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.6em 0;
+}
+
+.ProseMirror th,
+.ProseMirror td,
+.guide-content-render th,
+.guide-content-render td {
+  border: 1px solid #c9ced8;
+  padding: 4px 8px;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.ProseMirror th,
+.guide-content-render th {
+  background: #f1f4f9;
+  font-weight: 600;
+  text-align: left;
+}
+
+.ProseMirror td p,
+.ProseMirror th p,
+.guide-content-render td p,
+.guide-content-render th p {
+  margin: 0;
+}
+
+.ProseMirror .selectedCell {
+  background: #e3edff;
+}
+
 /* ===== 가이드 애니메이션 데모 (guideDemos) ===== */
 .guide-demo-lead {
   font-size: 12.5px;
