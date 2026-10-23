@@ -8,6 +8,14 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TableKit } from '@tiptap/extension-table';
 import Placeholder from '@tiptap/extension-placeholder';
 import { uploadImageAPI, uploadVideoAPI } from '../api/client';
+import {
+  TABLE_HTML_RE,
+  TABLE_RESIZE_HANDLE_PX,
+  applyPastedTableSizes,
+  TableRowWithHeight,
+  TableRowResize,
+  resetTableSize,
+} from './editorTable';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -48,9 +56,6 @@ const toEditorHtml = (html: string): string => html.replace(/<p><br\s*\/?><\/p>/
 // 툴바 '표' 버튼으로 삽입하는 기본 표 크기(첫 행은 머리글)
 const TABLE_INSERT_ROWS = 3;
 const TABLE_INSERT_COLS = 3;
-
-// 클립보드 HTML 에 표가 있는지 판별 — 엑셀·워드 표 복사는 표 HTML 과 함께 표 모양 그림(image/png)도 담는다
-const TABLE_HTML_RE = /<table[\s>]/i;
 
 interface Props {
   value: string;
@@ -253,10 +258,17 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
   // claude 수정 (2026-10-23): 엑셀·워드 표 붙여넣기 보존용 TableKit 추가, StarterKit 에 이미 있는
   // Underline 중복 등록 제거, Enter=새 문단(Shift+Enter=줄바꿈, TipTap 기본)으로 되돌림
   // — Enter 를 <br>로 바꾸던 확장 때문에 글 전체가 한 문단이 되어 H1·정렬이 전체에 적용됐다.
+  // 표 크기(B-77): 열 경계선 드래그(resizable), 넓은 표 가로 스크롤 상자(renderWrapper), 행 높이 속성·드래그,
+  // 붙여넣을 때 엑셀·워드 원래 열 너비 반영(transformPastedHTML).
   const editor = useEditor({
     extensions: [
       StarterKit,
-      TableKit.configure({ table: { resizable: false } }),
+      TableKit.configure({
+        table: { resizable: true, renderWrapper: true, handleWidth: TABLE_RESIZE_HANDLE_PX },
+        tableRow: false,
+      }),
+      TableRowWithHeight,
+      TableRowResize,
       Image.configure({ inline: false, allowBase64: false }),
       Video,
       TextStyle,
@@ -269,6 +281,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
     ],
     content: toEditorHtml(value),
     editable: !readOnly,
+    editorProps: { transformPastedHTML: applyPastedTableSizes },
     onUpdate: ({ editor }) => {
       onChange(toStoredHtml(editor.getHTML()));
     },
@@ -526,7 +539,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
               <span style={{ fontSize: 11 }}>{t('editor.reset_color_label')}</span>
             </ToolbarBtn>
 
-            {/* claude 수정 (2026-10-23): 표 삽입·행/열 추가·삭제. 표 밖에서 누르면 명령이 실행되지 않는다(no-op). */}
+            {/* claude 수정 (2026-10-23): 표 삽입·행/열 추가·삭제·크기 초기화. 표 밖에서 누르면 명령이 실행되지 않는다(no-op). */}
             <Sep />
             <ToolbarBtn
               title={t('editor.table_insert_title')}
@@ -538,6 +551,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
             <ToolbarBtn title={t('editor.table_delete_row_title')} onClick={() => editor.chain().focus().deleteRow().run()}>{t('editor.table_delete_row_label')}</ToolbarBtn>
             <ToolbarBtn title={t('editor.table_add_col_title')} onClick={() => editor.chain().focus().addColumnAfter().run()}>{t('editor.table_add_col_label')}</ToolbarBtn>
             <ToolbarBtn title={t('editor.table_delete_col_title')} onClick={() => editor.chain().focus().deleteColumn().run()}>{t('editor.table_delete_col_label')}</ToolbarBtn>
+            <ToolbarBtn title={t('editor.table_reset_size_title')} onClick={() => { editor.commands.focus(); resetTableSize(editor); }}>{t('editor.table_reset_size_label')}</ToolbarBtn>
             <ToolbarBtn title={t('editor.table_delete_title')} onClick={() => editor.chain().focus().deleteTable().run()}>{t('editor.table_delete_label')}</ToolbarBtn>
           </div>
 
