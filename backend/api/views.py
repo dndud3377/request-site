@@ -4331,6 +4331,8 @@ QUICKTIME_MAJOR_BRAND = b'qt  '
 WEBM_EBML_MAGIC = b'\x1a\x45\xdf\xa3'
 WEBM_DOCTYPE = b'webm'
 UPLOAD_VIDEO_ALLOWED_LABEL = 'mp4/webm'
+# claude 수정 (2026-10-23): 저장 실패 응답에 예외 원문(서버 파일 경로 등)을 싣지 않는다 — 원문은 logger 로만 (B-76)
+UPLOAD_FAILED_MESSAGE = '업로드 실패'
 
 
 def _detect_image_ext(upload):
@@ -4404,7 +4406,7 @@ def upload_image(request):
         })
     except Exception as e:
         logger.error(f"[UPLOAD_IMAGE] 이미지 업로드 실패: {e}")
-        return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+        return JsonResponse({'error': UPLOAD_FAILED_MESSAGE}, status=500)
 
 
 # 동영상 업로드 최대 크기 (50MB)
@@ -4457,7 +4459,7 @@ def upload_video(request):
         })
     except Exception as e:
         logger.error(f"[UPLOAD_VIDEO] 동영상 업로드 실패: {e}")
-        return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+        return JsonResponse({'error': UPLOAD_FAILED_MESSAGE}, status=500)
 
 
 # claude 수정 (2026-10-23): /media/ 를 인증 후 서빙한다 (B-34 — nginx 가 무인증·원본 MIME 으로 서빙해 같은 오리진 XSS 가 됐다)
@@ -4812,6 +4814,10 @@ def photostep_changes(request):
     })
 
 
+# claude 수정 (2026-10-23): 사용자 삭제 실패 응답 고정 문구 — 예외 원문 대신 (B-77)
+USER_DELETE_FAILED_MESSAGE = '사용자 삭제 중 오류가 발생했습니다.'
+
+
 class UserViewSet(viewsets.ModelViewSet):
     """
     사용자 관리 ViewSet
@@ -5063,31 +5069,31 @@ class UserViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save()
     
+    # claude 수정 (2026-10-23): 예외 원문(DB 접속 정보 등)을 응답·화면 토스트에 싣지 않는다(B-77).
+    # get_object() 를 try 밖으로 빼 없는 사용자는 400 이 아니라 DRF 표준 404, 삭제 실패만 400 + 고정 문구(원문은 로그)
     def destroy(self, request, *args, **kwargs):
+        user = self.get_object()
+        caller = request.user
+        caller_role = getattr(caller, 'role', '')
+        target_role = getattr(user, 'role', '')
+
+        if caller_role != 'MASTER':
+            assignable_roles = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
+            if caller_role not in assignable_roles:
+                return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+            if caller.id == user.id:
+                return Response({'error': '자기 자신은 삭제할 수 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+            if caller_role != target_role:
+                return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        user_id = user.id
         try:
-            user = self.get_object()
-            caller = request.user
-            caller_role = getattr(caller, 'role', '')
-            target_role = getattr(user, 'role', '')
-
-            if caller_role != 'MASTER':
-                assignable_roles = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
-                if caller_role not in assignable_roles:
-                    return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-                if caller.id == user.id:
-                    return Response({'error': '자기 자신은 삭제할 수 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-                if caller_role != target_role:
-                    return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-
-            user_id = user.id
             user.delete()
-            broadcaster.broadcast('user_deleted', {'id': user_id})
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        except Exception:
+            logging.getLogger(__name__).exception('[USER_DELETE] 사용자 삭제 실패: id=%s', user_id)
+            return Response({'error': USER_DELETE_FAILED_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        broadcaster.broadcast('user_deleted', {'id': user_id})
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def _sse_authenticated(request) -> bool:
