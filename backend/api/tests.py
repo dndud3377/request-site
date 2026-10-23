@@ -10223,3 +10223,158 @@ class FormOptionsLayerIdsStepseqTest(TestCase):
         for url in ('/api/form-options/layer-ids/?line=line2&process=PRC1', '/api/form-options/layer-ids/?line=line1'):
             res = self.client.get(url)
             self.assertEqual(json.loads(res.content)['options'], [])
+
+
+# claude 수정 (2026-10-23): B-02(무인증·확장자 위장 업로드) / B-34(/media/ 무인증·원본 MIME 서빙) 회귀 테스트
+def _png_bytes(image_format='PNG'):
+    """Pillow 로 만든 실제 1x1 이미지 바이트."""
+    from io import BytesIO
+    from PIL import Image
+    buf = BytesIO()
+    Image.new('RGB', (1, 1), 'red').save(buf, format=image_format)
+    return buf.getvalue()
+
+
+MP4_HEAD = b'\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2mp41' + b'\x00' * 32
+QUICKTIME_HEAD = b'\x00\x00\x00\x14ftypqt  \x00\x00\x02\x00qt  ' + b'\x00' * 32
+WEBM_HEAD = b'\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\x82\x84webm' + b'\x00' * 32
+SCRIPT_SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+SCRIPT_HTML = b'<script>alert(1)</script>'
+
+
+@override_settings(AUTH_MODE='sso')
+class UploadSecurityTest(TestCase):
+    """업로드: 운영 모드 무인증 거부 + 저장 확장자는 실제 내용으로 서버가 정한다(원본 파일명 무시)."""
+
+    IMAGE_URL = '/api/upload-image/'
+    VIDEO_URL = '/api/upload-video/'
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from rest_framework.test import APIClient
+        media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, media_root, ignore_errors=True)
+        media_override = override_settings(MEDIA_ROOT=media_root)
+        media_override.enable()
+        self.addCleanup(media_override.disable)
+        self.user = UserProfile.objects.create(loginid='uploader', mail='uploader@company.com', role='NONE')
+        self.client = APIClient()
+
+    def _upload(self, url, field, name, content, content_type, login=True):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        if login:
+            self.client.force_authenticate(user=self.user)
+        return self.client.post(
+            url, {field: SimpleUploadedFile(name, content, content_type=content_type)}, format='multipart'
+        )
+
+    # CookieJWTAuthentication 에 authenticate_header 가 없어 DRF 는 무인증을 403 으로 응답한다(앱 전역 동작).
+    def test_anonymous_image_upload_is_rejected(self):
+        r = self._upload(self.IMAGE_URL, 'image', 'a.png', _png_bytes(), 'image/png', login=False)
+        self.assertIn(r.status_code, (401, 403), r.content)
+
+    def test_anonymous_video_upload_is_rejected(self):
+        r = self._upload(self.VIDEO_URL, 'video', 'a.mp4', MP4_HEAD, 'video/mp4', login=False)
+        self.assertIn(r.status_code, (401, 403), r.content)
+
+    def test_svg_is_rejected_even_with_png_content_type(self):
+        for content_type in ('image/svg+xml', 'image/png'):
+            r = self._upload(self.IMAGE_URL, 'image', 'evil.svg', SCRIPT_SVG, content_type)
+            self.assertEqual(r.status_code, 400, (content_type, r.content))
+
+    def test_html_disguised_as_png_is_rejected(self):
+        r = self._upload(self.IMAGE_URL, 'image', 'evil.png', SCRIPT_HTML, 'image/png')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_real_image_is_saved_with_detected_extension_not_original_name(self):
+        for image_format, original_name, expected_ext in (
+            ('PNG', 'evil.html', '.png'), ('JPEG', 'photo.PNG', '.jpg'), ('GIF', 'x', '.gif'), ('WEBP', 'a.svg', '.webp'),
+        ):
+            r = self._upload(self.IMAGE_URL, 'image', original_name, _png_bytes(image_format), 'image/png')
+            self.assertEqual(r.status_code, 200, (image_format, r.content))
+            self.assertTrue(r.json()['path'].startswith('mshot_images/mshot_'), r.json())
+            self.assertTrue(r.json()['path'].endswith(expected_ext), (image_format, r.json()))
+
+    def test_video_is_saved_with_detected_extension_not_original_name(self):
+        for head, original_name, expected_ext in ((MP4_HEAD, 'evil.html', '.mp4'), (WEBM_HEAD, 'clip.mp4', '.webm')):
+            r = self._upload(self.VIDEO_URL, 'video', original_name, head, 'video/mp4')
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertTrue(r.json()['path'].startswith('guide_videos/guide_'), r.json())
+            self.assertTrue(r.json()['path'].endswith(expected_ext), r.json())
+
+    def test_quicktime_and_html_video_are_rejected(self):
+        for name, content in (('clip.mov', QUICKTIME_HEAD), ('clip.mp4', QUICKTIME_HEAD), ('evil.mp4', SCRIPT_HTML)):
+            r = self._upload(self.VIDEO_URL, 'video', name, content, 'video/mp4')
+            self.assertEqual(r.status_code, 400, (name, r.content))
+
+
+@override_settings(AUTH_MODE='sso', MEDIA_X_ACCEL_PREFIX='')
+class MediaServeTest(TestCase):
+    """/media/ 서빙: 운영 모드 무인증 거부, 화이트리스트 확장자만(대소문자 무시), MIME 을 서버가 지정."""
+
+    def setUp(self):
+        import os
+        import shutil
+        import tempfile
+        from rest_framework.test import APIClient
+        base_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        self.media_root = os.path.join(base_dir, 'media')
+        # MEDIA_ROOT 바로 바깥에 실제 파일을 둬서 경로 이탈이 '없는 파일'이라 404 인 게 아님을 확인한다
+        with open(os.path.join(base_dir, 'outside.png'), 'wb') as f:
+            f.write(_png_bytes())
+        media_override = override_settings(MEDIA_ROOT=self.media_root)
+        media_override.enable()
+        self.addCleanup(media_override.disable)
+        os.makedirs(os.path.join(self.media_root, 'mshot_images'))
+        self.png = _png_bytes()
+        for name, content in (
+            ('a.png', self.png), ('UPPER.PNG', self.png), ('evil.svg', SCRIPT_SVG), ('evil.html', SCRIPT_HTML),
+        ):
+            with open(os.path.join(self.media_root, 'mshot_images', name), 'wb') as f:
+                f.write(content)
+        self.user = UserProfile.objects.create(loginid='viewer', mail='viewer@company.com', role='NONE')
+        self.client = APIClient()
+
+    def _get(self, path, login=True):
+        if login:
+            self.client.force_authenticate(user=self.user)
+        return self.client.get(f'/media/{path}')
+
+    def test_anonymous_is_rejected(self):
+        self.assertIn(self._get('mshot_images/a.png', login=False).status_code, (401, 403))
+
+    def test_dev_mode_allows_anonymous_like_other_apis(self):
+        with override_settings(AUTH_MODE='dev'):
+            self.assertEqual(self._get('mshot_images/a.png', login=False).status_code, 200)
+
+    def test_authenticated_png_is_served_with_explicit_type_and_security_headers(self):
+        r = self._get('mshot_images/a.png')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], 'image/png')
+        self.assertEqual(r['X-Content-Type-Options'], 'nosniff')
+        self.assertIn('sandbox', r['Content-Security-Policy'])
+        self.assertTrue(r['Cache-Control'].startswith('private'))
+        self.assertEqual(b''.join(r.streaming_content), self.png)
+
+    def test_extension_is_case_insensitive(self):
+        r = self._get('mshot_images/UPPER.PNG')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], 'image/png')
+
+    def test_non_whitelisted_extension_is_404(self):
+        for path in ('mshot_images/evil.svg', 'mshot_images/evil.html', 'mshot_images/noext'):
+            self.assertEqual(self._get(path).status_code, 404, path)
+
+    def test_missing_file_and_path_traversal_are_404(self):
+        for path in ('mshot_images/none.png', '../outside.png', 'mshot_images/%2e%2e/%2e%2e/outside.png'):
+            self.assertEqual(self._get(path).status_code, 404, path)
+
+    def test_production_hands_file_transfer_to_nginx_via_x_accel(self):
+        with override_settings(MEDIA_X_ACCEL_PREFIX='/protected-media/'):
+            r = self._get('mshot_images/a.png')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['X-Accel-Redirect'], '/protected-media/mshot_images/a.png')
+        self.assertEqual(r['Content-Type'], 'image/png')
+        self.assertEqual(r.content, b'')
