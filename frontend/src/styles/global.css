@@ -3461,13 +3461,15 @@ select.form-control option {
 }
 
 /* claude 수정 (2026-10-23): Enter=새 문단으로 바뀌어 에디터 문단 간격을 가이드 표시(0.4em)와 맞추고,
-   엑셀·워드에서 붙여넣은 표가 에디터·가이드 화면에서 칸 구분이 보이도록 테두리를 준다. */
+   엑셀·워드에서 붙여넣은 표가 에디터·보기 화면(가이드 + .rich-table-render: 공지·VOC 본문/댓글·MAP 변경 사유)에서
+   칸 구분이 보이도록 테두리를 준다. */
 .ProseMirror p {
   margin: 0.4em 0;
 }
 
 .ProseMirror table,
-.guide-content-render table {
+.guide-content-render table,
+.rich-table-render table {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
@@ -3477,7 +3479,9 @@ select.form-control option {
 .ProseMirror th,
 .ProseMirror td,
 .guide-content-render th,
-.guide-content-render td {
+.guide-content-render td,
+.rich-table-render th,
+.rich-table-render td {
   border: 1px solid #c9ced8;
   padding: 4px 8px;
   vertical-align: top;
@@ -3485,7 +3489,8 @@ select.form-control option {
 }
 
 .ProseMirror th,
-.guide-content-render th {
+.guide-content-render th,
+.rich-table-render th {
   background: #f1f4f9;
   font-weight: 600;
   text-align: left;
@@ -3494,7 +3499,9 @@ select.form-control option {
 .ProseMirror td p,
 .ProseMirror th p,
 .guide-content-render td p,
-.guide-content-render th p {
+.guide-content-render th p,
+.rich-table-render td p,
+.rich-table-render th p {
   margin: 0;
 }
 

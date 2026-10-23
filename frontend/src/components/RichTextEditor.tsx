@@ -49,6 +49,9 @@ const toEditorHtml = (html: string): string => html.replace(/<p><br\s*\/?><\/p>/
 const TABLE_INSERT_ROWS = 3;
 const TABLE_INSERT_COLS = 3;
 
+// 클립보드 HTML 에 표가 있는지 판별 — 엑셀·워드 표 복사는 표 HTML 과 함께 표 모양 그림(image/png)도 담는다
+const TABLE_HTML_RE = /<table[\s>]/i;
+
 interface Props {
   value: string;
   onChange: (html: string) => void;
@@ -281,9 +284,12 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
   }, [value]);
 
   // 이미지 붙여넣기
+  // claude 수정 (2026-10-23): 표 HTML 이 함께 오면(엑셀·워드 표 복사) 표는 에디터가 넣으므로 딸려온 그림은 올리지 않는다
+  // — 그대로 두면 표 아래에 같은 모양의 그림이 하나 더 붙었다.
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent) => {
       if (readOnly || !editor) return;
+      if (TABLE_HTML_RE.test(e.clipboardData.getData('text/html'))) return;
       const items = Array.from(e.clipboardData.items);
       const imageItem = items.find((i) => i.type.startsWith('image/'));
       if (!imageItem) return;
