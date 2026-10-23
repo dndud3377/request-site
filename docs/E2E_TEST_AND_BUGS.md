@@ -50,6 +50,10 @@
 > 1~5는 서로 맞물린다. B-02로 올린 `.svg`를 B-34가 실행 가능하게 서빙하고, 그 스크립트가 B-01로 문서를 지우거나
 > B-26의 경로로 권한을 올린다. **개별 패치가 아니라 한 묶음으로 처리**할 것을 권한다.
 
+> **접근 경로 원칙 적용(2026-10-23, 보안 점검 조치)** — 데이터는 ① SSO 로그인 쿠키 ② 외부 API Key(`/api/external/v1/documents/`)
+> 로만 나간다. 무인증 SSE(R-09)·form-options 11종(R-08)·라우터 루트 API 목록·health·admin·운영 Bearer 를 닫고
+> 전 URL 순회 테스트로 고정했다 → §5-7, 원칙 원문은 `docs/EXTERNAL_API.md` §0.
+
 **데이터 정합성 즉시 조치 권고 (3차, 2026-08-04)** — 보안 TOP5 와 별개 트랙이다.
 1. **[B-57] 추가 후결자 소실** — C가문이 아닌 문서에서 `add-post-approver` 로 넣은 후결자가
    재상신/재개/PL수정후상신 저장 한 번에 `detail.post_approvers = []` 로 지워져, 재상신 후 **RA 단계가 안 생긴다.**
@@ -345,7 +349,8 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 `submit` / `resubmit` / `withdraw` / `delete` / `approve-step` / `reject-step` / `assign-step` /
 `claim-step` / `peer-approve` / `peer-reject` / `peer-submit` / `change-designee` /
 `add-post-approver` / `remove-post-approver` / `request-pause` / `confirm-pause` / `resume` / `cancel-pause`
-+ `form-options/*` 9종 + `upload-image` / `upload-video` + `external/v1/documents` + `users/events`(SSE)
++ `form-options/*` 11종 + `upload-image` / `upload-video` + `external/v1/documents` + `users/events`(SSE)
+(2026-10-23부터 `form-options/*`·`users/events` 도 운영에서 로그인 필수, 외부 API Key 로 열리는 건 `external/v1/documents` 뿐 — §5-7)
 
 ---
 
@@ -997,6 +1002,27 @@ curl -s http://<host>/api/documents/ | head -c 200      # 쿠키·토큰 없이
 docker logs <backend> 2>&1 | grep "\[OIDC\]" | head -20
 ```
 - ❌ 로그인 1회마다 **메일·부서·성·이름·UPN·sub**가 평문으로 남는다 → §5 **B-35**
+
+#### T-Q8 외부 접근 경로 점검 (2026-10-23 추가, 배포 후 필수) → §5-7
+운영 서버 **밖의 PC**에서, 쿠키·토큰 없이 실행한다(`-k` 는 사내 인증서용).
+```bash
+H=https://<운영호스트>:10010
+for p in /api/ /api/users/events/ /api/form-options/barcode/ /api/health/ /admin/ /api/documents/; do
+  echo "$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 $H$p)  $p"; done
+curl -sk -o /dev/null -w '%{http_code}  key only → 내부 API\n' -H "X-API-Key: <키>" $H/api/documents/
+curl -sk -o /dev/null -w '%{http_code}  key → 외부 API\n'    -H "X-API-Key: <키>" $H/api/external/v1/documents/
+```
+- ✅ 첫 6줄: `/api/users/events/` **401**, `/admin/` **404**, 나머지 **403** / key only → 내부 API **403** / key → 외부 API **200**
+- ❌ 어느 하나라도 200 이 나오거나 `/api/users/events/` 가 끊기지 않고 대기하면(스트림 열림) 실패 — 배포본이 이전 코드인지 확인
+- 컨테이너 안 healthcheck 는 계속 200 이어야 한다:
+  `docker exec <backend> python -c "import urllib.request as u; print(u.urlopen('http://localhost:8000/api/health/').read())"` → `b'{"status": "healthy", "db": "connected"}'`
+  (`docker ps` 의 backend 상태가 `unhealthy` 로 바뀌면 실패)
+
+#### T-Q9 권한관리 실시간 반영(SSE)이 로그인 상태에서 그대로 동작 (2026-10-23 추가)
+1. MASTER 로 로그인 → **권한관리** 메뉴 → 브라우저 개발자도구 Network 탭에서 `events/` 요청이 **200 / `text/event-stream`, 대기(pending) 상태**인지 확인
+2. 다른 브라우저(또는 시크릿 창)로 다른 계정 로그인 → 권한관리에서 NONE 사용자에게 역할 부여
+3. ✅ 1번 화면에 **새로고침 없이** 해당 사용자가 역할 탭으로 옮겨 간다
+- ❌ `events/` 가 401 이면 쿠키가 실리지 않은 것 — 로그아웃 후 재로그인해 다시 확인
 
 ---
 
@@ -2322,6 +2348,59 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ---
 
+## 5-7. 접근 경로 원칙 — 무인증 경로·제3 인증 수단 제거 (B-70 ~ B-74) — ✅수정완료(2026-10-23)
+
+> 계기: 보안 점검 지적 "SSE 스트림 무인증 구독"(쿠키 없이 `GET /api/users/events/` → `: connected` 수신).
+> 사용자 결정 원칙: **데이터는 ① SSO 로그인 쿠키 ② 외부 연동 API(`/api/external/v1/documents/` 목록·상세 + `X-API-Key`)로만 나간다.**
+> 원칙 원문·허용 목록은 `docs/EXTERNAL_API.md` §0.
+
+### 결과 요약
+
+| ID | 무엇이 열려 있었나 | 위치 | 조치 | 운영 응답(수정 후) |
+|---|---|---|---|---|
+| B-70 (=R-09) | SSE 무인증 구독 — 사용자 추가·역할 변경·삭제 이벤트(loginid·이름·부서·메일·메일 수신 설정) | `views.py` `user_events` | 스트림 열기 전에 `CookieJWTAuthentication` 직접 호출, 실패 시 구독 큐 생성 없이 401. 개발은 허용(현행) | **401** |
+| B-71 (=R-08) | 마스터 데이터 조회 11종 무인증 | `views.py` `form_options_*` | `@api_view(['GET'])` + `IsAuthenticatedInProd` | **403** |
+| B-72 | 라우터 루트가 **내부 API 주소 전체 목록**을 비로그인에 공개(`/api/`, `/api/external/v1/`) | `settings/base.py` 기본 권한 `IsAuthenticatedOrReadOnly` | 기본 권한 `IsAuthenticated` (기존 ViewSet·`@api_view` 는 전부 권한을 직접 지정해 동작 변화 없음) | **403** |
+| B-73 | `/api/health/` 공개 + DB 장애 시 오류 원문(`str(e)`) 응답 / `/admin/` 로그인 화면 외부 노출 | `views.py` `health_check`, `config/urls.py` | health 는 **루프백 + X-Forwarded-For 없음**만 허용(컨테이너 안 Docker healthcheck 전용), 오류 원문은 로그로만. admin 라우트 제거(사용 안 함·구조적 사용 불가 — 사용자 확인) | health **403**(외부)/200(컨테이너 안), admin **404** |
+| B-74 | 운영에서도 `Authorization: Bearer`(simplejwt) 가 통과 — 허용하지 않은 제3 인증 수단. 서명 키는 `SECRET_KEY` | `settings/base.py` `DEFAULT_AUTHENTICATION_CLASSES` | `AUTH_MODE=dev` 로 기동했을 때만 추가(dev-login 이 발급하는 조건과 동일). 운영 프론트는 dev 모드에서만 Bearer 를 보낸다(`client.ts:70,100`) | **403** |
+
+이미 막혀 있던 것(실측 확인): API Key 만으로 내부 API(`/api/documents/` 등) → 403, 외부 API 쓰기 메서드 → 405, `/media/` 비로그인 → 403, 운영 dev-login → 403.
+
+### 설계 메모
+- **SSE 를 DRF `@api_view` 로 감싸지 않은 이유**: EventSource 가 `Accept: text/event-stream` 을 보내 DRF 콘텐츠 협상이 **406** 으로 거절한다(실측:
+  `SSE Accept:text/event-stream -> 406 {'detail': ... 'not_acceptable'}`). 그래서 `_sse_authenticated()` 가 인증 클래스를 직접 부른다.
+- **health 를 루프백으로 판정하는 근거**: Docker healthcheck 는 backend 컨테이너 **안**에서 `localhost:8000` 을 친다(사용자 확인). nginx 경유 요청은
+  REMOTE_ADDR 가 nginx 컨테이너이고 `X-Forwarded-For` 가 붙으며, 공개 포트(8000)로 직접 들어온 외부 요청도 루프백이 아니다.
+  ⚠️ healthcheck 를 **호스트에서** `localhost:8000` 으로 치게 바꾸면 Docker 게이트웨이 IP 로 보여 403 이 된다 — 컨테이너 안에서 실행할 것.
+- 401(SSE·Bearer 없음) vs 403(DRF 뷰): `CookieJWTAuthentication` 에 `authenticate_header` 가 없어 DRF 는 미인증을 403 으로 응답한다(앱 전역 기존 동작, B-02 와 동일).
+
+### 수정 전·후 실측 — 등록된 전 URL 순회(무인증 / API Key 만, 외부 주소 `203.0.113.10` 흉내)
+```
+##### 수정 전 #####                                   ##### 수정 후 #####
+전체 URL 267개 순회                                    전체 URL 203개 순회   (admin 64개 제거)
+  LEAK GET  anon 302 /admin/            (+ admin 하위 전부)   LEAK 0건
+  LEAK GET  anon 200 /api/
+  LEAK GET  anon 200 /api/external/v1/
+  LEAK GET  anon 200 /api/form-options/{11종 전부}
+  LEAK GET  anon 200 /api/health/
+  LEAK GET  anon 200 /api/users/events/   (POST 도 200)
+  — 위 전부 API Key 만 붙여도 동일
+```
+
+### 회귀 테스트 (`backend/api/tests.py`, 18건)
+- `PublicEndpointAllowlistTest` — **모든 URL** 을 자동 순회해 허용 목록(SSO 로그인 흐름 3개, 외부 API) 밖에서 401/403/404/405 외 응답이 나오면 실패.
+  새 API 에 권한 지정을 빠뜨리면 여기서 잡힌다. 수정 전 코드로 되돌려 돌리면 실패하는 것까지 확인했다.
+- `UserEventsAuthTest`(무인증·위조·만료·미등록 사용자 401 + 구독 큐 미생성 / 정상 쿠키 200·`: connected`·종료 시 구독 해제 / 개발 허용)
+- `FormOptionsAuthTest` · `HealthCheckAccessTest` · `AccessChannelPolicyTest`(Bearer 운영 차단·admin 404·라우터 루트 비공개)
+- 기존 `FormOptionsLineProcessProductProcessIdTest`·`FormOptionsLayerIdsStepseqTest` 는 비로그인 호출이었어서 setUp 에 로그인을 추가했다.
+
+### 보류·후속 (이번 범위 밖)
+- SSE 연결 수 상한·스트림 수명 제한(R-09 후반) — 사용자 결정으로 보류.
+- 개발 모드(`AUTH_MODE=dev`) 개방 범위(B-29) — 개발 서버 접근 범위 확인 후 결정.
+- compose 의 backend `8000`·MySQL `3306` 포트가 호스트 전체 인터페이스에 공개(`docker-compose.yml:11,37`) — nginx·API 를 우회하는 경로. 방화벽 상태 미확인.
+
+---
+
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
 
 ### R-01 🔴 `additional_notes` 가 `TextField` — 도메인 데이터 전체가 스키마 없는 문자열
@@ -2372,11 +2451,13 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 - 권고: 서버가 step 별 `can_agree`/`can_claim`/`can_assign` 플래그를 내려주고 프론트는 그걸 렌더만 하기
   (이미 `can_edit`/`can_withdraw` 는 그 방식이라 선례가 있다).
 
-### R-08 🟡 마스터 데이터 조회 API 9종이 전부 미인증
+### R-08 🟡 마스터 데이터 조회 API 9종이 전부 미인증 → ✅**수정완료(2026-10-23)**
+> **[2026-10-23]** 실제로는 11종. `@api_view(['GET'])` + `IsAuthenticatedInProd` 로 전환 — 운영 비로그인 **403**, 개발은 현행대로 허용. 프론트는 이미 쿠키를 보내 화면 변경 없음. §5-7. 아래는 원문.
 `/api/form-options/*` 는 `@require_GET` 순수 뷰라 인증이 없다. 라인·조합법·제품·process_id·layer·바코드·MAP 이름이
 **로그인 없이 전량 열람 가능**하다(사내망 전제라 하더라도 최소 인증은 필요).
 
-### R-09 🟡 SSE 스트림에 인증·정리 로직이 없다
+### R-09 🟡 SSE 스트림에 인증·정리 로직이 없다 → ✅**인증만 수정완료(2026-10-23)** / ⏸️ 연결 상한·수명 제한 보류
+> **[2026-10-23]** 운영은 로그인 쿠키 인증 통과 전에는 스트림·구독 큐를 만들지 않고 **401**. 개발은 현행대로 허용(EventSource 는 Bearer 헤더를 못 보냄). 연결 수 상한·스트림 수명 제한은 사용자 결정으로 **보류** — 운영 gunicorn 이 `gthread 2 workers × 10 threads` = 동시 20 스레드라 **로그인 사용자의 열린 권한관리 탭 20개**로도 전체 API 가 멈출 수 있다(코드 기준 추정, 미실측). §5-7. 아래는 원문.
 `user_events` 는 `@csrf_exempt` 만 붙은 무한 제너레이터다. 인증 검사가 없고 구독자 수 제한도 없어
 연결이 쌓이면 워커(gunicorn 동기 워커)를 점유한다. `X-Accel-Buffering: no` 는 있으나 nginx `proxy_read_timeout` 설정도 함께 확인 필요.
 
@@ -2466,6 +2547,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [x] B-01 무관한 사용자로 `DELETE /api/documents/{id}/` → **405** / `POST delete/` → **403** ✅ 수정완료
 - [x] B-02 비로그인 `POST /api/upload-image/` → **401/403**, `.svg` 업로드 → **400** ✅ 수정완료(2026-10-23, 자동 테스트 + nginx 연동)
 - [x] B-34 업로드 파일 URL 직접 접근 시 스크립트 **미실행** ✅ 수정완료(2026-10-23 — 비로그인 403, `.svg`/`.html` 404, nosniff·CSP sandbox)
+- [x] B-70~B-74 외부 PC 에서 무인증 `/api/users/events/` **401**, `/api/`·form-options·health **403**, `/admin/` **404**, Key 만으로 내부 API **403** ✅ 수정완료(2026-10-23, 자동 테스트 — 배포 후 T-Q8 로 실서버 확인)
 - [ ] B-35 `docker logs | grep '\[OIDC\]'` → 개인정보 **미출력**
 - [ ] B-41 `DJANGO_SECRET_KEY` 미설정 시 **기동 실패**
 
