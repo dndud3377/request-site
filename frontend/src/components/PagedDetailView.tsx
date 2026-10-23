@@ -2659,8 +2659,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                   onClose={() => setMapReasonHistOpen(false)}
                 />
               )}
+              {/* claude 수정 (2026-10-23): 에디터로 넣은 표가 보이도록 공통 표 스타일 클래스 추가 */}
               {detail.map_change_reason ? (
                 <div
+                  className="rich-table-render"
                   style={{
                     border: changedFields.has('map_change_reason') ? '2px solid var(--danger)' : '1px solid var(--border)',
                     borderRadius: 6, padding: '10px 12px', maxHeight: 840, overflowY: 'auto',
