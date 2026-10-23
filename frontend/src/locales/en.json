@@ -1398,6 +1398,7 @@
     "paste_image_hint": "You can paste images directly into the editor with Ctrl+V.",
     "video_too_large": "Video size cannot exceed 50MB.",
     "video_upload_failed": "Failed to upload the video.",
+    "image_upload_failed": "Failed to upload the image.",
     "save": "Save",
     "cancel": "Cancel",
     "edit": "Edit",
@@ -1676,7 +1677,19 @@
     "font_default": "Default",
     "font_malgun": "Malgun Gothic",
     "font_nanum": "NanumGothic",
-    "font_gulim": "Gulim"
+    "font_gulim": "Gulim",
+    "table_insert_title": "Insert table (3×3, header row)",
+    "table_insert_label": "Table",
+    "table_add_row_title": "Add row below",
+    "table_add_row_label": "+Row",
+    "table_delete_row_title": "Delete current row",
+    "table_delete_row_label": "-Row",
+    "table_add_col_title": "Add column to the right",
+    "table_add_col_label": "+Col",
+    "table_delete_col_title": "Delete current column",
+    "table_delete_col_label": "-Col",
+    "table_delete_title": "Delete table",
+    "table_delete_label": "Delete table"
   },
   "group": {
     "section_title": "My Groups",
