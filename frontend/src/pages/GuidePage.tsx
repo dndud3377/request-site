@@ -19,6 +19,14 @@ import { useAuth } from '../contexts/AuthContext';
 const formatDate = (d: string) =>
   new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
 
+// claude 수정 (2026-10-23): 빈 에디터는 '<p><br></p>'를 넘겨 기존 '<p></p>' 비교를 통과했다.
+// VOC 처럼 태그를 걷어낸 글자로 판단하되, 이미지·동영상만 있는 가이드는 내용이 있는 것으로 본다.
+const HTML_TAG_RE = /<[^>]*>/g;
+const NBSP_RE = /&nbsp;/gi;
+const MEDIA_TAG_RE = /<(img|video)\b/i;
+const hasGuideContent = (html: string): boolean =>
+  html.replace(HTML_TAG_RE, '').replace(NBSP_RE, ' ').trim() !== '' || MEDIA_TAG_RE.test(html);
+
 type FilterTab = 'all' | 'feature' | 'info';
 
 interface FormState {
@@ -145,7 +153,7 @@ export default function GuidePage(): React.ReactElement {
         return;
       }
     }
-    if (!form.content.trim() || form.content === '<p></p>') {
+    if (!hasGuideContent(form.content)) {
       addToast(t('common.error'), 'error');
       return;
     }
