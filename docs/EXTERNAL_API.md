@@ -10,6 +10,30 @@
 
 ---
 
+## 0. 접근 경로 원칙 (2026-10-23, 보안 점검 조치)
+
+이 사이트의 데이터는 **아래 두 경로로만** 나간다. 그 밖의 요청은 401/403/404/405 다.
+
+| 경로 | 대상 | 인증 수단 | 열리는 범위 |
+|---|---|---|---|
+| ① 사이트 로그인 | 브라우저 사용자 | SSO 로그인 후 발급되는 HttpOnly 쿠키 `approval_system_token` (`CookieJWTAuthentication`) | 내부 API 전체(역할별 권한은 각 API 가 판단) |
+| ② 외부 연동 | 다른 시스템 | `X-API-Key` (`ExternalApiKeyAuthentication`) | **`GET /api/external/v1/documents/`·`/{id}/` 두 개뿐** — 이 키로는 내부 API 가 열리지 않는다(403) |
+
+로그인 없이 닿는 예외는 SSO 로그인 흐름 3개(`/api/auth/oidc/login/`·`callback/`·`logout/`)와,
+**컨테이너 안 루프백 접속에만** 답하는 `/api/health/`(Docker healthcheck 용 — nginx·공개 포트 경유는 403) 뿐이다.
+
+함께 닫은 것:
+- `Authorization: Bearer`(simplejwt) 인증은 `AUTH_MODE=dev` 로 기동했을 때만 켜진다(dev-login 전용). 운영에서는 제3의 인증 수단이 없다.
+- DRF 전역 기본 권한이 `IsAuthenticated` — 권한 지정을 빠뜨린 새 API 와 라우터 루트(`/api/`·`/api/external/v1/` 의 엔드포인트 목록)도 비로그인 403.
+- Django admin(`/admin/`) 라우트 제거.
+
+**회귀 고정**: `backend/api/tests.py` 의 `PublicEndpointAllowlistTest` 가 등록된 **모든 URL** 을 순회해
+(무인증 / API Key 만) GET·POST 를 보내고, 위 허용 목록 밖에서 2xx·3xx 가 나오면 실패한다.
+허용 목록을 늘려야 하면 이 절과 테스트의 `ANON_ALLOWED`·`KEY_ALLOWED_PREFIX` 를 함께 고친다.
+전후 실측과 개별 회귀 테스트는 `docs/E2E_TEST_AND_BUGS.md` §5-7.
+
+---
+
 ## 1. 키 설정 방법
 
 `.env`(운영) 또는 `.env.dev`(개발) 파일에 아래 값을 직접 채워 넣는다(`.env`는 AI가 수정하지 않는 파일 — 사용자가 직접 값을 지정).
@@ -137,4 +161,4 @@ curl -H "X-API-Key: <키>" \
 | `backend/api/serializers.py` | `ExternalRequestDocumentSerializer` |
 | `backend/api/urls.py` | `external_router` → `/api/external/v1/documents/` |
 | `backend/config/settings/base.py` | `EXTERNAL_API_KEY` 로드 |
-| `backend/api/tests.py` | `ExternalApiKeyAccessTest` |
+| `backend/api/tests.py` | `ExternalApiKeyAccessTest`, `PublicEndpointAllowlistTest`(§0 접근 경로 원칙), `AccessChannelPolicyTest` |
