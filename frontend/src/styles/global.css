@@ -3509,6 +3509,42 @@ select.form-control option {
   background: #e3edff;
 }
 
+/* claude 수정 (2026-10-23): 표 크기 조절(B-77). 너비가 저장된 표는 인라인 width(px)가 위의 width:100% 보다 우선하고,
+   화면보다 넓으면 tableWrapper 안에서 가로 스크롤된다. 열 경계선=col-resize, 셀 아래 경계선=row-resize 커서. */
+.ProseMirror .tableWrapper,
+.guide-content-render .tableWrapper,
+.rich-table-render .tableWrapper {
+  overflow-x: auto;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  position: relative;
+}
+
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: -2px;
+  width: 4px;
+  background: #4f8ef7;
+  pointer-events: none;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+.ProseMirror.row-resize-cursor {
+  cursor: row-resize;
+}
+
+.ProseMirror tr.row-resize-active > td,
+.ProseMirror tr.row-resize-active > th {
+  border-bottom: 2px solid #4f8ef7;
+}
+
 /* ===== 가이드 애니메이션 데모 (guideDemos) ===== */
 .guide-demo-lead {
   font-size: 12.5px;
