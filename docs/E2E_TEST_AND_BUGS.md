@@ -2348,7 +2348,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ---
 
-## 5-7. 접근 경로 원칙 — 무인증 경로·제3 인증 수단 제거 (B-70 ~ B-74) — ✅수정완료(2026-10-23)
+## 5-7. 접근 경로 원칙 — 무인증 경로·제3 인증 수단 제거 (B-70 ~ B-75) — ✅수정완료(2026-10-23)
 
 > 계기: 보안 점검 지적 "SSE 스트림 무인증 구독"(쿠키 없이 `GET /api/users/events/` → `: connected` 수신).
 > 사용자 결정 원칙: **데이터는 ① SSO 로그인 쿠키 ② 외부 연동 API(`/api/external/v1/documents/` 목록·상세 + `X-API-Key`)로만 나간다.**
@@ -2363,6 +2363,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 | B-72 | 라우터 루트가 **내부 API 주소 전체 목록**을 비로그인에 공개(`/api/`, `/api/external/v1/`) | `settings/base.py` 기본 권한 `IsAuthenticatedOrReadOnly` | 기본 권한 `IsAuthenticated` (기존 ViewSet·`@api_view` 는 전부 권한을 직접 지정해 동작 변화 없음) | **403** |
 | B-73 | `/api/health/` 공개 + DB 장애 시 오류 원문(`str(e)`) 응답 / `/admin/` 로그인 화면 외부 노출 | `views.py` `health_check`, `config/urls.py` | health 는 **루프백 + X-Forwarded-For 없음**만 허용(컨테이너 안 Docker healthcheck 전용), 오류 원문은 로그로만. admin 라우트 제거(사용 안 함·구조적 사용 불가 — 사용자 확인) | health **403**(외부)/200(컨테이너 안), admin **404** |
 | B-74 | 운영에서도 `Authorization: Bearer`(simplejwt) 가 통과 — 허용하지 않은 제3 인증 수단. 서명 키는 `SECRET_KEY` | `settings/base.py` `DEFAULT_AUTHENTICATION_CLASSES` | `AUTH_MODE=dev` 로 기동했을 때만 추가(dev-login 이 발급하는 조건과 동일). 운영 프론트는 dev 모드에서만 Bearer 를 보낸다(`client.ts:70,100`) | **403** |
+| B-75 | form-options 4종(job-file-layer·ovl-layer·extra-layer·bb-external)이 조회 실패 시 **예외 원문**을 응답 `error` 에 실었다(Impala 접속 호스트 등) | `views.py` 각 `except` | 응답은 `{'options': []}` 만, 원문은 기존 `logger.error` 로만. 응답 코드는 그대로 200 이고 화면은 `options` 만 읽어(`client.ts` `getStepOptions`) 동작 변화 없음 | 200 `{"options": []}` |
 
 이미 막혀 있던 것(실측 확인): API Key 만으로 내부 API(`/api/documents/` 등) → 403, 외부 API 쓰기 메서드 → 405, `/media/` 비로그인 → 403, 운영 dev-login → 403.
 
@@ -2387,11 +2388,11 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   — 위 전부 API Key 만 붙여도 동일
 ```
 
-### 회귀 테스트 (`backend/api/tests.py`, 18건)
+### 회귀 테스트 (`backend/api/tests.py`, 19건)
 - `PublicEndpointAllowlistTest` — **모든 URL** 을 자동 순회해 허용 목록(SSO 로그인 흐름 3개, 외부 API) 밖에서 401/403/404/405 외 응답이 나오면 실패.
   새 API 에 권한 지정을 빠뜨리면 여기서 잡힌다. 수정 전 코드로 되돌려 돌리면 실패하는 것까지 확인했다.
 - `UserEventsAuthTest`(무인증·위조·만료·미등록 사용자 401 + 구독 큐 미생성 / 정상 쿠키 200·`: connected`·종료 시 구독 해제 / 개발 허용)
-- `FormOptionsAuthTest` · `HealthCheckAccessTest` · `AccessChannelPolicyTest`(Bearer 운영 차단·admin 404·라우터 루트 비공개)
+- `FormOptionsAuthTest`(B-75 예외 원문 미노출 포함 — 수정 전 코드에서 `{'options': [], 'error': 'impala-secret-host:...'}` 로 실패 확인) · `HealthCheckAccessTest` · `AccessChannelPolicyTest`(Bearer 운영 차단·admin 404·라우터 루트 비공개)
 - 기존 `FormOptionsLineProcessProductProcessIdTest`·`FormOptionsLayerIdsStepseqTest` 는 비로그인 호출이었어서 setUp 에 로그인을 추가했다.
 
 ### 보류·후속 (이번 범위 밖)
@@ -2547,7 +2548,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [x] B-01 무관한 사용자로 `DELETE /api/documents/{id}/` → **405** / `POST delete/` → **403** ✅ 수정완료
 - [x] B-02 비로그인 `POST /api/upload-image/` → **401/403**, `.svg` 업로드 → **400** ✅ 수정완료(2026-10-23, 자동 테스트 + nginx 연동)
 - [x] B-34 업로드 파일 URL 직접 접근 시 스크립트 **미실행** ✅ 수정완료(2026-10-23 — 비로그인 403, `.svg`/`.html` 404, nosniff·CSP sandbox)
-- [x] B-70~B-74 외부 PC 에서 무인증 `/api/users/events/` **401**, `/api/`·form-options·health **403**, `/admin/` **404**, Key 만으로 내부 API **403** ✅ 수정완료(2026-10-23, 자동 테스트 — 배포 후 T-Q8 로 실서버 확인)
+- [x] B-70~B-75 외부 PC 에서 무인증 `/api/users/events/` **401**, `/api/`·form-options·health **403**, `/admin/` **404**, Key 만으로 내부 API **403** ✅ 수정완료(2026-10-23, 자동 테스트 — 배포 후 T-Q8 로 실서버 확인)
 - [ ] B-35 `docker logs | grep '\[OIDC\]'` → 개인정보 **미출력**
 - [ ] B-41 `DJANGO_SECRET_KEY` 미설정 시 **기동 실패**
 
