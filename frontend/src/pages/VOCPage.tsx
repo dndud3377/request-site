@@ -477,7 +477,9 @@ export default function VOCPage(): React.ReactElement {
             {/* 원본 내용 */}
             <div className="form-group">
               <label className="form-label">{t('voc.content')}</label>
+              {/* claude 수정 (2026-10-23): 에디터로 넣은 표가 보이도록 공통 표 스타일 클래스 추가 */}
               <div
+                className="rich-table-render"
                 style={{
                   background: 'var(--bg-secondary)',
                   border: '1px solid var(--border-color)',
@@ -514,7 +516,9 @@ export default function VOCPage(): React.ReactElement {
                         </span>
                         <span>{formatTime(c.created_at)}</span>
                       </div>
+                      {/* claude 수정 (2026-10-23): 에디터로 넣은 표가 보이도록 공통 표 스타일 클래스 추가 */}
                       <div
+                        className="rich-table-render"
                         style={{ fontSize: '0.9rem', lineHeight: 1.6 }}
                         dangerouslySetInnerHTML={{ __html: c.content }}
                       />
