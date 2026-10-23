@@ -13,6 +13,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# claude 수정 (2026-10-23): 인증 실패 응답 고정 문구 — 예외 원문 대신 (B-78)
+INVALID_TOKEN_MESSAGE = '유효하지 않은 토큰입니다.'
+AUTH_ERROR_MESSAGE = '인증 오류가 발생했습니다.'
+
 
 class CookieJWTAuthentication(BaseAuthentication):
     """
@@ -74,11 +78,13 @@ class CookieJWTAuthentication(BaseAuthentication):
             
         except ExpiredSignatureError:
             raise AuthenticationFailed('토큰이 만료되었습니다.')
+        # claude 수정 (2026-10-23): 예외 원문(JWT 라이브러리 사유·DB 접속 정보 등)을 응답에 싣지 않고 로그로만 남긴다 (B-78)
         except InvalidTokenError as e:
-            raise AuthenticationFailed(f'유효하지 않은 토큰입니다: {str(e)}')
+            logger.warning(f"[Auth] Invalid token: {e}")
+            raise AuthenticationFailed(INVALID_TOKEN_MESSAGE)
         except Exception as e:
             logger.error(f"[Auth] Token authentication error: {e}")
-            raise AuthenticationFailed(f'인증 오류가 발생했습니다: {str(e)}')
+            raise AuthenticationFailed(AUTH_ERROR_MESSAGE)
 
 
 class ExternalApiKeyAuthentication(BaseAuthentication):
