@@ -1688,6 +1688,8 @@
     "table_add_col_label": "+Col",
     "table_delete_col_title": "Delete current column",
     "table_delete_col_label": "-Col",
+    "table_reset_size_title": "Reset table size (clear column widths/row heights, fit to width)",
+    "table_reset_size_label": "Reset size",
     "table_delete_title": "Delete table",
     "table_delete_label": "Delete table"
   },
