@@ -10563,6 +10563,29 @@ class FormOptionsAuthTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.assertEqual(self.client.post('/api/form-options/barcode/').status_code, 405)
 
+    def test_lookup_failure_returns_empty_options_without_exception_detail(self):
+        """조회 실패 시 예외 원문(접속 호스트 등)을 응답에 싣지 않는다 — 화면은 options 만 읽는다(client.ts getStepOptions)."""
+        from . import layer_drift
+        secret = 'impala-secret-host:21050 auth failed'
+        self.client.force_authenticate(user=self.user)
+        cases = (
+            ('api.views.layer_drift.get_job_file_layer_rows',
+             f'/api/form-options/job-file-layer/?line={next(iter(layer_drift.JOB_FILE_MODEL_MAP))}&process=P'),
+            ('api.views.layer_drift.get_ovl_layer_rows',
+             f'/api/form-options/ovl-layer/?line={next(iter(layer_drift.OVL_MODEL_MAP))}&process=P'),
+            ('api.views.layer_drift.get_extra_layer_rows',
+             f'/api/form-options/extra-layer/?line={next(iter(layer_drift.EXTRA_MODEL_MAP))}&process=P'),
+            ('api.views.PhotoStepS1', '/api/form-options/bb-external/?location=line1&process_id=P'),
+        )
+        for target, url in cases:
+            with patch(target) as failing:
+                failing.side_effect = Exception(secret)
+                failing.objects.filter.side_effect = Exception(secret)
+                r = self.client.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            self.assertEqual(r.json(), {'options': []}, url)
+            self.assertNotIn(secret, r.content.decode(), url)
+
 
 class HealthCheckAccessTest(TestCase):
     """/api/health/: 컨테이너 안 Docker healthcheck(루프백)만 허용, DB 오류 원문은 응답에 싣지 않는다."""
