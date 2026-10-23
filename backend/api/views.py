@@ -5,14 +5,17 @@ from decimal import Decimal
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.http import JsonResponse, StreamingHttpResponse
-from django.views.decorators.http import require_GET, require_POST
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.views.decorators.http import require_GET
 from django.views.decorators.csrf import csrf_exempt
 import queue as _queue_module
 from .sse import broadcaster
 from django.db import connections
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+from django.core.exceptions import SuspiciousFileOperation
+from django.utils._os import safe_join
+from PIL import Image, UnidentifiedImageError
 from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -52,8 +55,10 @@ from .serializers import (
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
     RejectionSnapshotSerializer, LayerFilterSetSerializer, PersonalMarkCategorySerializer,
 )
+import os
 import uuid
 import logging
+from urllib.parse import quote
 import re
 
 
@@ -4289,8 +4294,47 @@ def form_options_extra_layer(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
-@csrf_exempt
-@require_POST
+# claude 수정 (2026-10-23): 업로드 저장 확장자를 원본 파일명이 아니라 실제 내용으로 정한다 (B-02 — .svg/.html 위장 업로드 차단)
+# Pillow 가 판별한 포맷 → 저장 확장자. 여기 없는 포맷(SVG 등)은 업로드를 거부한다.
+UPLOAD_IMAGE_FORMAT_EXT = {'PNG': 'png', 'JPEG': 'jpg', 'GIF': 'gif', 'WEBP': 'webp'}
+UPLOAD_IMAGE_ALLOWED_LABEL = 'png/jpg/gif/webp'
+# 동영상 컨테이너 시그니처: MP4 는 4~8 바이트가 'ftyp', WebM 은 EBML 헤더 + DocType 'webm'.
+# QuickTime(.mov) 은 ftyp major brand 가 'qt  ' 라 허용하지 않는다(MP4 와 구분).
+VIDEO_SIGNATURE_READ_BYTES = 64
+MP4_FTYP_MARKER = b'ftyp'
+QUICKTIME_MAJOR_BRAND = b'qt  '
+WEBM_EBML_MAGIC = b'\x1a\x45\xdf\xa3'
+WEBM_DOCTYPE = b'webm'
+UPLOAD_VIDEO_ALLOWED_LABEL = 'mp4/webm'
+
+
+def _detect_image_ext(upload):
+    """업로드 이미지의 실제 포맷을 Pillow 로 판별해 저장 확장자를 돌려준다. 허용 외 포맷·손상 파일은 None."""
+    try:
+        with Image.open(upload) as img:
+            image_format = img.format
+            img.verify()
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, Image.DecompressionBombError):
+        return None
+    finally:
+        upload.seek(0)
+    return UPLOAD_IMAGE_FORMAT_EXT.get(image_format)
+
+
+def _detect_video_ext(upload):
+    """업로드 동영상의 앞부분 바이트(컨테이너 시그니처)로 저장 확장자를 돌려준다. 허용 외 형식은 None."""
+    head = upload.read(VIDEO_SIGNATURE_READ_BYTES)
+    upload.seek(0)
+    if head[4:8] == MP4_FTYP_MARKER and head[8:12] != QUICKTIME_MAJOR_BRAND:
+        return 'mp4'
+    if head.startswith(WEBM_EBML_MAGIC) and WEBM_DOCTYPE in head:
+        return 'webm'
+    return None
+
+
+# claude 수정 (2026-10-23): 무인증 업로드 차단 — 순수 Django 뷰라 DRF 인증(JWT 쿠키)·permission 이 안 걸렸다 (B-02)
+@api_view(['POST'])
+@permission_classes([IsAuthenticatedInProd])
 def upload_image(request):
     """이미지 파일 업로드 API - mshot 이미지용"""
     logger = logging.getLogger(__name__)
@@ -4309,8 +4353,14 @@ def upload_image(request):
     if image.size > max_size:
         return JsonResponse({'error': '이미지 크기는 2MB 를 초과할 수 없습니다'}, status=400)
     
+    # claude 수정 (2026-10-23): 확장자는 실제 이미지 포맷으로 서버가 정한다 (원본 파일명 확장자 사용 금지, B-02)
+    ext = _detect_image_ext(image)
+    if ext is None:
+        return JsonResponse(
+            {'error': f'지원하지 않는 이미지 형식입니다 ({UPLOAD_IMAGE_ALLOWED_LABEL} 만 가능)'}, status=400
+        )
+
     # 파일명 생성 (UUID 사용)
-    ext = image.name.split('.')[-1] if '.' in image.name else 'png'
     filename = f"mshot_{uuid.uuid4().hex}.{ext}"
     path = f"mshot_images/{filename}"
     
@@ -4336,8 +4386,9 @@ def upload_image(request):
 MAX_VIDEO_UPLOAD_SIZE = 50 * 1024 * 1024
 
 
-@csrf_exempt
-@require_POST
+# claude 수정 (2026-10-23): 무인증 업로드 차단 — upload_image 와 같은 이유 (B-02)
+@api_view(['POST'])
+@permission_classes([IsAuthenticatedInProd])
 def upload_video(request):
     """동영상 파일 업로드 API - 가이드 동영상용"""
     logger = logging.getLogger(__name__)
@@ -4355,8 +4406,14 @@ def upload_video(request):
     if video.size > MAX_VIDEO_UPLOAD_SIZE:
         return JsonResponse({'error': '동영상 크기는 50MB 를 초과할 수 없습니다'}, status=400)
 
+    # claude 수정 (2026-10-23): 확장자는 컨테이너 시그니처로 서버가 정한다 (원본 파일명 확장자 사용 금지, .mov 불허, B-02)
+    ext = _detect_video_ext(video)
+    if ext is None:
+        return JsonResponse(
+            {'error': f'지원하지 않는 동영상 형식입니다 ({UPLOAD_VIDEO_ALLOWED_LABEL} 만 가능)'}, status=400
+        )
+
     # 파일명 생성 (UUID 사용)
-    ext = video.name.split('.')[-1] if '.' in video.name else 'mp4'
     filename = f"guide_{uuid.uuid4().hex}.{ext}"
     path = f"guide_videos/{filename}"
 
@@ -4376,6 +4433,53 @@ def upload_video(request):
     except Exception as e:
         logger.error(f"[UPLOAD_VIDEO] 동영상 업로드 실패: {e}")
         return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+
+
+# claude 수정 (2026-10-23): /media/ 를 인증 후 서빙한다 (B-34 — nginx 가 무인증·원본 MIME 으로 서빙해 같은 오리진 XSS 가 됐다)
+# 서빙 허용 확장자(소문자) → Content-Type. 확장자는 대소문자를 무시하고 비교하며, 여기 없는 파일은 404.
+# Content-Type 을 직접 지정해야 한다 — X-Accel-Redirect 응답은 nginx 가 업스트림 Content-Type
+# (지정 안 하면 Django 기본값 text/html)을 그대로 내보낸다(nginx 1.25 실험으로 확인).
+MEDIA_SERVE_CONTENT_TYPES = {
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+}
+MEDIA_RESPONSE_CSP = "default-src 'none'; img-src 'self'; media-src 'self'; sandbox"
+MEDIA_RESPONSE_CACHE_CONTROL = 'private, max-age=604800'
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
+def serve_media(request, path):
+    """업로드 미디어 서빙. 운영은 nginx internal 경로로 X-Accel-Redirect, 개발은 Django 가 직접 보낸다.
+
+    settings.MEDIA_X_ACCEL_PREFIX 가 있으면(운영) 파일 전송은 nginx 가 맡고, 없으면(개발) FileResponse.
+    """
+    ext = path.rsplit('.', 1)[-1].lower() if '.' in path else ''
+    content_type = MEDIA_SERVE_CONTENT_TYPES.get(ext)
+    if content_type is None:
+        raise Http404
+    try:
+        full_path = safe_join(settings.MEDIA_ROOT, path)
+    except SuspiciousFileOperation:
+        raise Http404
+    if not os.path.isfile(full_path):
+        raise Http404
+
+    accel_prefix = getattr(settings, 'MEDIA_X_ACCEL_PREFIX', '')
+    if accel_prefix:
+        response = HttpResponse(content_type=content_type)
+        response['X-Accel-Redirect'] = f'{accel_prefix}{quote(path)}'
+    else:
+        response = FileResponse(open(full_path, 'rb'), content_type=content_type)
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Content-Security-Policy'] = MEDIA_RESPONSE_CSP
+    response['Cache-Control'] = MEDIA_RESPONSE_CACHE_CONTROL
+    return response
 
 
 
