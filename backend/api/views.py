@@ -4226,7 +4226,7 @@ def form_options_process_id(request):
     return JsonResponse({'options': options})
 
 
-# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용. 조회 실패 시 예외 원문(접속 정보 등)은 응답에 싣지 않고 로그로만 남긴다
 @api_view(['GET'])
 @permission_classes([IsAuthenticatedInProd])
 def form_options_job_file_layer(request):
@@ -4255,10 +4255,10 @@ def form_options_job_file_layer(request):
 
     except Exception as e:
         logger.error(f"[JOB_FILE_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': []})
 
 
-# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용. 조회 실패 시 예외 원문(접속 정보 등)은 응답에 싣지 않고 로그로만 남긴다
 @api_view(['GET'])
 @permission_classes([IsAuthenticatedInProd])
 def form_options_ovl_layer(request):
@@ -4283,10 +4283,10 @@ def form_options_ovl_layer(request):
 
     except Exception as e:
         logger.error(f"[OVL_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': []})
 
 
-# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용. 조회 실패 시 예외 원문(접속 정보 등)은 응답에 싣지 않고 로그로만 남긴다
 @api_view(['GET'])
 @permission_classes([IsAuthenticatedInProd])
 def form_options_extra_layer(request):
@@ -4316,7 +4316,7 @@ def form_options_extra_layer(request):
 
     except Exception as e:
         logger.error(f"[EXTRA_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': []})
 
 
 # claude 수정 (2026-10-23): 업로드 저장 확장자를 원본 파일명이 아니라 실제 내용으로 정한다 (B-02 — .svg/.html 위장 업로드 차단)
@@ -4531,7 +4531,7 @@ class VocHistoryViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용. 조회 실패 시 예외 원문(접속 정보 등)은 응답에 싣지 않고 로그로만 남긴다
 @api_view(['GET'])
 @permission_classes([IsAuthenticatedInProd])
 def form_options_bb_external(request):
@@ -4582,7 +4582,7 @@ def form_options_bb_external(request):
 
     except Exception as e:
         logger.error(f"[BB_EXTERNAL] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': []})
 
 
 # 흐름도 Step stepseq 숫자 비교에서 먼저 보는 앞자리 수 (프론트 helpers.ts STEPSEQ_LEAD_DIGITS 와 같은 값)
