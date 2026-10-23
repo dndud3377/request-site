@@ -2363,7 +2363,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 | B-72 | 라우터 루트가 **내부 API 주소 전체 목록**을 비로그인에 공개(`/api/`, `/api/external/v1/`) | `settings/base.py` 기본 권한 `IsAuthenticatedOrReadOnly` | 기본 권한 `IsAuthenticated` (기존 ViewSet·`@api_view` 는 전부 권한을 직접 지정해 동작 변화 없음) | **403** |
 | B-73 | `/api/health/` 공개 + DB 장애 시 오류 원문(`str(e)`) 응답 / `/admin/` 로그인 화면 외부 노출 | `views.py` `health_check`, `config/urls.py` | health 는 **루프백 + X-Forwarded-For 없음**만 허용(컨테이너 안 Docker healthcheck 전용), 오류 원문은 로그로만. admin 라우트 제거(사용 안 함·구조적 사용 불가 — 사용자 확인) | health **403**(외부)/200(컨테이너 안), admin **404** |
 | B-74 | 운영에서도 `Authorization: Bearer`(simplejwt) 가 통과 — 허용하지 않은 제3 인증 수단. 서명 키는 `SECRET_KEY` | `settings/base.py` `DEFAULT_AUTHENTICATION_CLASSES` | `AUTH_MODE=dev` 로 기동했을 때만 추가(dev-login 이 발급하는 조건과 동일). 운영 프론트는 dev 모드에서만 Bearer 를 보낸다(`client.ts:70,100`) | **403** |
-| B-75 | form-options 4종(job-file-layer·ovl-layer·extra-layer·bb-external)이 조회 실패 시 **예외 원문**을 응답 `error` 에 실었다(Impala 접속 호스트 등) | `views.py` 각 `except` | 응답은 `{'options': []}` 만, 원문은 기존 `logger.error` 로만. 응답 코드는 그대로 200 이고 화면은 `options` 만 읽어(`client.ts` `getStepOptions`) 동작 변화 없음 | 200 `{"options": []}` |
+| B-75 | form-options 4종(job-file-layer·ovl-layer·extra-layer·bb-external)이 조회 실패 시 **예외 원문**을 응답 `error` 에 실었다(DB 오류 원문 — 접속 호스트 등. 조회 대상은 PhotoStep 모델 테이블) | `views.py` 각 `except` | 응답은 `{'options': []}` 만, 원문은 기존 `logger.error` 로만. 응답 코드는 그대로 200 이고 화면은 `options` 만 읽어(`client.ts` `getStepOptions`) 동작 변화 없음 | 200 `{"options": []}` |
 
 이미 막혀 있던 것(실측 확인): API Key 만으로 내부 API(`/api/documents/` 등) → 403, 외부 API 쓰기 메서드 → 405, `/media/` 비로그인 → 403, 운영 dev-login → 403.
 
