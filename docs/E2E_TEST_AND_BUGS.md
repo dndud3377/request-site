@@ -45,7 +45,7 @@
 2. ~~**[B-27] OIDC id_token 만료 검증이 꺼져 있다**~~ → ✅ **수정 완료**(2026-10-11) — exp·iss·aud·nonce·state 검증 적용(§5-6).
 3. ~~**[B-01] 의뢰서 삭제 인가 전무**~~ → ✅ **수정 완료**(2026-07-28, `03b2240`) — 인가 적용 + REST DELETE 405 차단.
 4. **[B-06] PAUSE 동결 우회** — 중단(pause) 문서에서 PL 합의/반려가 그대로 동작해 결재가 되살아난다.
-5. **[B-02+B-34] 미인증 업로드 + 무방비 `/media/` 서빙** — 비로그인으로 스크립트 포함 `.svg` 업로드 → 같은 오리진에서 실행.
+5. ~~**[B-02+B-34] 미인증 업로드 + 무방비 `/media/` 서빙**~~ → ✅ **수정 완료**(2026-10-23) — 업로드·열람 인증, 확장자 서버 판정, `/media/` 인증 서빙 + nosniff·CSP sandbox(§5 B-02·B-34).
 
 > 1~5는 서로 맞물린다. B-02로 올린 `.svg`를 B-34가 실행 가능하게 서빙하고, 그 스크립트가 B-01로 문서를 지우거나
 > B-26의 경로로 권한을 올린다. **개별 패치가 아니라 한 묶음으로 처리**할 것을 권한다.
@@ -1002,6 +1002,9 @@ docker logs <backend> 2>&1 | grep "\[OIDC\]" | head -20
 
 ### 3.R 파일 업로드 / 미디어 서빙 (T-R) — 2차 추가
 
+> **2026-10-23 수정 후**: T-R1 → **403**, T-R2 → **400**(실제 포맷이 png/jpg/gif/webp·mp4/webm 이 아니면 거부, 저장 확장자는 서버가 결정),
+> T-R3 → 비로그인 **403**, T-R2 의 기존 `.svg`/`.html` 파일 → **404**. 상세는 §5 B-02·B-34.
+
 #### T-R1 미인증 업로드
 ```bash
 curl -i -F "image=@evil.svg;type=image/png" http://localhost:10011/api/upload-image/
@@ -1253,7 +1256,15 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: 4개 액션 앞에 동일 가드 추가 + `_advance_after_pl`·`peer_reject` 에 `_cancel_active_pause_requests` 호출 추가(B-32 동시 해결).
   공통 데코레이터/헬퍼로 빼서 향후 액션 추가 시 누락 방지. 프론트는 서버가 step 별 가능 플래그를 내려주는 방식으로 통일(R-07).
 
-### 🔴 B-02 업로드 API가 미인증 + 확장자 무검증 **재현✅**
+### ✅ B-02 업로드 API가 미인증 + 확장자 무검증 **재현✅** → ✅**수정완료(2026-10-23)**
+> **[2026-10-23 수정 완료]**
+> - **인증**: `upload_image`·`upload_video` 를 `@api_view(['POST'])` + `IsAuthenticatedInProd` 로 전환. 운영 모드 비로그인 → **403**
+>   (`CookieJWTAuthentication` 에 `authenticate_header` 가 없어 DRF 가 401 이 아닌 403 으로 응답 — 앱 전역 동작). 업로드 권한은 **로그인 사용자 전체**(사용자 결정).
+> - **확장자는 서버가 결정**: 원본 파일명 확장자를 쓰지 않는다. 이미지는 Pillow `Image.open`+`verify` 로 판별해
+>   PNG→`png` / JPEG→`jpg` / GIF→`gif` / WEBP→`webp` 만 허용(SVG 등은 400). 동영상은 앞 64바이트 시그니처로
+>   `ftyp`→`mp4`, EBML+DocType `webm`→`webm` 만 허용. **QuickTime(.mov, ftyp brand `qt  `)은 불허**(사용자 결정).
+> - 응답 형식(`path`/`url`/`original_name`/`size`, 오류는 `error`)은 그대로 — 프론트 변경 없음.
+> - 회귀 고정: `UploadSecurityTest`(7건). 아래는 1차 기록(원문 보존).
 - 위치: `views.py:2073`(`upload_image`), `views.py:2120`(`upload_video`) — **2026-08-04 미수정 확인**
 - 내용: 두 뷰 모두 `@csrf_exempt @require_POST` 인 **순수 Django 뷰**로, DRF permission 이 걸리지 않는다.
   검증은 (a) **클라이언트가 보낸 `Content-Type`** 이 `image/`·`video/` 로 시작하는지, (b) 크기(2MB/50MB) 뿐이다.
@@ -1653,7 +1664,23 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 영향: 관리자 메일함에서 **HTML 주입**(가짜 링크·위장 문구 삽입). 메일 클라이언트에 따라 피싱으로 이어진다.
 - 권고: `_build_voc_message`에도 `escape()` 적용(제목은 메일 헤더라 태그 제거).
 
-### 🟠 B-34 `/media/` 가 인가·보안헤더 없이 원본 Content-Type으로 서빙된다 **분석🔍**
+### ✅ B-34 `/media/` 가 인가·보안헤더 없이 원본 Content-Type으로 서빙된다 **분석🔍** → ✅**수정완료(2026-10-23)**
+> **[2026-10-23 수정 완료]**
+> - **흐름**: nginx `/media/` → backend `api.views.serve_media`(인증·확장자 검사) → `X-Accel-Redirect: /protected-media/<path>`
+>   → nginx `location /protected-media/ { internal; alias /var/www/media/; }` 가 파일 전송(Range/206 지원).
+>   개발(`MEDIA_X_ACCEL_PREFIX` 미설정)은 Django 가 `FileResponse` 로 직접 보낸다. `config/urls.py` 의 `static()` 은 제거.
+> - **서빙 화이트리스트**: `png/jpg/jpeg/gif/webp/mp4/webm`(**대소문자 무시** — 사용자 결정), 그 외(기존 `.svg`/`.html` 포함)·없는 파일·
+>   경로 이탈(`safe_join`)은 **404**. 비로그인 → **403**(운영 모드. dev 모드는 다른 API 와 같이 허용).
+> - **Content-Type 은 Django 가 확장자 기준으로 직접 지정한다** — X-Accel 응답에서 nginx 는 업스트림 Content-Type 을 그대로 내보내므로
+>   지정하지 않으면 Django 기본값 `text/html` 이 나간다(nginx 1.25-alpine 실험으로 확인).
+> - **헤더**: `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; img-src 'self'; media-src 'self'; sandbox`,
+>   `Cache-Control: private, max-age=604800`(기존 `expires 7d` 대체). Django 응답과 nginx internal location 양쪽에 붙인다.
+> - **설정**: `production.py` `MEDIA_X_ACCEL_PREFIX = '/protected-media/'` — nginx internal location 경로와 같아야 한다.
+> - **배포 순서(필수)**: **backend 먼저 → nginx 나중**(nginx 는 이미지에 conf 가 COPY 돼 재빌드 필요). nginx 를 먼저 올리면
+>   `/media/` 가 아직 서빙 뷰가 없는 backend 로 가서 **모든 이미지가 404** 가 된다.
+> - **알려진 동작**: 액세스 토큰 쿠키(12h) 만료 후에는 이미지가 403 으로 깨지며, 새로고침(SSO 재로그인)으로 복구된다.
+>   파일이 문서와 연결돼 있지 않아 **문서 단위 인가는 없다**(로그인 여부만 검사).
+> - 회귀 고정: `MediaServeTest`(7건). 실제 `nginx/nginx.conf` + Django 연동 검증 결과는 아래 1차 기록 다음에 둔다.
 - 위치: `nginx/nginx.conf:95-99` — **2026-08-04 미수정 확인**(`add_header` 는 `/django-static/` 의 `Cache-Control`(`:92`) 하나뿐)
   ```nginx
   location /media/ { alias /var/www/media/; expires 7d; }
@@ -1664,6 +1691,21 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   또한 의뢰서 첨부 M-shot 이미지가 인가 없이 열람 가능하다.
 - 권고: `add_header X-Content-Type-Options nosniff always;` + 업로드 확장자 화이트리스트(B-02) +
   민감 첨부는 Django 경유 인가 서빙으로 전환.
+- **2026-10-23 연동 검증** — 실제 `nginx/nginx.conf`(수정본, nginx:1.25-alpine) + Django(`production.py` 의 SSL 리다이렉트·`MEDIA_X_ACCEL_PREFIX` 적용)
+  ```
+  비로그인 upload-image(svg) / upload-video(html)        -> 403 / 403
+  로그인 svg(type=image/png) / html→x.png / .mov          -> 400 / 400 / 400
+  로그인 실제 PNG·MP4 를 trick.html 이름으로 업로드        -> 200, 저장명 .png / .mp4
+  업로드 이미지 비로그인 열람                              -> 403
+  업로드 이미지 로그인 열람  -> 200 Content-Type: image/png + nosniff + CSP sandbox + Cache-Control: private (내용 일치)
+  동영상 Range: bytes=0-99   -> 206 Content-Type: video/mp4, Content-Range: bytes 0-99/200028
+  기존 악성 old_evil.svg / old_evil.html (로그인)          -> 404 / 404
+  기존 대문자 LEGACY.PNG                                   -> 200 image/png
+  /protected-media/... 직접 접근                           -> 404 (internal)
+  ```
+  `X-Forwarded-Proto https` 를 넘겨 `SECURE_SSL_REDIRECT` 리다이렉트 루프가 없음을 함께 확인했다.
+  `/media/../x`·`/media/%2e%2e/x` 는 nginx 가 경로를 정규화해 `location /`(프론트)로 보내므로 미디어에 닿지 않는다
+  (Django 단에서도 `safe_join` 이 404 — `MediaServeTest`).
 
 ### 🟠 B-35 OIDC 클레임(개인정보)이 평문 INFO 로그로 남는다 **분석🔍**
 - 위치: `auth_views.py:390-407`(클레임 전 필드 루프 로깅), `authentication.py:55`(토큰 payload username 을 INFO 로 출력),
@@ -2422,8 +2464,8 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] B-68/B-69 운영(HTTPS) 실제 ADFS 로그인 1회 성공 + 로그에 `[OIDC] Login success` (§5-6 배포 전 체크리스트)
 - [ ] B-29 `AUTH_MODE` 값 확인 + dev 모드에서도 쓰기·삭제는 **인증 요구**
 - [x] B-01 무관한 사용자로 `DELETE /api/documents/{id}/` → **405** / `POST delete/` → **403** ✅ 수정완료
-- [ ] B-02 비로그인 `POST /api/upload-image/` → **401/403**, `.svg` 업로드 → **400**
-- [ ] B-34 업로드 파일 URL 직접 접근 시 스크립트 **미실행**
+- [x] B-02 비로그인 `POST /api/upload-image/` → **401/403**, `.svg` 업로드 → **400** ✅ 수정완료(2026-10-23, 자동 테스트 + nginx 연동)
+- [x] B-34 업로드 파일 URL 직접 접근 시 스크립트 **미실행** ✅ 수정완료(2026-10-23 — 비로그인 403, `.svg`/`.html` 404, nosniff·CSP sandbox)
 - [ ] B-35 `docker logs | grep '\[OIDC\]'` → 개인정보 **미출력**
 - [ ] B-41 `DJANGO_SECRET_KEY` 미설정 시 **기동 실패**
 
