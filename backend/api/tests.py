@@ -10716,3 +10716,77 @@ class PublicEndpointAllowlistTest(TestCase):
         r = client.get('/api/external/v1/documents/', HTTP_X_API_KEY=ACCESS_POLICY_EXTERNAL_KEY)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json(), [])
+
+
+# claude 수정 (2026-10-23): 서버 예외 원문(파일 경로·DB 접속 정보·JWT 사유)이 응답으로 나가지 않는지 (B-76~B-78)
+@override_settings(AUTH_MODE='sso', SERVICE_JWT_SECRET_KEY=ACCESS_POLICY_JWT_SECRET)
+class ExceptionDetailNotExposedTest(TestCase):
+    """업로드 저장 실패·사용자 삭제 실패·쿠키 인증 실패 때 응답은 고정 문구, 원문은 로그로만."""
+
+    DISK_ERROR = OSError(28, 'No space left on device', '/app/media/mshot_images/secret-path.png')
+
+    def setUp(self):
+        from django.db import OperationalError
+        from rest_framework.test import APIClient
+        self.db_error = OperationalError(2003, "Can't connect to MySQL server on 'db-secret-host:3306' (111)")
+        self.master = UserProfile.objects.create(loginid='exc_master', role='MASTER')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.master)
+
+    def _assert_no_detail(self, r, *secrets):
+        body = r.content.decode()
+        for secret in secrets:
+            self.assertNotIn(secret, body)
+
+    def test_upload_storage_failure_hides_server_path(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        cases = (
+            ('/api/upload-image/', 'image', SimpleUploadedFile('a.png', _png_bytes(), content_type='image/png')),
+            ('/api/upload-video/', 'video', SimpleUploadedFile('a.mp4', MP4_HEAD, content_type='video/mp4')),
+        )
+        for url, field, upload in cases:
+            with patch('api.views.default_storage.save', side_effect=self.DISK_ERROR):
+                r = self.client.post(url, {field: upload}, format='multipart')
+            self.assertEqual(r.status_code, 500, url)
+            self.assertEqual(r.json(), {'error': '업로드 실패'}, url)
+            self._assert_no_detail(r, 'secret-path', 'Errno')
+
+    def test_delete_missing_user_is_404(self):
+        # 문구는 DRF 가 Django Http404 문구('No UserProfile matches the given query.')를 그대로 넘긴다 — 앱 전역 동작이라 상태 코드만 고정
+        self.assertEqual(self.client.delete('/api/users/999999/').status_code, 404)
+
+    def test_delete_db_failure_hides_db_detail_and_keeps_user(self):
+        target = UserProfile.objects.create(loginid='exc_target', role='NONE')
+        with patch.object(UserProfile, 'delete', side_effect=self.db_error):
+            r = self.client.delete(f'/api/users/{target.id}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json(), {'error': '사용자 삭제 중 오류가 발생했습니다.'})
+        self._assert_no_detail(r, 'db-secret-host', 'MySQL')
+        self.assertTrue(UserProfile.objects.filter(pk=target.pk).exists())
+
+    def test_delete_success_and_permission_checks_are_unchanged(self):
+        from .sse import broadcaster
+        same_role = UserProfile.objects.create(loginid='exc_pl', role='PL')
+        other_role = UserProfile.objects.create(loginid='exc_te', role='TE_R')
+        pl = UserProfile.objects.create(loginid='exc_pl_caller', role='PL')
+        self.client.force_authenticate(user=pl)
+        self.assertEqual(self.client.delete(f'/api/users/{other_role.id}/').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/users/{pl.id}/').status_code, 403)
+        with patch.object(broadcaster, 'broadcast') as sent:
+            self.assertEqual(self.client.delete(f'/api/users/{same_role.id}/').status_code, 204)
+        sent.assert_called_once_with('user_deleted', {'id': same_role.id})
+        self.assertFalse(UserProfile.objects.filter(pk=same_role.pk).exists())
+
+    def test_cookie_auth_failures_hide_library_and_db_detail(self):
+        client = Client()
+        client.cookies['approval_system_token'] = 'garbage'
+        r = client.get('/api/documents/')
+        self.assertIn(r.status_code, (401, 403))
+        self.assertEqual(r.json(), {'detail': '유효하지 않은 토큰입니다.'})
+
+        client.cookies['approval_system_token'] = _service_cookie_token('exc_master')
+        with patch.object(UserProfile.objects, 'get', side_effect=self.db_error):
+            r = client.get('/api/documents/')
+        self.assertIn(r.status_code, (401, 403))
+        self.assertEqual(r.json(), {'detail': '인증 오류가 발생했습니다.'})
+        self._assert_no_detail(r, 'db-secret-host', 'MySQL')
