@@ -20,7 +20,7 @@ from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
-from rest_framework.exceptions import ValidationError, NotAuthenticated
+from rest_framework.exceptions import ValidationError, NotAuthenticated, AuthenticationFailed, PermissionDenied
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
@@ -46,7 +46,7 @@ from . import design_rule_stats
 from . import review_items as review_items_sync
 from . import rejection_snapshots
 from . import layer_drift
-from .authentication import ExternalApiKeyAuthentication
+from .authentication import CookieJWTAuthentication, ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
     DocumentReviewItemSerializer,
@@ -4118,18 +4118,33 @@ class AdminNoticeViewSet(viewsets.ModelViewSet):
             return Response(None)
         return Response(AdminNoticeSerializer(notice).data)
 
+
+HEALTH_CHECK_ALLOWED_ADDRS = ('127.0.0.1', '::1')
+
+
+# claude 수정 (2026-10-23): 외부 공개 차단 — 컨테이너 안 Docker healthcheck(루프백)만 허용, DB 오류 원문 응답 제거
 @require_GET
 def health_check(request):
-    """헬스체크 엔드포인트 - DB 연결 상태 확인"""
+    """헬스체크 엔드포인트 - DB 연결 상태 확인
+
+    호출자는 backend 컨테이너 안의 Docker healthcheck 뿐이라 루프백 접속만 받는다.
+    nginx 를 거친 요청(REMOTE_ADDR=nginx 컨테이너, X-Forwarded-For 있음)과 공개 포트로 직접 들어온 외부 요청은 403.
+    """
+    if (request.META.get('REMOTE_ADDR') not in HEALTH_CHECK_ALLOWED_ADDRS
+            or 'HTTP_X_FORWARDED_FOR' in request.META):
+        return JsonResponse({'detail': str(PermissionDenied.default_detail)}, status=403)
     try:
         conn = connections['default']
         conn.cursor()
         return JsonResponse({'status': 'healthy', 'db': 'connected'})
-    except Exception as e:
-        return JsonResponse({'status': 'unhealthy', 'db': 'disconnected', 'error': str(e)}, status=503)
+    except Exception:
+        logging.getLogger(__name__).exception('[HealthCheck] DB 연결 실패')
+        return JsonResponse({'status': 'unhealthy', 'db': 'disconnected'}, status=503)
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_process(request):
     """{{request.line}} → {{request.process_selection}} 목록"""
     from .models import ProcessProduct as CP
@@ -4146,7 +4161,9 @@ def form_options_process(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_products(request):
     """{{request.line}} + {{request.process_selection}} → {{request.partid_selection}} 목록
     (process 는 선택 사항, process_id 도 선택 사항 — {{request.process_id}} 를 먼저 골랐을 때 그에 맞는 제품이름만 좁힌다)
@@ -4176,7 +4193,9 @@ def form_options_products(request):
     )
     return JsonResponse({'options': options})
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_process_id(request):
     """{{request.line}} + {{request.partid_selection}} → {{request.process_id}} 목록
     (product 없이 process(조합법)만 와도 동작 — {{request.line}}+{{request.process_selection}} 범위 전체 조리법 목록)
@@ -4207,7 +4226,9 @@ def form_options_process_id(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_job_file_layer(request):
     """{{request.line}} + {{request.process_id}} → JOB FILE layer 정보 (eqptype='PMAINF')
 
@@ -4237,7 +4258,9 @@ def form_options_job_file_layer(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_ovl_layer(request):
     """{{request.line}} + {{request.process_id}} → OVL layer 정보 (eqptype='POVLAY')"""
     import logging
@@ -4263,7 +4286,9 @@ def form_options_ovl_layer(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_extra_layer(request):
     """{{request.line}} + {{request.process_id}} → XXXXXX layer 정보 (eqptype 임시값).
 
@@ -4506,7 +4531,9 @@ class VocHistoryViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_bb_external(request):
     """bb 외부 데이터 - {{request.line}} + {{request.process_id}} → api_steps (eqptype='PMAINF')"""
     import logging
@@ -4582,7 +4609,9 @@ def _stepseq_sort_key(s: str) -> list:
 
 
 # claude 수정 (2026-10-19): (layerid, stepseq) 쌍의 정렬 키를 _natural_key → _stepseq_sort_key 로 바꿔 숫자 자릿수가 달라도 앞 4자리부터 비교한다(2026-10-15 도입).
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_layer_ids(request):
     """line + process → 중복 없는 {layerid, stepseq} 목록 (stepseq 정렬 — 숫자는 앞 4자리 → 나머지 자리 순, _stepseq_sort_key).
 
@@ -4618,7 +4647,9 @@ def form_options_layer_ids(request):
         return JsonResponse({'options': []})
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_barcode(request):
     """product_name → 유효한 바코드 옵션 목록 반환 (n7cancel_date, n7cancel_ok 없는 행만)"""
     product_name = request.GET.get('product_name', '')
@@ -4652,7 +4683,9 @@ def form_options_barcode(request):
         return JsonResponse({'options': []})
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_mapname(request):
     """원본 위치(라인명) → partid 목록 반환("_" 앞 8자리 코드만, 중복 제거·정렬)"""
     line = request.GET.get('line', '')
@@ -4670,7 +4703,9 @@ def form_options_mapname(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_map_info(request):
     """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 + CC 참고값(oc) 반환.
     (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용)
@@ -5055,9 +5090,27 @@ class UserViewSet(viewsets.ModelViewSet):
             )
 
 
+def _sse_authenticated(request) -> bool:
+    """SSE 구독 허용 여부. 운영=로그인 쿠키 인증 통과, 개발=허용(IsAuthenticatedInProd 와 같은 기준).
+
+    DRF @api_view 로 감싸면 EventSource 의 `Accept: text/event-stream` 을 콘텐츠 협상에서 406 으로
+    거절하므로, 인증 클래스를 직접 호출한다.
+    """
+    if _is_dev():
+        return True
+    try:
+        return CookieJWTAuthentication().authenticate(request) is not None
+    except AuthenticationFailed:
+        return False
+
+
+# claude 수정 (2026-10-23): 무인증 구독 차단(R-09) — 인증 통과 전에는 스트림·구독 큐를 만들지 않고 401
 @csrf_exempt
 def user_events(request):
     """SSE endpoint: 사용자 권한 변경 실시간 스트림"""
+    if not _sse_authenticated(request):
+        return JsonResponse({'detail': str(NotAuthenticated.default_detail)}, status=401)
+
     def event_stream():
         q = broadcaster.subscribe()
         try:
