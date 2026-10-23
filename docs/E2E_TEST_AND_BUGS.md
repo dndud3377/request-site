@@ -2320,6 +2320,55 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - **`.cer` 파일 2개 삭제**: 운영 배포 후 로그인 확인을 마친 다음 진행한다(B-47).
 - **code 교환(back-channel)**: implicit 전환으로 선택지에서 빠졌다. 필요하면 hybrid 로 되돌리고 token endpoint 교환을 구현한다.
 
+## 5-7. 리치텍스트 에디터(`RichTextEditor.tsx`, TipTap 3.25.0) (B-70 ~ B-75) — ✅수정완료(2026-10-23)
+
+공용 에디터라 **가이드 편집·공지 작성·VOC 등록·MAP 변경 사유** 4곳에 모두 적용된다.
+재현은 실제 컴포넌트를 React+jsdom 에 렌더해 수정 전/후를 같은 스크립트로 비교했다(아래 출력 원문).
+
+### B-70 🟠 표가 포함된 HTML(엑셀·워드 붙여넣기)이 표 구조가 사라지고 한 문단으로 합쳐졌다
+- 원인: 표(table) 확장이 없어 스키마에 없는 `<table>/<tr>/<td>` 를 TipTap 이 걷어냈다.
+- 수정: `@tiptap/extension-table@3.25.0` 추가(core/pm 이 3.25.0 고정 peer 라 같은 버전) →
+  `TableKit.configure({ table: { resizable: false } })` 등록. 툴바 2행에 **표 삽입(3×3, 첫 행 머리글)·
+  +행(아래)·-행·+열(오른쪽)·-열·표 삭제** 버튼 추가(i18n `editor.table_*`). 표 밖에서 누르면 아무 일도 없다.
+  `global.css` 에 `.ProseMirror`·`.guide-content-render` 표 테두리·머리글 배경·셀 선택 색 추가.
+- 저장 형식: `<table style="min-width: …"><colgroup>…</colgroup><tbody><tr><td colspan="1" rowspan="1"><p>…</p></td>…`
+  엑셀의 `colspan`(병합)·`align=right` 는 보존, 셀 서식(배경색·글꼴 등 `class=xl65`)은 버려진다.
+- 재현: 수정 전 `<p>앞항목값A10병합</p>` → 수정 후 `<table>` 보존, 워드(`MsoTableGrid`) 표도 보존, 다시 열어도 HTML 동일.
+
+### B-71 🟠 글을 끝까지 지우면 커서가 다음 줄로 넘어갔다
+- 원인: `onUpdate` 가 빈 문단 `<p></p>` 를 `<p><br></p>` 로 보정해 부모에 넘기면, 외부 value 동기화
+  `useEffect` 가 `value !== getHTML()` 로 **다르다고 판단해 `setContent` 를 다시 호출**했다. 다시 읽힌 `<br>` 은
+  hardBreak(줄바꿈) 노드가 되고 커서는 그 뒤(둘째 줄)에 놓였다. 저장된 빈 줄 `<p><br></p>` 도 같은 이유로
+  에디터에서 두 칸 높이로 보였다.
+- 수정: `toStoredHtml`(`<p></p>`→`<p><br></p>`, 저장용)·`toEditorHtml`(역변환, 에디터 입력용)로 분리하고
+  동기화 비교를 저장 형식끼리 한다. **저장 형식은 그대로**라 기존 데이터·표시 화면 영향 없음.
+- 재현: 수정 전 `doc=[paragraph[hardBreak]] selection.from=2`, 이어서 입력 시 `<p><br>X</p>` →
+  수정 후 `doc=[paragraph] selection.from=1`, `<p>X</p>`.
+
+### B-72 🟡 H1·가운데 정렬이 그 줄이 아니라 글 전체에 적용됐다
+- 원인: `EnterAsHardBreak` 확장이 Enter 를 `<br>` 로 바꿔 글 전체가 한 문단이었다.
+- 수정(사용자 결정): 확장 제거 → **Enter=새 문단, Shift+Enter=문단 안 줄바꿈**(TipTap 기본).
+  에디터 문단 간격을 가이드 표시와 같은 `0.4em` 으로 맞췄다(`.ProseMirror p`).
+- 재현: 수정 전 `<h1>첫째줄<br>둘째줄<br>같은문단</h1>` → 수정 후 `<h1>첫째줄</h1><p>둘째줄<br>같은문단</p>`.
+- 영향: 공지(`notice-detail-content`)·VOC·MAP 변경 사유 보기 화면에는 문단 간격 CSS 가 없어 브라우저 기본(1em)으로
+  보인다 — 예전 `<br>` 줄바꿈보다 줄 사이가 넓다.
+
+### B-73 🟡 빈 가이드가 저장됐다
+- 원인: 빈 에디터는 `<p><br></p>` 를 넘기는데 `GuidePage.tsx` 검증은 `'<p></p>'` 만 막았다.
+- 수정: `hasGuideContent` — 태그·`&nbsp;` 를 걷어낸 글자로 판단(VOC 방식), 단 `<img>`/`<video>` 만 있는 가이드는 허용.
+
+### B-74 ⚪ Underline 확장 중복 등록
+- `[tiptap warn]: Duplicate extension names found: ['underline']` — v3 `StarterKit` 에 이미 포함. 별도 등록 제거.
+  (`package.json` 의 `@tiptap/extension-underline` 의존성은 이번에 건드리지 않았다.)
+
+### B-75 ⚪ 이미지 업로드 실패가 조용히 무시됐다
+- 붙여넣기·버튼 업로드 모두 `catch {}` 로 무시 → 동영상과 같이 `window.alert(t('guide.image_upload_failed'))`.
+
+### 미결 항목 (사용자 결정 대기)
+- 엑셀 복사 시 클립보드에 표(HTML)와 함께 **그림(image/png)** 이 들어오는 환경이면, ProseMirror 가 표를 넣은 뒤
+  `handlePaste` 가 그림도 업로드해 **표+이미지가 중복 삽입될 수 있다**. 실제 엑셀 클립보드로는 확인하지 못했다.
+- 공지·VOC·MAP 변경 사유 **보기 화면**에는 표 테두리 CSS 가 없다(가이드 보기 `.guide-content-render` 만 추가).
+
 ---
 
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
@@ -2620,7 +2669,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
   화면상 "선택지가 안 뜸"으로 나타나며, 사용자에게 원인이 보이지 않는다.
 - `utils.py`의 DCQ 로그인 — 전역 `sys.stdin` 을 교체하는 방식이라 락으로 직렬화하고 있으나,
   gunicorn 멀티워커에서는 **프로세스별로 락이 따로 걸린다**(프로세스 간 보호 없음). 실사용 영향 확인 필요.
-- `RichTextEditor.tsx`(574줄)·`GuideTourModal`·`guideDemos/*` — 투어·에디터 UI. `any` 9건 외 기능 검증 미실시.
+- `GuideTourModal`·`guideDemos/*` — 투어 UI. 기능 검증 미실시. (`RichTextEditor.tsx` 는 §5-7 에서 jsdom 렌더 재현 검증, 실제 브라우저 확인은 별도 필요)
 - `PagedDetailView.tsx`(1,757줄) — diff 로직(B-40)과 `any` 집계만 확인. 6개 탭의 렌더 정확성은 브라우저 확인 필요.
 - ~~마이그레이션 일치 여부~~ → 1·3차 모두 **실행 완료**. 3차 결과는 **`No changes detected`(exit 0)** →
   B-48 은 **해소됨**(§5-2 참조).
