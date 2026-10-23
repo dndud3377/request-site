@@ -278,8 +278,9 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                   <div className="notice-detail-title">{selected.title}</div>
 
                   {selected.template === 'notice' && selected.content && (
+                    // claude 수정 (2026-10-23): 에디터로 넣은 표가 보이도록 공통 표 스타일 클래스 추가
                     <div
-                      className="notice-detail-content"
+                      className="notice-detail-content rich-table-render"
                       style={{ whiteSpace: 'pre-wrap' }}
                       dangerouslySetInnerHTML={{ __html: selected.content }}
                     />
