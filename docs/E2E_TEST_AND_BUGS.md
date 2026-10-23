@@ -2320,7 +2320,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - **`.cer` 파일 2개 삭제**: 운영 배포 후 로그인 확인을 마친 다음 진행한다(B-47).
 - **code 교환(back-channel)**: implicit 전환으로 선택지에서 빠졌다. 필요하면 hybrid 로 되돌리고 token endpoint 교환을 구현한다.
 
-## 5-7. 리치텍스트 에디터(`RichTextEditor.tsx`, TipTap 3.25.0) (B-70 ~ B-76) — ✅수정완료(2026-10-23)
+## 5-7. 리치텍스트 에디터(`RichTextEditor.tsx`, TipTap 3.25.0) (B-70 ~ B-77) — ✅수정완료(2026-10-23)
 
 공용 에디터라 **가이드 편집·공지 작성·VOC 등록·VOC 댓글·MAP 변경 사유** 5곳에 모두 적용된다.
 재현은 실제 컴포넌트를 React+jsdom 에 렌더해 수정 전/후를 같은 스크립트로 비교했다(아래 출력 원문).
@@ -2374,6 +2374,39 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   표가 없는 붙여넣기(캡처 그림 등)는 이전과 같이 업로드한다.
 - 재현(jsdom, 표 HTML + image/png 동시 붙여넣기): 수정 전 업로드 호출 **1회** → 수정 후 **0회**, 표 1개 삽입,
   붙여넣은 표의 셀 `A` → `수정됨` 편집 정상. 그림만 붙여넣기는 수정 후에도 업로드 1회·`<img>` 1개.
+
+### B-77 🟡 붙여넣은 표의 크기(열 너비·행 높이·표 폭)를 바꿀 수 없었다 — ✅수정완료(2026-10-23)
+- 원인: 표 확장을 `resizable: false` 로 넣었고, CSS `width: 100%; table-layout: fixed` 로 모든 표가 화면 폭·같은 열 너비가 됐다.
+  엑셀 원래 열 너비도 무시됐다(TipTap 기본 파서는 `<col>` 너비를 읽지만 **첫 열을 건너뛰고**(`cellIndex` 0 이 falsy) `span` 을 처리하지 않음).
+- 수정(사용자 선택: 열 너비 드래그·엑셀 원래 열 너비·행 높이 드래그·표 전체 폭 + 크기 초기화 버튼):
+  - 열 너비·표 전체 폭: `TableKit` `table: { resizable: true, renderWrapper: true }`. 열 경계선 드래그(커서 `col-resize`, 파란 핸들),
+    마지막 열 오른쪽 경계선을 끌면 표 전체 폭이 바뀐다. 화면보다 넓은 표는 `.tableWrapper` 안에서 가로 스크롤.
+  - 엑셀·워드 원래 크기: 신규 `components/editorTable.ts` `applyPastedTableSizes`(editorProps.transformPastedHTML) —
+    `<col width>`(span 포함) → 없으면 첫 행 셀 `width`(colspan 분배)를 읽어 셀마다 `colwidth` 를 채운다(rowspan 으로 밀린 열 위치 계산).
+    행 높이는 `<tr height>`/`style="height:15pt"`(pt→px) 를 `TableRowWithHeight.height` 가 읽는다.
+  - 행 높이: `TableRowWithHeight`(tableRow 에 `height` 속성, `<tr style="height: Npx">`) + `TableRowResize` 플러그인 —
+    셀 아래 경계선 5px 안에서 커서 `row-resize`, 드래그 중에는 장식(decoration)으로만 미리 보이고 놓을 때 한 번만 저장(Ctrl+Z 1회로 취소).
+    셀 좌우 끝 5px 은 열 드래그 영역이라 양보한다. 글자 높이보다 작게는 줄지 않는다(표 특성), 최소 20px.
+  - 툴바 `크기 초기화`(`editor.table_reset_size_*`): 커서가 있는 표의 `colwidth`·행 `height` 를 모두 지워 화면 폭에 맞춤. 표 밖에서는 무동작.
+- 저장 형식 변화: `<div class="tableWrapper"><table style="width: 360px;"><colgroup><col style="width: 72px;">…</colgroup>`
+  `<tbody><tr style="height: 20px;"><td colspan="1" rowspan="1" colwidth="72">…`. 너비 정보가 없는 표(툴바 삽입·크기 초기화 후)는
+  예전처럼 화면 폭(`width: 100%`)이고, 너비가 있으면 인라인 `width: Npx` 가 우선한다. 이전 저장본은 그대로 보인다.
+- 검증(실제 Chromium 1194 + Playwright, 에디터만 esbuild 로 띄운 하네스. 엑셀 클립보드 HTML 을 DataTransfer 로 붙여넣기):
+  ```
+  1) 엑셀(표+그림) 붙여넣기 업로드 0회 | 에디터 {"table":361,"cols":[72,200,88],"rows":[33,40,33]}
+     가이드 보기 cols [72,200,88] rows [35,40,35] / 공지 보기 cols [72,200,88] rows [34,40,34]
+  2) 열 경계선 hover resize-cursor: true → 첫 열 +60 드래그 {"table":421,"cols":[132,200,88]}
+  3) 마지막 열 +100 드래그 {"table":521,"cols":[132,200,188]}
+  4) 행 경계선 hover row-resize-cursor: true, 드래그 중 미리보기 [33,57,33](저장값 불변) → 놓은 뒤 [33,70,33], <tr style="height: 70px;">
+     가이드·공지 보기도 rows [..,70,..]
+  5) Ctrl+Z 1회 → [33,40,33]   6) 저장본 다시 열기 HTML 동일   7) 붙여넣은 표 셀 글 수정 OK
+  8) 크기 초기화 → colwidth 0개·tr height 0개, 표 폭 750(=본문 폭)   9) 표 밖에서 크기 초기화 무변화
+  A) <col width=80 span=2>+병합+rowspan → colwidth "80" / "80,120" / "80" / "120"
+  B) 워드(셀 width=150/300, col 없음) → colwidth 150·300, table width 450px
+  C) 1200px 표 → 에디터·가이드·공지 모두 wrapper 안 가로 스크롤, 페이지 가로 넘침 없음
+  ```
+  jsdom 재현 스크립트(B-70~B-76) 재실행 모두 동일, `tsc` 0건, `npm test` 45 suites / 615 tests 통과.
+- 주의: 엑셀 셀 서식(배경색·글꼴·테두리 굵기)은 옮기지 않는다. 행 높이는 '최소 높이'로 동작한다(글이 많으면 늘어남).
 
 ### 미결 항목 (사용자 결정 대기)
 - ~~엑셀 표 붙여넣기 시 표 아래에 같은 모양 그림이 하나 더 붙는다~~ → B-76 으로 해소.
