@@ -1398,6 +1398,7 @@
     "paste_image_hint": "이미지를 에디터에 직접 Ctrl+V로 붙여넣기할 수 있습니다.",
     "video_too_large": "동영상 크기는 50MB를 초과할 수 없습니다.",
     "video_upload_failed": "동영상 업로드에 실패했습니다.",
+    "image_upload_failed": "이미지 업로드에 실패했습니다.",
     "save": "저장",
     "cancel": "취소",
     "edit": "수정",
@@ -1676,7 +1677,19 @@
     "font_default": "기본",
     "font_malgun": "맑은 고딕",
     "font_nanum": "나눔고딕",
-    "font_gulim": "굴림"
+    "font_gulim": "굴림",
+    "table_insert_title": "표 삽입 (3×3, 첫 행 머리글)",
+    "table_insert_label": "표",
+    "table_add_row_title": "아래에 행 추가",
+    "table_add_row_label": "+행",
+    "table_delete_row_title": "현재 행 삭제",
+    "table_delete_row_label": "-행",
+    "table_add_col_title": "오른쪽에 열 추가",
+    "table_add_col_label": "+열",
+    "table_delete_col_title": "현재 열 삭제",
+    "table_delete_col_label": "-열",
+    "table_delete_title": "표 삭제",
+    "table_delete_label": "표 삭제"
   },
   "group": {
     "section_title": "나만의 그룹",
