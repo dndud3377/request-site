@@ -2322,7 +2322,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ## 5-7. 리치텍스트 에디터(`RichTextEditor.tsx`, TipTap 3.25.0) (B-70 ~ B-75) — ✅수정완료(2026-10-23)
 
-공용 에디터라 **가이드 편집·공지 작성·VOC 등록·MAP 변경 사유** 4곳에 모두 적용된다.
+공용 에디터라 **가이드 편집·공지 작성·VOC 등록·VOC 댓글·MAP 변경 사유** 5곳에 모두 적용된다.
 재현은 실제 컴포넌트를 React+jsdom 에 렌더해 수정 전/후를 같은 스크립트로 비교했다(아래 출력 원문).
 
 ### B-70 🟠 표가 포함된 HTML(엑셀·워드 붙여넣기)이 표 구조가 사라지고 한 문단으로 합쳐졌다
@@ -2330,7 +2330,9 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - 수정: `@tiptap/extension-table@3.25.0` 추가(core/pm 이 3.25.0 고정 peer 라 같은 버전) →
   `TableKit.configure({ table: { resizable: false } })` 등록. 툴바 2행에 **표 삽입(3×3, 첫 행 머리글)·
   +행(아래)·-행·+열(오른쪽)·-열·표 삭제** 버튼 추가(i18n `editor.table_*`). 표 밖에서 누르면 아무 일도 없다.
-  `global.css` 에 `.ProseMirror`·`.guide-content-render` 표 테두리·머리글 배경·셀 선택 색 추가.
+  `global.css` 에 `.ProseMirror`·`.guide-content-render`·`.rich-table-render` 표 테두리·머리글 배경·셀 선택 색 추가.
+  보기 화면 공통 클래스 `rich-table-render` 를 공지 상세(`HomePage` `.notice-detail-content`)·VOC 본문/댓글(`VOCPage`)·
+  MAP 변경 사유(`PagedDetailView`)에 붙였다(사용자 결정, 2026-10-23). 표 규칙만 적용되고 문단 간격 등은 그대로다.
 - 저장 형식: `<table style="min-width: …"><colgroup>…</colgroup><tbody><tr><td colspan="1" rowspan="1"><p>…</p></td>…`
   엑셀의 `colspan`(병합)·`align=right` 는 보존, 셀 서식(배경색·글꼴 등 `class=xl65`)은 버려진다.
 - 재현: 수정 전 `<p>앞항목값A10병합</p>` → 수정 후 `<table>` 보존, 워드(`MsoTableGrid`) 표도 보존, 다시 열어도 HTML 동일.
@@ -2365,9 +2367,9 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - 붙여넣기·버튼 업로드 모두 `catch {}` 로 무시 → 동영상과 같이 `window.alert(t('guide.image_upload_failed'))`.
 
 ### 미결 항목 (사용자 결정 대기)
-- 엑셀 복사 시 클립보드에 표(HTML)와 함께 **그림(image/png)** 이 들어오는 환경이면, ProseMirror 가 표를 넣은 뒤
+- (사용자 결정: 브라우저 수동 확인 결과를 보고 결정) 엑셀 복사 시 클립보드에 표(HTML)와 함께 **그림(image/png)** 이 들어오는 환경이면, ProseMirror 가 표를 넣은 뒤
   `handlePaste` 가 그림도 업로드해 **표+이미지가 중복 삽입될 수 있다**. 실제 엑셀 클립보드로는 확인하지 못했다.
-- 공지·VOC·MAP 변경 사유 **보기 화면**에는 표 테두리 CSS 가 없다(가이드 보기 `.guide-content-render` 만 추가).
+- ~~공지·VOC·MAP 변경 사유 보기 화면에 표 테두리 CSS 가 없다~~ → `rich-table-render` 로 해소(B-70 참조).
 
 ---
 
