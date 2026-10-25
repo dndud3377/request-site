@@ -8995,6 +8995,8 @@ class FormOptionsLineProcessProductProcessIdTest(TestCase):
         from rest_framework.test import APIClient
         self._json = json
         self.client = APIClient()
+        # claude 수정 (2026-10-23): form-options 가 운영 모드에서 로그인 필수가 돼(R-08) 로그인 사용자로 호출한다
+        self.client.force_authenticate(user=UserProfile.objects.create(loginid='opt_viewer', role='NONE'))
         # 라인1/조합법A 아래 제품 P1, P2 / 라인1/조합법B 아래 제품 P3
         ProcessProduct.objects.create(line='라인1', process='조합법A', product_name='P1')
         ProcessProduct.objects.create(line='라인1', process='조합법A', product_name='P2')
@@ -10267,6 +10269,10 @@ class FormOptionsLayerIdsStepseqTest(TestCase):
 
     def setUp(self):
         from .models import PhotoStepS1
+        from rest_framework.test import APIClient
+        # claude 수정 (2026-10-23): form-options 가 운영 모드에서 로그인 필수가 돼(R-08) 로그인 사용자로 호출한다
+        self.client = APIClient()
+        self.client.force_authenticate(user=UserProfile.objects.create(loginid='step_viewer', role='NONE'))
         base = dict(processid='PRC1', descript='d', recipeid='r', areaname='a', eqptype='PMAINF')
         # 같은 layerid(L01)가 두 stepseq 에 존재 / 자릿수가 다른 stepseq(AAAA9 vs AAAA10) / 다른 공정·장비·빈 layerid 는 제외 대상
         PhotoStepS1.objects.create(stepseq='AAAA10', layerid='L02', **base)
@@ -10457,3 +10463,330 @@ class MediaServeTest(TestCase):
         self.assertEqual(r['X-Accel-Redirect'], '/protected-media/mshot_images/a.png')
         self.assertEqual(r['Content-Type'], 'image/png')
         self.assertEqual(r.content, b'')
+
+
+# claude 수정 (2026-10-23): 접근 경로 원칙 회귀 테스트 — 데이터는 ① SSO 로그인 쿠키 ② 외부 API Key(/api/external/v1/documents/) 로만 나간다
+# (R-08 form-options·R-09 SSE·health·Bearer·admin·라우터 루트). 원칙은 docs/EXTERNAL_API.md §0.
+ACCESS_POLICY_JWT_SECRET = 'access-policy-test-service-secret-0123456789'
+ACCESS_POLICY_EXTERNAL_KEY = 'access-policy-test-external-key'
+# 외부에서 들어온 요청을 흉내 내는 주소(TEST-NET-3 문서용 대역). Django 테스트 Client 기본값은 127.0.0.1 이다.
+EXTERNAL_CLIENT_ADDR = '203.0.113.10'
+BLOCKED_STATUSES = (401, 403, 404, 405)
+
+
+def _service_cookie_token(loginid, secret=ACCESS_POLICY_JWT_SECRET, expires_in=timedelta(hours=1)):
+    """SSO 로그인 후 발급되는 approval_system_token 과 같은 형식(HS256, username·exp)의 토큰."""
+    return jwt.encode({'username': loginid, 'exp': timezone.now() + expires_in}, secret, algorithm='HS256')
+
+
+@override_settings(AUTH_MODE='sso', SERVICE_JWT_SECRET_KEY=ACCESS_POLICY_JWT_SECRET)
+class UserEventsAuthTest(TestCase):
+    """SSE /api/users/events/: 로그인 쿠키 인증을 통과해야만 스트림·구독 큐가 생긴다(R-09)."""
+
+    URL = '/api/users/events/'
+
+    def setUp(self):
+        UserProfile.objects.create(loginid='sse_viewer', role='NONE')
+        self.client = Client()
+
+    def _subscriber_count(self):
+        from .sse import broadcaster
+        return len(broadcaster._queues)
+
+    def test_anonymous_is_401_without_stream_or_subscription(self):
+        before = self._subscriber_count()
+        r = self.client.get(self.URL, HTTP_ACCEPT='text/event-stream')
+        self.assertEqual(r.status_code, 401)
+        self.assertFalse(r.streaming)
+        self.assertEqual(self._subscriber_count(), before)
+
+    def test_forged_expired_or_unknown_user_cookie_is_401(self):
+        tokens = {
+            'forged': _service_cookie_token('sse_viewer', secret='wrong-secret'),
+            'expired': _service_cookie_token('sse_viewer', expires_in=timedelta(minutes=-1)),
+            'unknown': _service_cookie_token('nobody'),
+        }
+        for label, token in tokens.items():
+            self.client.cookies['approval_system_token'] = token
+            self.assertEqual(self.client.get(self.URL).status_code, 401, label)
+
+    def test_login_cookie_opens_stream_and_close_unsubscribes(self):
+        before = self._subscriber_count()
+        self.client.cookies['approval_system_token'] = _service_cookie_token('sse_viewer')
+        r = self.client.get(self.URL, HTTP_ACCEPT='text/event-stream')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], 'text/event-stream')
+        self.assertEqual(next(iter(r.streaming_content)), b': connected\n\n')
+        self.assertEqual(self._subscriber_count(), before + 1)
+        r.close()
+        self.assertEqual(self._subscriber_count(), before)
+
+    def test_dev_mode_allows_anonymous_like_other_apis(self):
+        with override_settings(AUTH_MODE='dev'):
+            r = self.client.get(self.URL)
+        self.assertEqual(r.status_code, 200)
+        r.close()
+
+
+FORM_OPTIONS_URLS = (
+    '/api/form-options/processes/', '/api/form-options/products/', '/api/form-options/process-id/',
+    '/api/form-options/job-file-layer/', '/api/form-options/ovl-layer/', '/api/form-options/extra-layer/',
+    '/api/form-options/bb-external/', '/api/form-options/layer-ids/', '/api/form-options/barcode/',
+    '/api/form-options/map-names/', '/api/form-options/map-info/',
+)
+
+
+@override_settings(AUTH_MODE='sso')
+class FormOptionsAuthTest(TestCase):
+    """마스터 데이터 조회 11종: 운영은 로그인 필수, 개발은 다른 API 와 같이 허용(R-08). 파라미터 없이 호출해 빈 결과로 확인."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.user = UserProfile.objects.create(loginid='opt_auth', role='NONE')
+        self.client = APIClient()
+
+    def test_anonymous_is_rejected(self):
+        for url in FORM_OPTIONS_URLS:
+            self.assertIn(self.client.get(url).status_code, (401, 403), url)
+
+    def test_logged_in_user_gets_options(self):
+        self.client.force_authenticate(user=self.user)
+        for url in FORM_OPTIONS_URLS:
+            self.assertEqual(self.client.get(url).status_code, 200, url)
+
+    def test_dev_mode_allows_anonymous_like_other_apis(self):
+        with override_settings(AUTH_MODE='dev'):
+            for url in FORM_OPTIONS_URLS:
+                self.assertEqual(self.client.get(url).status_code, 200, url)
+
+    def test_post_is_still_405(self):
+        self.client.force_authenticate(user=self.user)
+        self.assertEqual(self.client.post('/api/form-options/barcode/').status_code, 405)
+
+    def test_lookup_failure_returns_empty_options_without_exception_detail(self):
+        """조회 실패 시 예외 원문(접속 호스트 등)을 응답에 싣지 않는다 — 화면은 options 만 읽는다(client.ts getStepOptions)."""
+        from . import layer_drift
+        secret = 'impala-secret-host:21050 auth failed'
+        self.client.force_authenticate(user=self.user)
+        cases = (
+            ('api.views.layer_drift.get_job_file_layer_rows',
+             f'/api/form-options/job-file-layer/?line={next(iter(layer_drift.JOB_FILE_MODEL_MAP))}&process=P'),
+            ('api.views.layer_drift.get_ovl_layer_rows',
+             f'/api/form-options/ovl-layer/?line={next(iter(layer_drift.OVL_MODEL_MAP))}&process=P'),
+            ('api.views.layer_drift.get_extra_layer_rows',
+             f'/api/form-options/extra-layer/?line={next(iter(layer_drift.EXTRA_MODEL_MAP))}&process=P'),
+            ('api.views.PhotoStepS1', '/api/form-options/bb-external/?location=line1&process_id=P'),
+        )
+        for target, url in cases:
+            with patch(target) as failing:
+                failing.side_effect = Exception(secret)
+                failing.objects.filter.side_effect = Exception(secret)
+                r = self.client.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            self.assertEqual(r.json(), {'options': []}, url)
+            self.assertNotIn(secret, r.content.decode(), url)
+
+
+class HealthCheckAccessTest(TestCase):
+    """/api/health/: 컨테이너 안 Docker healthcheck(루프백)만 허용, DB 오류 원문은 응답에 싣지 않는다."""
+
+    URL = '/api/health/'
+
+    def test_loopback_gets_status(self):
+        for addr in ('127.0.0.1', '::1'):
+            r = Client(REMOTE_ADDR=addr).get(self.URL)
+            self.assertEqual(r.status_code, 200, addr)
+            self.assertEqual(r.json(), {'status': 'healthy', 'db': 'connected'})
+
+    def test_external_or_proxied_request_is_403(self):
+        self.assertEqual(Client(REMOTE_ADDR=EXTERNAL_CLIENT_ADDR).get(self.URL).status_code, 403)
+        # nginx 를 거친 요청은 X-Forwarded-For 가 붙는다 — 주소가 루프백으로 보여도 거절
+        self.assertEqual(Client().get(self.URL, HTTP_X_FORWARDED_FOR=EXTERNAL_CLIENT_ADDR).status_code, 403)
+
+    def test_db_failure_is_503_without_error_detail(self):
+        with patch('api.views.connections') as conns:
+            conns.__getitem__.return_value.cursor.side_effect = Exception('db-secret-host:3306 access denied')
+            r = Client().get(self.URL)
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.json(), {'status': 'unhealthy', 'db': 'disconnected'})
+
+
+@override_settings(AUTH_MODE='sso', EXTERNAL_API_KEY=ACCESS_POLICY_EXTERNAL_KEY)
+class AccessChannelPolicyTest(TestCase):
+    """세 번째 인증 수단(Bearer)·admin·라우터 루트 API 목록이 운영에서 닫혀 있는지."""
+
+    def setUp(self):
+        self.client = Client(REMOTE_ADDR=EXTERNAL_CLIENT_ADDR)
+
+    def test_bearer_authentication_is_enabled_only_in_dev_auth_mode(self):
+        from django.conf import settings as django_settings
+        classes = django_settings.REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']
+        jwt_class = 'rest_framework_simplejwt.authentication.JWTAuthentication'
+        # REST_FRAMEWORK 는 기동 시 환경변수 AUTH_MODE 로 정해진다(override_settings 로 바뀌지 않음)
+        import os
+        self.assertEqual(jwt_class in classes, os.environ.get('AUTH_MODE', 'sso') == 'dev')
+
+    def test_bearer_token_is_rejected_when_started_in_sso_mode(self):
+        import os
+        if os.environ.get('AUTH_MODE', 'sso') == 'dev':
+            self.skipTest('AUTH_MODE=dev 로 기동된 프로세스는 dev-login 용 Bearer 를 의도적으로 받는다')
+        from rest_framework_simplejwt.tokens import RefreshToken
+        master = UserProfile.objects.create(loginid='bearer_master', role='MASTER')
+        token = str(RefreshToken.for_user(master).access_token)
+        for url in ('/api/documents/', '/api/users/'):
+            self.assertIn(self.client.get(url, HTTP_AUTHORIZATION=f'Bearer {token}').status_code, (401, 403), url)
+
+    def test_django_admin_is_not_routed(self):
+        for url in ('/admin/', '/admin/login/'):
+            self.assertEqual(self.client.get(url).status_code, 404, url)
+
+    def test_router_roots_do_not_list_endpoints(self):
+        for url in ('/api/', '/api/external/v1/'):
+            self.assertIn(self.client.get(url).status_code, (401, 403), url)
+            self.assertIn(
+                self.client.get(url, HTTP_X_API_KEY=ACCESS_POLICY_EXTERNAL_KEY).status_code, (401, 403), url,
+            )
+
+
+@override_settings(AUTH_MODE='sso', EXTERNAL_API_KEY=ACCESS_POLICY_EXTERNAL_KEY)
+class PublicEndpointAllowlistTest(TestCase):
+    """등록된 **모든** URL 을 순회해, 로그인 없이(또는 외부 API Key 만으로) 열리는 곳이 허용 목록뿐인지 확인한다.
+
+    새 API 를 만들며 권한 지정을 빠뜨리면 이 테스트가 실패한다. 허용 목록을 늘리려면 docs/EXTERNAL_API.md §0 도 함께 고친다.
+    """
+
+    # SSO 로그인 흐름 — 로그인 전이라 쿠키가 없을 수밖에 없다
+    ANON_ALLOWED = {'/api/auth/oidc/login/', '/api/auth/oidc/callback/', '/api/auth/oidc/logout/'}
+    # 외부 연동 API — X-API-Key 로만 열린다(목록·상세, 형식 접미사 포함)
+    KEY_ALLOWED_PREFIX = '/api/external/v1/documents'
+
+    @staticmethod
+    def _sample(fragment):
+        import re
+        # 정규식 그룹(라우터)을 먼저 바꾼다 — 경로 변환자 치환이 (?P<pk>...) 안의 <pk> 를 먼저 먹지 않도록
+        fragment = re.sub(
+            r'\(\?P<(\w+)>[^)]*\)', lambda m: 'json' if m.group(1) == 'format' else '1', fragment,
+        )
+        fragment = re.sub(r'<(?:\w+:)?\w+>', '1', fragment)
+        return fragment.replace('^', '').replace('$', '').replace('/?', '/').replace('\\.', '.')
+
+    def _all_paths(self):
+        from django.urls import URLResolver, get_resolver
+
+        def walk(patterns, prefix):
+            for p in patterns:
+                path = prefix + self._sample(str(p.pattern))
+                if isinstance(p, URLResolver):
+                    yield from walk(p.url_patterns, path)
+                else:
+                    yield path
+
+        return sorted(set(walk(get_resolver().url_patterns, '/')))
+
+    def _status(self, client, method, path, **headers):
+        r = getattr(client, method)(path, **headers)
+        if r.streaming:
+            r.close()
+        return r.status_code
+
+    def test_enumeration_covers_known_endpoints(self):
+        paths = self._all_paths()
+        for expected in ('/api/users/events/', '/api/form-options/barcode/', '/api/health/',
+                         '/api/documents/', '/api/external/v1/documents/', '/media/1'):
+            self.assertIn(expected, paths)
+
+    def test_only_allowlisted_paths_open_without_login(self):
+        client = Client(REMOTE_ADDR=EXTERNAL_CLIENT_ADDR)
+        leaks = []
+        for path in self._all_paths():
+            if path in self.ANON_ALLOWED:
+                continue
+            for method in ('get', 'post'):
+                code = self._status(client, method, path)
+                if code not in BLOCKED_STATUSES:
+                    leaks.append((method.upper(), path, code))
+                code = self._status(client, method, path, HTTP_X_API_KEY=ACCESS_POLICY_EXTERNAL_KEY)
+                if code not in BLOCKED_STATUSES and not path.startswith(self.KEY_ALLOWED_PREFIX):
+                    leaks.append((method.upper() + '+key', path, code))
+        self.maxDiff = None
+        self.assertEqual(leaks, [])
+
+    def test_external_api_still_works_with_key(self):
+        client = Client(REMOTE_ADDR=EXTERNAL_CLIENT_ADDR)
+        r = client.get('/api/external/v1/documents/', HTTP_X_API_KEY=ACCESS_POLICY_EXTERNAL_KEY)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), [])
+
+
+# claude 수정 (2026-10-23): 서버 예외 원문(파일 경로·DB 접속 정보·JWT 사유)이 응답으로 나가지 않는지 (B-76~B-78)
+@override_settings(AUTH_MODE='sso', SERVICE_JWT_SECRET_KEY=ACCESS_POLICY_JWT_SECRET)
+class ExceptionDetailNotExposedTest(TestCase):
+    """업로드 저장 실패·사용자 삭제 실패·쿠키 인증 실패 때 응답은 고정 문구, 원문은 로그로만."""
+
+    DISK_ERROR = OSError(28, 'No space left on device', '/app/media/mshot_images/secret-path.png')
+
+    def setUp(self):
+        from django.db import OperationalError
+        from rest_framework.test import APIClient
+        self.db_error = OperationalError(2003, "Can't connect to MySQL server on 'db-secret-host:3306' (111)")
+        self.master = UserProfile.objects.create(loginid='exc_master', role='MASTER')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.master)
+
+    def _assert_no_detail(self, r, *secrets):
+        body = r.content.decode()
+        for secret in secrets:
+            self.assertNotIn(secret, body)
+
+    def test_upload_storage_failure_hides_server_path(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        cases = (
+            ('/api/upload-image/', 'image', SimpleUploadedFile('a.png', _png_bytes(), content_type='image/png')),
+            ('/api/upload-video/', 'video', SimpleUploadedFile('a.mp4', MP4_HEAD, content_type='video/mp4')),
+        )
+        for url, field, upload in cases:
+            with patch('api.views.default_storage.save', side_effect=self.DISK_ERROR):
+                r = self.client.post(url, {field: upload}, format='multipart')
+            self.assertEqual(r.status_code, 500, url)
+            self.assertEqual(r.json(), {'error': '업로드 실패'}, url)
+            self._assert_no_detail(r, 'secret-path', 'Errno')
+
+    def test_delete_missing_user_is_404(self):
+        # 문구는 DRF 가 Django Http404 문구('No UserProfile matches the given query.')를 그대로 넘긴다 — 앱 전역 동작이라 상태 코드만 고정
+        self.assertEqual(self.client.delete('/api/users/999999/').status_code, 404)
+
+    def test_delete_db_failure_hides_db_detail_and_keeps_user(self):
+        target = UserProfile.objects.create(loginid='exc_target', role='NONE')
+        with patch.object(UserProfile, 'delete', side_effect=self.db_error):
+            r = self.client.delete(f'/api/users/{target.id}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json(), {'error': '사용자 삭제 중 오류가 발생했습니다.'})
+        self._assert_no_detail(r, 'db-secret-host', 'MySQL')
+        self.assertTrue(UserProfile.objects.filter(pk=target.pk).exists())
+
+    def test_delete_success_and_permission_checks_are_unchanged(self):
+        from .sse import broadcaster
+        same_role = UserProfile.objects.create(loginid='exc_pl', role='PL')
+        other_role = UserProfile.objects.create(loginid='exc_te', role='TE_R')
+        pl = UserProfile.objects.create(loginid='exc_pl_caller', role='PL')
+        self.client.force_authenticate(user=pl)
+        self.assertEqual(self.client.delete(f'/api/users/{other_role.id}/').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/users/{pl.id}/').status_code, 403)
+        with patch.object(broadcaster, 'broadcast') as sent:
+            self.assertEqual(self.client.delete(f'/api/users/{same_role.id}/').status_code, 204)
+        sent.assert_called_once_with('user_deleted', {'id': same_role.id})
+        self.assertFalse(UserProfile.objects.filter(pk=same_role.pk).exists())
+
+    def test_cookie_auth_failures_hide_library_and_db_detail(self):
+        client = Client()
+        client.cookies['approval_system_token'] = 'garbage'
+        r = client.get('/api/documents/')
+        self.assertIn(r.status_code, (401, 403))
+        self.assertEqual(r.json(), {'detail': '유효하지 않은 토큰입니다.'})
+
+        client.cookies['approval_system_token'] = _service_cookie_token('exc_master')
+        with patch.object(UserProfile.objects, 'get', side_effect=self.db_error):
+            r = client.get('/api/documents/')
+        self.assertIn(r.status_code, (401, 403))
+        self.assertEqual(r.json(), {'detail': '인증 오류가 발생했습니다.'})
+        self._assert_no_detail(r, 'db-secret-host', 'MySQL')

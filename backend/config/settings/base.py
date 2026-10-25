@@ -102,13 +102,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'api.UserProfile'
 
+# claude 수정 (2026-10-23): 기본 권한을 비로그인 읽기 허용 → 로그인 필수로(권한 지정을 빠뜨린 API·라우터 루트의 API 목록 비공개),
+# Bearer(simplejwt) 인증은 아래 AUTH_MODE 판정 뒤 dev 에서만 추가한다
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'api.authentication.CookieJWTAuthentication',
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -189,6 +190,13 @@ SERVICE_JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=7)
 
 # Auth Mode (dev: 개발용 드롭다운, sso: 운영용 OIDC)
 AUTH_MODE = os.environ.get('AUTH_MODE', 'sso')
+
+# claude 수정 (2026-10-23): Bearer 토큰은 dev-login(AUTH_MODE=dev 전용)만 발급하므로 dev 에서만 받는다 —
+# 운영 접근 경로는 SSO 로그인 쿠키와 외부 API Key(/api/external/) 두 가지뿐이어야 한다
+if AUTH_MODE == 'dev':
+    REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'].append(
+        'rest_framework_simplejwt.authentication.JWTAuthentication'
+    )
 
 # ============================================
 # 외부 조회용 고정 API Key (읽기 전용 /api/external/ 접근)
