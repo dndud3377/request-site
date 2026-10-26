@@ -329,7 +329,7 @@ FAILED (failures=2, errors=1)
 | `/approval` | `ApprovalPage` | `NONE` 제외 | 목록·필터·정렬 / 상세 / 결재 액션 전부 |
 | `/history` | `HistoryPage` | `NONE` 제외 | `approved` 문서 조회·검색·상세(읽기전용)·삭제(MASTER) |
 | `/voc` | `VOCPage` | `NONE` 제외 | VOC 등록·댓글·완료/거부 |
-| `/permissions` | `PermissionPage` | `NONE` 제외 | 역할 부여/회수, 나만의 그룹, SSE 실시간 반영 |
+| `/permissions` | `PermissionPage` | `NONE` 제외 | 역할 부여/회수, 나만의 그룹, 사용자 목록 30초 폴링 반영(2026-10-26 SSE 대체) |
 | `/guide` | `GuidePage` | `NONE` 제외 | 가이드 CRUD, 전체 가이드 투어 |
 | `/address-book` | `AddressBookPage` | `NONE` 제외 | 통보처 프리셋 CRUD |
 
@@ -349,8 +349,9 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 `submit` / `resubmit` / `withdraw` / `delete` / `approve-step` / `reject-step` / `assign-step` /
 `claim-step` / `peer-approve` / `peer-reject` / `peer-submit` / `change-designee` /
 `add-post-approver` / `remove-post-approver` / `request-pause` / `confirm-pause` / `resume` / `cancel-pause`
-+ `form-options/*` 11종 + `upload-image` / `upload-video` + `external/v1/documents` + `users/events`(SSE)
-(2026-10-23부터 `form-options/*`·`users/events` 도 운영에서 로그인 필수, 외부 API Key 로 열리는 건 `external/v1/documents` 뿐 — §5-7)
++ `form-options/*` 11종 + `upload-image` / `upload-video` + `external/v1/documents` + `auth/refresh`
+(2026-10-23부터 `form-options/*` 도 운영에서 로그인 필수, 외부 API Key 로 열리는 건 `external/v1/documents` 뿐 — §5-7.
+`users/events`(SSE)는 2026-10-26 제거, `auth/refresh` 는 같은 날부터 refresh 쿠키만으로 동작 — §5-8)
 
 ---
 
@@ -370,8 +371,8 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 #### T-A2 역할 부여 (권한관리)
 - 사전: **M** 로그인 → `/permissions`
 - 조작: `NONE` 사용자 검색 → `TE_O` 부여 → **다른 브라우저 탭에서 그 사용자로 로그인**
-- ✅ 역할이 **새로고침 없이** 반영(SSE `/api/users/events/`), '최근 추가순' 정렬 상단에 뜸
-- ❌ 새로고침해야만 반영되면 SSE 스트림(nginx 버퍼링) 확인
+- ✅ 역할이 **새로고침 없이 30초 안에** 반영(권한관리 화면의 사용자 목록 폴링, 2026-10-26 SSE 대체), '최근 추가순' 정렬 상단에 뜸
+- ❌ 30초가 지나도 반영되지 않으면 Network 탭에서 `users/` 요청이 30초마다 나가는지 확인(탭이 숨겨진 동안은 멈추는 게 정상)
 
 #### T-A3 일반 사용자의 역할 부여 제한
 - 사전: **O-1**(TE_O) 로그인 → `/permissions`
@@ -382,6 +383,7 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 #### T-A4 세션 만료 경고
 - 사전: 12시간 세션. 검증 시에는 `AuthContext.SESSION_TIMEOUT_MS` 를 짧게 두고 확인
 - ✅ 만료 10분 전 `SessionWarningModal` 표시 → '연장' 클릭 시 `/auth/refresh/` 성공
+  (2026-10-26부터 access 가 이미 만료됐어도 refresh 쿠키가 유효하면 성공 — T-Q4, B-36)
 
 ---
 
@@ -961,7 +963,7 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
 - 조작: 비로그인 상태로 `/` 접속 → 자동으로 `/api/auth/oidc/login/` → ADFS 리다이렉트 → 로그인 → `/oidc-callback`
 - ✅ `approval_system_token`·`approval_system_refresh`가 **HttpOnly + Secure + SameSite=Lax** 쿠키로 설정
   (2026-10-13 쿠키 이름 변경 — 예전 이름 `access_token`·`refresh_token`. 회귀 테스트 `OidcCallbackValidationTest` 도 2026-10-14 에 새 이름으로 맞춤)
-- ✅ 최초 로그인 사용자는 `role='NONE'`으로 자동 생성되고 권한관리 화면에 실시간(SSE)으로 뜬다
+- ✅ 최초 로그인 사용자는 `role='NONE'`으로 자동 생성되고 권한관리 화면에 30초 안에 뜬다(2026-10-26 SSE → 폴링)
 - ❌ `secure=True` 고정이라 **HTTP(개발 10011)에서는 쿠키가 저장되지 않는다** — dev는 `AUTH_MODE=dev`(Bearer) 경로를 쓰므로 우회되지만, dev에서 SSO를 시험하면 무한 리다이렉트처럼 보인다
 
 #### T-Q2 id_token 재사용(replay) — **현재 통과해버림**
@@ -982,8 +984,12 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
 #### T-Q4 세션 만료 후 갱신
 - 조작: `approval_system_token` 쿠키(예전 이름 `access_token`)를 삭제(또는 12시간 경과)한 뒤 '세션 연장' 또는 `POST /api/auth/refresh/`
 - ✅ **기대**: `approval_system_refresh`(예전 이름 `refresh_token`, 7일)로 재발급
-- ❌ **실제**: `refresh_token_view`에 `@permission_classes([IsAuthenticated])`가 붙어 있어 **access_token이 살아 있어야만** 호출된다 → 만료 후에는 항상 401, 재로그인 강제. **refresh 7일 설정이 사실상 무의미** → §5 **B-36**
+- ~~❌ **실제**: `refresh_token_view`에 `@permission_classes([IsAuthenticated])`가 붙어 있어 **access_token이 살아 있어야만** 호출된다 → 만료 후에는 항상 401, 재로그인 강제. **refresh 7일 설정이 사실상 무의미** → §5 **B-36**~~
+  → ✅ **수정완료(2026-10-26)**: 실제 응답은 401 이 아니라 **403** 이었다. `AllowAny` + `authentication_classes([])` 로 access 쿠키 상태와 무관하게 200 → §5-8
 - 성공 판정: 만료 상태에서 연장 버튼을 눌러 **재로그인 없이** 세션이 이어져야 정상
+- 브라우저 확인: 개발자도구 → Application → Cookies 에서 `approval_system_token` **만** 삭제(refresh 는 남김) → 콘솔에서
+  `fetch('/api/auth/refresh/', {method: 'POST', credentials: 'include'}).then(r => r.status)` → **200**, 쿠키 목록에 `approval_system_token` 이 다시 생김
+  - ❌ 403 이면 배포본이 이전 코드
 
 #### T-Q5 SSO 재로그인 시 프로필 덮어쓰기
 - 조작: ADFS가 `deptname` 클레임을 주지 않는 상황(또는 값이 빈 경우)에서 재로그인
@@ -1012,17 +1018,20 @@ for p in /api/ /api/users/events/ /api/form-options/barcode/ /api/health/ /admin
 curl -sk -o /dev/null -w '%{http_code}  key only → 내부 API\n' -H "X-API-Key: <키>" $H/api/documents/
 curl -sk -o /dev/null -w '%{http_code}  key → 외부 API\n'    -H "X-API-Key: <키>" $H/api/external/v1/documents/
 ```
-- ✅ 첫 6줄: `/api/users/events/` **401**, `/admin/` **404**, 나머지 **403** / key only → 내부 API **403** / key → 외부 API **200**
+- ✅ 첫 6줄: `/admin/` **404**, 나머지 **403** / key only → 내부 API **403** / key → 외부 API **200**
+  (`/api/users/events/` 는 2026-10-23~25 배포본에서 **401**. 2026-10-26 SSE 제거 후에는 사용자 상세 경로로 해석돼 **403** — §5-8)
 - ❌ 어느 하나라도 200 이 나오거나 `/api/users/events/` 가 끊기지 않고 대기하면(스트림 열림) 실패 — 배포본이 이전 코드인지 확인
 - 컨테이너 안 healthcheck 는 계속 200 이어야 한다:
   `docker exec <backend> python -c "import urllib.request as u; print(u.urlopen('http://localhost:8000/api/health/').read())"` → `b'{"status": "healthy", "db": "connected"}'`
   (`docker ps` 의 backend 상태가 `unhealthy` 로 바뀌면 실패)
 
-#### T-Q9 권한관리 실시간 반영(SSE)이 로그인 상태에서 그대로 동작 (2026-10-23 추가)
-1. MASTER 로 로그인 → **권한관리** 메뉴 → 브라우저 개발자도구 Network 탭에서 `events/` 요청이 **200 / `text/event-stream`, 대기(pending) 상태**인지 확인
+#### T-Q9 권한관리 사용자 목록 폴링 반영 (2026-10-23 추가, 2026-10-26 SSE → 폴링으로 개정)
+1. MASTER 로 로그인 → **권한관리** 메뉴 → 브라우저 개발자도구 Network 탭에서 `users/` 와 `users/for-assignment/` 요청이 **30초마다** 200 으로 나가는지 확인
+   - `events/` 요청은 **더 이상 없어야** 한다
 2. 다른 브라우저(또는 시크릿 창)로 다른 계정 로그인 → 권한관리에서 NONE 사용자에게 역할 부여
-3. ✅ 1번 화면에 **새로고침 없이** 해당 사용자가 역할 탭으로 옮겨 간다
-- ❌ `events/` 가 401 이면 쿠키가 실리지 않은 것 — 로그아웃 후 재로그인해 다시 확인
+3. ✅ 1번 화면에 **새로고침 없이 30초 안에** 해당 사용자가 역할 탭으로 옮겨 간다. 조회 중 로딩 스피너·깜빡임이 없다
+4. 1번 탭을 다른 탭으로 가린 채 1분 기다린다 → Network 탭에 `users/` 요청이 **늘지 않는다** → 다시 1번 탭으로 오면 **즉시 1회** 요청
+- ❌ `events/` 요청이 보이면 배포본이 이전 프론트 / 30초가 지나도 반영되지 않거나 표가 비면 폴링 회귀
 
 ---
 
@@ -1742,7 +1751,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 ---
 
-### 🟡 B-36 세션 갱신(refresh)이 access token 만료 후엔 동작하지 않는다 **분석🔍**
+### 🟡 B-36 세션 갱신(refresh)이 access token 만료 후엔 동작하지 않는다 ✅**수정완료(2026-10-26)** → §5-8
 - 위치: `auth_views.py:118-120`
   ```python
   @api_view(['POST'])
@@ -2461,9 +2470,53 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - 기존 `FormOptionsLineProcessProductProcessIdTest`·`FormOptionsLayerIdsStepseqTest` 는 비로그인 호출이었어서 setUp 에 로그인을 추가했다.
 
 ### 보류·후속 (이번 범위 밖)
-- SSE 연결 수 상한·스트림 수명 제한(R-09 후반) — 사용자 결정으로 보류.
+- ~~SSE 연결 수 상한·스트림 수명 제한(R-09 후반) — 사용자 결정으로 보류.~~ → 2026-10-26 SSE 자체를 제거해 해소(§5-8).
 - 개발 모드(`AUTH_MODE=dev`) 개방 범위(B-29) — 개발 서버 접근 범위 확인 후 결정.
 - compose 의 backend `8000`·MySQL `3306` 포트가 호스트 전체 인터페이스에 공개(`docker-compose.yml:11,37`) — nginx·API 를 우회하는 경로. 방화벽 상태 미확인.
+
+---
+
+## 5-8. 권한관리 SSE 제거(폴링 대체) · refresh 만료 후 동작 (R-09 후반·B-36) — ✅수정완료(2026-10-26)
+
+> 계기: 보안 점검 후속 검토 중 실측으로 확인된 두 결함. 사용자 결정 — SSE 는 **폴링으로 교체하고 백엔드 SSE 전부 제거**(`sse.py` 삭제 승인),
+> refresh 는 **access 상태와 무관하게 refresh 쿠키만으로** 재발급.
+
+### 결과 요약
+
+| 항목 | 문제(실측) | 조치 | 위치 |
+|---|---|---|---|
+| R-09 후반 | ① 브로드캐스터가 gunicorn **워커별 메모리** → 다른 워커에 붙은 탭은 이벤트 0건 수신 ② 열린 탭마다 gthread 스레드 1개 상시 점유 → 한 워커에 몰리면 일부 API 대기·504 | 권한관리 화면이 사용자 목록·배정 후보를 **30초마다** 로딩 표시 없이 다시 조회. 탭이 숨겨진 동안은 건너뛰고 다시 보이면 즉시 조회. 조회 실패 시 기존 목록 유지. 백엔드 `user_events`·`sse.py`·broadcast 호출 3곳·nginx SSE location 제거 | `PermissionPage.tsx`, `views.py`, `auth_views.py`, `urls.py`, `nginx/*.conf` |
+| B-36 | access 만료(쿠키 남음)·쿠키 없음 → `/api/auth/refresh/` **403**(문서의 "401" 은 실측과 다름) | `@authentication_classes([])` + `@permission_classes([AllowAny])` — **`AllowAny` 만으로는 부족**: 인증 클래스가 만료 쿠키에서 `AuthenticationFailed` 를 먼저 던져 403 이 남는다(실측) | `auth_views.py` `refresh_token_view` |
+
+### 실측
+```
+# SSE 축소 재현 (gunicorn 22.0.0, gthread 2 workers × 2 threads, user_events 와 같은 구조)
+스트림 2개 (총 스레드 4개 중 2개만 점유)  s1·s2 모두 pid=742
+ping 10회: 성공 6 / 타임아웃 4
+fired in pid=743 subscribers_here=0   (×4)  → s1·s2 수신 user_updated: 0
+
+# refresh (운영 설정 AUTH_MODE=sso)              수정 전   AllowAny만   AllowAny + authentication_classes=[]
+  access 유효                                       200        200          200
+  access 만료(쿠키는 남음)                           403        403          200
+  access 쿠키 없음                                   403        200          200
+  access 위조                                        403        403          200
+  refresh 쿠키도 없음                                403        401          401
+```
+
+### 응답 변화
+- `/api/users/events/` — 이제 `UserViewSet` 상세(pk=`events`)로 해석된다: 비로그인 **403**, 로그인 **404**, EventSource(`Accept: text/event-stream`) **406**. 어느 경우도 스트림을 열지 않는다.
+- `/api/auth/refresh/` — refresh 쿠키가 유효하면 access 쿠키 상태와 무관하게 **200**, refresh 쿠키 없음·만료·위조·`type≠refresh`·미등록 사용자 **401**.
+  CSRF: 쿠키가 `SameSite=Lax` 라 다른 사이트의 POST 에는 실리지 않고, 응답은 CORS 로 읽을 수 없다.
+
+### 회귀 테스트 (`backend/api/tests.py`)
+- `RefreshAfterAccessExpiryTest` 2건 — 수정 전 코드에서 2건 모두 실패(`403 != 200 : expired`, `403 != 401 : missing`) 확인.
+- `UserEventsAuthTest`(4건) → `UserEventsRemovedTest`(1건): 로그인 여부와 무관하게 스트림이 열리지 않음.
+- 프론트 폴링은 임시 jest 테스트로 확인(커밋 안 함): 초기 1회 → 30초 후 +1 → 탭 숨김 90초 동안 +0 → 다시 보이면 즉시 +1 → 조회 실패 후에도 기존 행 유지.
+
+### 남은 것 (이번 범위 밖)
+- 계속 사용 중 12시간이 지나 access 쿠키가 사라지면 일반 API 는 여전히 **403** 이고 `client.ts` 는 401 만 SSO 로 보낸다 —
+  `CookieJWTAuthentication` 에 `authenticate_header` 가 없어서다(§5-7 설계 메모). 별도 검토 항목.
+- 세션 연장 버튼의 `try { await authAPI.refresh(); } catch {}` 는 실패를 화면에 알리지 않는다(`AuthContext.tsx`).
 
 ---
 
@@ -2522,7 +2575,9 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 `/api/form-options/*` 는 `@require_GET` 순수 뷰라 인증이 없다. 라인·조합법·제품·process_id·layer·바코드·MAP 이름이
 **로그인 없이 전량 열람 가능**하다(사내망 전제라 하더라도 최소 인증은 필요).
 
-### R-09 🟡 SSE 스트림에 인증·정리 로직이 없다 → ✅**인증만 수정완료(2026-10-23)** / ⏸️ 연결 상한·수명 제한 보류
+### R-09 🟡 SSE 스트림에 인증·정리 로직이 없다 → ✅**인증만 수정완료(2026-10-23)** / ✅**SSE 제거로 해소(2026-10-26)**
+> **[2026-10-26]** 스레드 고갈을 실측으로 확인(gthread 2×2 축소 재현: 스트림 2개가 한 워커에 몰리자 ping 10회 중 4회 타임아웃)하고,
+> 브로드캐스터가 워커별 메모리라 **다른 워커 탭에는 이벤트가 유실**되는 것도 확인해 SSE 를 제거하고 30초 폴링으로 대체했다. §5-8.
 > **[2026-10-23]** 운영은 로그인 쿠키 인증 통과 전에는 스트림·구독 큐를 만들지 않고 **401**. 개발은 현행대로 허용(EventSource 는 Bearer 헤더를 못 보냄). 연결 수 상한·스트림 수명 제한은 사용자 결정으로 **보류** — 운영 gunicorn 이 `gthread 2 workers × 10 threads` = 동시 20 스레드라 **로그인 사용자의 열린 권한관리 탭 20개**로도 전체 API 가 멈출 수 있다(코드 기준 추정, 미실측). §5-7. 아래는 원문.
 `user_events` 는 `@csrf_exempt` 만 붙은 무한 제너레이터다. 인증 검사가 없고 구독자 수 제한도 없어
 연결이 쌓이면 워커(gunicorn 동기 워커)를 점유한다. `X-Accel-Buffering: no` 는 있으나 nginx `proxy_read_timeout` 설정도 함께 확인 필요.
@@ -2631,7 +2686,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] B-12 TE_O 로 '내 차례' → 미선점 O 단계 문서 **보임**
 - [ ] B-13 재상신 문서 상세에 이전 회차 '검토중' 버튼 **없음**
 - [ ] B-14/B-15 J/O-layer 표 헤더 버튼에 한글 라벨 표시 + 영어 전환 시 VOC 유형 정상
-- [ ] B-36 access 만료 상태에서 '세션 연장' → **재로그인 없이** 이어짐
+- [x] B-36 access 만료 상태에서 '세션 연장' → **재로그인 없이** 이어짐 ✅ 수정완료(2026-10-26, 자동 테스트 — 배포 후 T-Q4 브라우저 확인)
 - [ ] B-40 변경 없는 재상신에서 `bb_entries` 가 **강조되지 않음**
 
 *`additional_notes` 저장 정합성 (3차 · §5-4)*

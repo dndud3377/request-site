@@ -5,7 +5,7 @@ from .views import (
     VOCViewSet, LineViewSet, LayerFilterSetViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet, GuideViewSet, UserGroupViewSet, AddressBookViewSet,
     ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet, PersonalMarkCategoryViewSet,
-    health_check, upload_image, upload_video, user_events,
+    health_check, upload_image, upload_video,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_extra_layer, form_options_bb_external,
     form_options_layer_ids, form_options_barcode, form_options_mapname, form_options_map_info,
@@ -35,7 +35,6 @@ external_router = DefaultRouter()
 external_router.register(r'documents', ExternalRequestDocumentViewSet, basename='external-document')
 
 urlpatterns = [
-    path('users/events/', user_events, name='user-events'),
     path('', include(router.urls)),
     path('external/v1/', include(external_router.urls)),
     path('health/', health_check),

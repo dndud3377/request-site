@@ -21,6 +21,9 @@ const MAIL_LINE_ROLES: UserRole[] = ['TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MA
 // 사용자 추가 시 배정 가능한 실제 역할(NONE 제외) — MASTER 역할 선택 드롭다운에 사용
 const ADD_ROLES: UserRole[] = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
 
+// claude 수정 (2026-10-26): SSE 대신 사용자 목록을 주기적으로 다시 조회한다 — 조회 간격
+const USERS_POLL_INTERVAL_MS = 30 * 1000;
+
 
 // ===== Shared styles =====
 
@@ -986,40 +989,30 @@ export default function PermissionPage(): React.ReactElement {
     fetchGroups();
   }, [fetchGroups, authLoading]);
 
+  // claude 수정 (2026-10-26): SSE(워커별 메모리 브로드캐스트라 다른 워커 탭에 유실 + 연결마다 스레드 점유)를 폴링으로 교체.
+  // 로딩 표시 없이 목록만 바꾸고, 실패하면 기존 목록을 유지한다. 탭이 숨겨진 동안은 건너뛰고 다시 보이면 즉시 조회한다.
+  const refreshUsersSilently = useCallback(() => {
+    usersAPI
+      .list()
+      .then((r) => setUsers(r.data))
+      .catch(() => undefined);
+    usersAPI
+      .forAssignment(isMaster ? formRole : undefined)
+      .then((r) => setUsersForAssignment(r.data))
+      .catch(() => undefined);
+  }, [isMaster, formRole]);
+
   useEffect(() => {
-    const es = new EventSource('/api/users/events/');
-
-    es.addEventListener('user_added', (e: MessageEvent) => {
-      const user = JSON.parse(e.data) as UserWithRole;
-      setUsers(prev => prev.some(u => u.id === user.id) ? prev : [...prev, user]);
-      if (user.role === 'NONE') {
-        setUsersForAssignment(prev => {
-          if (prev.some(u => u.id === user.id)) return prev;
-          return [...prev, {
-            id: user.id,
-            username: user.loginid,
-            display_name: user.name,
-            department: user.deptname,
-            email: user.mail,
-          }];
-        });
-      }
-    });
-
-    es.addEventListener('user_updated', (e: MessageEvent) => {
-      const updated = JSON.parse(e.data) as UserWithRole;
-      setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
-      setUsersForAssignment(prev => prev.filter(u => u.id !== updated.id));
-    });
-
-    es.addEventListener('user_deleted', (e: MessageEvent) => {
-      const { id } = JSON.parse(e.data) as { id: number };
-      setUsers(prev => prev.filter(u => u.id !== id));
-      setUsersForAssignment(prev => prev.filter(u => u.id !== id));
-    });
-
-    return () => es.close();
-  }, []);
+    const poll = () => {
+      if (document.visibilityState === 'visible') refreshUsersSilently();
+    };
+    const timer = window.setInterval(poll, USERS_POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', poll);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', poll);
+    };
+  }, [refreshUsersSilently]);
 
   const usersForTab = users
     .filter((u) => {

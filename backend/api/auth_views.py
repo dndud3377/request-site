@@ -3,7 +3,7 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.http import HttpResponseRedirect, HttpResponse
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -18,8 +18,6 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, PyJWKClient
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
-
-from .sse import broadcaster as _user_broadcaster
 
 
 def user_to_dict(user):
@@ -66,16 +64,6 @@ def create_or_update_user_from_oidc(claims):
     user.save()
     
     logger.info(f"[OIDC] User {'created' if created else 'updated'}: {login_id}")
-
-    if created:
-        _user_broadcaster.broadcast('user_added', {
-            'id': user.id,
-            'loginid': user.loginid,
-            'name': user.username or '',
-            'deptname': user.deptname or '',
-            'role': 'NONE',
-            'mail': user.mail or '',
-        })
 
     return user
 
@@ -130,8 +118,11 @@ def me_view(request):
     return Response({'user': user_to_dict(request.user)})
 
 
+# claude 수정 (2026-10-26): access 만료 뒤에도 refresh 쿠키만으로 재발급되게 인증·권한 검사를 끈다 (B-36) —
+# 인증 클래스가 남아 있으면 만료된 access 쿠키에서 AuthenticationFailed(403)가 먼저 나므로 AllowAny 만으로는 부족하다
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def refresh_token_view(request):
     """
     POST /api/auth/refresh/

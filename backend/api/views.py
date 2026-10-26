@@ -5,11 +5,8 @@ from decimal import Decimal
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET
-from django.views.decorators.csrf import csrf_exempt
-import queue as _queue_module
-from .sse import broadcaster
 from django.db import connections
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
@@ -20,7 +17,7 @@ from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
-from rest_framework.exceptions import ValidationError, NotAuthenticated, AuthenticationFailed, PermissionDenied
+from rest_framework.exceptions import ValidationError, NotAuthenticated, PermissionDenied
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
@@ -46,7 +43,7 @@ from . import design_rule_stats
 from . import review_items as review_items_sync
 from . import rejection_snapshots
 from . import layer_drift
-from .authentication import CookieJWTAuthentication, ExternalApiKeyAuthentication
+from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
     DocumentReviewItemSerializer,
@@ -5042,13 +5039,12 @@ class UserViewSet(viewsets.ModelViewSet):
             'role': role,
             'mail': user.mail or '',
             'role_assigned_at': user.role_assigned_at.isoformat() if user.role_assigned_at else None,
-            # 역할 변경 응답/브로드캐스트로 행 전체가 교체되므로 메일 수신 설정도 함께 실어 보낸다.
+            # 역할 변경 응답으로 행 전체가 교체되므로 메일 수신 설정도 함께 실어 보낸다.
             'receive_all_mail': user.receive_all_mail,
             'mail_lines': list(user.mail_lines.values_list('name', flat=True)),
             'receive_voc_mail': user.receive_voc_mail,
             'receive_submit_mail': user.receive_submit_mail,
         }
-        broadcaster.broadcast('user_updated', payload)
 
         return Response(payload)
     
@@ -5092,48 +5088,7 @@ class UserViewSet(viewsets.ModelViewSet):
         except Exception:
             logging.getLogger(__name__).exception('[USER_DELETE] 사용자 삭제 실패: id=%s', user_id)
             return Response({'error': USER_DELETE_FAILED_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
-        broadcaster.broadcast('user_deleted', {'id': user_id})
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-def _sse_authenticated(request) -> bool:
-    """SSE 구독 허용 여부. 운영=로그인 쿠키 인증 통과, 개발=허용(IsAuthenticatedInProd 와 같은 기준).
-
-    DRF @api_view 로 감싸면 EventSource 의 `Accept: text/event-stream` 을 콘텐츠 협상에서 406 으로
-    거절하므로, 인증 클래스를 직접 호출한다.
-    """
-    if _is_dev():
-        return True
-    try:
-        return CookieJWTAuthentication().authenticate(request) is not None
-    except AuthenticationFailed:
-        return False
-
-
-# claude 수정 (2026-10-23): 무인증 구독 차단(R-09) — 인증 통과 전에는 스트림·구독 큐를 만들지 않고 401
-@csrf_exempt
-def user_events(request):
-    """SSE endpoint: 사용자 권한 변경 실시간 스트림"""
-    if not _sse_authenticated(request):
-        return JsonResponse({'detail': str(NotAuthenticated.default_detail)}, status=401)
-
-    def event_stream():
-        q = broadcaster.subscribe()
-        try:
-            yield ": connected\n\n"
-            while True:
-                try:
-                    msg = q.get(timeout=30)
-                    yield msg
-                except _queue_module.Empty:
-                    yield ": keepalive\n\n"
-        finally:
-            broadcaster.unsubscribe(q)
-
-    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-    response['Cache-Control'] = 'no-cache'
-    response['X-Accel-Buffering'] = 'no'
-    return response
 
 
 class GuideViewSet(viewsets.ModelViewSet):

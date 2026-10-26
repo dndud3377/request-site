@@ -314,7 +314,7 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
 | 인증 | JWT + OIDC SSO | simplejwt 5.3.1, mozilla-django-oidc |
 | i18n | react-i18next / i18next | 14.1.0 / 23.10.0 |
 | 라우팅 | React Router | 6.22.3 |
-| API | REST API (JSON) + SSE | SSE: `/api/users/events/` |
+| API | REST API (JSON) | 실시간 반영은 폴링(권한관리 30초). SSE 는 2026-10-26 제거 |
 | 인프라 | Docker + Nginx | 운영: HTTPS 10010, 개발: HTTP 10011 |
 | 백그라운드 | APScheduler | django-apscheduler 0.6.2 |
 | 데이터 처리 | pandas, SQLAlchemy | Cloudera Impala ODBC 연동 |
@@ -342,7 +342,6 @@ request-site/
 │       ├── auth_views_dev.py   # 개발용 로그인
 │       ├── authentication.py   # 커스텀 JWT
 │       ├── scheduler.py        # APScheduler
-│       ├── sse.py              # Server-Sent Events
 │       └── migrations/
 ├── frontend/src/
 │   ├── App.tsx / index.tsx / i18n.ts

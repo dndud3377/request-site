@@ -10479,53 +10479,23 @@ def _service_cookie_token(loginid, secret=ACCESS_POLICY_JWT_SECRET, expires_in=t
     return jwt.encode({'username': loginid, 'exp': timezone.now() + expires_in}, secret, algorithm='HS256')
 
 
+# claude 수정 (2026-10-26): SSE 제거 — 권한관리 실시간 반영은 프론트 30초 폴링으로 대체(워커 간 이벤트 유실·연결마다 스레드 점유)
 @override_settings(AUTH_MODE='sso', SERVICE_JWT_SECRET_KEY=ACCESS_POLICY_JWT_SECRET)
-class UserEventsAuthTest(TestCase):
-    """SSE /api/users/events/: 로그인 쿠키 인증을 통과해야만 스트림·구독 큐가 생긴다(R-09)."""
+class UserEventsRemovedTest(TestCase):
+    """/api/users/events/ 는 더 이상 스트림을 열지 않는다(로그인 여부 무관)."""
 
     URL = '/api/users/events/'
 
-    def setUp(self):
+    def test_no_stream_for_anonymous_or_logged_in(self):
         UserProfile.objects.create(loginid='sse_viewer', role='NONE')
-        self.client = Client()
-
-    def _subscriber_count(self):
-        from .sse import broadcaster
-        return len(broadcaster._queues)
-
-    def test_anonymous_is_401_without_stream_or_subscription(self):
-        before = self._subscriber_count()
-        r = self.client.get(self.URL, HTTP_ACCEPT='text/event-stream')
-        self.assertEqual(r.status_code, 401)
-        self.assertFalse(r.streaming)
-        self.assertEqual(self._subscriber_count(), before)
-
-    def test_forged_expired_or_unknown_user_cookie_is_401(self):
-        tokens = {
-            'forged': _service_cookie_token('sse_viewer', secret='wrong-secret'),
-            'expired': _service_cookie_token('sse_viewer', expires_in=timedelta(minutes=-1)),
-            'unknown': _service_cookie_token('nobody'),
-        }
-        for label, token in tokens.items():
-            self.client.cookies['approval_system_token'] = token
-            self.assertEqual(self.client.get(self.URL).status_code, 401, label)
-
-    def test_login_cookie_opens_stream_and_close_unsubscribes(self):
-        before = self._subscriber_count()
-        self.client.cookies['approval_system_token'] = _service_cookie_token('sse_viewer')
-        r = self.client.get(self.URL, HTTP_ACCEPT='text/event-stream')
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r['Content-Type'], 'text/event-stream')
-        self.assertEqual(next(iter(r.streaming_content)), b': connected\n\n')
-        self.assertEqual(self._subscriber_count(), before + 1)
-        r.close()
-        self.assertEqual(self._subscriber_count(), before)
-
-    def test_dev_mode_allows_anonymous_like_other_apis(self):
-        with override_settings(AUTH_MODE='dev'):
-            r = self.client.get(self.URL)
-        self.assertEqual(r.status_code, 200)
-        r.close()
+        client = Client()
+        anon = client.get(self.URL, HTTP_ACCEPT='text/event-stream')
+        client.cookies['approval_system_token'] = _service_cookie_token('sse_viewer')
+        logged_in = client.get(self.URL, HTTP_ACCEPT='text/event-stream')
+        # 이제 경로가 UserViewSet 상세(pk='events')로 해석돼 EventSource 의 Accept 헤더는 콘텐츠 협상에서 406 이 된다
+        for label, r in (('anon', anon), ('logged_in', logged_in)):
+            self.assertFalse(r.streaming, label)
+            self.assertIn(r.status_code, BLOCKED_STATUSES + (406,), label)
 
 
 FORM_OPTIONS_URLS = (
@@ -10691,7 +10661,7 @@ class PublicEndpointAllowlistTest(TestCase):
 
     def test_enumeration_covers_known_endpoints(self):
         paths = self._all_paths()
-        for expected in ('/api/users/events/', '/api/form-options/barcode/', '/api/health/',
+        for expected in ('/api/form-options/barcode/', '/api/health/',
                          '/api/documents/', '/api/external/v1/documents/', '/media/1'):
             self.assertIn(expected, paths)
 
@@ -10765,16 +10735,13 @@ class ExceptionDetailNotExposedTest(TestCase):
         self.assertTrue(UserProfile.objects.filter(pk=target.pk).exists())
 
     def test_delete_success_and_permission_checks_are_unchanged(self):
-        from .sse import broadcaster
         same_role = UserProfile.objects.create(loginid='exc_pl', role='PL')
         other_role = UserProfile.objects.create(loginid='exc_te', role='TE_R')
         pl = UserProfile.objects.create(loginid='exc_pl_caller', role='PL')
         self.client.force_authenticate(user=pl)
         self.assertEqual(self.client.delete(f'/api/users/{other_role.id}/').status_code, 403)
         self.assertEqual(self.client.delete(f'/api/users/{pl.id}/').status_code, 403)
-        with patch.object(broadcaster, 'broadcast') as sent:
-            self.assertEqual(self.client.delete(f'/api/users/{same_role.id}/').status_code, 204)
-        sent.assert_called_once_with('user_deleted', {'id': same_role.id})
+        self.assertEqual(self.client.delete(f'/api/users/{same_role.id}/').status_code, 204)
         self.assertFalse(UserProfile.objects.filter(pk=same_role.pk).exists())
 
     def test_cookie_auth_failures_hide_library_and_db_detail(self):
@@ -10790,3 +10757,56 @@ class ExceptionDetailNotExposedTest(TestCase):
         self.assertIn(r.status_code, (401, 403))
         self.assertEqual(r.json(), {'detail': '인증 오류가 발생했습니다.'})
         self._assert_no_detail(r, 'db-secret-host', 'MySQL')
+
+
+# claude 수정 (2026-10-26): access 만료 뒤에도 refresh 쿠키만으로 세션 연장이 되는지 (B-36)
+@override_settings(AUTH_MODE='sso', SERVICE_JWT_SECRET_KEY=ACCESS_POLICY_JWT_SECRET)
+class RefreshAfterAccessExpiryTest(TestCase):
+    """POST /api/auth/refresh/ 는 access 쿠키 상태와 무관하게 refresh 쿠키만 검증한다."""
+
+    URL = '/api/auth/refresh/'
+
+    def setUp(self):
+        UserProfile.objects.create(loginid='refresh_user', role='PL')
+        self.client = Client()
+
+    @staticmethod
+    def _refresh_token(loginid='refresh_user', secret=ACCESS_POLICY_JWT_SECRET,
+                       expires_in=timedelta(days=7), token_type='refresh'):
+        payload = {'username': loginid, 'type': token_type, 'exp': timezone.now() + expires_in}
+        return jwt.encode(payload, secret, algorithm='HS256')
+
+    def _post(self, access=None, refresh=None):
+        self.client.cookies.clear()
+        if access is not None:
+            self.client.cookies['approval_system_token'] = access
+        if refresh is not None:
+            self.client.cookies['approval_system_refresh'] = refresh
+        return self.client.post(self.URL)
+
+    def test_reissues_access_regardless_of_access_cookie_state(self):
+        cases = {
+            'valid': _service_cookie_token('refresh_user'),
+            'expired': _service_cookie_token('refresh_user', expires_in=timedelta(minutes=-1)),
+            'forged': _service_cookie_token('refresh_user', secret='wrong-secret'),
+            'missing': None,
+        }
+        for label, access in cases.items():
+            r = self._post(access=access, refresh=self._refresh_token())
+            self.assertEqual(r.status_code, 200, label)
+            issued = jwt.decode(r.cookies['approval_system_token'].value,
+                                ACCESS_POLICY_JWT_SECRET, algorithms=['HS256'])
+            self.assertEqual(issued['username'], 'refresh_user', label)
+
+    def test_invalid_refresh_cookie_is_401_without_new_access(self):
+        cases = {
+            'missing': None,
+            'expired': self._refresh_token(expires_in=timedelta(minutes=-1)),
+            'forged': self._refresh_token(secret='wrong-secret'),
+            'access_token_as_refresh': self._refresh_token(token_type='access'),
+            'unknown_user': self._refresh_token(loginid='nobody'),
+        }
+        for label, refresh in cases.items():
+            r = self._post(refresh=refresh)
+            self.assertEqual(r.status_code, 401, label)
+            self.assertNotIn('approval_system_token', r.cookies, label)
