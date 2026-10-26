@@ -1949,11 +1949,6 @@ select.form-control option {
   margin-top: 8px;
 }
 
-.bulk-action-row .flow-table-add-btn {
-  margin-top: 0;
-  flex: 1;
-}
-
 .btn-sm {
   font-size: 0.82rem;
   padding: 6px 12px;
