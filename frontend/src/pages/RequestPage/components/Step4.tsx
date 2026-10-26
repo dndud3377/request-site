@@ -47,7 +47,6 @@ interface Step4Props {
   handleBbCheckToggle: (id: string) => void;
   handleBbChange: (id: string, field: keyof Omit<BbTableRow, 'id'>, value: string) => void;
   handleSortBbRows: () => void;
-  handleBbAddRow: () => void;
   handleBbBulkDelete: () => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
@@ -88,7 +87,6 @@ const Step4: React.FC<Step4Props> = ({
   handleBbCheckToggle,
   handleBbChange,
   handleSortBbRows,
-  handleBbAddRow,
   handleBbBulkDelete,
   GuideTourBadge,
   GuideBadge,
@@ -532,7 +530,6 @@ const Step4: React.FC<Step4Props> = ({
           </table>
         </div>
         <div className="bulk-action-row">
-          <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>{t('request.bb_add_row_btn')}</button>
           {bbChecked.size > 0 && (
             <button
               type="button"
