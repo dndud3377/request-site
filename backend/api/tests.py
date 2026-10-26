@@ -10790,3 +10790,56 @@ class ExceptionDetailNotExposedTest(TestCase):
         self.assertIn(r.status_code, (401, 403))
         self.assertEqual(r.json(), {'detail': '인증 오류가 발생했습니다.'})
         self._assert_no_detail(r, 'db-secret-host', 'MySQL')
+
+
+# claude 수정 (2026-10-26): access 만료 뒤에도 refresh 쿠키만으로 세션 연장이 되는지 (B-36)
+@override_settings(AUTH_MODE='sso', SERVICE_JWT_SECRET_KEY=ACCESS_POLICY_JWT_SECRET)
+class RefreshAfterAccessExpiryTest(TestCase):
+    """POST /api/auth/refresh/ 는 access 쿠키 상태와 무관하게 refresh 쿠키만 검증한다."""
+
+    URL = '/api/auth/refresh/'
+
+    def setUp(self):
+        UserProfile.objects.create(loginid='refresh_user', role='PL')
+        self.client = Client()
+
+    @staticmethod
+    def _refresh_token(loginid='refresh_user', secret=ACCESS_POLICY_JWT_SECRET,
+                       expires_in=timedelta(days=7), token_type='refresh'):
+        payload = {'username': loginid, 'type': token_type, 'exp': timezone.now() + expires_in}
+        return jwt.encode(payload, secret, algorithm='HS256')
+
+    def _post(self, access=None, refresh=None):
+        self.client.cookies.clear()
+        if access is not None:
+            self.client.cookies['approval_system_token'] = access
+        if refresh is not None:
+            self.client.cookies['approval_system_refresh'] = refresh
+        return self.client.post(self.URL)
+
+    def test_reissues_access_regardless_of_access_cookie_state(self):
+        cases = {
+            'valid': _service_cookie_token('refresh_user'),
+            'expired': _service_cookie_token('refresh_user', expires_in=timedelta(minutes=-1)),
+            'forged': _service_cookie_token('refresh_user', secret='wrong-secret'),
+            'missing': None,
+        }
+        for label, access in cases.items():
+            r = self._post(access=access, refresh=self._refresh_token())
+            self.assertEqual(r.status_code, 200, label)
+            issued = jwt.decode(r.cookies['approval_system_token'].value,
+                                ACCESS_POLICY_JWT_SECRET, algorithms=['HS256'])
+            self.assertEqual(issued['username'], 'refresh_user', label)
+
+    def test_invalid_refresh_cookie_is_401_without_new_access(self):
+        cases = {
+            'missing': None,
+            'expired': self._refresh_token(expires_in=timedelta(minutes=-1)),
+            'forged': self._refresh_token(secret='wrong-secret'),
+            'access_token_as_refresh': self._refresh_token(token_type='access'),
+            'unknown_user': self._refresh_token(loginid='nobody'),
+        }
+        for label, refresh in cases.items():
+            r = self._post(refresh=refresh)
+            self.assertEqual(r.status_code, 401, label)
+            self.assertNotIn('approval_system_token', r.cookies, label)
