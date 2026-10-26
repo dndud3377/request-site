@@ -192,7 +192,7 @@ def refresh_token_view(request):
         
         new_access_token = jwt.encode(token_payload, service_jwt_secret, algorithm=service_jwt_algorithm)
         
-        # 새로운 refresh_token 생성 (슬라이딩 갱신: 마지막 접속 시점부터 30 일)
+        # 새로운 refresh_token 생성 (슬라이딩 갱신: 마지막 갱신 시점부터 SERVICE_JWT_REFRESH_TOKEN_LIFETIME = 7일)
         new_refresh_payload = {
             'sub': payload.get('sub', ''),
             'username': username,
@@ -218,7 +218,7 @@ def refresh_token_view(request):
             path='/',
         )
         
-        # Refresh Token 도 함께 갱신 (30 일로)
+        # Refresh Token 도 함께 갱신 (SERVICE_JWT_REFRESH_TOKEN_LIFETIME = 7일)
         response.set_cookie(
             key='approval_system_refresh',
             value=new_refresh_token,
