@@ -1073,12 +1073,6 @@ export const deriveAutoOtherPurpose = (pairs: MergePair[], otherPurpose: string[
 export const sameOtherPurpose = (a: string[], b: string[]): boolean =>
   a.length === b.length && a.every((v) => b.includes(v));
 
-/** J/O-layer 행에 사용자가 입력한 값이 하나라도 있는가 — 수동 행 삭제 시 확인 모달 여부 판단용 */
-export const layerRowHasInput = (row: JayerRow | OayerRow): boolean =>
-  [row.process_id, row.sp, row.sd, row.pp, row.layerid, row.st, row.new_or_copy, row.product_name, row.step,
-    'item_id' in row ? row.item_id : '']
-    .some((v) => !!v?.trim());
-
 /** 행 단위: 이 행의 pp 가 판정 키워드를 포함하는가 (셀 하이라이트·문서 판정 공용) */
 export const isValidationKeywordRow = (pp: string | undefined): boolean =>
   !!pp && pp.toLowerCase().includes(VALIDATION_KEYWORD);

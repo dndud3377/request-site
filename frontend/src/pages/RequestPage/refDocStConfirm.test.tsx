@@ -457,17 +457,6 @@ describe("참조 요청서 '없음' 확정 → J/O 표 st 결정", () => {
     expect(stInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('O');
   });
 
-  it('확정 뒤 J 표에 행을 추가하면 확정이 풀리고 STEP1 에서 다시 확정해야 한다', async () => {
-    const { container } = await renderLoaded();
-    await goToTable(container, J_TABLE);
-    await click(container.querySelector(`${J_TABLE} ~ .flow-table-add-btn`) as HTMLElement ?? buttonWith(container, i18n.t('request.bb_add_row_btn')));
-    expect(toastsOf('warning')).toContain(i18n.t('request.toast_ba_confirm_released'));
-    await click(buttonWith(container, '이전'));
-    await click(buttonWith(container, '이전'));
-    expect(onStep1()).toBe(true);
-    expect(panelButton(i18n.t('request.ba_confirm'))).toBeDefined();
-  });
-
   it('O 표도 같은 규칙으로 잠긴다', async () => {
     const { container } = await renderLoaded();
     await goToTable(container, J_TABLE);

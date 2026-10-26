@@ -112,9 +112,9 @@ pages/RequestPage/
 ### 2.2 핸들러 그룹 (접두사별 — 2026-08-06 실측, 총 89개)
 | 접두사 | 개수 | 비고 |
 |--------|------|------|
-| `handleJayer*` | 7 | J-layer 행 편집/붙여넣기/일괄설정/필터적용 (2026-08-25: 체크/드래그/일괄비활성·복원 6개 폐지, `handleJayerApplyFilter` 신설) + 수동 추가 행 삭제 `handleJayerRemoveRow`(2026-10-05 신설) |
-| `handleOayer*` | 7 | O-layer (J-layer와 대칭 구조) + `handleOayerRemoveRow`(2026-10-05 신설) |
-| `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 |
+| `handleJayer*` | 7 | J-layer 행 편집/붙여넣기/일괄설정/필터적용 (2026-08-25: 체크/드래그/일괄비활성·복원 6개 폐지, `handleJayerApplyFilter` 신설) + 수동 추가 행 삭제 `handleJayerRemoveRow`(2026-10-05 신설) — **2026-10-26 `handleJayerAddRow`·`handleJayerRemoveRow` 폐지**(행 추가·✕ 삭제 제거, §4.1 참조) |
+| `handleOayer*` | 7 | O-layer (J-layer와 대칭 구조) + `handleOayerRemoveRow`(2026-10-05 신설) — **2026-10-26 `handleOayerAddRow`·`handleOayerRemoveRow` 폐지** |
+| `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 — **2026-10-26 `handleBbAddRow` 폐지** |
 | `handleAdiCd*` | 10 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 + '동일 변경 적용 대상' 입력칸 편집/추가(완전성·중복 검사)/삭제 3개(2026-08-21 신설) |
 | `handleFlow*` | 4 | Flow chart 행 |
 | `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
@@ -279,14 +279,45 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   | 파일 | 문자열 |
   |---|---|
   | `MshotImageUpload.tsx` | "Ctrl+V 로 이미지를 붙여넣으세요" |
-  | `Step2.tsx` / `Step3.tsx` | `활성 N / 전체 N`, "STEP 정렬", "+ 행 추가", "선택 비활성화" |
-  | `Step4.tsx` | "+ 행 추가", "범위 추가" |
+  | `Step2.tsx` / `Step3.tsx` | `활성 N / 전체 N`, "STEP 정렬", ~~"+ 행 추가"~~(2026-10-26 버튼 삭제), "선택 비활성화" |
+  | `Step4.tsx` | ~~"+ 행 추가"~~(2026-10-26 버튼 삭제), "범위 추가" |
   | `StepMap.tsx` | ~~"특정 제품 삭제 필요"~~ → 2026-10-15 `request.mshot_delete_desc` 로 이관 완료 |
   | `FilterManageModal.tsx` | "저장된 필터", "저장된 필터가 없습니다.", "새 필터 만들기", "필터 수정", "수정 적용", "+ 추가", "수정", "삭제", "전체 삭제", "닫기", "키워드 입력 후 Enter", "🔵 STEPSEQ / 🟢 STEP 설명 / 🟠 PPID" |
 
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 삭제 (2026-10-26 — J-ayer / O-ayer / bb 표 '+ 행 추가'와 J/O 행 `✕` 삭제 폐지)
+
+- **의도(사용자)**: 표의 행은 **불러온 데이터로만** 만든다 — J/O 는 JOB FILE·OVL 자동 조회, bb 는 매핑·자동 채움.
+  사용자가 빈 행을 새로 만들어 상신하지 않고, 불러온 행을 수정만 해서 작성한다.
+  `✕` 는 '+ 행 추가'로 만든 행을 지우려고 있던 기능이라 함께 없앤다.
+- **삭제한 것**
+  - 화면: STEP3 J-ayer(`Step2.tsx`)·STEP4 O-ayer(`Step3.tsx`)·STEP5 bb(`Step4.tsx`) 표 아래 `+ 행 추가` 버튼,
+    J/O 표 맨 오른쪽 `✕` 열(폭 36px `col`·빈 `th`·`td`). bb 의 `선택 원복` 버튼은 같은 줄에 그대로 남는다.
+  - `index.tsx`: `handleJayerAddRow`·`handleOayerAddRow`·`handleBbAddRow`, `removeJayerRowById`·`removeOayerRowById`,
+    `handleJayerRemoveRow`·`handleOayerRemoveRow`·`handleLayerRowRemoveConfirm`, `layerRowRemoveConfirm` 상태와 행 삭제 `ConfirmModal`.
+  - `helpers.ts`: `layerRowHasInput`(행 삭제 확인에만 쓰임).
+  - i18n(ko/en 동시): `request.bb_add_row_btn`, `request.layer_row_remove_title`, `request.layer_row_remove_msg`.
+  - CSS: `.bulk-action-row .flow-table-add-btn`(이 버튼 전용). `.bulk-action-row`·`.flow-table-add-btn` 자체는 bb 원복 줄·문서 마크에서 계속 쓴다.
+  - 테스트: `RequestPage/jayerOayerRowRemove.test.tsx` 파일 삭제(6건 모두 폐지 기능 검사),
+    `refDocStConfirm.test.tsx` 의 "확정 뒤 J 표에 행을 추가하면 확정이 풀린다" 1건 삭제(값 변경으로 확정이 풀리는 경우는 같은 파일 다른 케이스가 검사).
+- **남긴 것(사용자 결정 — 연계는 있지만 다른 용도가 있음)**: `loaded` 플래그·`LOADED_LOCK_COLS` 잠금, 옛 문서 `loaded` 보정
+  (`r.loaded ?? !!r.updated`), `BB_MIRRORED_COLS` 변경 시 bb 매핑 해제, bb 체크박스·`선택 원복`, `makeJayerRow`/`makeOayerRow`/`makeBbRow`.
+- **이미 저장된 수동 행(사용자 결정: 상신을 막지 않는다)**: 이전에 '+ 행 추가'로 만든 행이 든 임시저장·반려·중단 문서는
+  그대로 불러와지고 편집·상신할 수 있다. 다만 `✕` 가 없어 **그 행을 지울 수는 없다**. 백엔드·저장 형식 변경 없음.
+- **주의**: JOB FILE·OVL 조회가 0건이면 J/O 표가 빈 채로 남고 사용자가 채울 수단이 없다(이전에는 '+ 행 추가'로 넣을 수 있었다).
+  이 문서의 옛 수동 검증 시나리오 중 '+ 행 추가'로 J/O 테스트 행을 만드는 것(예: 2026-10-16·2026-10-14 항목)은
+  이제 불러온 행의 값을 쓰는 방식으로 바꿔 따라야 한다.
+- **검증**: `npx tsc --noEmit` 에러 0건(변경 전 0건), 프론트 전체 44 suites / 608건 통과.
+- **수동 검증 시나리오**
+  1. [`/request` → STEP1 라인·조리법 등 입력 → STEP3 J-ayer] → [기대: 표 아래 `+ 행 추가` 가 없고, 행 오른쪽 끝 `✕` 열도 없다. 마지막 열은 `ID`.]
+  2. [`다음` → STEP4 O-ayer 'OVL Layer 목록' 탭] → [기대: `+ 행 추가`·`✕` 가 없고 마지막 열은 `STEP`.]
+  3. [`다음` → STEP5 뼈찜 정보 → 'bb 정보 (적용 결과)' 표] → [기대: 표 아래 `+ 행 추가` 가 없다. 행 체크박스를 하나 고르면 `선택 원복 (1)` 버튼은 그대로 나온다.]
+  4. [불러온 J/O 행의 ST·요청 기준·제품 이름·STEP·ID 편집, 엑셀 붙여넣기] → [기대: 이전과 같이 동작한다(붙여넣기로 행이 늘지 않는다).]
+  5. (옛 문서) [이전에 '+ 행 추가'로 만든 행이 든 임시저장 문서를 다시 열기] → [기대: 그 행이 그대로 보이고 모든 칸을 편집할 수 있지만 `✕` 는 없다. 상신은 막히지 않는다.]
+  - 실패 신호: 표 오른쪽에 빈 열이 남아 있거나, 헤더와 본문 열이 한 칸씩 어긋나 보이면 `colgroup`/`th` 정리가 잘못된 것이다.
 
 ### 기능 변경 (2026-10-22 — STEP2 MAP 정보: MAP 목적을 먼저 골라야 나머지 항목을 입력할 수 있다)
 
@@ -4630,6 +4661,7 @@ direct-approve)는 그대로다.
   - 기존 저장 문서(`entryIdx` 없음)·수동 `+행 추가` 행은 색 없이 표시(안전).
 
 - **불러온(loaded) 행의 원본 컬럼 읽기전용 잠금**: 자동채움(JOB FILE/OVL)·참조요청서 병합으로 "불러온" J/O 행의 `process_id·sp·sd·layerid·pp`(`LOADED_LOCK_COLS`)를 읽기전용으로 잠가, 다른 값(st 등) 편집·엑셀식 붙여넣기·Delete로 인해 원본 값이 바뀌지 않도록 한다. **수동 `+행 추가` 행은 전 컬럼 편집 허용**하며, 이 행만 `✕` 로 삭제할 수 있다(2026-10-05 §4 '수동 추가 행 삭제').
+  > 2026-10-26: `+ 행 추가`·`✕` 는 폐지됐다. 잠금 규칙은 그대로이며, 수동 행은 이제 그 이전에 저장된 문서에만 남아 있다(편집 가능·삭제 불가).
   - 행에 `loaded?: boolean` 추가(`JayerRow`/`OayerRow`). 자동채움·병합 행에 `loaded:true` 저장(영속). 재상신/지정PL 수정 로드 시 신규 작성과 동일하게 잠금 재현.
   - 옛 문서(`loaded` 없음)는 **Update 날짜 유무**로 보정(`loaded = r.loaded ?? !!r.updated`): Update 날짜는 백엔드 자동채움에서만 채워지고 사용자가 못 넣으므로 수동 행을 오인 잠금하지 않는다.
   - `useCellSelection`을 셀 단위 잠금(`isCellLocked(row,col)`)으로 확장 — 붙여넣기/Delete/연동 콜백에서 잠긴 셀만 건너뜀(선택 하이라이트는 허용, 쓰기만 차단). 미전달 시 기존 행 단위(disabled/기등록) 동작.
@@ -6178,6 +6210,8 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   Step 값에 `[`·`]` 가 들어가면 제목에서 구분이 모호해진다(Step 입력이 `[`·`]` 를 막는지는 확인하지 않았다).
 
 ### 기능 추가 (2026-10-05 — J-layer/O-layer: '+ 행 추가'로 만든 행만 삭제하는 `✕` 버튼)
+
+> ⛔ **2026-10-26 폐지** — `+ 행 추가`와 함께 `✕`·확인 모달·`layerRowHasInput`·테스트 파일이 모두 삭제됐다. §4.1 '기능 삭제 (2026-10-26)' 참조.
 
 - **배경**: J-layer(STEP3)·O-layer(STEP4) 표에는 `+ 행 추가`만 있고 삭제가 없어, 잘못 추가한 행을 지울 방법이 없었다.
 - **규칙**: 삭제 가능한 행은 **수동 추가 행(`!row.loaded`)뿐**이다. 자동채움(JOB FILE/OVL)·참조요청서 병합으로 불러온 행(`loaded:true`)은
