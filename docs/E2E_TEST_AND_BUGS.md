@@ -2355,67 +2355,6 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - **`.cer` 파일 2개 삭제**: 운영 배포 후 로그인 확인을 마친 다음 진행한다(B-47).
 - **code 교환(back-channel)**: implicit 전환으로 선택지에서 빠졌다. 필요하면 hybrid 로 되돌리고 token endpoint 교환을 구현한다.
 
-## 5-7. 리치텍스트 에디터(`RichTextEditor.tsx`, TipTap 3.25.0) (B-70 ~ B-76) — ✅수정완료(2026-10-23)
-
-공용 에디터라 **가이드 편집·공지 작성·VOC 등록·VOC 댓글·MAP 변경 사유** 5곳에 모두 적용된다.
-재현은 실제 컴포넌트를 React+jsdom 에 렌더해 수정 전/후를 같은 스크립트로 비교했다(아래 출력 원문).
-
-### B-70 🟠 표가 포함된 HTML(엑셀·워드 붙여넣기)이 표 구조가 사라지고 한 문단으로 합쳐졌다
-- 원인: 표(table) 확장이 없어 스키마에 없는 `<table>/<tr>/<td>` 를 TipTap 이 걷어냈다.
-- 수정: `@tiptap/extension-table@3.25.0` 추가(core/pm 이 3.25.0 고정 peer 라 같은 버전) →
-  `TableKit.configure({ table: { resizable: false } })` 등록. 툴바 2행에 **표 삽입(3×3, 첫 행 머리글)·
-  +행(아래)·-행·+열(오른쪽)·-열·표 삭제** 버튼 추가(i18n `editor.table_*`). 표 밖에서 누르면 아무 일도 없다.
-  `global.css` 에 `.ProseMirror`·`.guide-content-render`·`.rich-table-render` 표 테두리·머리글 배경·셀 선택 색 추가.
-  보기 화면 공통 클래스 `rich-table-render` 를 공지 상세(`HomePage` `.notice-detail-content`)·VOC 본문/댓글(`VOCPage`)·
-  MAP 변경 사유(`PagedDetailView`)에 붙였다(사용자 결정, 2026-10-23). 표 규칙만 적용되고 문단 간격 등은 그대로다.
-- 저장 형식: `<table style="min-width: …"><colgroup>…</colgroup><tbody><tr><td colspan="1" rowspan="1"><p>…</p></td>…`
-  엑셀의 `colspan`(병합)·`align=right` 는 보존, 셀 서식(배경색·글꼴 등 `class=xl65`)은 버려진다.
-- 재현: 수정 전 `<p>앞항목값A10병합</p>` → 수정 후 `<table>` 보존, 워드(`MsoTableGrid`) 표도 보존, 다시 열어도 HTML 동일.
-
-### B-71 🟠 글을 끝까지 지우면 커서가 다음 줄로 넘어갔다
-- 원인: `onUpdate` 가 빈 문단 `<p></p>` 를 `<p><br></p>` 로 보정해 부모에 넘기면, 외부 value 동기화
-  `useEffect` 가 `value !== getHTML()` 로 **다르다고 판단해 `setContent` 를 다시 호출**했다. 다시 읽힌 `<br>` 은
-  hardBreak(줄바꿈) 노드가 되고 커서는 그 뒤(둘째 줄)에 놓였다. 저장된 빈 줄 `<p><br></p>` 도 같은 이유로
-  에디터에서 두 칸 높이로 보였다.
-- 수정: `toStoredHtml`(`<p></p>`→`<p><br></p>`, 저장용)·`toEditorHtml`(역변환, 에디터 입력용)로 분리하고
-  동기화 비교를 저장 형식끼리 한다. **저장 형식은 그대로**라 기존 데이터·표시 화면 영향 없음.
-- 재현: 수정 전 `doc=[paragraph[hardBreak]] selection.from=2`, 이어서 입력 시 `<p><br>X</p>` →
-  수정 후 `doc=[paragraph] selection.from=1`, `<p>X</p>`.
-
-### B-72 🟡 H1·가운데 정렬이 그 줄이 아니라 글 전체에 적용됐다
-- 원인: `EnterAsHardBreak` 확장이 Enter 를 `<br>` 로 바꿔 글 전체가 한 문단이었다.
-- 수정(사용자 결정): 확장 제거 → **Enter=새 문단, Shift+Enter=문단 안 줄바꿈**(TipTap 기본).
-  에디터 문단 간격을 가이드 표시와 같은 `0.4em` 으로 맞췄다(`.ProseMirror p`).
-- 재현: 수정 전 `<h1>첫째줄<br>둘째줄<br>같은문단</h1>` → 수정 후 `<h1>첫째줄</h1><p>둘째줄<br>같은문단</p>`.
-- 영향: 공지(`notice-detail-content`)·VOC·MAP 변경 사유 보기 화면에는 문단 간격 CSS 가 없어 브라우저 기본(1em)으로
-  보인다 — 예전 `<br>` 줄바꿈보다 줄 사이가 넓다.
-
-### B-73 🟡 빈 가이드가 저장됐다
-- 원인: 빈 에디터는 `<p><br></p>` 를 넘기는데 `GuidePage.tsx` 검증은 `'<p></p>'` 만 막았다.
-- 수정: `hasGuideContent` — 태그·`&nbsp;` 를 걷어낸 글자로 판단(VOC 방식), 단 `<img>`/`<video>` 만 있는 가이드는 허용.
-
-### B-74 ⚪ Underline 확장 중복 등록
-- `[tiptap warn]: Duplicate extension names found: ['underline']` — v3 `StarterKit` 에 이미 포함. 별도 등록 제거.
-  (`package.json` 의 `@tiptap/extension-underline` 의존성은 이번에 건드리지 않았다.)
-
-### B-75 ⚪ 이미지 업로드 실패가 조용히 무시됐다
-- 붙여넣기·버튼 업로드 모두 `catch {}` 로 무시 → 동영상과 같이 `window.alert(t('guide.image_upload_failed'))`.
-
-### B-76 🟠 엑셀 표를 붙여넣으면 표 아래에 같은 모양의 그림이 하나 더 붙었다 — ✅수정완료(2026-10-23)
-- 증상(사용자 브라우저 확인): 엑셀 셀 복사 → Ctrl+V 시 표 + 표 그림이 함께 삽입.
-- 원인: 엑셀(워드 표 포함) 복사는 클립보드에 표 HTML 과 **표 모양 그림(image/png)** 을 같이 담는다.
-  ProseMirror 가 HTML 로 표를 넣은 뒤, 래퍼 `div` 의 `handlePaste` 가 image 항목을 찾아 업로드·삽입했다.
-- 수정: `handlePaste` 에서 `getData('text/html')` 에 `<table` 이 있으면 그림 업로드를 건너뛴다(`TABLE_HTML_RE`).
-  표가 없는 붙여넣기(캡처 그림 등)는 이전과 같이 업로드한다.
-- 재현(jsdom, 표 HTML + image/png 동시 붙여넣기): 수정 전 업로드 호출 **1회** → 수정 후 **0회**, 표 1개 삽입,
-  붙여넣은 표의 셀 `A` → `수정됨` 편집 정상. 그림만 붙여넣기는 수정 후에도 업로드 1회·`<img>` 1개.
-
-### 미결 항목 (사용자 결정 대기)
-- ~~엑셀 표 붙여넣기 시 표 아래에 같은 모양 그림이 하나 더 붙는다~~ → B-76 으로 해소.
-- ~~공지·VOC·MAP 변경 사유 보기 화면에 표 테두리 CSS 가 없다~~ → `rich-table-render` 로 해소(B-70 참조).
-
----
-
 ## 5-7. 접근 경로 원칙 — 무인증 경로·제3 인증 수단 제거 (B-70 ~ B-78) — ✅수정완료(2026-10-23)
 
 > 계기: 보안 점검 지적 "SSE 스트림 무인증 구독"(쿠키 없이 `GET /api/users/events/` → `: connected` 수신).
@@ -2517,6 +2456,71 @@ fired in pid=743 subscribers_here=0   (×4)  → s1·s2 수신 user_updated: 0
 - 계속 사용 중 12시간이 지나 access 쿠키가 사라지면 일반 API 는 여전히 **403** 이고 `client.ts` 는 401 만 SSO 로 보낸다 —
   `CookieJWTAuthentication` 에 `authenticate_header` 가 없어서다(§5-7 설계 메모). 별도 검토 항목.
 - 세션 연장 버튼의 `try { await authAPI.refresh(); } catch {}` 는 실패를 화면에 알리지 않는다(`AuthContext.tsx`).
+
+---
+
+## 5-9. 리치텍스트 에디터(`RichTextEditor.tsx`, TipTap 3.25.0) (B-79 ~ B-85) — ✅수정완료(2026-10-23)
+
+> **번호 정정(2026-10-26)**: 처음에 §5-7·B-70~B-76 으로 적혀 같은 날 기록된 접근 경로 원칙(§5-7, B-70~B-78)과 번호가 겹쳤다.
+> 코드 주석(`B-76`~`B-78`)이 접근 경로 쪽 번호를 쓰므로 이 절을 §5-9 로 옮기고 번호를 바꿨다 —
+> 구 B-70→B-79, B-71→B-80, B-72→B-81, B-73→B-82, B-74→B-83, B-75→B-84, B-76→B-85. 2026-10-23 커밋 메시지에는 구 번호가 남아 있다.
+
+공용 에디터라 **가이드 편집·공지 작성·VOC 등록·VOC 댓글·MAP 변경 사유** 5곳에 모두 적용된다.
+재현은 실제 컴포넌트를 React+jsdom 에 렌더해 수정 전/후를 같은 스크립트로 비교했다(아래 출력 원문).
+
+### B-79 🟠 표가 포함된 HTML(엑셀·워드 붙여넣기)이 표 구조가 사라지고 한 문단으로 합쳐졌다
+- 원인: 표(table) 확장이 없어 스키마에 없는 `<table>/<tr>/<td>` 를 TipTap 이 걷어냈다.
+- 수정: `@tiptap/extension-table@3.25.0` 추가(core/pm 이 3.25.0 고정 peer 라 같은 버전) →
+  `TableKit.configure({ table: { resizable: false } })` 등록. 툴바 2행에 **표 삽입(3×3, 첫 행 머리글)·
+  +행(아래)·-행·+열(오른쪽)·-열·표 삭제** 버튼 추가(i18n `editor.table_*`). 표 밖에서 누르면 아무 일도 없다.
+  `global.css` 에 `.ProseMirror`·`.guide-content-render`·`.rich-table-render` 표 테두리·머리글 배경·셀 선택 색 추가.
+  보기 화면 공통 클래스 `rich-table-render` 를 공지 상세(`HomePage` `.notice-detail-content`)·VOC 본문/댓글(`VOCPage`)·
+  MAP 변경 사유(`PagedDetailView`)에 붙였다(사용자 결정, 2026-10-23). 표 규칙만 적용되고 문단 간격 등은 그대로다.
+- 저장 형식: `<table style="min-width: …"><colgroup>…</colgroup><tbody><tr><td colspan="1" rowspan="1"><p>…</p></td>…`
+  엑셀의 `colspan`(병합)·`align=right` 는 보존, 셀 서식(배경색·글꼴 등 `class=xl65`)은 버려진다.
+- 재현: 수정 전 `<p>앞항목값A10병합</p>` → 수정 후 `<table>` 보존, 워드(`MsoTableGrid`) 표도 보존, 다시 열어도 HTML 동일.
+
+### B-80 🟠 글을 끝까지 지우면 커서가 다음 줄로 넘어갔다
+- 원인: `onUpdate` 가 빈 문단 `<p></p>` 를 `<p><br></p>` 로 보정해 부모에 넘기면, 외부 value 동기화
+  `useEffect` 가 `value !== getHTML()` 로 **다르다고 판단해 `setContent` 를 다시 호출**했다. 다시 읽힌 `<br>` 은
+  hardBreak(줄바꿈) 노드가 되고 커서는 그 뒤(둘째 줄)에 놓였다. 저장된 빈 줄 `<p><br></p>` 도 같은 이유로
+  에디터에서 두 칸 높이로 보였다.
+- 수정: `toStoredHtml`(`<p></p>`→`<p><br></p>`, 저장용)·`toEditorHtml`(역변환, 에디터 입력용)로 분리하고
+  동기화 비교를 저장 형식끼리 한다. **저장 형식은 그대로**라 기존 데이터·표시 화면 영향 없음.
+- 재현: 수정 전 `doc=[paragraph[hardBreak]] selection.from=2`, 이어서 입력 시 `<p><br>X</p>` →
+  수정 후 `doc=[paragraph] selection.from=1`, `<p>X</p>`.
+
+### B-81 🟡 H1·가운데 정렬이 그 줄이 아니라 글 전체에 적용됐다
+- 원인: `EnterAsHardBreak` 확장이 Enter 를 `<br>` 로 바꿔 글 전체가 한 문단이었다.
+- 수정(사용자 결정): 확장 제거 → **Enter=새 문단, Shift+Enter=문단 안 줄바꿈**(TipTap 기본).
+  에디터 문단 간격을 가이드 표시와 같은 `0.4em` 으로 맞췄다(`.ProseMirror p`).
+- 재현: 수정 전 `<h1>첫째줄<br>둘째줄<br>같은문단</h1>` → 수정 후 `<h1>첫째줄</h1><p>둘째줄<br>같은문단</p>`.
+- 영향: 공지(`notice-detail-content`)·VOC·MAP 변경 사유 보기 화면에는 문단 간격 CSS 가 없어 브라우저 기본(1em)으로
+  보인다 — 예전 `<br>` 줄바꿈보다 줄 사이가 넓다.
+
+### B-82 🟡 빈 가이드가 저장됐다
+- 원인: 빈 에디터는 `<p><br></p>` 를 넘기는데 `GuidePage.tsx` 검증은 `'<p></p>'` 만 막았다.
+- 수정: `hasGuideContent` — 태그·`&nbsp;` 를 걷어낸 글자로 판단(VOC 방식), 단 `<img>`/`<video>` 만 있는 가이드는 허용.
+
+### B-83 ⚪ Underline 확장 중복 등록
+- `[tiptap warn]: Duplicate extension names found: ['underline']` — v3 `StarterKit` 에 이미 포함. 별도 등록 제거.
+  (`package.json` 의 `@tiptap/extension-underline` 의존성은 이번에 건드리지 않았다.)
+
+### B-84 ⚪ 이미지 업로드 실패가 조용히 무시됐다
+- 붙여넣기·버튼 업로드 모두 `catch {}` 로 무시 → 동영상과 같이 `window.alert(t('guide.image_upload_failed'))`.
+
+### B-85 🟠 엑셀 표를 붙여넣으면 표 아래에 같은 모양의 그림이 하나 더 붙었다 — ✅수정완료(2026-10-23)
+- 증상(사용자 브라우저 확인): 엑셀 셀 복사 → Ctrl+V 시 표 + 표 그림이 함께 삽입.
+- 원인: 엑셀(워드 표 포함) 복사는 클립보드에 표 HTML 과 **표 모양 그림(image/png)** 을 같이 담는다.
+  ProseMirror 가 HTML 로 표를 넣은 뒤, 래퍼 `div` 의 `handlePaste` 가 image 항목을 찾아 업로드·삽입했다.
+- 수정: `handlePaste` 에서 `getData('text/html')` 에 `<table` 이 있으면 그림 업로드를 건너뛴다(`TABLE_HTML_RE`).
+  표가 없는 붙여넣기(캡처 그림 등)는 이전과 같이 업로드한다.
+- 재현(jsdom, 표 HTML + image/png 동시 붙여넣기): 수정 전 업로드 호출 **1회** → 수정 후 **0회**, 표 1개 삽입,
+  붙여넣은 표의 셀 `A` → `수정됨` 편집 정상. 그림만 붙여넣기는 수정 후에도 업로드 1회·`<img>` 1개.
+
+### 미결 항목 (사용자 결정 대기)
+- ~~엑셀 표 붙여넣기 시 표 아래에 같은 모양 그림이 하나 더 붙는다~~ → B-85 로 해소.
+- ~~공지·VOC·MAP 변경 사유 보기 화면에 표 테두리 CSS 가 없다~~ → `rich-table-render` 로 해소(B-79 참조).
 
 ---
 
@@ -2823,7 +2827,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
   화면상 "선택지가 안 뜸"으로 나타나며, 사용자에게 원인이 보이지 않는다.
 - `utils.py`의 DCQ 로그인 — 전역 `sys.stdin` 을 교체하는 방식이라 락으로 직렬화하고 있으나,
   gunicorn 멀티워커에서는 **프로세스별로 락이 따로 걸린다**(프로세스 간 보호 없음). 실사용 영향 확인 필요.
-- `GuideTourModal`·`guideDemos/*` — 투어 UI. 기능 검증 미실시. (`RichTextEditor.tsx` 는 §5-7 에서 jsdom 렌더 재현 검증, 실제 브라우저 확인은 별도 필요)
+- `GuideTourModal`·`guideDemos/*` — 투어 UI. 기능 검증 미실시. (`RichTextEditor.tsx` 는 §5-9 에서 jsdom 렌더 재현 검증, 실제 브라우저 확인은 별도 필요)
 - `PagedDetailView.tsx`(1,757줄) — diff 로직(B-40)과 `any` 집계만 확인. 6개 탭의 렌더 정확성은 브라우저 확인 필요.
 - ~~마이그레이션 일치 여부~~ → 1·3차 모두 **실행 완료**. 3차 결과는 **`No changes detected`(exit 0)** →
   B-48 은 **해소됨**(§5-2 참조).
