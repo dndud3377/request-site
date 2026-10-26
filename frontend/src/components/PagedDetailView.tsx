@@ -2352,7 +2352,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
       ],
     },
     r: {
-      title: t('request.section_map_r'),
+      // claude 수정 (2026-10-26): '모든 이력 확인' 창 제목을 탭 이름과 같은 'MAP 정보'로(agent_R 전용 탭으로 보이지 않게)
+      title: t('request.section_map'),
       items: (d) => [
         textItem('request.map_type', fmtDiffVal(d?.map_type)),
         textItem('request.source_line', fmtDiffVal(d?.source_line)),
@@ -2605,7 +2606,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
 
   if (showMap) {
     pages.push({
-      label: t('request.section_map_r'),
+      // claude 수정 (2026-10-26): 탭 이름 'R' → 'MAP 정보'(agent_R 부담 완화). 탭 안 카드 제목은 R 담당 항목 묶음이라 'R' 유지
+      label: t('request.section_map'),
       content: isAdiCdChange ? (
         <div style={cardStyle} ref={mapTabRef}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
