@@ -629,7 +629,8 @@ export async function exportDetailInfoImage(doc: RequestDocument, t: TFunction, 
 export async function exportMapInfoImage(doc: RequestDocument, t: TFunction, screenshot: ScreenshotCapture | null): Promise<void> {
   const { detail } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
-  const sheetName = t('request.section_map_r');
+  // claude 수정 (2026-10-26): 시트·파일 이름을 상세 모달 탭 이름과 같은 'MAP 정보'로('R' → 'MAP 정보')
+  const sheetName = t('request.section_map');
   addScreenshotSheet(wb, sheetName, screenshot, t('request.export_capture_failed'));
   addMapInfoSheet(wb, t, textSheetName(sheetName, t), detail);
   await downloadWorkbook(wb, `${doc.title}_${sheetName}_${getNowString()}.xlsx`);
@@ -670,7 +671,8 @@ export async function exportAll(
   const detailSheetName = t('request.section_detail');
   addScreenshotSheet(wb, detailSheetName, screenshots.detail, t('request.export_capture_failed'));
   addDetailInfoSheet(wb, t, textSheetName(detailSheetName, t), doc, detail);
-  const mapSheetName = t('request.section_map_r');
+  // claude 수정 (2026-10-26): 전체 export 의 MAP 시트 이름도 탭 이름과 같은 'MAP 정보'로('R' → 'MAP 정보')
+  const mapSheetName = t('request.section_map');
   addScreenshotSheet(wb, mapSheetName, screenshots.map, t('request.export_capture_failed'));
   addMapInfoSheet(wb, t, textSheetName(mapSheetName, t), detail);
   addJobSheet(wb, t, jayer, colorFilters.jayerColorFilterSets, colorFilters.activeJayerColorFilterIds);
