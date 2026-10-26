@@ -1677,7 +1677,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **(2026-07) 결재 현황 테이블 계산 헬퍼 공용화**: `getDocTableRows`·`getFinalCompletionDate` 등을 `frontend/src/utils/approvalTable.ts` 로 이동해 **홈 화면 '최근 의뢰 현황'과 결재 현황이 동일한 표**를 쓰도록 했다. 홈에서 '검토중'으로 뜨고 결재 현황에서 '대기중'으로 뜨던 불일치를 해소한다. `ApprovalPage`·`HomePage` 가 이 헬퍼를 공유한다. **(2026-08)** 병렬 단계 2행 분기가 3행 2열 그리드로 바뀌고 `getDueDateDisplay` 는 컬럼과 함께 삭제됐다(§3.3.2·§3.5) — 두 화면 모두 같이 적용된다.
 - **(2026-07) 모든 팀 상세 탭 전체 개방**: 역할 게이팅 플래그(`isP/isR/isJ/isO/isE`)를 **모두 `true`로 고정**하여, 모든 역할(PL·TE_R·TE_P·TE_J·TE_O·TE_E·MASTER)이 상세 보기의 **7개 탭 전부**(의뢰 상세 / R / J-ayer / O-ayer / 뼈찜 / 기타 / 결재 경로 — 2026-09 탭 개편, 아래 항목 참조)와 탭 내부 섹션을 **동일하게** 볼 수 있다. 이로써 아래 2026-06-13 항목의 "MAP은 순수 TE_J/TE_E 미표시" 제한도 해제된다(상세 내용은 결재 권한과 무관한 표시 영역).
 - **(2026-06-13, 위 2026-07 개방으로 상위 완화됨) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다.
-- 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map_r`('R' 탭 — 상세 모달 전용 키, 작성 화면 단계명 `section_map`='MAP 정보'와 분리)·`section_etc`('기타' 탭).
+- 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→'MAP 정보' 탭(탭 이름·'모든 이력 확인' 창 제목·export 시트명은 작성 화면과 같은 `section_map`, 탭 안 카드 제목만 `section_map_r`='R' — 2026-10-26, 아래 2026-09 항목 참조)·`section_etc`('기타' 탭).
 - **(2026-06-22)** J-ayer `📊 export` 버튼에 `data-tour="export-jayer"`, 결재 경로 탭 카드에 `data-tour="approval-route-tab"`을 부여했다(전체 가이드 투어 강조용, 실제 동작 변경 없음).
 - **(2026-08-24) export 범위 확장 — 상세 정보/MAP 정보 export 추가, O-ayer export 정보 시트 추가, 전체 export 버튼**: 엑셀 시트 생성 로직을 `frontend/src/utils/detailExport.ts` 로 모아 `PagedDetailView`(개별 버튼)와 상세 모달 제목(전체 export)이 공유한다.
   - **상세 정보 / MAP 정보 export**: `section_detail`(기본 정보 카드)·`section_map` 탭 제목 줄에 JOB/OVL/BB와 같은 자리에 `📊 export` 버튼을 추가했다. 각각 화면에 보이는 값을 "항목/값" 2열 시트 하나로 내려받는다(표 형태 항목—흐름도·Merge 결과·ADI CD 표·TBV/TLV—는 같은 시트 안에 작은 표로 이어 붙인다). CLONE/EXISTING 등 화면에서 회색 "없음"으로 잠기는 항목은 시트에도 동일하게 `request.value_none` 문자열로 들어간다. X표시 첨부 이미지 등 이미지 자체는 셀에 넣지 않고 상태 텍스트만 담는다.
@@ -1730,6 +1730,14 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   - **탭 인덱스 의존 코드**: 결재 경로 탭이 5→6번이 되어 `ApprovalPage.tsx` 의 `TOUR_PAGE_IDX.route`(전체 가이드 투어 `page-route`)를 6으로 고쳤다. R·기타 탭이 ADI CD 변경을 포함한 모든 문서에 나타나므로 탭 번호는 문서와 무관하게 0~6으로 고정이다(예전엔 ADI CD 문서만 5개 탭이라 `jayer`/`route` 번호가 어긋날 수 있었다). `PagedDetailView` 의 전체 export 캡처는 탭 목록에서 `key: 'etc'`(`ETC_PAGE_KEY`)로 기타 탭 위치를 찾는다(인덱스 하드코딩·렌더 중 변수 재할당 없음).
   - **(2026-10-05 변경)** CC 적용 여부는 '의뢰 상세' 탭으로 옮겨져 기타 탭은 현재 비어 있다(탭은 유지). 문서 끝 "요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동" 절 참고.
   - **백엔드 무변경**: 저장 필드·`MAP_INFO_FIELDS`·API 는 그대로다(표시 위치만 변경).
+  - **(2026-10-26 변경) 탭 이름 'R' → 'MAP 정보' 복귀, 탭 안 'R' 카드는 유지**: 탭 이름이 'R'이면 탭 전체가 agent_R 전용으로 보여
+    agent_R 팀의 부담이 커진다(사용자 판단). 그래서 탭 이름은 'MAP 정보'로 두고, 탭 안의 '🗺️ R' 카드는 "MAP 정보 중
+    agent_R 이 다루는 항목을 모은 부분"이라는 뜻으로 그대로 둔다.
+    - `request.section_map`("MAP 정보"/"Map Information", 작성 화면과 같은 키)으로 바꾼 곳: 상세 모달 **탭 이름**(`PagedDetailView` `pages`),
+      이 탭의 **'모든 이력 확인' 창 제목**(`allHistSpecs.r.title` → "MAP 정보 — 모든 변경 이력"), **export 시트·파일 이름**
+      (`detailExport.ts` `exportMapInfoImage`·`exportAll` → 시트 `MAP 정보` / `MAP 정보 (텍스트)`, 파일 `<제목>_MAP 정보_<시각>.xlsx`).
+    - `request.section_map_r`("R")을 그대로 쓰는 곳: 탭 안 카드 제목 '🗺️ R'(일반·ADI CD 안내 둘 다), ADI CD 변경 문서의 MAP 텍스트 시트 안내 행 라벨(`addMapInfoSheet`).
+    - 탭 순서·인덱스(0~6)·`key`·저장 필드·i18n 키는 그대로다(새 키 없음).
 
 ---
 
