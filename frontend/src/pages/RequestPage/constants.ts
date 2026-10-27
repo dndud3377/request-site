@@ -145,6 +145,15 @@ export const MAP_TYPE_EXISTING = 'EXISTING';
 export const isMapRegisteredType = (mapType?: string): boolean =>
   mapType === MAP_TYPE_CLONE || mapType === MAP_TYPE_EXISTING;
 
+// claude 수정 (2026-10-27): TSV 적용 여부는 원본 MAP 과 무관하게 의뢰마다 다르게 정해지므로 CLONE/EXISTING 에서도 고를 수 있게 한다
+/** CLONE/EXISTING 에서도 잠기지 않는 Map Option 필드 — StepMap 버튼 잠금과 상세 보기·export 의 잠금 항목 경고가 함께 본다.
+ *  다른 옵션도 풀어야 하면 이 목록에 필드 이름을 추가한다. */
+export const MAP_OPTIONS_EDITABLE_WHEN_REGISTERED: readonly (keyof DetailFormState)[] = ['tsv'];
+
+/** 이 Map Option 이 CLONE/EXISTING 에서 잠기는가 */
+export const isMapOptionLockedWhenRegistered = (name: keyof DetailFormState): boolean =>
+  !MAP_OPTIONS_EDITABLE_WHEN_REGISTERED.includes(name);
+
 // claude 수정 (2026-10-15): Step1 조합법에 따라 StepMap 3번(inter)을 YES 로 고정하는 기준 단어 목록 신설
 // 3번(detail.inter) 선택값.
 export const INTER_YES = 'YES';
