@@ -1738,6 +1738,28 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
       (`detailExport.ts` `exportMapInfoImage`·`exportAll` → 시트 `MAP 정보` / `MAP 정보 (텍스트)`, 파일 `<제목>_MAP 정보_<시각>.xlsx`).
     - `request.section_map_r`("R")을 그대로 쓰는 곳: 탭 안 카드 제목 '🗺️ R'(일반·ADI CD 안내 둘 다), ADI CD 변경 문서의 MAP 텍스트 시트 안내 행 라벨(`addMapInfoSheet`).
     - 탭 순서·인덱스(0~6)·`key`·저장 필드·i18n 키는 그대로다(새 키 없음).
+  - **(2026-10-27 변경) CLONE/EXISTING 잠금 항목 — "무조건 없음" → "기본값일 때만 없음"**: 작성 화면에서 CLONE/EXISTING 은
+    지도 편차·예외 구역·X표시·C가문 세부(제품 위치·상/중/하판)·3번·Map Option 이 잠긴다. 이전에는 상세 보기가 지도 편차·예외 구역·C가문 세부를,
+    export 가 여기에 X표시까지 저장값과 무관하게 "없음"으로 내보내, 오류로 DB 에 기본값이 아닌 값이 들어가도 화면에서 알 수 없었다
+    (예외 구역은 백엔드 `requires_sales_agreer()` 판정에도 쓰인다). 사용자 결정에 따라 "없음"은 **잠금 때문에 실제로 기본값일 때만** 보인다.
+    - 기본값 판정(`RequestPage/constants.ts` — 상세 보기·export 공용 단일 출처):
+
+      | 항목 | 기본값("없음") 조건 | 함수 |
+      |---|---|---|
+      | 지도 편차 | C가문 No: `map_change` 빈 값/변경 없음 + X·Y·사유 빈 값 · C가문 Yes: 북/남 모두 빈 값/변경 없음 + 리전 X·Y·사유 빈 값 | `isLockedMapDefault` |
+      | 예외 구역 | `ea_change` 빈 값/변경 없음 + `ea_value` 빈 값 또는 기본값(300/500, 숫자 비교 — `isEaDefaultValue`) | `isLockedEaDefault` |
+      | X표시 | `mshot_change` 빈 값/없음 + 이미지 3개 빈 값 | `isLockedMshotDefault` |
+      | C가문 세부 | 제품 위치·상/중/하판 값 전부 빈 값(중판 사용 여부는 빈 값/미사용) | `isLockedProdcDetailDefault` |
+      | 3번 | `inter` 가 YES 가 아님 | 호출부(`buildInterValue` 가 빈 값) |
+      | Map Option | '적용'인 옵션이 없음 | 호출부(`activeOptions`) |
+
+    - 기본값이 아니면 NEW 문서와 같은 칩·형식으로 저장값을 보여주고, 라벨 옆에 주황색 **"⚠ 잠긴 항목에 값 있음"**
+      (`approval.locked_value_warning`, 툴팁 `approval.locked_value_warning_tooltip`, ko/en)을 붙인다(`PagedDetailView` `lockedValueMark`, `Chip` 의 `lockedWarning`).
+      export 텍스트 시트는 값 앞에 `⚠ 잠긴 항목에 값 있음 — ` 를 붙인다(`addMapInfoSheet` 의 `withLockedMark`).
+    - 직전 회차 대비 변경 강조(빨간 테두리·'이력 확인')는 종전 규칙 그대로다 — 저장값 칩은 NEW 와 같이 강조되고,
+      회색 "없음" 칩(`PlaceholderChip`)에는 강조가 없다(이번 범위 아님, 사용자 결정). '모든 이력 확인' 창도 종전대로 저장값을 보여준다.
+    - 정상 작성 문서(잠긴 칸 전부 기본값)는 화면·export 모두 변경 전과 같다. NEW·MAP 삭제·ADI CD 변경 문서도 영향 없다.
+    - 테스트: `components/PagedDetailView.lockedDefault.test.tsx` (상세 보기 5건 + export 2건).
 
 ---
 
