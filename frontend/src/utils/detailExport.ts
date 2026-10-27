@@ -3,7 +3,10 @@ import type { TFunction } from 'i18next';
 import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo, ColorFilterSet } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
-import { VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
+import {
+  VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
+  isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
+} from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText } from '../pages/RequestPage/helpers';
 
 const NO_ACTIVE_COLOR_FILTERS = new Set<string>();
@@ -447,20 +450,31 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
     blocks.push({ kind: 'kv', label: t('request.map_change_reason_delete'), value: htmlToPlainText(detail.map_change_reason) || '-' });
   }
 
-  if (isMapRegisteredDetail) {
-    blocks.push({ kind: 'kv', label: t('request.map'), value: t('request.value_none') });
-    blocks.push({ kind: 'kv', label: t('request.ea_change'), value: t('request.value_none') });
-  } else if (!isDeleteType) {
-    const isProdcMap = isProdc && !!(detail.map_change_top || detail.map_change_bottom || detail.map_value_x_top || detail.map_value_x_bottom);
-    const isPlainMap = !isProdc && !!detail.map_change;
-    if (isProdcMap || isPlainMap) blocks.push({ kind: 'kv', label: t('request.map'), value: buildMapValue(detail, t) });
-    if (detail.ea_change) blocks.push({ kind: 'kv', label: t('request.ea_change'), value: buildEaValue(detail, t) });
+  // claude 수정 (2026-10-27): CLONE/EXISTING 잠금 항목을 무조건 "없음"으로 내보내던 것을 상세 보기와 같게 —
+  // 실제로 기본값이면 "없음", 아니면(오류로 저장된 값) 저장값 앞에 잠금 항목 경고 문구를 붙여 내보낸다.
+  const noneText = t('request.value_none');
+  const withLockedMark = (value: string): string =>
+    (isMapRegisteredDetail ? `${t('approval.locked_value_warning')} — ${value}` : value);
+
+  if (!isDeleteType) {
+    if (isMapRegisteredDetail && isLockedMapDefault(detail)) {
+      blocks.push({ kind: 'kv', label: t('request.map'), value: noneText });
+    } else {
+      const isProdcMap = isProdc && !!(detail.map_change_top || detail.map_change_bottom || detail.map_value_x_top || detail.map_value_x_bottom);
+      const isPlainMap = !isProdc && !!detail.map_change;
+      if (isProdcMap || isPlainMap) blocks.push({ kind: 'kv', label: t('request.map'), value: withLockedMark(buildMapValue(detail, t)) });
+    }
+    if (isMapRegisteredDetail && isLockedEaDefault(detail)) {
+      blocks.push({ kind: 'kv', label: t('request.ea_change'), value: noneText });
+    } else if (detail.ea_change) {
+      blocks.push({ kind: 'kv', label: t('request.ea_change'), value: withLockedMark(buildEaValue(detail, t)) });
+    }
   }
 
-  if (isMapRegisteredDetail) {
-    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: t('request.value_none') });
+  if (isMapRegisteredDetail && isLockedMshotDefault(detail)) {
+    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: noneText });
   } else if (!isDeleteType && detail.mshot_change) {
-    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: detail.mshot_change });
+    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: withLockedMark(detail.mshot_change) });
   }
 
   if (!isDeleteType && detail.only_prodc) {
@@ -469,11 +483,11 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
       // PY 적용 여부는 CLONE/EXISTING(isMapRegisteredDetail)에서도 잠기지 않는 항목이라
       // 항상 실값을 그대로 내보낸다(다른 C가문 세부 정보처럼 "없음"으로 대체하지 않음).
       blocks.push({ kind: 'kv', label: t('request.py_apply'), value: detail.py_apply || '-' });
-      if (isMapRegisteredDetail) {
-        blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: t('request.value_none') });
+      if (isMapRegisteredDetail && isLockedProdcDetailDefault(detail)) {
+        blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: noneText });
       } else {
         const info = buildProdcInfo(detail, t);
-        if (info) blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: info });
+        if (info) blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: withLockedMark(info) });
       }
     }
   }
@@ -499,6 +513,7 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
             detail.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
             detail.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
           ].filter(Boolean).join(' / ');
+      interVal = withLockedMark(interVal);
     } else {
       interVal = t('request.value_none');
     }
@@ -517,7 +532,10 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
       { label: t('request.map_opt_hpkglabelheight'), fieldKey: 'hpkglabelheight' },
     ];
     const active = mapOptionDefs.filter((o) => detail[o.fieldKey] === '적용');
-    blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? active.map((o) => o.label).join(', ') : t('request.value_none') });
+    // claude 수정 (2026-10-27): 잠금 항목 경고는 CLONE/EXISTING 에서 잠기는 옵션이 적용됐을 때만 — TSV 등 예외 옵션만 적용이면 경고 없음
+    const activeText = active.map((o) => o.label).join(', ');
+    const hasLockedOption = active.some((o) => isMapOptionLockedWhenRegistered(o.fieldKey));
+    blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? (hasLockedOption ? withLockedMark(activeText) : activeText) : t('request.value_none') });
   }
 
   addInfoSheet(wb, t, sheetName, blocks);
@@ -629,7 +647,8 @@ export async function exportDetailInfoImage(doc: RequestDocument, t: TFunction, 
 export async function exportMapInfoImage(doc: RequestDocument, t: TFunction, screenshot: ScreenshotCapture | null): Promise<void> {
   const { detail } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
-  const sheetName = t('request.section_map_r');
+  // claude 수정 (2026-10-26): 시트·파일 이름을 상세 모달 탭 이름과 같은 'MAP 정보'로('R' → 'MAP 정보')
+  const sheetName = t('request.section_map');
   addScreenshotSheet(wb, sheetName, screenshot, t('request.export_capture_failed'));
   addMapInfoSheet(wb, t, textSheetName(sheetName, t), detail);
   await downloadWorkbook(wb, `${doc.title}_${sheetName}_${getNowString()}.xlsx`);
@@ -670,7 +689,8 @@ export async function exportAll(
   const detailSheetName = t('request.section_detail');
   addScreenshotSheet(wb, detailSheetName, screenshots.detail, t('request.export_capture_failed'));
   addDetailInfoSheet(wb, t, textSheetName(detailSheetName, t), doc, detail);
-  const mapSheetName = t('request.section_map_r');
+  // claude 수정 (2026-10-26): 전체 export 의 MAP 시트 이름도 탭 이름과 같은 'MAP 정보'로('R' → 'MAP 정보')
+  const mapSheetName = t('request.section_map');
   addScreenshotSheet(wb, mapSheetName, screenshots.map, t('request.export_capture_failed'));
   addMapInfoSheet(wb, t, textSheetName(mapSheetName, t), detail);
   addJobSheet(wb, t, jayer, colorFilters.jayerColorFilterSets, colorFilters.activeJayerColorFilterIds);

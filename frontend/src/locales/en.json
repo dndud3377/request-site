@@ -936,6 +936,8 @@
     "mshot_delete_notice": "Deletion Notice",
     "mshot_delete_desc": "Specific product deletion required",
     "prodc_detail": "C-Family Detail Info",
+    "locked_value_warning": "⚠ Value in locked field",
+    "locked_value_warning_tooltip": "This field cannot be edited for CLONE/EXISTING, but a non-default value is stored.",
     "current_role": "Current Role:",
     "agree_success": "{{agent}} agreed.",
     "reject_success": "Rejected.",

@@ -145,6 +145,15 @@ export const MAP_TYPE_EXISTING = 'EXISTING';
 export const isMapRegisteredType = (mapType?: string): boolean =>
   mapType === MAP_TYPE_CLONE || mapType === MAP_TYPE_EXISTING;
 
+// claude 수정 (2026-10-27): TSV 적용 여부는 원본 MAP 과 무관하게 의뢰마다 다르게 정해지므로 CLONE/EXISTING 에서도 고를 수 있게 한다
+/** CLONE/EXISTING 에서도 잠기지 않는 Map Option 필드 — StepMap 버튼 잠금과 상세 보기·export 의 잠금 항목 경고가 함께 본다.
+ *  다른 옵션도 풀어야 하면 이 목록에 필드 이름을 추가한다. */
+export const MAP_OPTIONS_EDITABLE_WHEN_REGISTERED: readonly (keyof DetailFormState)[] = ['tsv'];
+
+/** 이 Map Option 이 CLONE/EXISTING 에서 잠기는가 */
+export const isMapOptionLockedWhenRegistered = (name: keyof DetailFormState): boolean =>
+  !MAP_OPTIONS_EDITABLE_WHEN_REGISTERED.includes(name);
+
 // claude 수정 (2026-10-15): Step1 조합법에 따라 StepMap 3번(inter)을 YES 로 고정하는 기준 단어 목록 신설
 // 3번(detail.inter) 선택값.
 export const INTER_YES = 'YES';
@@ -534,6 +543,40 @@ export const mapInfoDefaults = (): Partial<DetailFormState> => ({
   final_yn: INITIAL_DETAIL.final_yn,
   final_entries: INITIAL_DETAIL.final_entries,
 });
+
+// claude 수정 (2026-10-27): CLONE/EXISTING 잠금 항목이 실제로 기본값인지 판정 — 상세 보기·export 가
+// 무조건 "없음"으로 가리지 않고, 기본값일 때만 "없음"·아니면 저장값을 보여주도록(오류로 들어간 값 노출)
+// 이 판정 함수들을 쓴다. 3번(inter)·Map Option 은 저장값 그대로가 이미 "기본값이면 없음"이라 호출부에서 판정한다.
+const isBlankValue = (v: unknown): boolean => typeof v !== 'string' || v.trim() === '';
+/** C가문 중판 사용 여부(prodc_middle_use)의 '미사용' 저장값 */
+const PRODC_MIDDLE_UNUSED = '미사용';
+
+/** 지도 편차가 기본값인가 — 화면과 같이 C가문이면 북/남 리전 값, 아니면 일반 값을 본다. 빈 선택값은 '변경 없음'으로 본다. */
+export const isLockedMapDefault = (d: Partial<DetailFormState>): boolean => {
+  const isNoChange = (v?: string): boolean => isBlankValue(v) || v === MAP_NO_CHANGE;
+  if (d.only_prodc === 'Yes') {
+    return isNoChange(d.map_change_top) && isNoChange(d.map_change_bottom)
+      && [d.map_value_x_top, d.map_value_y_top, d.map_value_x_bottom, d.map_value_y_bottom, d.map_reason].every(isBlankValue);
+  }
+  return isNoChange(d.map_change) && [d.map_value_x, d.map_value_y, d.map_reason].every(isBlankValue);
+};
+
+/** 예외 구역이 기본값인가 — '변경 없음'이고 값이 비었거나 C가문 기준 기본값(300/500)과 숫자로 같다. */
+export const isLockedEaDefault = (d: Partial<DetailFormState>): boolean =>
+  (isBlankValue(d.ea_change) || d.ea_change === EA_NO_CHANGE)
+  && (isBlankValue(d.ea_value) || isEaDefaultValue(d.ea_value, d.only_prodc));
+
+/** X표시가 기본값인가 — '없음'이고 붙여넣은 이미지가 하나도 없다. */
+export const isLockedMshotDefault = (d: Partial<DetailFormState>): boolean =>
+  (isBlankValue(d.mshot_change) || d.mshot_change === INITIAL_DETAIL.mshot_change)
+  && [d.mshot_image_copy, d.mshot_image_copy_top, d.mshot_image_copy_bottom].every(isBlankValue);
+
+/** C가문 세부 정보(제품 위치·상/중/하판)가 기본값인가 — 전부 비어 있다(중판 사용 여부는 빈 값·'미사용'). */
+export const isLockedProdcDetailDefault = (d: Partial<DetailFormState>): boolean =>
+  [d.prodc_scope, d.prodc_top_line, d.prodc_top_process, d.prodc_top_product,
+    d.prodc_middle_line, d.prodc_middle_process, d.prodc_middle_product,
+    d.prodc_bottom_line, d.prodc_bottom_process, d.prodc_bottom_product].every(isBlankValue)
+  && (isBlankValue(d.prodc_middle_use) || d.prodc_middle_use === PRODC_MIDDLE_UNUSED);
 
 export const INITIAL_FORM: CreateDocumentInput = {
   title: '',

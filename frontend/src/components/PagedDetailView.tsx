@@ -9,7 +9,10 @@ import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
 import { buildAdiCdTargets } from '../utils/approvalTable';
 import AdiCdTargetsCell from './AdiCdTargetsCell';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, isOverlayOnlyPurpose, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
+import {
+  VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, isOverlayOnlyPurpose, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
+  isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
+} from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -1987,9 +1990,20 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
     );
   };
 
+  // claude 수정 (2026-10-27): CLONE/EXISTING 잠금 항목에 기본값이 아닌 값이 저장돼 있을 때 라벨 옆에 붙이는 경고 표시
+  const lockedValueMark = (
+    <span
+      title={t('approval.locked_value_warning_tooltip')}
+      style={{ marginLeft: 6, color: 'var(--warning)', fontWeight: 700, fontSize: '0.68rem', cursor: 'help' }}
+    >
+      {t('approval.locked_value_warning')}
+    </span>
+  );
+
   // ===== Chip =====
+  // claude 수정 (2026-10-27): lockedWarning — 잠금 항목 경고 표시(lockedValueMark)를 라벨 옆에 붙인다
   const Chip = ({
-    label, value, style, changed, fieldKey, buildValue, highlightNumbers,
+    label, value, style, changed, fieldKey, buildValue, highlightNumbers, lockedWarning,
   }: {
     label: string;
     value: string | undefined | null;
@@ -2000,6 +2014,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
     buildValue?: (d: Partial<DetailFormState>) => string;
     /** 값 문자열 안의 숫자(um/mm) 토큰만 진하게 강조한다 — 지도 편차·예외 구역 칩 전용. */
     highlightNumbers?: boolean;
+    /** CLONE/EXISTING 잠금 항목인데 기본값이 아닌 값이 저장돼 있다 — 라벨 옆에 경고 표시 */
+    lockedWarning?: boolean;
   }) => {
     const [histOpen, setHistOpen] = useState(false);
     if (!value) return null;
@@ -2034,7 +2050,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
             )}
           </>
         )}
-        <div style={{ ...fieldLabel, textAlign: merged.textAlign as any }}>{label}</div>
+        <div style={{ ...fieldLabel, textAlign: merged.textAlign as any }}>{label}{lockedWarning && lockedValueMark}</div>
         <div style={{ ...fieldValue, textAlign: merged.textAlign as any }}>
           {highlightNumbers ? renderWithHighlightedNumbers(value) : value}
         </div>
@@ -2157,10 +2173,17 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   };
 
   const isProdc = detail.only_prodc === PRODC_YES;
-  /** CLONE/EXISTING — StepMap 에서 MAP 관련 입력칸이 전부 잠기므로, 상세보기에서도
-   *  지도편차·예외구역·X표시·C가문 세부정보는 값이 있어도 회색 "없음"으로 표시한다.
-   *  (MAP 목적·원본 위치·원본 제품·C가문 Yes/No 는 잠기지 않으므로 실값 유지) */
+  // claude 수정 (2026-10-27): 잠금 항목을 무조건 "없음"으로 가리던 것을 '기본값일 때만 없음'으로 — 아니면 저장값 + 경고 표시
+  /** CLONE/EXISTING — StepMap 에서 지도편차·예외구역·X표시·C가문 세부·3번·Map Option 입력칸이 잠긴다.
+   *  상세보기는 그 항목이 실제로 기본값이면 회색 "없음"으로, 기본값이 아니면(오류로 저장된 값)
+   *  저장값을 그대로 보여주고 라벨 옆에 경고(lockedValueMark)를 붙인다.
+   *  (MAP 목적·원본 위치·원본 제품·C가문 Yes/No·PY·Final 은 잠기지 않으므로 항상 실값) */
   const isMapRegisteredDetail = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
+  const mapLockedNone = isMapRegisteredDetail && isLockedMapDefault(detail);
+  const eaLockedNone = isMapRegisteredDetail && isLockedEaDefault(detail);
+  const prodcDetailLockedNone = isMapRegisteredDetail && isLockedProdcDetailDefault(detail);
+  const mshotLockedNone = isMapRegisteredDetail && isLockedMshotDefault(detail);
+  const mshotLockedWarn = isMapRegisteredDetail && !mshotLockedNone;
   // 요청 목적 'ADI CD 변경' — StepMap 을 아예 작성하지 않으므로 MAP 정보 탭 자체를 감춘다
   // (map_change 등은 기본값이 빈 문자열이 아니라 실제로 채운 것처럼 보일 수 있다).
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
@@ -2352,7 +2375,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
       ],
     },
     r: {
-      title: t('request.section_map_r'),
+      // claude 수정 (2026-10-26): '모든 이력 확인' 창 제목을 탭 이름과 같은 'MAP 정보'로(agent_R 전용 탭으로 보이지 않게)
+      title: t('request.section_map'),
       items: (d) => [
         textItem('request.map_type', fmtDiffVal(d?.map_type)),
         textItem('request.source_line', fmtDiffVal(d?.source_line)),
@@ -2605,7 +2629,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
 
   if (showMap) {
     pages.push({
-      label: t('request.section_map_r'),
+      // claude 수정 (2026-10-26): 탭 이름 'R' → 'MAP 정보'(agent_R 부담 완화). 탭 안 카드 제목은 R 담당 항목 묶음이라 'R' 유지
+      label: t('request.section_map'),
       content: isAdiCdChange ? (
         <div style={cardStyle} ref={mapTabRef}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2676,19 +2701,14 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             </div>
           )}
 
-          {/* CLONE/EXISTING — StepMap 에서 잠겨 의미 없는 기본값이므로 회색 "없음"으로 대체한다. */}
-          {isMapRegisteredDetail && (isR || isO || isP) && (
-            <div style={rowStyle}>
-              <PlaceholderChip label={t('request.map')} style={chipWide} />
-              <PlaceholderChip label={t('request.ea_change')} style={chipWide} />
-            </div>
-          )}
-
           {/* MAP 삭제 모드는 이 아래 항목들을 작성 화면에서부터 숨긴다 — 저장된 값은
               INITIAL_DETAIL 기본값('변경 없음'/'No'/'없음' 등)일 뿐이라 상세에서도 함께 숨긴다. */}
-          {!isMapRegisteredDetail && !isMapDeleteEditType(detail.map_type) && (isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
+          {/* claude 수정 (2026-10-27): CLONE/EXISTING 도 같은 칩 줄을 쓴다 — 기본값이면 회색 "없음",
+              아니면 NEW 와 같은 칩 + 잠금 항목 경고(오류로 저장된 값이 가려지지 않게) */}
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isJ || isP) && (isMapRegisteredDetail || detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
-              {(isR || isO || isP) && (() => {
+              {(isR || isO || isP) && mapLockedNone && <PlaceholderChip label={t('request.map')} style={chipWide} />}
+              {(isR || isO || isP) && !mapLockedNone && (() => {
                 // 리전별로 '변경 없음/있음'을 함께 표기한다(둘 다 '변경 없음'이어도 칩을 띄운다).
                 const isProdcMap = isProdc && !!(detail.map_change_top || detail.map_change_bottom
                   || detail.map_value_x_top || detail.map_value_x_bottom);
@@ -2702,9 +2722,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                 // '변경 있음'을 직접 선택한 경우에만 켠다 — '변경 없음'인데 잔여 값이
                 // 남아 있는 경우까지 강조되는 것을 막기 위함이다.
                 const mapHighlight = isProdcMap || detail.map_change !== MAP_NO_CHANGE;
-                return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} highlightNumbers={mapHighlight} />;
+                return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} highlightNumbers={mapHighlight} lockedWarning={isMapRegisteredDetail} />;
               })()}
-              {(isR || isO || isP) && detail.ea_change && (() => {
+              {(isR || isO || isP) && eaLockedNone && <PlaceholderChip label={t('request.ea_change')} style={chipWide} />}
+              {(isR || isO || isP) && !eaLockedNone && detail.ea_change && (() => {
                 // 합의자 미지정 사유는 칩에 함께 보이므로 사유만 바뀌어도 변경으로 본다.
                 // changedFields(JSON 비교)는 구버전 스냅샷의 undefined ↔ '' 를 변경으로 잡으므로 정규화해 따로 비교한다.
                 const eaNoneReasonChanged = historyMode
@@ -2715,7 +2736,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                 // 강조하지 않는다(위 지도 편차와 동일한 이유).
                 const eaHighlight = detail.ea_change !== MAP_NO_CHANGE;
                 return (
-                  <Chip label={t('request.ea_change')} value={buildEaValue(detail)} style={chipWide} changed={eaChanged} buildValue={buildEaValue} highlightNumbers={eaHighlight} />
+                  <Chip label={t('request.ea_change')} value={buildEaValue(detail)} style={chipWide} changed={eaChanged} buildValue={buildEaValue} highlightNumbers={eaHighlight} lockedWarning={isMapRegisteredDetail} />
                 );
               })()}
             </div>
@@ -2726,7 +2747,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
               (2026-09) 이전에는 CLONE/EXISTING 한정으로 api_maptable 을 실시간 재조회해 드리프트를
               감지·강조했으나, 이제는 그 기능을 폐지하고 다른 필드(map_change 등)와 동일하게
               회차별 상신 값만 비교한다(changedFields/buildMshotItems 공용 로직). */}
-          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
+          {/* claude 수정 (2026-10-27): CLONE/EXISTING 은 값이 비어 있어도(기본값) 다른 잠금 항목처럼 카드를 그려 회색 "없음"을 보인다 */}
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && (detail.mshot_change || isMapRegisteredDetail) && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
             const imgStyle: React.CSSProperties = { maxWidth: '600px', maxHeight: '420px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' };
             const renderMshotImg = (src: string, alt: string) => (
@@ -2762,9 +2784,13 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                     renderGroupHistory(t('request.mshot_history_title'), buildMshotItems, () => setMshotHistOpen(false))
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
+                    {/* claude 수정 (2026-10-27): CLONE/EXISTING — X표시가 기본값('없음'·이미지 없음)이면 다른 잠금 항목과 같은
+                        회색 "없음", 아니면 저장값 + 잠금 항목 경고 */}
+                    <div style={fieldLabel}>{t('request.mshot_change_status')}{mshotLockedWarn && lockedValueMark}</div>
                     <div style={fieldValue}>
-                      {detail.mshot_change}
+                      {mshotLockedNone
+                        ? <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
+                        : detail.mshot_change}
                     </div>
                   </div>
                   {mshotIsDelete && (
@@ -2827,9 +2853,9 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                       <div style={fieldValue}>{detail.py_apply}</div>
                     </div>
                   )}
-                  {/* CLONE/EXISTING — C가문 Yes/No 자체는 실값을 유지하되, 잠긴 세부 정보(제품
-                      해당 위치·상/중/하판)는 회색 "없음"으로 대체한다. */}
-                  {isProdc && isMapRegisteredDetail && (
+                  {/* claude 수정 (2026-10-27): CLONE/EXISTING — C가문 Yes/No 자체는 실값을 유지하고, 잠긴 세부 정보(제품
+                      해당 위치·상/중/하판)는 실제로 비어 있을 때만 회색 "없음", 값이 있으면 실값 + 잠금 항목 경고. */}
+                  {isProdc && prodcDetailLockedNone && (
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
                       <div style={fieldValue}>
@@ -2837,9 +2863,9 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                       </div>
                     </div>
                   )}
-                  {isProdc && !isMapRegisteredDetail && buildProdcInfo() && (
+                  {isProdc && !prodcDetailLockedNone && buildProdcInfo() && (
                     <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                      <div style={fieldLabel}>{t('approval.prodc_detail')}{isMapRegisteredDetail && lockedValueMark}</div>
                       <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
                     </div>
                   )}
@@ -2937,7 +2963,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                         onClose={() => setInterHistOpen(false)}
                       />
                     )}
-                    <div style={fieldLabel}>{t('request.map_opt_inter')}</div>
+                    {/* claude 수정 (2026-10-27): CLONE/EXISTING 인데 3번이 기본값(NO)이 아니면 잠금 항목 경고 */}
+                    <div style={fieldLabel}>{t('request.map_opt_inter')}{isMapRegisteredDetail && !!buildInterValue(detail) && lockedValueMark}</div>
                     <div style={fieldValue}>
                       {buildInterValue(detail) || (
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
@@ -2960,7 +2987,14 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                         {t('request.history_check_btn')}
                       </button>
                     )}
-                    <div style={fieldLabel}>{t('request.map_option_title')}</div>
+                    {/* claude 수정 (2026-10-27): CLONE/EXISTING 인데 잠기는 Map Option 이 적용돼 있으면 잠금 항목 경고
+                        — TSV 처럼 CLONE/EXISTING 에서도 고를 수 있는 옵션(MAP_OPTIONS_EDITABLE_WHEN_REGISTERED)은 정상 입력이라 제외 */}
+                    <div style={fieldLabel}>
+                      {t('request.map_option_title')}
+                      {isMapRegisteredDetail
+                        && activeOptions.some((o) => isMapOptionLockedWhenRegistered(o.fieldKey as keyof DetailFormState))
+                        && lockedValueMark}
+                    </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
                       {activeOptions.length > 0
                         ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)

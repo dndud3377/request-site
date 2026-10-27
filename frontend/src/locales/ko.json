@@ -936,6 +936,8 @@
     "mshot_delete_notice": "삭제 안내",
     "mshot_delete_desc": "특정 제품 삭제 필요",
     "prodc_detail": "C가문 세부 정보",
+    "locked_value_warning": "⚠ 잠긴 항목에 값 있음",
+    "locked_value_warning_tooltip": "CLONE/EXISTING에서는 수정할 수 없는 항목인데 기본값이 아닌 값이 저장되어 있습니다.",
     "agree_success": "{{agent}} 합의 처리되었습니다.",
     "reject_success": "반려 처리되었습니다.",
     "modal_agree_title": "{{agent}} 합의",
