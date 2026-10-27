@@ -288,6 +288,29 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### i18n 정리 (2026-10-27 — J/O-ayer·bb 관련 하드코딩 문구 → i18n 키 / STEP3·4 검증 주석 정정)
+
+- **의도(사용자)**: J-ayer·O-ayer·bb 표 기능 점검 중 발견한 규칙 G 위반(하드코딩 한글)과 실제 동작과 어긋난 주석을 고친다.
+  범위는 **J/O/bb 관련 문구만**이다(MAP 정보·이미지 업로드·상신 결과 토스트 등 `validate()` 의 다른 하드코딩 문구는 이번 범위 밖 — 그대로 남아 있다).
+- **바꾼 것** (`index.tsx`)
+  - `handleFilterDeleteConfirm` / `handleFilterAllDeleteConfirm`(J/O 필터 삭제 토스트) → `request.filter_delete_toast`(`{{label}}`) / `request.filter_all_delete_toast`
+  - `validate(4)` Partial Shot 미선택 토스트 → `request.partial_shot_required`(`$t(request.partial_shot)` 중첩)
+  - `validate(5)` bb 미매핑 오류(`errors.jayer_mapping` + 토스트) → `request.jayer_mapping_required`
+  - STEP3·4 검증 블록 위 주석: "행 단위 필수값 검증을 두지 않는다(행은 선택사항)" → 실제 동작대로
+    "모든 행의 ST·요청 기준 필수 + 짝 일치(`addStNocError`), 그 밖의 칸은 차용 행만 필수"로 정정(동작 변경 없음).
+- **i18n(ko/en 동시 4개)**: `request.filter_delete_toast`, `request.filter_all_delete_toast`, `request.partial_shot_required`, `request.jayer_mapping_required`.
+  ko 문구는 예전 하드코딩 문구와 **글자 그대로 같다** — 한국어 화면에서는 보이는 것이 달라지지 않는다. 영어 화면에서 영문으로 나온다.
+- **검증**: `npx tsc --noEmit` 에러 0건(변경 전 0건), 프론트 전체 46 suites / 625건 통과. i18next 로 ko/en 4개 키 렌더 결과 확인.
+  결재 흐름 무관 — `scripts/approval_cases` 러너 대상 아님.
+- **수동 검증 시나리오** (한국어/영어 각각 — 상단 바 사용자 메뉴 드롭다운에서 언어 전환)
+  1. [`/request` → STEP1~3 입력 → STEP4 O-ayer 'OVL 정보' 탭에서 Partial Shot 을 고르지 않고 `다음`] →
+     [기대: ko `Partial Shot 계측 필요: 필수 선택 항목입니다.` / en `Partial Shot Measurement Required: This selection is required.` 토스트]
+  2. [STEP5 뼈찜 정보에서 원본 데이터 목록에 미매핑 행을 남긴 채 `상신`] →
+     [기대: 표 위 빨간 문구와 토스트가 ko `모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.` / en `Every source row must be mapped to a Backbone before submitting.`]
+  3. [STEP3 J-ayer(또는 STEP4 O-ayer) `+ 필터` → 저장된 필터 하나 삭제 → 확인 / '전체 삭제' → 확인] →
+     [기대: ko `필터 "이름"이 삭제되었습니다.`·`모든 필터가 삭제되었습니다.` / en `Filter "name" was deleted.`·`All filters were deleted.`]
+  - 실패 신호: 토스트에 `request.xxx` 처럼 키 이름이 그대로 보이면 ko/en 키 누락이다.
+
 ### 기능 삭제 (2026-10-26 — J-ayer / O-ayer / bb 표 '+ 행 추가'와 J/O 행 `✕` 삭제 폐지)
 
 - **의도(사용자)**: 표의 행은 **불러온 데이터로만** 만든다 — J/O 는 JOB FILE·OVL 자동 조회, bb 는 매핑·자동 채움.
