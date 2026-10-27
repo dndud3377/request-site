@@ -326,6 +326,8 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   재현 결과: `{"map_type":"CLONE","map_change":"변경 있음","map_value_x":"12",…,"ea_change":"변경 있음","ea_value":"777","mshot_change":"삭제","tsv":"적용"}`.
   상세 보기(`PagedDetailView` R 탭)는 CLONE/EXISTING 의 지도 편차·예외 구역을 저장값과 무관하게 "없음"으로 보여주는데, 백엔드
   `requires_sales_agreer()` 는 저장값(예외 구역 777)으로 영업 합의자를 필수로 만든다 — 화면과 결재 판정이 어긋났다.
+  (2026-10-27 후속: 상세 보기·export 는 이제 잠금 항목이 실제로 기본값일 때만 "없음"을 보이고, 아니면 저장값 + "⚠ 잠긴 항목에 값 있음"을
+  보인다 — `docs/APPROVAL.md` 2026-10-27 항목 참조.)
 - **변경(사용자 결정 — Step1 게이트와 같은 방식)**: `StepMap.tsx` 에서 MAP 목적 아래 영역 전체를 `<fieldset disabled={!detail.map_type}>` 로 묶고,
   미선택이면 MAP 목적 버튼 아래에 안내 문구(`request.step2_map_type_gate_hint`)를 띄운다.
   - fieldset 은 `display: contents` + 테두리·여백 0(`GATE_FIELDSET_STYLE`)이라 `form-grid` 배치·모양은 그대로다.
