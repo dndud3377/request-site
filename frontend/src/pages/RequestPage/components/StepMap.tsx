@@ -6,7 +6,7 @@ import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey, MapInfo } from '../../../types';
 import {
   CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, MAP_TYPE_EXISTING, isMapRegisteredType,
-  EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue, INITIAL_DETAIL,
+  EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue, INITIAL_DETAIL, isMapOptionLockedWhenRegistered,
 } from '../constants';
 import { sanitizeSignedDecimal, sourceCodeFromPartid } from '../helpers';
 import ProdcRow from './ProdcRow';
@@ -752,7 +752,9 @@ const StepMap: React.FC<StepMapProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, max-content)', gap: '8px' }}>
                 {mapOptions.map((opt) => {
                   const isActive = detail[opt.name] === opt.activeValue;
-                  const isDisabled = isMapRegistered || (opt.name === 'eds_backside' && detail.inter === 'YES');
+                  // claude 수정 (2026-10-27): CLONE/EXISTING 잠금에서 TSV 등 예외 옵션(MAP_OPTIONS_EDITABLE_WHEN_REGISTERED)은 제외
+                  const isDisabled = (isMapRegistered && isMapOptionLockedWhenRegistered(opt.name))
+                    || (opt.name === 'eds_backside' && detail.inter === 'YES');
                   return (
                     <button
                       key={opt.name as string}
