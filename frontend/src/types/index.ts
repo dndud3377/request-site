@@ -215,6 +215,16 @@ export interface AdiCdTargetSummary {
   process_id: string;
 }
 
+// claude 수정 (2026-10-27): 공유 그룹 멤버가 대신 상신한 회차를 결재 경로에 표시하기 위해 추가
+/** 회차별 실제 상신자 (RoundSubmissionSerializer) */
+export interface RoundSubmitter {
+  round: number;
+  submitter_loginid: string | null;
+  submitter_name: string;
+  submitter_email: string;
+  submitted_at: string;
+}
+
 export interface RequestDocument {
   id: number;
   title: string;
@@ -236,16 +246,20 @@ export interface RequestDocument {
   designated_pl_name?: string;
   approval_steps?: ApprovalStepFrontend[];
   notifier_mails?: Record<string, string>; // 통보처 loginid → 이메일 (결재 경로 탭 표시용)
-  // 임시저장 공유 그룹 — 작성자가 지정한 그룹 1개. 변경은 set-shared-group 액션으로만 한다(읽기 전용).
+  // claude 수정 (2026-10-27): 공유 그룹은 상신 이후에도 이어진다(결재 완료 전까지 지정·변경 가능)
+  // 공유 그룹 — 작성자가 지정한 그룹 1개. 변경은 set-shared-group 액션으로만 한다(읽기 전용).
   shared_group?: number | null;
   shared_group_name?: string | null;
+  is_shared_with_me?: boolean;     // 공유 그룹이 내가 멤버인 그룹인가(의뢰자 무관) — 결재 현황·홈 '공유' 탭 조건
+  can_act_as_requester?: boolean;  // 의뢰자 본인·공유 그룹 멤버(MASTER 미포함) — 결재 현황 의뢰자 기능 버튼 노출 기준
+  round_submitters?: RoundSubmitter[]; // 회차별 실제 상신자 (상세 응답 전용, 이 기능 이전 회차는 없음)
   // 서버가 요청자 기준으로 계산해 내려주는 권한 플래그 (읽기 전용)
   requester_loginid?: string | null;
   can_edit?: boolean;
   can_withdraw?: boolean;
-  can_request_pause?: boolean; // 중단 요청 가능(작성자 본인·진행 중·기존 요청 없음)
-  can_resume?: boolean;        // 재개 가능(작성자 본인·pause 상태)
-  can_requester_resubmit?: boolean; // 중단요청 없이 즉시 재상신 가능(작성자 본인·PL 검토 단계·R 등 다음 단계 미생성)
+  can_request_pause?: boolean; // 중단 요청 가능(작성자 본인·공유 그룹 멤버·진행 중·기존 요청 없음)
+  can_resume?: boolean;        // 재개 가능(작성자 본인·공유 그룹 멤버·pause 상태)
+  can_requester_resubmit?: boolean; // 중단요청 없이 즉시 재상신 가능(작성자 본인·공유 그룹 멤버·PL 검토 단계·R 등 다음 단계 미생성)
   pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
   withdraw_request?: WithdrawRequestInfo | null; // 확인 대기 중인 철회 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용

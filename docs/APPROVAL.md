@@ -1456,7 +1456,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 ## 4.1 결재 알림 메일 (DXHUB) — 2026-06 추가
 
 각 전이 시점에 해당 단계 권한자·작성자·결재 참여자·통보처에게 알림 메일을 보낸다.
-(**나만의 그룹은 메일 발송 대상 기준이 아니다** — 그룹은 통보처 일괄 추가와 임시저장 공유에만 쓰인다. §9 참조.)
+(**나만의 그룹은 반려 메일 외에는 메일 발송 대상 기준이 아니다** — 그룹은 통보처 일괄 추가와 의뢰서 공유에 쓰이며,
+(2026-10-27) 공유 그룹 멤버는 의뢰자 대신 재상신할 수 있어 **반려 메일**만 함께 받는다. §9·`docs/MAIL.md` §3.1 참조.)
 적재(enqueue)는 결재 트랜잭션 안에서 수행되고, 커밋 직후 즉시 1회 발송(거의 실시간)하며,
 실패분은 백그라운드 큐(`MailNotification` + APScheduler `process_mail_queue`, 1분 주기)가
 최대 5회 재시도한다(하이브리드).
@@ -1789,10 +1790,13 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ---
 
-## 9. 임시저장(draft) 공유 그룹
+## 9. 의뢰서 공유 그룹 (임시저장 + 상신 이후)
 
 임시저장(`status='draft'`) 문서는 **작성자 본인 + 문서에 지정된 공유 그룹의 멤버 + MASTER** 에게만
 보인다. 그 외 상태(상신/반려/완료)는 종전대로 전원에게 노출된다.
+
+(2026-10-27) 공유는 **상신 이후에도 이어진다** — 공유 그룹 멤버는 진행 중·반려·중단 문서에서도 의뢰자와
+같은 기능을 쓰고(§9-2), 회차마다 실제로 상신한 사람이 결재 경로에 남는다(§9-5).
 
 ### 9-1. 공유 대상은 '그룹 1개' (2026-08 정책 변경)
 
@@ -1801,9 +1805,12 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 지정해야 하고, 지정하지 않으면 아무에게도 공유되지 않는다.
 
 - 필드: `RequestDocument.shared_group` (FK → `UserGroup`, null 허용, `SET_NULL`, 마이그레이션 `0017`)
-- 지정 UI: **결재 현황 → 임시저장 행(또는 상세 모달) → `👥 그룹 지정`** → 내가 속한 그룹 중 1개 선택 / '공유 안 함'
+- 지정 UI: **결재 현황 → 의뢰서 행(또는 상세 모달) → `👥 그룹 지정`** → 내가 속한 그룹 중 1개 선택 / '공유 안 함'
+  - (2026-10-27) 임시저장뿐 아니라 **진행 중·반려·중단** 문서에도 버튼이 보인다. **결재 완료(approved)만 제외**.
 - 지정 API: `POST /api/documents/{id}/set-shared-group/` body `{"group_id": <id>|null}`
   - 인가: **의뢰자 본인 또는 MASTER 만**. 공유 그룹 멤버는 문서를 수정·상신할 수는 있어도 공유 범위는 못 바꾼다.
+  - (2026-10-27) 결재 완료(approved) 문서는 400(`_SHARED_GROUP_LOCKED_STATUSES`). 그 외 상태는 모두 지정·변경·해제 가능.
+  - 상신(submit)·재상신은 `shared_group` 을 건드리지 않으므로 임시저장 때 지정한 그룹이 그대로 이어진다.
   - 지정 가능한 그룹은 **호출자가 멤버인 그룹**뿐(남의 그룹에 문서를 밀어 넣을 수 없다).
   - serializer 에서 `shared_group` 은 **read-only** — 전체 저장(PUT/PATCH)에 값이 빠져 공유가 초기화되는 것을 막는다.
 - 조회 구현: `RequestDocumentViewSet.get_queryset`(`backend/api/views.py`)
@@ -1815,14 +1822,30 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ### 9-2. 공유 그룹 멤버가 할 수 있는 것
 
+(2026-10-27) 상신 이후에도 **의뢰자 기능 전부**를 함께 쓴다. 판정은 `doc_permissions.acts_as_requester`
+(의뢰자 본인 **또는** 문서 공유 그룹의 멤버) 하나로 모았다. 삭제·공유 그룹 변경만 예외다.
+
 | 동작 | 공유 그룹 멤버 | 근거 |
 |---|---|---|
 | 조회 | ✅ | `get_queryset` |
 | 수정 · 임시저장 | ✅ | `can_edit`(draft 분기) |
-| 상신 · 재상신 | ✅ | `submit`/`resubmit` 의 `can_edit` 인가 |
+| 상신 · 재상신(반려 후) | ✅ | `submit`/`resubmit` 의 `can_edit` 인가 |
+| 수정 후 즉시 재상신(PL 검토 단계, 중단요청 없이) | ✅ (2026-10-27) | `can_requester_resubmit`, `can_edit`(under_review 분기) |
+| 중단 요청 · 중단 요청 취소 | ✅ (2026-10-27) | `can_request_pause`, `cancel_pause` |
+| 중단 문서 수정 · 재개 | ✅ (2026-10-27) | `can_edit`(pause 분기), `can_resume` |
+| 결재 경로 변경 | ✅ (2026-10-27) | `change_route` |
+| 후결자 추가·제거 | ✅ (2026-10-27) | `_can_manage_post_approver` |
+| Validation System · Partial Shot 수정 | ✅ (2026-10-27) | `update_validation_system`, `update_partial_shot` |
 | 철회(요청·즉시삭제) | ✅ | `can_withdraw` — 확정 시 문서가 삭제된다(Case J) |
-| **삭제** | ❌ | `can_delete` — 의뢰자 / 지정 PL / MASTER 만 |
+| 반려 메일 수신 | ✅ (2026-10-27) | `mailer.resolve_reject_recipients` — `docs/MAIL.md` §3.1 |
+| **삭제** | ❌ | `can_delete` — 의뢰자 / 지정 PL / MASTER 만 (2026-10-27 재확인: 유지) |
 | **공유 그룹 변경** | ❌ | `set_shared_group` — 의뢰자 / MASTER 만 |
+
+- 프론트 노출: 서버가 문서마다 `can_act_as_requester`(의뢰자 본인 또는 공유 그룹 멤버, **MASTER 미포함**)를
+  내려준다. 결재 현황(`ApprovalPage.tsx` `actsAsRequester`)이 Validation System·Partial Shot 수정, 결재 경로 변경,
+  중단 요청 취소, 후결자 관리 버튼을 이 값으로 연다(MASTER 허용 여부는 버튼마다 종전 그대로). 중단 요청·재개·
+  즉시 재상신 버튼은 종전대로 `can_request_pause`/`can_resume`/`can_requester_resubmit` 을 본다.
+- 공유 그룹이 지정되지 않은 문서는 그룹 멤버라도 아무 권한이 없다(`acts_as_requester` 가 False).
 
 ### 9-3. 의뢰자는 최초 작성자로 고정
 
@@ -1851,13 +1874,43 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   삭제 후 그룹 탭을 다시 불러온다.
 - 테스트: `backend/api/tests.py::GroupCreatorTransferOnUserDeleteTest`
 
+### 9-5. 회차별 실제 상신자 (2026-10-27 추가)
+
+의뢰자(`requester`)는 최초 작성자로 고정되지만(§9-3), 공유 그룹 멤버가 상신·재상신할 수 있으므로
+**"그 회차를 누가 올렸는가"** 를 따로 남긴다.
+
+- 모델: `RoundSubmission`(`backend/api/models.py`, 마이그레이션 `0056_roundsubmission`) —
+  `document`·`round`·`submitter`(FK, SET_NULL)·`submitter_name`·`submitter_email`·`submitted_at`, (document, round) 유일.
+- 기록: `submit`(1회차) / `resubmit` / `requester-resubmit` 이 실제 호출자를 기록한다
+  (`RequestDocumentViewSet._record_round_submission`, 같은 회차를 다시 기록하면 덮어쓴다).
+  `resume`(재개)·`direct-approve`(이력 바로 등록)는 새 회차를 만들지 않거나 상신이 아니므로 기록하지 않는다.
+- 응답: 상세 `GET /api/documents/{id}/` 의 `round_submitters`
+  `[{round, submitter_loginid, submitter_name, submitter_email, submitted_at}]` (목록 응답에는 없다).
+- 화면: 의뢰 상세 모달 **'결재 경로' 탭 → '상신자' 행**이 회차마다 실제 상신자 이름·이메일·상신 시각을 보여준다
+  (`PagedDetailView.tsx` `getRoundSubmitter`). 예) 1회차 A 상신 → 반려 → B(공유 그룹 멤버) 수정·재상신
+  → **1회차 A / 2회차 B**. **결재 현황 목록의 의뢰자는 계속 A** 다.
+- 기록이 없는 회차(이 기능 이전 문서·비인증 상신)는 종전대로 **의뢰자**로 표시하고, 날짜도 종전 규칙
+  (1회차 PL 단계 생성 시각, 이후 회차 R 단계 생성 시각)을 쓴다. 기록이 있으면 날짜는 **기록된 상신 시각**이다
+  — R 이 아직 열리지 않았거나 생략된 회차도 날짜가 비지 않는다.
+- 테스트: `backend/api/tests.py::SharedGroupAfterSubmitTest`, `frontend/src/components/PagedDetailView.roundSubmitter.test.tsx`
+
+### 9-6. '공유' 탭 (2026-10-27 추가)
+
+내가 멤버인 나만의 그룹에 공유된 문서를 모아 본다. **의뢰자 무관**(내가 공유한 문서도 포함).
+
+- 판정: 서버가 문서마다 내려주는 `is_shared_with_me`(문서 `shared_group` 이 호출자가 멤버인 그룹인가).
+- 결재 현황: MY 탭 바로 옆 `공유` 탭(`SHARED_FILTER`, i18n `approval.filter_shared`). 결재 현황 목록이 원래
+  결재 완료 문서를 빼므로 임시저장·진행 중·반려·중단 문서가 대상이다.
+- 홈 '나의 의뢰 현황': 전체/상신함/결재함 옆 `공유` 필터(i18n `home.filter_shared`). MY 판정(`isMyDocument`)과
+  별개로 미완료 문서 중 `is_shared_with_me` 인 것을 모은다(`sharedDocs`) — 상신 오래된 순, 최대 5건.
+
 ### 9-4. 하이라이트 가이드 투어 (2026-08-17 추가)
 
 결재 현황(`ApprovalPage.tsx`) 페이지 제목("결재 현황") 옆에 새 "영상 가이드" 배지를 추가했다.
 클릭하면 RequestPage/PermissionPage에서 쓰는 범용 스포트라이트 엔진(`components/StepGuideTour.tsx`)을
 재사용해 2개 그룹을 순서대로 강조한다:
 
-1. **`👥 그룹 지정` 버튼** — 임시저장 상태에서만 보이는 버튼이므로, 실제 목록(`allDocs`/`docs`)은 건드리지
+1. **`👥 그룹 지정` 버튼** — (2026-10-27부터 결재 완료 전 모든 상태에서 보이지만) 시연은 임시저장 문서로 하므로, 실제 목록(`allDocs`/`docs`)은 건드리지
    않고 상세 모달(`selected`)만 `makeShareGuideDemoDoc()`(가짜 임시저장 문서, id=-1)로 열어서 보여준다.
 2. **그룹 지정 모달** — 위 가짜 문서로 `handleShareClick`을 그대로 호출해 실제 공유 모달을 연다. 목록에
    뜨는 그룹은 **호출자가 실제로 속한 그룹**(진짜 `userGroupsAPI.list()` 결과)이라 데모지만 내용은 진짜다.

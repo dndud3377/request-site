@@ -33,7 +33,7 @@ from .models import (
     VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
-    PersonalMarkCategory, PersonalDocumentMark,
+    PersonalMarkCategory, PersonalDocumentMark, RoundSubmission,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
 from .search_filters import AdiCdTargetSearchFilter
@@ -445,6 +445,24 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """문서의 현재 최대 결재 회차를 반환한다. 단계가 없으면 default."""
         return ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or default
 
+    # claude 수정 (2026-10-27): 공유 그룹 멤버가 대신 상신해도 회차별 실제 상신자가 결재 경로에 보이도록 기록
+    def _record_round_submission(self, document, round_no, user, submitted_at):
+        """round_no 회차를 실제로 상신한 사람을 기록한다(같은 회차를 다시 기록하면 덮어쓴다).
+
+        의뢰자(requester)는 최초 작성자로 고정되므로, 공유 그룹 멤버가 상신·재상신한 회차는
+        여기서만 구분된다. 비인증 호출(개발 모드)은 상신자 없이 시각만 남긴다 — 화면은 의뢰자로 표시한다.
+        """
+        has_account = bool(getattr(user, 'loginid', ''))
+        RoundSubmission.objects.update_or_create(
+            document=document, round=round_no,
+            defaults={
+                'submitter': user if has_account else None,
+                'submitter_name': (user.username or user.loginid) if has_account else '',
+                'submitter_email': (user.mail or '') if has_account else '',
+                'submitted_at': submitted_at,
+            },
+        )
+
     def _validate_bb_mapping(self, document):
         """J-ayer 행 bb 매핑 검증. 문제 있으면 error 문자열 반환, 없으면 None.
 
@@ -686,6 +704,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
             # 지정 PL 전원에 대해 pending PL 단계를 생성(전원 합의 필요)
             ApprovalStep.objects.filter(document=document).delete()
+            # claude 수정 (2026-10-27): 1회차 실제 상신자 기록(공유 그룹 멤버가 대신 상신할 수 있음)
+            self._record_round_submission(document, 1, request.user, timezone.now())
             for u in pl_users:
                 pl_step = ApprovalStep.objects.create(
                     document=document, agent='PL', action='pending', round=1,
@@ -806,6 +826,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             # (새 회차 J 단계가 열릴 때 fill_from_master 로 마스터 최신본과 다시 맞춘다)
             review_items_sync.reset_confirmations(document)
 
+            # claude 수정 (2026-10-27): 새 회차 실제 상신자 기록(공유 그룹 멤버가 재상신할 수 있음)
+            self._record_round_submission(document, new_round, request.user, document.submitted_at)
+
             # 새 회차에 지정 PL 전원의 pending 단계를 생성(이전 회차는 이력 보존)
             for u in pl_users:
                 pl_step = ApprovalStep.objects.create(
@@ -848,7 +871,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='requester-resubmit')
     @transaction.atomic
     def requester_resubmit(self, request, pk=None):
-        """의뢰자 재상신(중단요청 없이): PL 검토(+SA 합의) 단계에서만 가능.
+        """의뢰자(또는 공유 그룹 멤버) 재상신(중단요청 없이): PL 검토(+SA 합의) 단계에서만 가능.
 
         R 등 다음 단계가 이미 생성된 뒤에는 사용할 수 없다(그 이후엔 request_pause 를 이용해야
         한다). 문서 내용은 사전에 /request 화면에서 update 됨. 성공 시 round+1 로 새 회차를 열어
@@ -905,6 +928,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         # 새 회차에 지정 PL·SA 전원의 pending 단계를 생성 — 이전 회차 합의는 이력으로 남아 무효화된다.
         new_round = self._max_round(document, default=0) + 1
+        # claude 수정 (2026-10-27): 새 회차 실제 상신자 기록(공유 그룹 멤버가 재상신할 수 있음)
+        self._record_round_submission(document, new_round, request.user, document.submitted_at)
         for u in pl_users:
             pl_step = ApprovalStep.objects.create(
                 document=document, agent='PL', action='pending', round=new_round,
@@ -2136,15 +2161,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'document': RequestDocumentSerializer(document, context={'request': request}).data,
         })
 
+    # claude 수정 (2026-10-27): 작성자 본인에 더해 공유 그룹 멤버도 취소 가능(acts_as_requester)
     @action(detail=True, methods=['post'], url_path='cancel-pause')
     @transaction.atomic
     def cancel_pause(self, request, pk=None):
-        """중단 요청 취소: 확인 완료 전(requested) 요청을 작성자/MASTER 가 철회한다."""
+        """중단 요청 취소: 확인 완료 전(requested) 요청을 작성자·공유 그룹 멤버/MASTER 가 철회한다."""
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
         role = getattr(request.user, 'role', '')
-        if role != 'MASTER' and not doc_permissions.is_requester(request.user, document):
+        if role != 'MASTER' and not doc_permissions.acts_as_requester(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         updated = PauseRequest.objects.filter(
@@ -2161,7 +2187,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='validation-system')
     @transaction.atomic
     def update_validation_system(self, request, pk=None):
-        """진행 중 문서의 Validation System 대상/비대상을 상신자 본인이 변경한다.
+        """진행 중 문서의 Validation System 대상/비대상을 상신자 본인(또는 공유 그룹 멤버)이 변경한다.
 
         판정 주체는 상신자 하나다 — MASK(E) 팀은 확인 후 '합의'만 하고 값을 바꾸지 않는다.
         수정 창은 상신 직후부터 **E 단계가 완료되기 전까지** 열려 있다 — 게이트는
@@ -2183,8 +2209,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # claude 수정 (2026-10-27): 의뢰자 본인에 더해 공유 그룹 멤버도 수정 가능(acts_as_requester)
         role = getattr(request.user, 'role', '')
-        if role != 'MASTER' and not doc_permissions.is_requester(request.user, document):
+        if role != 'MASTER' and not doc_permissions.acts_as_requester(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         if document.status not in ('under_review', 'pause'):
@@ -2221,7 +2248,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='partial-shot')
     @transaction.atomic
     def update_partial_shot(self, request, pk=None):
-        """진행 중 문서의 Partial Shot 계측 필요 여부를 상신자 본인이 변경한다.
+        """진행 중 문서의 Partial Shot 계측 필요 여부를 상신자 본인(또는 공유 그룹 멤버)이 변경한다.
 
         `update_validation_system`과 동일한 구조다 — 수정 창은 상신 직후부터
         **O 단계가 완료되기 전까지** 열려 있다. O 는 P/E 와 달리 지정 검토자가 없어
@@ -2238,8 +2265,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # claude 수정 (2026-10-27): 의뢰자 본인에 더해 공유 그룹 멤버도 수정 가능(acts_as_requester)
         role = getattr(request.user, 'role', '')
-        if role != 'MASTER' and not doc_permissions.is_requester(request.user, document):
+        if role != 'MASTER' and not doc_permissions.acts_as_requester(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         if document.status not in ('under_review', 'pause'):
@@ -3082,7 +3110,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def change_route(self, request, pk=None):
         """결재 경로 변경: 상신 때 지정한 사람(PL·영업/기술지원 합의자·후결자·통보처)을 진행 중에 수정한다.
 
-        권한은 작성자 본인(doc_permissions.is_requester) 또는 MASTER. 요청 본문에 **실린 항목만**
+        권한은 작성자 본인·공유 그룹 멤버(doc_permissions.acts_as_requester) 또는 MASTER. 요청 본문에 **실린 항목만**
         처리한다(`designated_pl_loginids` / `sales_agreer_loginids` / `post_approver_loginids` 는
         최종 loginid 배열, `notifiers` 는 `[{loginid, name}]`). 새 회차는 열지 않고 같은 회차 안에서
         **대기 중(pending)인 사람만** 추가·제거한다 — 이미 합의한 사람은 목록에서 빠지면 400.
@@ -3101,7 +3129,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        if getattr(request.user, 'role', '') != 'MASTER' and not doc_permissions.is_requester(request.user, document):
+        # claude 수정 (2026-10-27): 작성자 본인에 더해 공유 그룹 멤버도 변경 가능(acts_as_requester)
+        if getattr(request.user, 'role', '') != 'MASTER' and not doc_permissions.acts_as_requester(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
         blocked = self._blocked_progress_response(document)
         if blocked:
@@ -3373,11 +3402,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # claude 수정 (2026-10-27): 작성자 본인에 더해 공유 그룹 멤버도 후결자 관리 가능(acts_as_requester)
     def _can_manage_post_approver(self, user, document):
         role = getattr(user, 'role', '')
         if role == 'MASTER':
             return True
-        return doc_permissions.is_requester(user, document)
+        return doc_permissions.acts_as_requester(user, document)
 
     @action(detail=True, methods=['post'], url_path='add-post-approver')
     @transaction.atomic
@@ -3540,10 +3570,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             is_overseas=RequestDocument.overseas_by_role(requester),
         )
 
+    # 공유 그룹을 지정·변경할 수 없는 문서 상태 — 결재가 끝난 문서는 함께 고칠 일이 없다.
+    _SHARED_GROUP_LOCKED_STATUSES = ('approved',)
+
+    # claude 수정 (2026-10-27): 임시저장뿐 아니라 상신 이후(진행 중·반려·중단)에도 지정·변경 가능, 결재 완료 문서는 차단
     @action(detail=True, methods=['post'], url_path='set-shared-group')
     def set_shared_group(self, request, pk=None):
-        """임시저장 공유 그룹 지정/해제 — body `{"group_id": <id> | null}`.
+        """공유 그룹 지정/해제 — body `{"group_id": <id> | null}`.
 
+        - 대상: 결재 완료(approved)를 제외한 모든 상태(임시저장·진행 중·반려·중단). 상신 후에도
+          공유가 이어지며, 공유 그룹 멤버는 상신 이후에도 의뢰자 기능을 함께 쓴다
+          (doc_permissions.acts_as_requester).
         - 인가: 의뢰자 본인 또는 MASTER 만. 공유 그룹 멤버는 문서를 수정·상신할 수는 있어도
           공유 범위 자체는 바꿀 수 없다(2026-08 정책).
         - 지정할 수 있는 그룹은 **호출자가 멤버인 그룹**뿐이다. 남의 그룹에 내 문서를
@@ -3555,6 +3592,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         user = request.user
         if getattr(user, 'role', '') != 'MASTER' and not doc_permissions.is_requester(user, document):
             return Response({'error': '공유 그룹을 지정할 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if document.status in self._SHARED_GROUP_LOCKED_STATUSES:
+            return Response({'error': '결재가 완료된 의뢰서는 공유 그룹을 변경할 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         group_id = request.data.get('group_id', None)
         if group_id in (None, ''):

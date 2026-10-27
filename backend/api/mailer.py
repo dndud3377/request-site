@@ -614,7 +614,9 @@ def _remaining_stage_individual_emails(document, max_round):
 def resolve_reject_recipients(document):
     """반려 시 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
 
-    개인 수신자 = 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거) + 아래 추가분.
+    개인 수신자 = 요청서 작성자 + 문서 공유 그룹(shared_group) 멤버 + 현재 회차에서 이미 합의했던
+    전원(중복 제거) + 아래 추가분.
+    - 공유 그룹 멤버: 의뢰자 대신 수정·재상신할 수 있으므로 반려 사실을 함께 받는다(2026-10).
     - PL 단계 반려: 아직 합의/반려하지 않은 나머지 지정 PL(pending). PL 은 결재선
       팀 브로드캐스트 대상이 아니라 지정된 당사자들만 챙긴다.
     - 그 외 단계 반려: 아직 합의를 마치지 않은 결재선의 RA(후결자)·SA(합의자) 개인 수신자
@@ -630,6 +632,11 @@ def resolve_reject_recipients(document):
     individual_emails = []
     if document.requester_email:
         individual_emails.append(document.requester_email)
+    # claude 수정 (2026-10-27): 반려 문서를 대신 수정·재상신할 수 있는 공유 그룹 멤버에게도 반려를 알린다
+    if document.shared_group_id:
+        for mail in document.shared_group.members.exclude(mail='').values_list('mail', flat=True):
+            if mail not in individual_emails:
+                individual_emails.append(mail)
     for mail in _current_round_step_emails(document, action='approved'):
         if mail not in individual_emails:
             individual_emails.append(mail)

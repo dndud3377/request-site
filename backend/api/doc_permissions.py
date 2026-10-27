@@ -80,6 +80,19 @@ def is_shared_group_member(user, document, my_group_ids=None):
     return user.member_groups.filter(pk=document.shared_group_id).exists()
 
 
+# claude 수정 (2026-10-27): 상신 이후에도 공유 그룹 멤버가 의뢰자 기능을 함께 쓰도록 판정 함수 추가
+def acts_as_requester(user, document, my_group_ids=None):
+    """의뢰자 본인 또는 문서 공유 그룹(shared_group)의 멤버인가.
+
+    상신 이후(진행 중·반려·중단)에도 공유 그룹 멤버는 의뢰자와 같은 기능(재상신·중단/재개·
+    결재 경로 변경·후결자 관리·Validation System/Partial Shot 수정)을 쓴다.
+    ⚠️ 삭제(can_delete)와 공유 그룹 변경(set_shared_group)에는 쓰지 않는다 — 의뢰자·MASTER 전용.
+    """
+    if not getattr(user, 'loginid', ''):
+        return False
+    return is_requester(user, document) or is_shared_group_member(user, document, my_group_ids)
+
+
 def can_withdraw(user, document, my_group_ids=None):
     """철회 인가: MASTER / 의뢰자 / 지정 PL / 문서 공유 그룹(shared_group)의 멤버."""
     if getattr(user, 'role', '') == 'MASTER':
@@ -151,11 +164,12 @@ def _pl_stage_open(document):
     return not any(s.round == max_round and s.agent not in ('PL', 'SA') for s in steps)
 
 
-def can_requester_resubmit(user, document):
-    """의뢰자 본인이 중단요청 없이 즉시 수정·재상신할 수 있는가.
+# claude 수정 (2026-10-27): 의뢰자 본인에 더해 공유 그룹 멤버도 허용(acts_as_requester)
+def can_requester_resubmit(user, document, my_group_ids=None):
+    """의뢰자(또는 공유 그룹 멤버)가 중단요청 없이 즉시 수정·재상신할 수 있는가.
 
     조건: 진행 중(under_review) + 아직 PL 검토(+SA 합의) 단계(R 등 다음 단계 미생성) +
-    의뢰자 본인 또는 MASTER. 다음 단계가 이미 생성된 뒤에는 request_pause 를 이용해야 한다.
+    의뢰자 본인·공유 그룹 멤버 또는 MASTER. 다음 단계가 이미 생성된 뒤에는 request_pause 를 이용해야 한다.
     """
     if document.status != 'under_review':
         return False
@@ -163,7 +177,7 @@ def can_requester_resubmit(user, document):
         return False
     if getattr(user, 'role', '') == 'MASTER':
         return True
-    return is_requester(user, document)
+    return acts_as_requester(user, document, my_group_ids)
 
 
 def can_edit(user, document, my_group_ids=None):
@@ -172,7 +186,8 @@ def can_edit(user, document, my_group_ids=None):
     - draft     : 작성자(의뢰자) / 문서 공유 그룹의 멤버 / MASTER
     - rejected  : 철회 가능 범위와 동일(의뢰자/지정PL/공유 그룹 멤버/MASTER)
     - under_review/submitted : PL 검토 단계 pending 시 그 지정 PL 또는 MASTER,
-      혹은 아직 PL 검토(+SA 합의) 단계라면 의뢰자 본인(중단요청 없는 재상신용, can_requester_resubmit 참고)
+      혹은 아직 PL 검토(+SA 합의) 단계라면 의뢰자 본인·공유 그룹 멤버(중단요청 없는 재상신용, can_requester_resubmit 참고)
+    - pause     : 의뢰자 본인·공유 그룹 멤버
     - approved  : MASTER 만
     """
     if getattr(user, 'role', '') == 'MASTER':
@@ -186,6 +201,7 @@ def can_edit(user, document, my_group_ids=None):
         return is_requester(user, document) or is_shared_group_member(user, document, my_group_ids)
     if st == 'rejected':
         return can_withdraw(user, document, my_group_ids)
+    # claude 수정 (2026-10-27): 진행 중(PL 검토 단계)·중단 분기에 공유 그룹 멤버 포함(acts_as_requester)
     if st in ('under_review', 'submitted'):
         # document.approval_steps.all() 사용 이유는 _pl_stage_open 과 동일(prefetch 캐시 재사용,
         # 목록 직렬화에서 문서마다 새 쿼리를 만들지 않기 위함 — 2026-09 성능 개선).
@@ -201,17 +217,18 @@ def can_edit(user, document, my_group_ids=None):
             return True
         if document.designated_pl and document.designated_pl.loginid == loginid:
             return True
-        if is_requester(user, document) and _pl_stage_open(document):
+        if acts_as_requester(user, document, my_group_ids) and _pl_stage_open(document):
             return True
         return False
     if st == 'pause':
-        # 중단(PAUSE) 문서는 작성자 본인만 수정 가능(수정 후 재개)
-        return is_requester(user, document)
+        # 중단(PAUSE) 문서는 작성자 본인·공유 그룹 멤버가 수정 가능(수정 후 재개)
+        return acts_as_requester(user, document, my_group_ids)
     return False
 
 
-def can_request_pause(user, document):
-    """중단 요청 인가: 진행 중(under_review) 문서의 작성자 본인 또는 MASTER.
+# claude 수정 (2026-10-27): 작성자 본인에 더해 공유 그룹 멤버도 허용(acts_as_requester)
+def can_request_pause(user, document, my_group_ids=None):
+    """중단 요청 인가: 진행 중(under_review) 문서의 작성자 본인·공유 그룹 멤버 또는 MASTER.
 
     이미 활성(요청/확정) 중단 요청이 있으면 불가.
     """
@@ -221,16 +238,17 @@ def can_request_pause(user, document):
         return False
     if getattr(user, 'role', '') == 'MASTER':
         return True
-    return is_requester(user, document)
+    return acts_as_requester(user, document, my_group_ids)
 
 
-def can_resume(user, document):
-    """재개 인가: 중단(pause) 문서의 작성자 본인 또는 MASTER."""
+# claude 수정 (2026-10-27): 작성자 본인에 더해 공유 그룹 멤버도 허용(acts_as_requester)
+def can_resume(user, document, my_group_ids=None):
+    """재개 인가: 중단(pause) 문서의 작성자 본인·공유 그룹 멤버 또는 MASTER."""
     if document.status != 'pause':
         return False
     if getattr(user, 'role', '') == 'MASTER':
         return True
-    return is_requester(user, document)
+    return acts_as_requester(user, document, my_group_ids)
 
 
 # MAP 정보 잠금을 적용하는 문서 상태 — 의뢰자·지정 PL 이 문서를 고칠 수 있는 상태 전부

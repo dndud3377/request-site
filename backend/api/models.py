@@ -625,6 +625,40 @@ class ApprovalStep(models.Model):
         return f"{self.document.title} - AGENT {self.agent}: {self.action}"
 
 
+# claude 수정 (2026-10-27): 공유 그룹 멤버가 대신 상신하는 경우 회차별 실제 상신자를 남기기 위해 추가
+class RoundSubmission(models.Model):
+    """회차별 실제 상신자 기록.
+
+    의뢰자(RequestDocument.requester)는 최초 작성자로 고정되지만, 공유 그룹 멤버가 상신·재상신할 수
+    있으므로 "그 회차를 누가 올렸는가"는 따로 남긴다. 결재 경로 탭의 '상신자' 행이 이 값을 쓰고,
+    기록이 없는 회차(이 모델 도입 전 문서·이력 바로 등록)는 의뢰자로 표시한다.
+
+    submit(1회차) · resubmit · requester-resubmit 에서 (document, round) 당 1행을 기록한다.
+    """
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.CASCADE,
+        related_name='round_submissions', verbose_name='의뢰서'
+    )
+    round = models.PositiveSmallIntegerField(verbose_name='상신 회차')
+    submitter = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='round_submissions', verbose_name='상신자'
+    )
+    # 계정이 삭제돼도 당시 상신자를 표시할 수 있도록 이름·이메일을 함께 복사해 둔다.
+    submitter_name = models.CharField(max_length=100, blank=True, verbose_name='상신자 이름')
+    submitter_email = models.EmailField(blank=True, verbose_name='상신자 이메일')
+    submitted_at = models.DateTimeField(verbose_name='상신일시')
+
+    class Meta:
+        verbose_name = '회차별 상신자'
+        verbose_name_plural = '회차별 상신자 목록'
+        ordering = ['round']
+        unique_together = ('document', 'round')
+
+    def __str__(self):
+        return f"{self.document_id} - {self.round}회차: {self.submitter_name}"
+
+
 class PauseRequest(models.Model):
     """결재 중단(PAUSE) 요청.
 
@@ -1383,13 +1417,17 @@ class ProductBarcode(models.Model):
         return f"{self.n7prod_code} / {self.n7mto_date} / {self.n7c_layer_num}"
 
 
+# claude 수정 (2026-10-27): 공유가 상신 이후에도 이어지고 반려 메일이 공유 그룹 멤버에게도 가도록 바뀐 점을 설명에 반영
 class UserGroup(models.Model):
     """나만의 그룹 — 같은 역할 사용자 묶음 (멤버만 조회·관리 가능).
 
-    쓰임새는 두 가지다. 그룹 자체가 메일 발송 대상이 되지는 **않는다**.
+    쓰임새는 두 가지다.
     - 상신 모달의 통보처: 그룹을 골라 멤버 전원을 통보처(detail.notifiers)에 한 번에 추가
-    - 임시저장 공유: 작성자가 문서마다 그룹 1개를 지정하면(RequestDocument.shared_group)
-      그 그룹 멤버만 해당 draft 를 조회·수정·상신할 수 있다
+    - 의뢰서 공유: 작성자가 문서마다 그룹 1개를 지정하면(RequestDocument.shared_group)
+      그 그룹 멤버만 해당 draft 를 조회할 수 있고, 상신 이후(진행 중·반려·중단)에도 의뢰자와 함께
+      수정·상신·재상신·중단/재개 등 의뢰자 기능을 쓴다(doc_permissions.acts_as_requester).
+      그래서 반려 메일은 공유 그룹 멤버에게도 간다(mailer.resolve_reject_recipients). 그 외 메일의
+      수신자 기준은 아니다.
     """
     name       = models.CharField(max_length=100, verbose_name='그룹 이름')
     creator    = models.ForeignKey(

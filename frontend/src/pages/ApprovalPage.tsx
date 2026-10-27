@@ -181,6 +181,13 @@ const PAUSE_WITHDRAW_FILTER = 'pause_withdraw';
 const isPausedOrWithdrawing = (d: RequestDocument): boolean =>
   d.status === 'pause' || d.withdraw_request != null;
 
+// claude 수정 (2026-10-27): 내가 속한 나만의 그룹에 공유된 문서(의뢰자 무관)를 모아 보는 '공유' 탭 추가
+// '공유' 필터 탭 키 — 공유 그룹이 내가 멤버인 그룹인 문서(서버 플래그 is_shared_with_me).
+const SHARED_FILTER = 'shared';
+
+// 공유 그룹을 지정·변경할 수 없는 문서 상태 — 서버 set_shared_group 의 _SHARED_GROUP_LOCKED_STATUSES 와 동일.
+const SHARED_GROUP_LOCKED_STATUSES: ReadonlyArray<RequestDocument['status']> = ['approved'];
+
 export default function ApprovalPage(): React.ReactElement {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -443,6 +450,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (filter === 'draft') return all.filter(d => d.status === 'draft');
     if (filter === 'rejected') return all.filter(d => d.status === 'rejected');
     if (filter === PAUSE_WITHDRAW_FILTER) return all.filter(isPausedOrWithdrawing);
+    if (filter === SHARED_FILTER) return all.filter((d) => !!d.is_shared_with_me);
     // MY 판정은 홈 '나의 의뢰 현황'과 공유한다(utils/approvalTable.isMyDocument).
     if (filter === 'my') return all.filter((d) => isMyDocument(d, currentUser));
     if (filter.startsWith('agent_')) {
@@ -462,6 +470,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (key === 'draft') return base.filter(d => d.status === 'draft').length;
     if (key === 'rejected') return base.filter(d => d.status === 'rejected').length;
     if (key === PAUSE_WITHDRAW_FILTER) return base.filter(isPausedOrWithdrawing).length;
+    if (key === SHARED_FILTER) return base.filter((d) => !!d.is_shared_with_me).length;
     if (key === 'my') return base.filter(d => isMyDocument(d, currentUser)).length;
     if (key.startsWith('agent_')) {
       const agent = key.replace('agent_', '');
@@ -746,6 +755,7 @@ export default function ApprovalPage(): React.ReactElement {
   const tabBaseLabels: { key: string; baseLabel: string }[] = [
     { key: '', baseLabel: t('approval.filter_all') },
     { key: 'my', baseLabel: t('approval.filter_my') },
+    { key: SHARED_FILTER, baseLabel: t('approval.filter_shared') },
     { key: 'agent_PL', baseLabel: t('approval.filter_agent_PL') },
     { key: 'agent_R', baseLabel: t('approval.filter_agent_R') },
     { key: 'agent_P', baseLabel: t('approval.filter_agent_P') },
@@ -889,15 +899,21 @@ export default function ApprovalPage(): React.ReactElement {
     setModalOpen(true);
   };
 
+  // claude 수정 (2026-10-27): 의뢰자 기능 노출을 서버 플래그(can_act_as_requester — 공유 그룹 멤버 포함) 기준으로 판정
+  // 서버 플래그가 없는 투어 시드 문서를 위해 의뢰자 본인 비교를 함께 둔다. MASTER 는 포함하지 않는다(버튼별로 따로 본다).
+  const actsAsRequester = (doc: RequestDocument): boolean =>
+    !!doc.can_act_as_requester
+    || (!!doc.requester_loginid && doc.requester_loginid === currentUser.username);
+
   /**
    * Validation System 수정 창.
-   * 상신자 본인(또는 MASTER)이고, 진행 중이며, MASK(E) 검토가 끝나기 전까지 열려 있다.
+   * 상신자 본인·공유 그룹 멤버(또는 MASTER)이고, 진행 중이며, MASK(E) 검토가 끝나기 전까지 열려 있다.
    * 백엔드 _stage_reviewers_complete 와 같은 규칙 — E 담당자 합의 + EV 중 1명 합의로 닫힌다.
    */
   const canEditValidationSystem = (doc: RequestDocument | null): boolean => {
     if (!doc || isTourMode) return false;
     if (doc.status !== 'under_review' && doc.status !== 'pause') return false;
-    const isOwner = currentUser.role === 'MASTER' || doc.requester_loginid === currentUser.username;
+    const isOwner = currentUser.role === 'MASTER' || actsAsRequester(doc);
     if (!isOwner) return false;
     const steps = doc.approval_steps ?? [];
     const maxRound = steps.reduce((m, st) => Math.max(m, st.round), 1);
@@ -912,14 +928,14 @@ export default function ApprovalPage(): React.ReactElement {
 
   /**
    * Partial Shot 수정 창.
-   * 상신자 본인(또는 MASTER)이고, 진행 중이며, O 단계 검토가 끝나기 전까지 열려 있다.
+   * 상신자 본인·공유 그룹 멤버(또는 MASTER)이고, 진행 중이며, O 단계 검토가 끝나기 전까지 열려 있다.
    * O 는 검토자(OV)가 없어(백엔드 `_REVIEW_AGENT_OF`에 'O' 없음) O 담당자 본인 합의 시점에
    * 곧바로 닫힌다 — `canEditValidationSystem`의 EV 루프가 여기엔 없다.
    */
   const canEditPartialShot = (doc: RequestDocument | null): boolean => {
     if (!doc || isTourMode) return false;
     if (doc.status !== 'under_review' && doc.status !== 'pause') return false;
-    const isOwner = currentUser.role === 'MASTER' || doc.requester_loginid === currentUser.username;
+    const isOwner = currentUser.role === 'MASTER' || actsAsRequester(doc);
     if (!isOwner) return false;
     const steps = doc.approval_steps ?? [];
     const maxRound = steps.reduce((m, st) => Math.max(m, st.round), 1);
@@ -1501,10 +1517,11 @@ export default function ApprovalPage(): React.ReactElement {
   const [myGroups, setMyGroups] = useState<UserGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
 
-  // 공유 그룹을 지정할 수 있는 사람 = 의뢰자 본인 또는 MASTER, 대상은 임시저장 문서뿐.
+  // claude 수정 (2026-10-27): 임시저장뿐 아니라 상신 이후(진행 중·반려·중단)에도 지정·변경 가능 — 결재 완료만 제외
+  // 공유 그룹을 지정할 수 있는 사람 = 의뢰자 본인 또는 MASTER.
   // (공유 그룹 멤버는 수정·상신은 되어도 공유 범위는 못 바꾼다 — 서버 인가와 동일 규칙)
   const canSetSharedGroup = (doc: RequestDocument): boolean =>
-    doc.status === 'draft' &&
+    !SHARED_GROUP_LOCKED_STATUSES.includes(doc.status) &&
     (currentUser.role === 'MASTER' || doc.requester_loginid === currentUser.username);
 
   const handleShareClick = (doc: RequestDocument) => {
@@ -2506,16 +2523,17 @@ export default function ApprovalPage(): React.ReactElement {
             && reviewerSelectedIds.length === 0
             && existingReviewerLoginids.length === 0;
 
-          // 결재 경로 변경 가능 여부: 작성자 본인(loginid 기준) 또는 MASTER, 진행 중(under_review)인 문서.
+          // claude 수정 (2026-10-27): 작성자 본인에 더해 공유 그룹 멤버도 결재 경로 변경·중단 요청 취소·후결자 관리 가능
+          // 결재 경로 변경 가능 여부: 작성자 본인·공유 그룹 멤버 또는 MASTER, 진행 중(under_review)인 문서.
           // 항목별(PL·합의자 단계 종료, 합의 완료자 잠금 등)·철회/중단 차단은 모달·서버가 판정한다.
           const canChangeRoute = !!selected && !progressFrozen && selected.status === 'under_review'
-            && (isMaster || (!!selected.requester_loginid && selected.requester_loginid === currentUser.username));
+            && (isMaster || actsAsRequester(selected));
 
           // 중단(PAUSE) 관련 버튼 노출 계산
           const pr = selected?.pause_request;
           const isPauseRequester = selected
             ? (selected.requester_loginid
-                ? selected.requester_loginid === currentUser.username
+                ? actsAsRequester(selected)
                 : selected.requester_name === currentUser.name)
             : false;
           // 확인 가능한 대상 단계(요청됨 상태 + target pending + 미확인 + 확인권한)

@@ -173,6 +173,10 @@
 | S-14 | MASTER + draft | `direct-approve/` | 결재선 없이 `approved`, pending step 0 | `views.py:525` | — |
 
 > 추가 인가 규칙(문서 보충분): 상신·재상신은 **작성자 / 문서 공유 그룹 멤버 / MASTER** 만 가능(`_can_edit`).
+> (2026-10-27) 상신 이후의 의뢰자 기능(즉시 재상신 `requester-resubmit/`, 중단 요청·취소·재개, 중단 문서 수정,
+> 결재 경로 변경, 후결자 관리, Validation System·Partial Shot 수정)도 **공유 그룹 멤버**에게 허용된다
+> (`doc_permissions.acts_as_requester`, `docs/APPROVAL.md` §9-2). 삭제·공유 그룹 변경은 작성자 / MASTER 만.
+> 회차마다 실제 상신자가 `RoundSubmission` 에 기록된다(§9-5).
 
 ### 3.2 그룹 L — PL 검토 · SA 합의 (12건)
 

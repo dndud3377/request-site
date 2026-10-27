@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory,
+    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory, RoundSubmission,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -42,6 +42,8 @@ class DocPermFieldsMixin(serializers.Serializer):
     can_request_pause = serializers.SerializerMethodField()
     can_resume = serializers.SerializerMethodField()
     can_requester_resubmit = serializers.SerializerMethodField()
+    can_act_as_requester = serializers.SerializerMethodField()
+    is_shared_with_me = serializers.SerializerMethodField()
     pause_request = serializers.SerializerMethodField()
     withdraw_request = serializers.SerializerMethodField()
     post_approver_fixed_loginid = serializers.SerializerMethodField()
@@ -75,17 +77,31 @@ class DocPermFieldsMixin(serializers.Serializer):
         user = self._perm_user()
         return bool(user and doc_permissions.can_withdraw(user, obj, self._my_group_ids()))
 
+    # claude 수정 (2026-10-27): 공유 그룹 멤버 판정에 미리 계산한 그룹 id 를 넘겨 문서마다 쿼리하지 않게 함
     def get_can_request_pause(self, obj):
         user = self._perm_user()
-        return bool(user and doc_permissions.can_request_pause(user, obj))
+        return bool(user and doc_permissions.can_request_pause(user, obj, self._my_group_ids()))
 
     def get_can_resume(self, obj):
         user = self._perm_user()
-        return bool(user and doc_permissions.can_resume(user, obj))
+        return bool(user and doc_permissions.can_resume(user, obj, self._my_group_ids()))
 
     def get_can_requester_resubmit(self, obj):
         user = self._perm_user()
-        return bool(user and doc_permissions.can_requester_resubmit(user, obj))
+        return bool(user and doc_permissions.can_requester_resubmit(user, obj, self._my_group_ids()))
+
+    # claude 수정 (2026-10-27): 상신 이후 공유 그룹 멤버도 의뢰자 기능을 쓰도록 프론트 노출 기준 플래그 추가
+    def get_can_act_as_requester(self, obj):
+        """의뢰자 본인 또는 공유 그룹 멤버인가 — 결재 현황의 의뢰자 기능 버튼
+        (Validation System/Partial Shot 수정, 결재 경로 변경, 중단 요청 취소, 후결자 관리) 노출 기준.
+        MASTER 는 포함하지 않는다 — 버튼마다 기존 MASTER 허용 여부를 프론트가 그대로 따로 본다.
+        상태별 세부 조건도 프론트·서버가 각각 따로 본다."""
+        user = self._perm_user()
+        return bool(user and doc_permissions.acts_as_requester(user, obj, self._my_group_ids()))
+
+    def get_is_shared_with_me(self, obj):
+        """문서의 공유 그룹이 내가 멤버인 그룹인가 — 결재 현황·홈의 '공유' 탭 판정용(의뢰자 무관)."""
+        return bool(obj.shared_group_id and obj.shared_group_id in self._my_group_ids())
 
     # claude 수정 (2026-10-19): 잠금 조건 변경(지난 회차 포함 R/고정 후결자 합의 이력)에 맞춰 설명 갱신
     def get_map_info_locked(self, obj):
@@ -283,8 +299,22 @@ class DocumentReviewItemSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'reviewers', 'is_done', 'created_at']
 
 
+# claude 수정 (2026-10-27): 결재 경로 탭에 회차별 실제 상신자를 보여주기 위해 추가
+class RoundSubmissionSerializer(serializers.ModelSerializer):
+    submitter_loginid = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoundSubmission
+        fields = ['round', 'submitter_loginid', 'submitter_name', 'submitter_email', 'submitted_at']
+        read_only_fields = fields
+
+    def get_submitter_loginid(self, obj):
+        return obj.submitter.loginid if obj.submitter_id else None
+
+
 class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
+    round_submitters = RoundSubmissionSerializer(source='round_submissions', many=True, read_only=True)
     review_items = DocumentReviewItemSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
     notifier_mails = serializers.SerializerMethodField()
@@ -302,7 +332,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'review_items', 'layer_drift_detected',
             'layer_drift_auto_rejected', 'is_overseas', 'sales_agreer_none_reasons',
-            'requires_sales_agreer',
+            'requires_sales_agreer', 'can_act_as_requester', 'is_shared_with_me', 'round_submitters',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
         # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
@@ -363,6 +393,7 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
             'post_approver_fixed_loginid', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'my_pending_review_items', 'my_mark_category',
             'layer_drift_detected', 'layer_drift_auto_rejected', 'is_overseas',
+            'can_act_as_requester', 'is_shared_with_me',
         ]
         read_only_fields = ['shared_group', 'mail_completion_matched', 'layer_drift_detected',
                             'is_overseas']

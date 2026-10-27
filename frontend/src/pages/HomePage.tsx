@@ -23,7 +23,9 @@ import {
 const MY_REQUESTS_LIMIT = 5;
 
 // 나의 의뢰 현황 필터 — 전체 / 상신함(내가 작성) / 결재함(내가 의뢰자 아닌 담당자로 들어간 문서)
-type HomeRequestsFilter = 'all' | 'submitted' | 'approval';
+// claude 수정 (2026-10-27): 내가 속한 나만의 그룹에 공유된 문서를 보는 '공유' 필터 추가
+type HomeRequestsFilter = 'all' | 'submitted' | 'approval' | 'shared';
+const HOME_REQUESTS_FILTERS: HomeRequestsFilter[] = ['all', 'submitted', 'approval', 'shared'];
 
 const CATEGORY_ICON: Record<ReleaseCategory, string> = {
   new: '🆕',
@@ -496,6 +498,8 @@ export default function HomePage(): React.ReactElement {
   const hasNoRole = currentUser.role === 'NONE';
 
   const [myDocs, setMyDocs] = useState<RequestDocument[]>([]);
+  // 공유 필터 대상 — MY 판정(isMyDocument)과 별개로, 공유 그룹이 내 그룹인 미완료 문서 전체(의뢰자 무관)
+  const [sharedDocs, setSharedDocs] = useState<RequestDocument[]>([]);
   const [homeFilter, setHomeFilter] = useState<HomeRequestsFilter>('all');
   const [allNotices, setAllNotices] = useState<AdminNotice[]>([]);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
@@ -560,15 +564,15 @@ export default function HomePage(): React.ReactElement {
   // 완료(approved)건은 빼고, 결재현황 기본 정렬과 같은 '상신 오래된 순'으로 정렬한 전체 목록을 담아 두고,
   // 화면에 보여줄 최대 5건은 선택된 필터(전체/상신함/결재함)에 맞춰 아래 recent 에서 자른다.
   useEffect(() => {
-    if (hasNoRole) { setMyDocs([]); return; }
+    if (hasNoRole) { setMyDocs([]); setSharedDocs([]); return; }
     documentsAPI.list({}).then((r) => {
       const data = r.data;
       const all: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
-      setMyDocs(
-        all
-          .filter((d) => d.status !== 'approved' && isMyDocument(d, currentUser))
-          .sort((a, b) => submittedSortKey(a).localeCompare(submittedSortKey(b)))
-      );
+      const sorted = all
+        .filter((d) => d.status !== 'approved')
+        .sort((a, b) => submittedSortKey(a).localeCompare(submittedSortKey(b)));
+      setMyDocs(sorted.filter((d) => isMyDocument(d, currentUser)));
+      setSharedDocs(sorted.filter((d) => !!d.is_shared_with_me));
     }).catch(() => {});
   }, [hasNoRole, currentUser]);
 
@@ -579,16 +583,19 @@ export default function HomePage(): React.ReactElement {
       ? myDocs
       : homeFilter === 'submitted'
         ? myDocs.filter((d) => isSubmittedByMe(d, currentUser))
-        : myDocs.filter((d) => isApprovalTargetForMe(d, currentUser));
+        : homeFilter === 'shared'
+          ? sharedDocs
+          : myDocs.filter((d) => isApprovalTargetForMe(d, currentUser));
     return filtered.slice(0, MY_REQUESTS_LIMIT);
-  }, [myDocs, homeFilter, currentUser]);
+  }, [myDocs, sharedDocs, homeFilter, currentUser]);
 
   // 필터 탭 옆에 보여줄 건수 — 결재현황 필터 탭과 같은 표기 방식(0건이면 숫자를 붙이지 않는다).
   const homeFilterCounts: Record<HomeRequestsFilter, number> = useMemo(() => ({
     all: myDocs.length,
     submitted: myDocs.filter((d) => isSubmittedByMe(d, currentUser)).length,
     approval: myDocs.filter((d) => isApprovalTargetForMe(d, currentUser)).length,
-  }), [myDocs, currentUser]);
+    shared: sharedDocs.length,
+  }), [myDocs, sharedDocs, currentUser]);
 
   const handleCloseModal = useCallback((hideToday: boolean) => {
     const maxUpdatedAt = allNotices.reduce((max, n) => (n.updated_at > max ? n.updated_at : max), '');
@@ -710,7 +717,7 @@ export default function HomePage(): React.ReactElement {
               <h2 className="section-title">{t('home.my_requests_title')}</h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div className="filter-tabs">
-                  {(['all', 'submitted', 'approval'] as HomeRequestsFilter[]).map((key) => (
+                  {HOME_REQUESTS_FILTERS.map((key) => (
                     <button
                       key={key}
                       type="button"
