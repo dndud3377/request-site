@@ -3115,6 +3115,8 @@ export default function RequestPage(): React.ReactElement {
             setJayerRows(rows => rows.map(r => (r.id === target.id
               ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, true) }
               : r)));
+            // claude 수정 (2026-10-27): O→J 전파로 J 행 ST 가 X 가 되면 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다
+            if (field === 'st' && consensusValue === ST_X) unmapIfMapped([target.id]);
           }
         }
       }
