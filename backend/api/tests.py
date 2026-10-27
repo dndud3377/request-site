@@ -28,6 +28,19 @@ from .models import (
 )
 
 
+# claude 수정 (2026-10-27): 테스트를 .env 의 MAIL_REDIRECT_TO 와 분리 — dev 컨테이너(.env.dev 에 항상 설정)에서
+# 수신자 검증 테스트 68건이 리다이렉트 주소로 바뀌어 깨졌다. 리다이렉트를 검증하는 테스트는 각자 override 한다.
+_MAIL_REDIRECT_OFF = override_settings(MAIL_REDIRECT_TO='')
+
+
+def setUpModule():
+    _MAIL_REDIRECT_OFF.enable()
+
+
+def tearDownModule():
+    _MAIL_REDIRECT_OFF.disable()
+
+
 def _make_document(requester):
     return RequestDocument.objects.create(
         title='테스트 의뢰서',
