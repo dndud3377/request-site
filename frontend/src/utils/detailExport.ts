@@ -5,7 +5,7 @@ import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
 import {
   VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
-  isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault,
+  isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
 } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText } from '../pages/RequestPage/helpers';
 
@@ -532,7 +532,10 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
       { label: t('request.map_opt_hpkglabelheight'), fieldKey: 'hpkglabelheight' },
     ];
     const active = mapOptionDefs.filter((o) => detail[o.fieldKey] === '적용');
-    blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? withLockedMark(active.map((o) => o.label).join(', ')) : t('request.value_none') });
+    // claude 수정 (2026-10-27): 잠금 항목 경고는 CLONE/EXISTING 에서 잠기는 옵션이 적용됐을 때만 — TSV 등 예외 옵션만 적용이면 경고 없음
+    const activeText = active.map((o) => o.label).join(', ');
+    const hasLockedOption = active.some((o) => isMapOptionLockedWhenRegistered(o.fieldKey));
+    blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? (hasLockedOption ? withLockedMark(activeText) : activeText) : t('request.value_none') });
   }
 
   addInfoSheet(wb, t, sheetName, blocks);
