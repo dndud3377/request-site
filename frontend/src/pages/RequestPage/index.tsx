@@ -3004,13 +3004,31 @@ export default function RequestPage(): React.ReactElement {
   const isBulkStOrNocTarget = (r: { st: string; new_or_copy: string }, field: 'st' | 'new_or_copy'): boolean =>
     !isNocSpecial(r.new_or_copy) && (field !== 'new_or_copy' || !isRowInactive(r.st));
 
+  // claude 수정 (2026-10-27): ST 일괄 버튼('전체 O'·'전체 X'·'초기화')도 반대편 표로 전파 — '전체 X' 는 클릭 후 참여행이 0개라,
+  // 반대편 행이 이미 X 면 '전체 O'·'초기화'는 대상에서 빠져 전파되지 않던 문제. ST 일괄 버튼은 이 표에서 값이 바뀐 행
+  // (기등록/layer삭제/미진행 제외 전체)의 layerid 로, 반대편에서도 ST X 행까지 포함해 그 layerid 행이 정확히 1개일 때만 전파한다.
+  // 요청 기준 일괄 버튼은 종전대로 클릭 후 참여행 기준 → 반대편 참여행 1개일 때만 전파한다.
+  const bulkCrossTargetIds = (
+    field: 'st' | 'new_or_copy',
+    updatedRows: { layerid: string; st: string; new_or_copy: string }[],
+    otherRows: { id: string; layerid: string; st: string; new_or_copy: string }[],
+  ): Set<string> => {
+    const sourceRows = field === 'st'
+      ? updatedRows.filter((r) => isBulkStOrNocTarget(r, 'st'))
+      : updatedRows.filter((r) => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy));
+    const layerids = new Set(sourceRows.map((r) => r.layerid?.trim()).filter((l): l is string => !!l));
+    const soleTarget = (layerid: string) => {
+      if (field !== 'st') return soleParticipantByLayerid(otherRows, layerid);
+      const candidates = otherRows.filter((r) => r.layerid?.trim() === layerid && isBulkStOrNocTarget(r, 'st'));
+      return candidates.length === 1 ? candidates[0] : undefined;
+    };
+    return new Set(Array.from(layerids).map((l) => soleTarget(l)?.id).filter((id): id is string => !!id));
+  };
+
   // 참여행(활성 && 기등록/layer삭제/미진행 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, O 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
-    // layerids는 "이 클릭이 반영된 뒤"의 참여 상태 기준으로 계산한다 — 클릭 이전 상태로 계산하면
-    // st 필드 버튼 자체가 참여 여부를 뒤집는 클릭인 경우(예: 전체 X 다음 전체 O) 자기모순으로 빈 집합이
-    // 되어 반대편 표로 전파되지 않는다.
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP·ITEM_ID 를
     // 비우고 bb 매핑을 푼다(ST X 에는 신규/차용을 쓸 수 없으므로 X 용 요청 기준을 다시 고르게 한다).
     const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
@@ -3019,10 +3037,10 @@ export default function RequestPage(): React.ReactElement {
       : r);
     setJayerRows(updatedRows);
     unmapIfMapped(clearedIds);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
+    // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않는다.
+    const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows);
     if (targetIds.size > 0) {
-      setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, false) } : r));
+      setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) } : r));
     }
   };
 
@@ -3030,8 +3048,7 @@ export default function RequestPage(): React.ReactElement {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
     setJayerRows(updatedRows);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
+    const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
 
@@ -3132,10 +3149,12 @@ export default function RequestPage(): React.ReactElement {
       ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) }
       : r);
     setOayerRows(updatedRows);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
+    // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않고,
+    // 전파로 X 가 된 J 행은 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다.
+    const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows);
     if (targetIds.size > 0) {
-      setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, true) } : r));
+      setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, true)) } : r));
+      if (field === 'st' && value === ST_X) unmapIfMapped(Array.from(targetIds));
     }
   };
 
@@ -3143,8 +3162,7 @@ export default function RequestPage(): React.ReactElement {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
     setOayerRows(updatedRows);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
+    const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
 
