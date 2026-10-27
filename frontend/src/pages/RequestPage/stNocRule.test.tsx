@@ -6,7 +6,7 @@
  * - 기등록·layer삭제·미진행을 고르면 ST 가 X 가 된다(기존 동작).
  * - 타이핑·붙여넣기·예전 문서로 들어온 불일치 조합은 STEP3/4 '다음'과 상신에서 막는다.
  * - '전체 X' 는 한 행씩 X 로 바꿀 때와 같이 요청 기준·제품 이름·STEP·ITEM_ID 를 비우고 bb 매핑을 푼다.
- * claude 수정 (2026-10-27): O→J 전파로 J 가 X 가 되면 bb 매핑을 푼다.
+ * claude 수정 (2026-10-27): O→J 전파로 J 가 X 가 되면 bb 매핑을 푼다 / ST 일괄 버튼(전체 O·전체 X·초기화)은 반대편 표에도 전파한다.
  */
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
@@ -397,7 +397,7 @@ describe('J/O 표 ST ↔ 요청 기준 짝 규칙', () => {
   });
 });
 
-// claude 수정 (2026-10-27): O→J ST 'X' 단건 전파 시 J 행 bb 매핑 해제 검증 추가
+// claude 수정 (2026-10-27): O→J ST 'X' 단건 전파 시 bb 매핑 해제 + ST 일괄 버튼의 반대편 표 전파 검증 추가
 describe("J↔O ST 'X' 전파와 bb 매핑", () => {
   beforeEach(() => {
     mockState.doc = docWithRows(J_ROWS_FILLED);
@@ -406,6 +406,15 @@ describe("J↔O ST 'X' 전파와 bb 매핑", () => {
     localStorage.clear();
   });
 
+  const oToolbar = (c: HTMLElement) => c.querySelector(O_TABLE)!.previousElementSibling as HTMLElement;
+  const jToolbar = (c: HTMLElement) => c.querySelector(J_TABLE)!.previousElementSibling as HTMLElement;
+  /** 툴바에는 ST·요청 기준 '초기화' 가 둘 다 있다 — ST 그룹(첫 그룹)의 버튼을 누른다 */
+  const clickStBulk = async (toolbar: HTMLElement, label: string) => {
+    const stGroup = toolbar.querySelector('.wizard-table-toolbar-group') as HTMLElement;
+    await act(async () => { buttonWith(stGroup, label)!.click(); });
+    await flush(3);
+  };
+
   it('O 행 하나의 ST 를 X 로 바꾸면 같은 layerid 의 J 행도 X 가 되고 그 J 행의 bb 매핑이 풀린다', async () => {
     const { container } = await renderAtStep(O_TABLE);
     await setValue(stInputOf(rowOf(container, O_TABLE, 'SP01')), 'X');
@@ -413,5 +422,55 @@ describe("J↔O ST 'X' 전파와 bb 매핑", () => {
     expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' });
     expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O' });
     expect(saved.bbRows.map((b) => b.sourceJayerRowId)).toEqual(['j2']);
+  });
+
+  it("J '전체 X' 는 같은 layerid 의 O 행에도 X 를 전파하고 요청 기준·제품 이름·STEP 를 비운다", async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    await clickStBulk(jToolbar(container), i18n.t('request.btn_all_x'));
+    const saved = await saveDraftAndCapture();
+    ['o1', 'o2'].forEach((id) => {
+      expect(saved.oayerRows.find((r) => r.id === id)).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '' });
+    });
+    expect(saved.bbRows).toEqual([]);
+  });
+
+  it("O '전체 X' 는 같은 layerid 의 J 행에도 X 를 전파하고 그 J 행들의 bb 매핑을 푼다", async () => {
+    const { container } = await renderAtStep(O_TABLE);
+    await clickStBulk(oToolbar(container), i18n.t('request.btn_all_x'));
+    const saved = await saveDraftAndCapture();
+    ['j1', 'j2'].forEach((id) => {
+      expect(saved.jayerRows.find((r) => r.id === id)).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' });
+    });
+    expect(saved.bbRows).toEqual([]);
+  });
+
+  it("J '전체 X' → '전체 O' 를 누르면 같은 layerid 의 O 행도 O 로 돌아온다(2026-09-14 시나리오 2)", async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    await clickStBulk(jToolbar(container), i18n.t('request.btn_all_x'));
+    await clickStBulk(jToolbar(container), i18n.t('request.btn_all_o'));
+    const saved = await saveDraftAndCapture();
+    ['o1', 'o2'].forEach((id) => {
+      expect(saved.oayerRows.find((r) => r.id === id)).toMatchObject({ st: 'O' });
+    });
+  });
+
+  it("O '전체 X' → '전체 O' 를 누르면 같은 layerid 의 J 행도 O 로 돌아온다", async () => {
+    const { container } = await renderAtStep(O_TABLE);
+    await clickStBulk(oToolbar(container), i18n.t('request.btn_all_x'));
+    await clickStBulk(oToolbar(container), i18n.t('request.btn_all_o'));
+    const saved = await saveDraftAndCapture();
+    ['j1', 'j2'].forEach((id) => {
+      expect(saved.jayerRows.find((r) => r.id === id)).toMatchObject({ st: 'O' });
+    });
+  });
+
+  it("O '전체 X' → ST '초기화' 를 누르면 같은 layerid 의 J 행 ST 도 빈 값이 된다", async () => {
+    const { container } = await renderAtStep(O_TABLE);
+    await clickStBulk(oToolbar(container), i18n.t('request.btn_all_x'));
+    await clickStBulk(oToolbar(container), i18n.t('request.btn_reset'));
+    const saved = await saveDraftAndCapture();
+    ['j1', 'j2'].forEach((id) => {
+      expect(saved.jayerRows.find((r) => r.id === id)).toMatchObject({ st: '' });
+    });
   });
 });
