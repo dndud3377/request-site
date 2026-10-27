@@ -3998,7 +3998,8 @@ export default function RequestPage(): React.ReactElement {
       setOayerFilterSets(updated);
       localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
     }
-    addToast(`필터 "${label}"이 삭제되었습니다.`, 'info');
+    // claude 수정 (2026-10-27): 하드코딩 한글 토스트를 i18n 키로 교체(규칙 G)
+    addToast(t('request.filter_delete_toast', { label }), 'info');
   };
 
   const handleFilterAllDeleteConfirm = () => {
@@ -4010,7 +4011,8 @@ export default function RequestPage(): React.ReactElement {
       setOayerFilterSets([]);
       localStorage.removeItem('oayerFilterSets');
     }
-    addToast('모든 필터가 삭제되었습니다.', 'info');
+    // claude 수정 (2026-10-27): 하드코딩 한글 토스트를 i18n 키로 교체(규칙 G)
+    addToast(t('request.filter_all_delete_toast'), 'info');
   };
 
   const handleSortBbRows = () => {
@@ -4543,8 +4545,9 @@ export default function RequestPage(): React.ReactElement {
       } // end !isMapRegistered
     }
 
-    // step 3(J-layer)·step 4 O-layer 행은 그 외에는 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
-    // 예외: new_or_copy='차용' 행은 product_name·step 필수(아래). 상신 시 step 5의
+    // claude 수정 (2026-10-27): 실제 검증(addStNocError 가 모든 행의 ST·요청 기준을 필수로 검사)과 맞지 않던 주석을 정정
+    // step 3(J-layer)·step 4(O-layer) 행 검증: 모든 행의 ST·요청 기준은 필수이고 서로 짝이 맞아야 한다(addStNocError).
+    // 그 밖의 칸은 new_or_copy='차용' 행만 product_name·step(J 는 item_id 도) 필수다(아래). 상신 시 step 5의
     // "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로도 간접 검증된다.
 
     if (currentStep === 3) {
@@ -4576,9 +4579,10 @@ export default function RequestPage(): React.ReactElement {
     }
 
     if (currentStep === 4 && !isMapOnlyScope) {
+      // claude 수정 (2026-10-27): 하드코딩 한글 오류 문구를 i18n 키로 교체(규칙 G)
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
-        errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
+        errorMessages.push(t('request.partial_shot_required'));
       }
       addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
       const oViolations = findNocBorrowViolations(oayerRows);
@@ -4596,9 +4600,10 @@ export default function RequestPage(): React.ReactElement {
       const unmappedJayerRows = jayerRows.filter(
         (row) => !isRowInactive(row.st) && !isNocSpecial(row.new_or_copy) && row.process_id && !mappedJayerRowIds.has(row.id)
       );
+      // claude 수정 (2026-10-27): 하드코딩 한글 오류 문구를 i18n 키로 교체(규칙 G)
       if (unmappedJayerRows.length > 0) {
-        newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
-        errorMessages.push('모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.');
+        newErrors['jayer_mapping'] = t('request.jayer_mapping_required');
+        errorMessages.push(t('request.jayer_mapping_required'));
       }
       // 초안 복원 등으로 step 3/4 검증을 건너뛰었을 경우를 대비한 최종 안전망
       const jViolations = findNocBorrowViolations(jayerRows);
