@@ -6,6 +6,7 @@
  * - 기등록·layer삭제·미진행을 고르면 ST 가 X 가 된다(기존 동작).
  * - 타이핑·붙여넣기·예전 문서로 들어온 불일치 조합은 STEP3/4 '다음'과 상신에서 막는다.
  * - '전체 X' 는 한 행씩 X 로 바꿀 때와 같이 요청 기준·제품 이름·STEP·ITEM_ID 를 비우고 bb 매핑을 푼다.
+ * claude 수정 (2026-10-27): O→J 전파로 J 가 X 가 되면 bb 매핑을 푼다.
  */
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
@@ -393,5 +394,24 @@ describe('J/O 표 ST ↔ 요청 기준 짝 규칙', () => {
     saved.oayerRows.filter((r) => r.id !== 'o3').forEach((r) => {
       expect(r).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '' });
     });
+  });
+});
+
+// claude 수정 (2026-10-27): O→J ST 'X' 단건 전파 시 J 행 bb 매핑 해제 검증 추가
+describe("J↔O ST 'X' 전파와 bb 매핑", () => {
+  beforeEach(() => {
+    mockState.doc = docWithRows(J_ROWS_FILLED);
+    mockState.optionsFor = optionsFor;
+    mockState.captured = null;
+    localStorage.clear();
+  });
+
+  it('O 행 하나의 ST 를 X 로 바꾸면 같은 layerid 의 J 행도 X 가 되고 그 J 행의 bb 매핑이 풀린다', async () => {
+    const { container } = await renderAtStep(O_TABLE);
+    await setValue(stInputOf(rowOf(container, O_TABLE, 'SP01')), 'X');
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' });
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O' });
+    expect(saved.bbRows.map((b) => b.sourceJayerRowId)).toEqual(['j2']);
   });
 });
