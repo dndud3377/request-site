@@ -645,7 +645,9 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **담당자(R)**: PL 전원 합의 후 생성되는 기존 R 단계(RFG 팀 1명). **지정하기**로 지정.
 - **검토자(RV)**: 지정하기에서 담당자와 **함께** 지정(선택 — '검토자 없음' 가능, RFG 팀). 지정 시 `RV` 단계 생성(`assign_step` 확장, `reviewer_loginid`). 담당자 합의 **후에만** 처리 가능(`approve_step` 순차 가드).
 - **전환(병렬)**: 담당자(검토자 있으면 검토자까지) 합의 시 `_advance_to_parallel` → **P(4영업일)·O(6영업일)·E(6영업일, 병렬, `plel` 시에만) + 후결자(RA, 6영업일 병렬)** 생성.
-  - **Only MAP**: P/O/E 없이 **후결자(RA)만** 생성 → 후결자 전원 합의 시 최종 승인. (후결자 미설정 시 즉시 승인)
+  - **Only MAP**: P/O/E 없이 **후결자(RA)만** 생성 → 후결자 전원 합의 시 최종 승인. (후결자가 0명이면 R/RV 합의가 **400** 으로 막힌다 — 2026-10-27 B-04 수정. 예전엔 즉시 승인)
+  - **고정 후결자 필수(2026-10-27)**: 고정 후결자는 모든 의뢰서(MAP 삭제·ADI CD 변경 제외)에 반드시 들어가므로
+    `POST_APPROVER_LOGINID` 가 비어 있으면 backend 가 기동하지 않는다(`config/settings/development.py`·`production.py`).
 - **후결자(RA)**: **고정 1명**(`settings.POST_APPROVER_LOGINID`, `.env`, RFG 팀) + **추가 후결자**(상신 모달에서 PL 중 지정, `detail.post_approvers`). 추가 후결자가 필수인 대상은
   `RequestDocument.requires_post_approver()`(C가문 `only_prodc=YES` **또는** 기타 목적 `연구소 제품`, 2026-08 확장) 로 판정하며 최소 1명 필수(`_validate_post_approvers`). 고정은 PL 후보 목록에 안 뜸(TE_R 이라 자동 제외).
   - **연구소 제품(2026-08)**: 요청 목적이 `Only MAP` 일 때만 선택 가능한 기타 목적이다(그 외 목적에서는 버튼 잠금).

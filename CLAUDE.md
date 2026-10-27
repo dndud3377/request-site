@@ -115,6 +115,11 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
      (Pillow 10.3.0 은 3.13 wheel 이 없어 빌드 실패, pandas 2.2.2 도 3.13 wheel 없음, sqlalchemy 2.0.30 은 import 시 TypeError — 2026-10-14 확인).
      운영 `requirements.txt` 는 바꾸지 않는다. 상세는 `docs/E2E_TEST_AND_BUGS.md` §1.4.1.
    - 상세·배경은 `docs/E2E_TEST_AND_BUGS.md` **§1.4.1** 참조(이 절차의 원본).
+   - **개발환경 메일·후결자 원칙 (2026-10-27)**: 개발 DB 는 운영 복사본이라 실사용자 메일 주소가 들어 있다.
+     `.env.dev` 의 `MAIL_REDIRECT_TO` 는 **절대 비우거나 끄자고 제안하지 않는다** — 비면 dev backend 가 기동하지 않는다.
+     고정 후결자(`POST_APPROVER_LOGINID`)도 필수다(dev·운영 모두 비면 미기동, MAP 삭제·ADI CD 변경만 RA 없음).
+     자동 테스트는 `api/tests.py` 의 `setUpModule` 로 `MAIL_REDIRECT_TO` 와 분리돼 있으므로, 테스트가 깨지면
+     env 를 바꾸지 말고 테스트를 env 와 분리한다.
 
    **1-2. 버그를 발견하면 "재현 테스트"로 사실을 고정한다 [필수].**
    코드 정독만으로 단정하지 말고, 가능한 것은 **실제로 돌려서 출력으로 증명**한다.

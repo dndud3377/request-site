@@ -28,6 +28,19 @@ from .models import (
 )
 
 
+# claude 수정 (2026-10-27): 테스트를 .env 의 MAIL_REDIRECT_TO 와 분리 — dev 컨테이너(.env.dev 에 항상 설정)에서
+# 수신자 검증 테스트 68건이 리다이렉트 주소로 바뀌어 깨졌다. 리다이렉트를 검증하는 테스트는 각자 override 한다.
+_MAIL_REDIRECT_OFF = override_settings(MAIL_REDIRECT_TO='')
+
+
+def setUpModule():
+    _MAIL_REDIRECT_OFF.enable()
+
+
+def tearDownModule():
+    _MAIL_REDIRECT_OFF.disable()
+
+
 def _make_document(requester):
     return RequestDocument.objects.create(
         title='테스트 의뢰서',
@@ -1453,8 +1466,11 @@ class PEStageReviewerFlowTest(TestCase):
             'plel 이 있으면 E 는 병렬 단계로 생성되어야 한다',
         )
 
+    # claude 수정 (2026-10-27): 후결자 필수(B-04) — Only MAP 은 후결자 0명이면 R 합의가 막히므로 고정 후결자를 둔다
+    @override_settings(POST_APPROVER_LOGINID='onlymap_fixedpa')
     def test_e_step_not_created_for_only_map(self):
         """Only MAP 문서에는 여전히 E 단계가 생기지 않는다."""
+        UserProfile.objects.create(loginid='onlymap_fixedpa', mail='onlymap_fixedpa@c.com', role='TE_R')
         doc = RequestDocument.objects.create(
             title='onlymap', requester=self.requester, requester_name='요청자',
             requester_email='req@c.com', requester_department='dept',
@@ -11114,3 +11130,67 @@ class RefreshAfterAccessExpiryTest(TestCase):
             r = self._post(refresh=refresh)
             self.assertEqual(r.status_code, 401, label)
             self.assertNotIn('approval_system_token', r.cookies, label)
+
+
+# claude 수정 (2026-10-27): 후결자 필수(B-04) — Only MAP 은 후결자 0명이면 R 합의로 즉시 approved 되던 것을 400 으로 막는다
+class OnlyMapPostApproverRequiredTest(TestCase):
+    """Only MAP 은 후결자(RA)가 유일한 종단 경로다 — 후결자가 0명이면 R 합의를 막고,
+    고정 후결자가 있으면 R 합의 후 RA 단계가 생긴다."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='om_req', mail='om_req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='om_pl', mail='om_pl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='om_r', mail='om_r@c.com', role='TE_R')
+        self.fixed_pa = UserProfile.objects.create(loginid='om_fixedpa', mail='om_fixedpa@c.com', role='TE_R')
+        self.doc = RequestDocument.objects.create(
+            title='onlymap', requester=self.requester, requester_name='요청자',
+            requester_email='om_req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=json.dumps(
+                {'detail': {'request_purpose': RequestDocument.ONLY_MAP_PURPOSE}, 'jayerRows': []}
+            ),
+        )
+
+    def _approve_r(self):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{self.doc.id}/submit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{self.doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{self.doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        return self.client.post(f'/api/documents/{self.doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+
+    @override_settings(POST_APPROVER_LOGINID='')
+    def test_r_approve_blocked_without_post_approver(self):
+        r = self._approve_r()
+        self.assertEqual(r.status_code, 400, r.content)
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.status, 'under_review')
+        self.assertEqual(ApprovalStep.objects.get(document=self.doc, agent='R').action, 'pending')
+        self.assertFalse(ApprovalStep.objects.filter(document=self.doc, agent='RA').exists())
+
+    @override_settings(POST_APPROVER_LOGINID='om_missing_user')
+    def test_r_approve_blocked_when_fixed_post_approver_account_missing(self):
+        r = self._approve_r()
+        self.assertEqual(r.status_code, 400, r.content)
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.status, 'under_review')
+
+    @override_settings(POST_APPROVER_LOGINID='om_fixedpa')
+    def test_r_approve_creates_fixed_post_approver_step(self):
+        r = self._approve_r()
+        self.assertEqual(r.status_code, 200, r.content)
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.status, 'under_review')
+        ra = ApprovalStep.objects.get(document=self.doc, agent='RA')
+        self.assertEqual(ra.assignee, self.fixed_pa)
+        self.assertEqual(ra.action, 'pending')
