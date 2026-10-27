@@ -1759,7 +1759,12 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
     - 직전 회차 대비 변경 강조(빨간 테두리·'이력 확인')는 종전 규칙 그대로다 — 저장값 칩은 NEW 와 같이 강조되고,
       회색 "없음" 칩(`PlaceholderChip`)에는 강조가 없다(이번 범위 아님, 사용자 결정). '모든 이력 확인' 창도 종전대로 저장값을 보여준다.
     - 정상 작성 문서(잠긴 칸 전부 기본값)는 화면·export 모두 변경 전과 같다. NEW·MAP 삭제·ADI CD 변경 문서도 영향 없다.
-    - 테스트: `components/PagedDetailView.lockedDefault.test.tsx` (상세 보기 5건 + export 2건).
+    - **X표시 표시 통일(같은 날 후속)**: 기본값일 때 X표시만 저장값 '없음'을 검은 굵은 글씨로 보여 다른 잠금 항목과 모양이 달랐다.
+      이제 CLONE/EXISTING 이고 기본값이면 다른 잠금 항목과 같은 회색 "없음"(`fontSize 0.85rem` + `--text-muted` span)으로 보인다.
+      `mshot_change` 가 빈 값이어도 CLONE/EXISTING 이면 카드를 그려 회색 "없음"을 보인다(이전에는 카드 자체가 사라졌다).
+      NEW 문서의 X표시는 잠금 항목이 아니므로 종전대로 저장값 글씨다. 잠금 항목 6개(지도 편차·예외 구역·X표시·C가문 세부·3번·Map Option)의
+      기본값 표시는 이제 모두 같은 회색 "없음" span 이다.
+    - 테스트: `components/PagedDetailView.lockedDefault.test.tsx` (상세 보기 7건 + export 2건).
 
 ---
 
