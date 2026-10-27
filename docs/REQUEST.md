@@ -288,6 +288,23 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-10-27 — O→J ST 'X' 전파 시 J 행 bb 매핑이 풀리지 않던 문제)
+
+- **증상(재현 테스트로 확인)**: STEP4 O-ayer 행 하나의 ST 를 X 로 바꾸면 같은 layerid 의 J-ayer 행도 X 로 바뀌고 요청 기준·제품 이름·STEP·ID 가
+  비워지지만, 그 J 행에 매핑된 bb 행은 결과 표에 그대로 남아 저장·상신됐다. J 에서 직접 X 로 바꾸면 매핑이 풀린다(`handleJayerChange`).
+  J 행이 검증 대상에서 빠지므로 상신이 막히지는 않았다.
+- **결정(사용자)**: J 의 ST 가 X 가 되면 어느 경로든 bb 매핑이 풀리는 것이 맞다.
+- **수정**: `index.tsx` `handleOayerChange` 의 O→J st/new_or_copy 전파에서 대상 J 행의 ST 가 X 가 되면 `unmapIfMapped([target.id])` 호출.
+  bb 행이 지워지고 그 J 행은 STEP5 '원본 데이터 목록'에 다시 나타난다.
+- **테스트**: `RequestPage/stNocRule.test.tsx` 에 1건 추가 — O 행 SP01 의 ST 를 X → 저장 payload 에서 j1 이 X·필드 초기화, bb 행은 j2 것만 남는다.
+  수정 전 실패 / 수정 후 통과 확인. `npx tsc --noEmit` 에러 0건, 프론트 전체 46 suites / 626건 통과. 결재 흐름 무관 — `approval_cases` 러너 대상 아님.
+- **수동 검증 시나리오**
+  1. [`/request` → STEP1~3 입력, STEP5 에서 J 행 하나(layerid A)를 bb 에 매핑 → `이전` 으로 STEP4 O-ayer 'OVL Layer 목록'] →
+     [layerid A 인 O 행의 ST 칸에서 `X` 선택] → [`이전` 으로 STEP3: 같은 layerid 의 J 행이 ST X·회색, 요청 기준·제품 이름·STEP·ID 가 비어 있다] →
+     [`다음` 두 번으로 STEP5: 'bb 정보 (적용 결과)' 표에서 그 J 행의 bb 행이 사라져 있다. 그 J 행은 ST X 라 원본 목록에도 나오지 않는다.]
+  2. (대조) [STEP3 에서 같은 J 행의 ST 를 직접 X] → [STEP5 결과가 1번과 같다.]
+  - 실패 신호: STEP5 결과 표에 ST X 인 J 행의 bb 행이 남아 있다.
+
 ### i18n 정리 (2026-10-27 — J/O-ayer·bb 관련 하드코딩 문구 → i18n 키 / STEP3·4 검증 주석 정정)
 
 - **의도(사용자)**: J-ayer·O-ayer·bb 표 기능 점검 중 발견한 규칙 G 위반(하드코딩 한글)과 실제 동작과 어긋난 주석을 고친다.
