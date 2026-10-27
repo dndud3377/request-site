@@ -24,6 +24,12 @@ const PROCESS = '조합법A';
 const PROCESS_ID = 'PROC_X1';
 const GATE_HINT = 'MAP 목적을 먼저 선택하면 나머지 항목을 입력할 수 있습니다.';
 const MAP_OPTION_4 = '4번';
+/** CLONE/EXISTING 에서 잠기는 Map Option 9개(TSV=4번 제외)의 라벨 키 */
+const LOCKED_MAP_OPTION_KEYS = [
+  'request.map_opt_photo_backside', 'request.map_opt_eds_backside', 'request.map_opt_rf', 'request.map_opt_fullchip',
+  'request.map_opt_split', 'request.map_opt_st', 'request.map_opt_ecc', 'request.map_opt_labelsideshot',
+  'request.map_opt_hpkglabelheight',
+] as const;
 const FINAL_GDS_PLACEHOLDER = 'GDS version 입력';
 const FINAL_ADD_BTN = '+ 추가';
 
@@ -261,5 +267,25 @@ describe('STEP2 MAP 목적 게이트', () => {
     await flushEffects();
     expect(hasHint(container)).toBe(false);
     expect(isLocked(container.querySelector('select[name="only_prodc"]') as Element)).toBe(false);
+  });
+
+  // claude 수정 (2026-10-27): TSV 적용 여부는 원본 MAP 과 무관하게 의뢰마다 다르므로 CLONE/EXISTING 에서도 4번(TSV)만 고를 수 있다
+  it.each(['CLONE', 'EXISTING'])('%s 에서도 Map Option 4번(TSV)만 고를 수 있고 나머지 9개는 잠긴다 — 켠 값이 저장된다', async (mt) => {
+    const { container } = await renderNewDoc();
+    await toMapStep(container, '라인C', 'CCCCCCCC-0001');
+    await act(async () => { buttonExact(container, mt).click(); });
+    await flushEffects();
+
+    expect(isLocked(buttonExact(container, MAP_OPTION_4))).toBe(false);
+    LOCKED_MAP_OPTION_KEYS.forEach((key) => expect(isLocked(buttonExact(container, i18n.t(key)))).toBe(true));
+
+    await act(async () => { buttonExact(container, MAP_OPTION_4).click(); });
+    await flushEffects();
+    expect(buttonExact(container, MAP_OPTION_4).className).toContain('active');
+
+    const detail = await saveDraftAndCaptureDetail();
+    expect(detail.map_type).toBe(mt);
+    expect(detail.tsv).toBe('적용');
+    expect(detail.ecc).toBe('미적용');
   });
 });
