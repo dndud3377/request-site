@@ -4813,6 +4813,9 @@ def photostep_changes(request):
 
 # claude 수정 (2026-10-23): 사용자 삭제 실패 응답 고정 문구 — 예외 원문 대신 (B-77)
 USER_DELETE_FAILED_MESSAGE = '사용자 삭제 중 오류가 발생했습니다.'
+# claude 수정 (2026-10-27): 그룹 생성자 이관 시 새 생성자에게 같은 이름의 그룹이 있으면 붙일 접미사 (B-31)
+GROUP_TRANSFER_NAME_SUFFIX = ' ({n})'
+GROUP_TRANSFER_NAME_SUFFIX_START = 2
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -5065,8 +5068,32 @@ class UserViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save()
     
-    # claude 수정 (2026-10-23): 예외 원문(DB 접속 정보 등)을 응답·화면 토스트에 싣지 않는다(B-77).
-    # get_object() 를 try 밖으로 빼 없는 사용자는 400 이 아니라 DRF 표준 404, 삭제 실패만 400 + 고정 문구(원문은 로그)
+    # claude 수정 (2026-10-27): 그룹 생성자 계정 삭제 시 그룹이 CASCADE 로 통째로 사라지던 문제(B-31) —
+    # 삭제 직전에 이 사용자가 만든 그룹을 남은 멤버 중 무작위 1명에게 넘긴다
+    def _transfer_created_groups(self, user):
+        """user 가 만든 '나만의 그룹'을 남은 멤버 중 무작위 1명에게 넘긴다.
+
+        - 새 생성자에게 같은 이름의 그룹이 이미 있으면(unique_together) 이름 뒤에 ' (2)', ' (3)'… 를 붙인다.
+        - 남은 멤버가 없는 그룹은 건드리지 않는다 — user 삭제 시 CASCADE 로 함께 삭제된다.
+        """
+        max_len = UserGroup._meta.get_field('name').max_length
+        for group in UserGroup.objects.filter(creator=user):
+            successor = group.members.exclude(pk=user.pk).order_by('?').first()
+            if successor is None:
+                continue
+            name = group.name
+            n = GROUP_TRANSFER_NAME_SUFFIX_START
+            while UserGroup.objects.filter(creator=successor, name=name).exists():
+                suffix = GROUP_TRANSFER_NAME_SUFFIX.format(n=n)
+                name = group.name[:max_len - len(suffix)] + suffix
+                n += 1
+            group.creator = successor
+            group.name = name
+            group.save(update_fields=['creator', 'name'])
+
+    # claude 수정 (2026-10-27): 삭제 전에 생성한 그룹을 남은 멤버에게 넘기고, 이관·삭제를 한 트랜잭션으로 묶는다(B-31).
+    # (2026-10-23, B-77) 예외 원문(DB 접속 정보 등)을 응답·화면 토스트에 싣지 않는다 — get_object() 를 try 밖으로 빼
+    # 없는 사용자는 400 이 아니라 DRF 표준 404, 삭제 실패만 400 + 고정 문구(원문은 로그)
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()
         caller = request.user
@@ -5084,7 +5111,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
         user_id = user.id
         try:
-            user.delete()
+            with transaction.atomic():
+                self._transfer_created_groups(user)
+                user.delete()
         except Exception:
             logging.getLogger(__name__).exception('[USER_DELETE] 사용자 삭제 실패: id=%s', user_id)
             return Response({'error': USER_DELETE_FAILED_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
