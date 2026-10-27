@@ -319,6 +319,26 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   5. (옛 문서) [이전에 '+ 행 추가'로 만든 행이 든 임시저장 문서를 다시 열기] → [기대: 그 행이 그대로 보이고 모든 칸을 편집할 수 있지만 `✕` 는 없다. 상신은 막히지 않는다.]
   - 실패 신호: 표 오른쪽에 빈 열이 남아 있거나, 헤더와 본문 열이 한 칸씩 어긋나 보이면 `colgroup`/`th` 정리가 잘못된 것이다.
 
+### 기능 변경 (2026-10-27 — STEP2 MAP 정보: CLONE/EXISTING 에서도 Map Option TSV(4번)는 고를 수 있다)
+
+- **배경(사용자 결정)**: TSV 적용 여부는 원본 MAP 과 상관없이 의뢰마다 다르게 정해질 수 있다. 그런데 CLONE/EXISTING 은
+  Map Option 10개가 모두 잠겨(`isMapRegistered`) TSV 를 고를 수 없었다.
+- **변경**: `RequestPage/constants.ts` 에 `MAP_OPTIONS_EDITABLE_WHEN_REGISTERED`(= `['tsv']`)와 `isMapOptionLockedWhenRegistered()` 를 두고,
+  `StepMap.tsx` Map Option 버튼 잠금을 `isMapRegistered && isMapOptionLockedWhenRegistered(옵션)` 으로 바꿨다.
+  CLONE/EXISTING 에서 4번(TSV)만 열리고 나머지 9개는 그대로 잠긴다. EDS Backside ↔ 3번 YES 잠금 규칙은 그대로다.
+  - 다른 옵션도 풀어야 하면 이 목록에 필드 이름을 추가하면 된다(작성 화면·상세 보기·export 가 함께 따른다).
+- **연동**: 상세 보기·export 의 잠금 항목 경고(`docs/APPROVAL.md` 2026-10-27 항목)는 이 목록의 옵션을 잠금 항목으로 보지 않는다 —
+  TSV 만 적용이면 경고 없이 `4번`, 잠기는 옵션(예: 9번)이 함께 적용이면 종전대로 `⚠ 잠긴 항목에 값 있음`.
+- **변경 없음**: MAP 목적을 바꾸면 TSV 도 다른 MAP 정보와 함께 `미적용`으로 초기화된다(`mapInfoDefaults`). R(+RV)/고정 후결자 합의 이력이
+  생기면 TSV 도 다른 MAP 정보와 함께 잠긴다(`MAP_INFO_FIELDS`, 백엔드 무변경). 가이드 데모(`guideDemos/Step2MapTypeDemo.tsx`)의
+  EXISTING 시연은 기능 영역 전체를 흐리게 보여주는 그대로다(실제 동작 무관 — 이번 범위에서 제외, 사용자 결정).
+- **테스트**: `mapTypeGate.test.tsx` (CLONE·EXISTING 에서 4번만 열림·저장값 `tsv='적용'`) /
+  `PagedDetailView.lockedDefault.test.tsx` (TSV 만 적용 → 경고 없음, TSV+9번 → 경고 — 화면·export).
+- **수동 검증**:
+  1. [`/request` → STEP1 입력 → STEP2 MAP 목적 `CLONE`(또는 `EXISTING`)] → [기대: Map Option 중 `4번`만 눌리고 나머지 9개는 회색.]
+  2. [`4번` 클릭 → 임시저장 또는 상신 → 결재 현황에서 그 문서 → `MAP 정보` 탭] → [기대: Map Option 카드에 `4번` 태그만 있고 ⚠ 경고 없음.]
+  - 실패 신호: CLONE 에서 4번이 회색이거나, 4번만 적용한 문서에 `⚠ 잠긴 항목에 값 있음` 이 보인다.
+
 ### 기능 변경 (2026-10-22 — STEP2 MAP 정보: MAP 목적을 먼저 골라야 나머지 항목을 입력할 수 있다)
 
 - **배경(재현 확인)**: MAP 목적(`map_type`)을 고르기 전에도 아래 항목이 전부 열려 있었다. 그 상태에서 지도 편차·예외 구역·X표시·Map Option 을
