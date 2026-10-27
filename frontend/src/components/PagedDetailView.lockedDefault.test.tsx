@@ -14,8 +14,15 @@ import { RequestDocument } from '../types';
 const MAP_TAB_IDX = 1;
 const WARNING = i18n.t('approval.locked_value_warning');
 const NONE = i18n.t('request.value_none');
-/** 잠금 항목 6개 — 잔존값 문서에서는 모두 경고가 붙어야 한다 */
-const LOCKED_ITEM_COUNT = 6;
+/** 잠금 항목 6개의 라벨 키 — 정상 문서에서는 모두 회색 "없음", 잔존값 문서에서는 모두 경고가 붙어야 한다 */
+const LOCKED_LABEL_KEYS = [
+  'request.map', 'request.ea_change', 'request.mshot_change_status',
+  'approval.prodc_detail', 'request.map_opt_inter', 'request.map_option_title',
+];
+const LOCKED_ITEM_COUNT = LOCKED_LABEL_KEYS.length;
+/** 회색 "없음"(PlaceholderChip 등) span 의 인라인 글자 크기 — 회색 "없음"은 모두 { fontSize: 0.85rem, color: text-muted } span 으로 그린다.
+ *  jsdom 은 var() 색상 값을 버리므로 글자 크기로 그 span 인지 판별한다(저장값 텍스트는 span 없이 그려진다). */
+const MUTED_NONE_STYLE = 'font-size: 0.85rem';
 
 /** CLONE 이 정상 작성됐을 때 저장되는 값(잠긴 칸은 전부 기본값) — C가문 Yes 라 예외 구역 기본값은 500 */
 const cloneDefaults = {
@@ -105,6 +112,21 @@ describe('상세 MAP 정보 탭 — CLONE/EXISTING 잠금 항목 표시', () => 
     expect(itemBox('approval.prodc_detail').textContent).toContain(NONE);
     expect(itemBox('request.map_opt_inter').textContent).toContain(NONE);
     expect(itemBox('request.map_option_title').textContent).toContain(NONE);
+  });
+
+  it('정상 작성이면 잠금 항목 6개 모두 같은 회색 "없음"(같은 muted span)으로 통일돼 보인다', () => {
+    render(<Harness doc={makeDoc(cloneDefaults)} />);
+    LOCKED_LABEL_KEYS.forEach((key) => {
+      const none = Array.from(itemBox(key).querySelectorAll('span')).find((s) => s.textContent === NONE);
+      expect(none?.getAttribute('style')).toContain(MUTED_NONE_STYLE);
+    });
+  });
+
+  it('X표시 값이 비어 있어도(기본값) 카드가 그려지고 회색 "없음"이다', () => {
+    render(<Harness doc={makeDoc({ ...cloneDefaults, mshot_change: '' })} />);
+    const none = Array.from(itemBox('request.mshot_change_status').querySelectorAll('span')).find((s) => s.textContent === NONE);
+    expect(none?.getAttribute('style')).toContain(MUTED_NONE_STYLE);
+    expect(screen.queryAllByText(WARNING)).toHaveLength(0);
   });
 
   it('잠긴 칸에 기본값이 아닌 값이 있으면 저장값을 보여주고 6개 항목 모두에 경고가 붙는다', () => {
