@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, LayerFilterSet, ColorFilterSet } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, LayerFilterSet, ColorFilterSet, RoundSubmitter } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -3408,9 +3408,17 @@ type Page = { label: string; content: React.ReactNode; key?: string };
     } catch { return []; }
   })();
 
-  // 각 회차 상신 날짜: round=1은 1회차 PL 단계의 created_at, 이후 회차는 해당 R 단계의 created_at.
+  // claude 수정 (2026-10-27): 공유 그룹 멤버가 대신 상신한 회차를 구분하도록 회차별 실제 상신자(round_submitters) 사용
+  // 회차별 실제 상신자 기록. 기록이 없거나 이름이 비어 있으면(이 기능 이전 회차·비인증 상신) 의뢰자로 표시한다.
+  const getRoundSubmitter = (round: number): RoundSubmitter | null =>
+    (doc.round_submitters ?? []).find((s) => s.round === round && !!s.submitter_name) ?? null;
+
+  // 각 회차 상신 날짜: 회차별 상신 기록(round_submitters)이 있으면 그 상신 시각을 쓴다.
+  // 기록이 없는 회차는 종전대로 round=1은 1회차 PL 단계의 created_at, 이후 회차는 해당 R 단계의 created_at.
   // doc.submitted_at은 재상신마다 최신 회차 값으로 갱신되므로 회차별 이력에는 쓰지 않는다.
   const getRoundSubmittedAt = (round: number): string | null => {
+    const recorded = (doc.round_submitters ?? []).find((s) => s.round === round);
+    if (recorded?.submitted_at) return recorded.submitted_at;
     if (round === 1) {
       const plStep = allSteps.find((s) => s.agent === 'PL' && (s.round ?? 1) === 1);
       return plStep?.created_at ?? null;
@@ -3727,11 +3735,14 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             {rounds.map((r) => {
               const isCurrent = r === maxRound;
               const date = formatDateTimeShort(getRoundSubmittedAt(r));
+              const submitter = getRoundSubmitter(r);
+              const submitterName = submitter ? submitter.submitter_name : doc.requester_name;
+              const submitterEmail = submitter ? submitter.submitter_email : doc.requester_email;
               return (
                 <div key={r} style={historyItemStyle(isCurrent)}>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{t('request.round_ordinal', { r })}</span>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{doc.requester_name}</span>
-                  {doc.requester_email && <span style={emailStyle}>{doc.requester_email}</span>}
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{submitterName}</span>
+                  {submitterEmail && <span style={emailStyle}>{submitterEmail}</span>}
                   {date && date !== '-' && (
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{date}</span>
                   )}
