@@ -464,16 +464,12 @@ def r14(ctx):
     return f'doc={doc_id} RA={len(ra)}명'
 
 
-@case('R-15', 'R', 'Only MAP + 후결자 0명 → R 합의 즉시 approved')
+# claude 수정 (2026-10-27): 후결자 필수(B-04) — 후결자 0명이면 즉시 approved 가 아니라 R 합의가 400 으로 막힌다.
+# 고정 후결자는 필수 설정이라(비면 backend 미기동) 개발환경 HTTP 로는 이 상황을 만들 수 없다.
+@case('R-15', 'R', 'Only MAP + 후결자 0명 → R 합의 400 (B-04)')
 def r15(ctx):
-    ctx.need(PL=2, TE_R=1)
-    doc_id, author, pls = F.to_parallel(ctx, request_purpose=P.ONLY_MAP_PURPOSE)
-    doc = F.fetch(author, doc_id)
-    if F.steps(doc, agent='RA'):
-        raise CaseSkip('고정 후결자(POST_APPROVER_LOGINID)가 설정돼 있어 "후결자 0명" 상황을 '
-                       '만들 수 없다 — 설정을 비운 환경에서만 확인 가능하다.')
-    F.expect_doc_status(author, doc_id, 'approved')
-    return f'doc={doc_id}'
+    raise CaseSkip('고정 후결자(POST_APPROVER_LOGINID)는 필수 설정이라(비면 backend 미기동) "후결자 0명" 상황을 '
+                   'HTTP 로 만들 수 없다 — api.tests.OnlyMapPostApproverRequiredTest 에서 검증한다.')
 
 
 # claude 수정 (2026-10-15): 2026-09 R 분리(APPROVAL.md Case O) 기준으로 기대값 갱신 — PL 합의 직후엔 P·J·O 만, R 은 그 셋이 끝난 뒤
