@@ -11,7 +11,7 @@ import { buildAdiCdTargets } from '../utils/approvalTable';
 import AdiCdTargetsCell from './AdiCdTargetsCell';
 import {
   VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, isOverlayOnlyPurpose, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
-  isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault,
+  isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
 } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
@@ -2987,8 +2987,14 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                         {t('request.history_check_btn')}
                       </button>
                     )}
-                    {/* claude 수정 (2026-10-27): CLONE/EXISTING 인데 적용된 Map Option 이 있으면(기본값 전부 미적용이 아님) 잠금 항목 경고 */}
-                    <div style={fieldLabel}>{t('request.map_option_title')}{isMapRegisteredDetail && activeOptions.length > 0 && lockedValueMark}</div>
+                    {/* claude 수정 (2026-10-27): CLONE/EXISTING 인데 잠기는 Map Option 이 적용돼 있으면 잠금 항목 경고
+                        — TSV 처럼 CLONE/EXISTING 에서도 고를 수 있는 옵션(MAP_OPTIONS_EDITABLE_WHEN_REGISTERED)은 정상 입력이라 제외 */}
+                    <div style={fieldLabel}>
+                      {t('request.map_option_title')}
+                      {isMapRegisteredDetail
+                        && activeOptions.some((o) => isMapOptionLockedWhenRegistered(o.fieldKey as keyof DetailFormState))
+                        && lockedValueMark}
+                    </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
                       {activeOptions.length > 0
                         ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
