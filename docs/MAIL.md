@@ -479,7 +479,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | `reject-withdraw` (철회 거부) | ✅ | 철회 요청자 + 작성자에게 `withdraw_rejected`(1통, 분리 대상 아님) |
 | `cancel-withdraw` (철회 요청 취소) | ✅ | 확인 대상 단계 담당자(개인 1통)/팀(팀별 각 1통)에게 `withdraw_cancelled` |
 | `delete` (삭제) | ✅ | `document_deleted`: withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients`) 재사용(개인 1통 + 진행된 팀별 각 1통). 삭제 전 적재 + `@transaction.atomic` 추가(2026-09) |
-| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
+| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자가 0명이면 2026-10-27부터 R 합의 자체가 400 으로 막혀 메일도 없다 — B-04). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
 | `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(위와 동일) |
 | `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나면 **TE_O·TE_J 에게 notify_p_completed 발송**(2026-09부터 TE_O·TE_J 각각 별도 메일 2통, 순서대로 발송. 2026-10-19부터 'Overlay만 변경' 단독 문서는 J 가 없어 TE_O 1통만). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨). **(2026-08) 이 시점의 J 생성·J 도착 메일은 R 합의 시점으로 이동**했다 |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
@@ -520,7 +520,7 @@ resume 과 목적이 겹친다는 판단으로 계속 무메일).
 | `DXHUB_MAIL_URL` | DXHUB 호스트 (뒤에 `/api/public/gateway/mail/send` 자동 부착) | `https://dxhub-host` |
 | `DXHUB_API_KEY` | `X-API-Key` 헤더 값 | `(비밀)` |
 | `FRONTEND_URL` | 메일 본문 링크용 웹 주소 (`/approval` 자동 부착) | dev `http://localhost:10011` / 운영 `https://...:10010` |
-| `MAIL_REDIRECT_TO` | 설정 시 모든 메일을 이 주소로 강제 | dev `wooyoung7.oh@company.com` / 운영 공란 |
+| `MAIL_REDIRECT_TO` | 설정 시 모든 메일을 이 주소로 강제. **dev 필수** — 개발 DB 는 운영 복사본(실사용자 주소)이라 비면 dev backend 가 기동하지 않는다(2026-10-27) | dev `wooyoung7.oh@company.com` / 운영 공란 |
 | `RTDB_SYNC_ALERT_MAIL` | RTDB·DCQ 동기화 실패 알림(§9) 공통 수신자, 콤마 구분. 비우면 둘 다 미발송 | `a@company.com,b@company.com` |
 
 > ⚠️ `DXHUB_API_KEY` 등 비밀값은 **실제 `.env` 파일에만** 넣는다(코드/예시 파일 하드코딩 금지).
@@ -556,6 +556,9 @@ docker exec -it <backend_container> python manage.py process_mail_queue
 ```
 
 - `MAIL_REDIRECT_TO=wooyoung7.oh@company.com` 설정 시 모든 메일이 해당 주소로 발송된다.
+- **(2026-10-27) dev 는 `MAIL_REDIRECT_TO` 가 비어 있으면 기동하지 않는다**(`config/settings/development.py`,
+  `ImproperlyConfigured`). 개발 DB 는 `db-sync` 로 운영 DB 를 복사해 실사용자 메일 주소가 들어 있으므로,
+  리다이렉트 없이 결재를 진행하면 테스트할 때마다 실제 사용자에게 메일이 가기 때문이다. 운영(`production.py`)은 검사하지 않는다.
 - 적재/발송 상태는 Django Admin 의 **결재 알림 메일** 목록에서 확인할 수 있다.
 
 > 스케줄러 동작 정리: SKIP_SCHEDULER=true → DCQ 동기화 OFF / 메일 발송 ON.
@@ -571,6 +574,10 @@ docker exec -it <backend_container> python manage.py test api.tests
 
 `api/tests.py` — 수신자 해석(단계별/리다이렉트), 큐 적재, 발송 성공·재시도·중복방지
 (외부 호출 mock).
+
+- (2026-10-27) 테스트는 `.env` 의 `MAIL_REDIRECT_TO` 와 **분리**돼 있다 — `api/tests.py` 의 `setUpModule` 이 테스트 중에는
+  `MAIL_REDIRECT_TO=''` 로 고정한다. 그래서 dev 컨테이너(`.env.dev` 에 항상 설정)에서 돌려도 수신자 검증 테스트가 깨지지 않는다
+  (수정 전: 61 failures / 7 errors). 리다이렉트 자체를 검증하는 테스트는 각자 `@override_settings(MAIL_REDIRECT_TO=...)` 를 쓴다.
 
 ---
 
