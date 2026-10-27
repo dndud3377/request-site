@@ -97,9 +97,14 @@ docker ps --format "{{.Names}}"        # backend/frontend 컨테이너명 확인
 ```bash
 grep -E "POST_APPROVER_LOGINID|MAIL_REDIRECT_TO|DXHUB_MAIL_URL|EXTERNAL_API_KEY" .env
 ```
-- `POST_APPROVER_LOGINID` : **RFG 팀(TE_R) loginid**. 비어 있으면 후결자(RA)가 아예 안 생기고,
-  **Only MAP 의뢰서는 R 합의 즉시 `approved`** 로 끝나 후결 단계가 통째로 사라진다(재현✅ B-04).
-- `MAIL_REDIRECT_TO` : 설정 시 **모든 결재 메일이 이 주소 하나로** 간다(검증용). 운영 반영 전 반드시 비운다.
+- `POST_APPROVER_LOGINID` : **[필수] RFG 팀(TE_R) 고정 후결자 loginid**. 고정 후결자는 모든 의뢰서(MAP 삭제·ADI CD 변경 제외)에
+  반드시 들어가므로 **비어 있으면 backend 가 기동하지 않는다**(dev `development.py` / 운영 `production.py`, 2026-10-27).
+  값은 있는데 그 계정이 DB 에 없으면 Only MAP 의 R 합의가 **400** 으로 막힌다(B-04 수정).
+- `MAIL_REDIRECT_TO` : 설정 시 **모든 결재 메일이 이 주소 하나로** 간다. **개발환경은 필수** — 개발 DB 는 운영 복사본(db-sync)이라
+  실사용자 메일 주소가 들어 있어, 비면 테스트할 때마다 실제 사용자에게 메일이 간다. 그래서 **dev 는 비어 있으면 기동하지 않는다**
+  (2026-10-27). 운영은 반드시 비운다.
+- 자동 테스트(`manage.py test api`)는 이 두 값과 **분리**돼 있다 — `api/tests.py` 의 `setUpModule` 이 테스트 중 `MAIL_REDIRECT_TO=''` 로
+  고정하므로 `.env.dev` 값이 살아 있어도 수신자 검증 테스트가 깨지지 않는다(2026-10-27, 수정 전에는 61 failures / 7 errors).
 
 ### 1.4 자동 테스트 실행
 
@@ -714,7 +719,7 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 - 조작: **제거** → 이미 합의(approved)한 RA 는 제거 불가 / 고정 후결자 제거 불가
 - 조작: Only MAP 문서에서 마지막 RA 제거 → ✅ 400(최종 승인 경로가 사라지므로)
 - 조작: C가문에서 (고정 제외) 추가 후결자를 0명으로 → ✅ 400
-- ❌ `.env` 미설정 시 → §5 **B-04**
+- ✅ `.env POST_APPROVER_LOGINID` 미설정 시 backend 가 기동하지 않는다 / 계정이 없으면 Only MAP R 합의 400 → §5 **B-04**(2026-10-27 수정)
 
 ---
 
@@ -1129,7 +1134,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 2. ✅ **P/O/E 가 생성되지 않고** 후결자(RA)만 pending
 3. RA 가 반려 → ✅ `rejected`. 반려 메일은 **R·RV·RA 라인에만**(P/O/E/J 팀 제외)
 4. 재상신 → ✅ 새 회차에서 동일 경로
-5. ⚠️ `.env POST_APPROVER_LOGINID` 가 비어 있으면 3번이 아니라 **R 합의 순간 `approved`** — 결재가 통째로 생략된다(B-04)
+5. ✅ 고정 후결자 계정이 없어 후결자가 0명이면 1번의 R 합의가 **400** 으로 막힌다(B-04, 2026-10-27 수정 — 설정이 비면 애초에 기동하지 않음)
 
 ### X-3 J행 비활성화 × BB 매핑 × 상신 × 재편집 (2026-08-18 수정 반영)
 1. J행 10개 전부 매핑 → 그중 3개를 **비활성화**
@@ -1328,7 +1333,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: DRF 뷰로 옮겨 `IsAuthenticatedInProd` 적용 + 확장자 화이트리스트(`png/jpg/jpeg/gif/webp`) +
   실제 바이트 검사(Pillow `Image.open`) + `/media/` 응답에 `Content-Disposition: attachment`·`X-Content-Type-Options: nosniff`.
 
-### 🔴 B-04 `POST_APPROVER_LOGINID` 미설정 시 Only MAP 결재가 통째로 생략된다 **재현✅**
+### ✅ B-04 `POST_APPROVER_LOGINID` 미설정 시 Only MAP 결재가 통째로 생략된다 **재현✅** → ✅**수정완료(2026-10-27)**
 - 위치: `views.py:1185-1230`(`_advance_to_parallel`, 즉시 승인 분기 `:1198-1200`), `mailer.py:215`(`post_approver_users`)
 - 내용: Only MAP 문서는 P/O/E/J 가 없어 **후결자(RA)가 유일한 종단 경로**다. 그런데 후결자가 0명이면
   `if not post_users: return 'approved'` 로 **R 합의 즉시 최종 승인**된다.
@@ -1343,6 +1348,17 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   **애초에 0명인 경우는 막지 않아** 정책이 앞뒤가 안 맞는다.
 - 권고: 기동 시 `settings.POST_APPROVER_LOGINID` 실존 검증(`manage.py check` 또는 앱 ready) + 미설정 시
   `_advance_to_parallel` 에서 승인 대신 **에러/경고 로그 + 관리자 알림**.
+
+> **[2026-10-27 수정 완료]** — 이 프로젝트는 고정 후결자가 항상 들어가므로 후결자 0명은 **설정 오류**로 본다.
+> - **기동 차단**: `POST_APPROVER_LOGINID` 가 비어 있으면 `config/settings/development.py`·`production.py` 가
+>   `ImproperlyConfigured` 로 기동을 막는다(`base.py` 는 검사하지 않아 sqlite 테스트 레시피 §1.4.1 은 그대로 돈다).
+> - **R 합의 차단**: `approve_step` 이 Only MAP 의 R/RV 합의 **쓰기 전에** 후결자 0명(값은 있지만 계정 없음 등)이면
+>   **400** `후결자가 없어 합의할 수 없습니다. 고정 후결자 설정을 확인해 주세요.` + error 로그를 남긴다. R step 은 pending 그대로다.
+> - `_advance_to_parallel` 의 즉시 승인 분기(`return 'approved'`)는 `ImproperlyConfigured` 예외(롤백)로 바꿨다.
+> - 범위: **Only MAP** 만. MAP 삭제·ADI CD 변경은 설계상 RA 가 없다. 일반 경로는 후결자 0명이어도 P/J/O/E 로 종단하므로
+>   이번 범위에서 막지 않았다(설정 비면 기동 차단으로 대부분 걸러진다).
+> - 회귀 테스트: `OnlyMapPostApproverRequiredTest`(0명 400 / 계정 없음 400 / 고정 후결자 있으면 RA 생성).
+>   수정 전 코드로 돌리면 `200 != 400 … "status":"approved"` 로 실패해 B-04 를 재현한다.
 
 ---
 
@@ -2576,6 +2592,8 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 모두 **잘못돼도 기동은 성공**하고 런타임에 조용히 다른 동작을 한다.
 (`P_LINE_FALLBACK`은 미사용 상태로 코드에서 삭제됨 — 2026-08)
 - 권고: `AppConfig.ready()` 또는 `manage.py check` 커스텀 체크로 기동 시 경고.
+- (2026-10-27 일부 해소) `POST_APPROVER_LOGINID` 는 dev·운영 모두, `MAIL_REDIRECT_TO` 는 dev 에서 **비어 있으면 기동하지 않는다**
+  (`development.py`/`production.py` 의 `ImproperlyConfigured`). 계정 실존은 기동 시점에 검사하지 않는다(B-04 400 으로 런타임 차단).
 
 ### R-04 🟠 P/E 검토자(PV/EV) 지정 취소·변경 API가 없다
 `_create_reviewers` 로 생성만 가능하고 제거 경로가 없다. **잘못 지정하면 그 사람이 합의할 때까지 단계가 영구히 멈춘다**
@@ -2708,7 +2726,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] B-32 PL 합의 후 중단요청 state → **cancelled**
 - [ ] B-30 후결자 계정 삭제 후에도 최종 승인 **도달 가능**
 - [x] B-31 그룹 생성자 삭제 후 그룹 **잔존**(남은 멤버에게 이관 — 2026-10-27 수정)
-- [ ] B-04 `POST_APPROVER_LOGINID` 미설정 + Only MAP → R 합의로 approved 되지 **않음**
+- [x] B-04 `POST_APPROVER_LOGINID` 미설정 + Only MAP → R 합의로 approved 되지 **않음**(미설정 시 기동 차단, 계정 없음 시 400 — 2026-10-27 수정)
 - [ ] B-07 R 담당자로 TE_R 아닌 사용자 지정 → **400**
 
 *화면/UX*
