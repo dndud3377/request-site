@@ -2182,7 +2182,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const mapLockedNone = isMapRegisteredDetail && isLockedMapDefault(detail);
   const eaLockedNone = isMapRegisteredDetail && isLockedEaDefault(detail);
   const prodcDetailLockedNone = isMapRegisteredDetail && isLockedProdcDetailDefault(detail);
-  const mshotLockedWarn = isMapRegisteredDetail && !isLockedMshotDefault(detail);
+  const mshotLockedNone = isMapRegisteredDetail && isLockedMshotDefault(detail);
+  const mshotLockedWarn = isMapRegisteredDetail && !mshotLockedNone;
   // 요청 목적 'ADI CD 변경' — StepMap 을 아예 작성하지 않으므로 MAP 정보 탭 자체를 감춘다
   // (map_change 등은 기본값이 빈 문자열이 아니라 실제로 채운 것처럼 보일 수 있다).
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
@@ -2746,7 +2747,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
               (2026-09) 이전에는 CLONE/EXISTING 한정으로 api_maptable 을 실시간 재조회해 드리프트를
               감지·강조했으나, 이제는 그 기능을 폐지하고 다른 필드(map_change 등)와 동일하게
               회차별 상신 값만 비교한다(changedFields/buildMshotItems 공용 로직). */}
-          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
+          {/* claude 수정 (2026-10-27): CLONE/EXISTING 은 값이 비어 있어도(기본값) 다른 잠금 항목처럼 카드를 그려 회색 "없음"을 보인다 */}
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && (detail.mshot_change || isMapRegisteredDetail) && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
             const imgStyle: React.CSSProperties = { maxWidth: '600px', maxHeight: '420px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' };
             const renderMshotImg = (src: string, alt: string) => (
@@ -2782,10 +2784,13 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                     renderGroupHistory(t('request.mshot_history_title'), buildMshotItems, () => setMshotHistOpen(false))
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    {/* claude 수정 (2026-10-27): CLONE/EXISTING 인데 X표시가 기본값('없음'·이미지 없음)이 아니면 잠금 항목 경고 */}
+                    {/* claude 수정 (2026-10-27): CLONE/EXISTING — X표시가 기본값('없음'·이미지 없음)이면 다른 잠금 항목과 같은
+                        회색 "없음", 아니면 저장값 + 잠금 항목 경고 */}
                     <div style={fieldLabel}>{t('request.mshot_change_status')}{mshotLockedWarn && lockedValueMark}</div>
                     <div style={fieldValue}>
-                      {detail.mshot_change}
+                      {mshotLockedNone
+                        ? <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
+                        : detail.mshot_change}
                     </div>
                   </div>
                   {mshotIsDelete && (
