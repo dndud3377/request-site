@@ -1751,7 +1751,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
       | X표시 | `mshot_change` 빈 값/없음 + 이미지 3개 빈 값 | `isLockedMshotDefault` |
       | C가문 세부 | 제품 위치·상/중/하판 값 전부 빈 값(중판 사용 여부는 빈 값/미사용) | `isLockedProdcDetailDefault` |
       | 3번 | `inter` 가 YES 가 아님 | 호출부(`buildInterValue` 가 빈 값) |
-      | Map Option | '적용'인 옵션이 없음 | 호출부(`activeOptions`) |
+      | Map Option | 잠기는 옵션 중 '적용'인 것이 없음 — TSV(4번)는 CLONE/EXISTING 에서도 고를 수 있어 판정에서 제외(같은 날 후속, `docs/REQUEST.md` 2026-10-27) | 호출부(`activeOptions` + `isMapOptionLockedWhenRegistered`) |
 
     - 기본값이 아니면 NEW 문서와 같은 칩·형식으로 저장값을 보여주고, 라벨 옆에 주황색 **"⚠ 잠긴 항목에 값 있음"**
       (`approval.locked_value_warning`, 툴팁 `approval.locked_value_warning_tooltip`, ko/en)을 붙인다(`PagedDetailView` `lockedValueMark`, `Chip` 의 `lockedWarning`).
@@ -1764,7 +1764,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
       `mshot_change` 가 빈 값이어도 CLONE/EXISTING 이면 카드를 그려 회색 "없음"을 보인다(이전에는 카드 자체가 사라졌다).
       NEW 문서의 X표시는 잠금 항목이 아니므로 종전대로 저장값 글씨다. 잠금 항목 6개(지도 편차·예외 구역·X표시·C가문 세부·3번·Map Option)의
       기본값 표시는 이제 모두 같은 회색 "없음" span 이다.
-    - 테스트: `components/PagedDetailView.lockedDefault.test.tsx` (상세 보기 7건 + export 2건).
+    - 테스트: `components/PagedDetailView.lockedDefault.test.tsx` (상세 보기 9건 + export 3건 — TSV 예외 포함).
 
 ---
 
