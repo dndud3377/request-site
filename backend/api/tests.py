@@ -24,6 +24,7 @@ from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
     UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
+    RoundSubmission,
 )
 
 
@@ -5095,6 +5096,230 @@ class SharedGroupDraftTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.requester_id, self.author.id)
         self.assertEqual(doc.requester_name, '작성자A')
+
+
+# claude 수정 (2026-10-27): 상신 이후에도 공유 그룹 멤버가 의뢰자 기능을 쓰고, 회차별 실제 상신자가 남는지 고정
+class SharedGroupAfterSubmitTest(TestCase):
+    """상신 이후(진행 중·반려·중단)에도 공유 그룹(shared_group)이 이어진다.
+
+    - 공유 그룹 지정·변경: 결재 완료(approved) 외 모든 상태, 의뢰자·MASTER 만.
+    - 공유 그룹 멤버: 의뢰자 재상신·중단 요청/취소/재개·중단 문서 수정·Validation System 수정·
+      후결자 관리까지 의뢰자와 동일. 삭제는 여전히 불가.
+    - 회차마다 실제로 상신한 사람(RoundSubmission)을 기록하고, 의뢰자는 최초 작성자로 고정된다.
+    - 반려 메일 수신자에 공유 그룹 멤버를 포함한다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(
+            loginid='sa_author', username='작성자A', mail='a@c.com', deptname='개발팀', role='PL',
+        )
+        self.member = UserProfile.objects.create(
+            loginid='sa_member', username='그룹원B', mail='b@c.com', deptname='품질팀', role='PL',
+        )
+        self.outsider = UserProfile.objects.create(loginid='sa_out', mail='o@c.com', role='PL')
+        self.master = UserProfile.objects.create(loginid='sa_master', mail='ms@c.com', role='MASTER')
+        self.pl = UserProfile.objects.create(loginid='sa_pl', username='검토PL', mail='pl@c.com', role='PL')
+        self.group = UserGroup.objects.create(name='공유팀', creator=self.author)
+        self.group.members.add(self.author, self.member)
+
+    def _doc(self, status='draft', shared_group=None):
+        return RequestDocument.objects.create(
+            title='공유 의뢰서', requester=self.author, requester_name='작성자A',
+            requester_email='a@c.com', requester_department='개발팀', product_name='PROD-1',
+            status=status, shared_group=shared_group,
+            additional_notes=json.dumps({'detail': {}, 'jayerRows': []}),
+        )
+
+    def _submitted_by(self, user, shared_group=None):
+        """draft 를 user 가 상신해 1회차(PL 검토 단계)를 연 문서."""
+        doc = self._doc(shared_group=shared_group if shared_group is not None else self.group)
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        return doc
+
+    # ----- 공유 그룹 지정·변경 -----
+    def test_author_can_set_shared_group_after_submit(self):
+        for st in ('under_review', 'rejected', 'pause'):
+            doc = self._doc(status=st)
+            self.client.force_authenticate(user=self.author)
+            r = self.client.post(f'/api/documents/{doc.id}/set-shared-group/',
+                                 {'group_id': self.group.id}, format='json')
+            self.assertEqual(r.status_code, 200, (st, r.content))
+            doc.refresh_from_db()
+            self.assertEqual(doc.shared_group_id, self.group.id, st)
+
+    def test_cannot_set_shared_group_on_approved(self):
+        doc = self._doc(status='approved')
+        self.client.force_authenticate(user=self.author)
+        r = self.client.post(f'/api/documents/{doc.id}/set-shared-group/',
+                             {'group_id': self.group.id}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        doc.refresh_from_db()
+        self.assertIsNone(doc.shared_group_id)
+
+    def test_member_cannot_change_shared_group_after_submit(self):
+        doc = self._doc(status='under_review', shared_group=self.group)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.post(f'/api/documents/{doc.id}/set-shared-group/',
+                             {'group_id': None}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_submit_keeps_shared_group(self):
+        doc = self._submitted_by(self.author)
+        self.assertEqual(doc.status, 'under_review')
+        self.assertEqual(doc.shared_group_id, self.group.id)
+
+    # ----- 권한 플래그 -----
+    def test_flags_for_member_and_outsider(self):
+        doc = self._doc(status='under_review', shared_group=self.group)
+        self.client.force_authenticate(user=self.member)
+        data = self.client.get(f'/api/documents/{doc.id}/').json()
+        self.assertTrue(data['can_act_as_requester'])
+        self.assertTrue(data['is_shared_with_me'])
+        self.client.force_authenticate(user=self.author)
+        data = self.client.get(f'/api/documents/{doc.id}/').json()
+        self.assertTrue(data['can_act_as_requester'])
+        self.assertTrue(data['is_shared_with_me'])
+        self.client.force_authenticate(user=self.outsider)
+        data = self.client.get(f'/api/documents/{doc.id}/').json()
+        self.assertFalse(data['can_act_as_requester'])
+        self.assertFalse(data['is_shared_with_me'])
+
+    def test_unshared_document_gives_member_no_requester_rights(self):
+        doc = self._doc(status='under_review', shared_group=None)
+        self.client.force_authenticate(user=self.member)
+        data = self.client.get(f'/api/documents/{doc.id}/').json()
+        self.assertFalse(data['can_act_as_requester'])
+        self.assertFalse(data['is_shared_with_me'])
+
+    # ----- 의뢰자 기능 -----
+    def test_member_can_requester_resubmit_at_pl_stage(self):
+        doc = self._submitted_by(self.author)
+        self.client.force_authenticate(user=self.member)
+        self.assertTrue(self.client.get(f'/api/documents/{doc.id}/').json()['can_requester_resubmit'])
+        r = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(ApprovalStep.objects.filter(document=doc, agent='PL', round=2).count(), 1)
+
+    def test_outsider_cannot_requester_resubmit(self):
+        doc = self._submitted_by(self.author)
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_member_can_request_and_cancel_pause(self):
+        doc = self._submitted_by(self.author)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.post(f'/api/documents/{doc.id}/request-pause/', {'reason': '수정 필요'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/cancel-pause/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_member_can_edit_and_resume_paused_document(self):
+        doc = self._submitted_by(self.author)
+        RequestDocument.objects.filter(pk=doc.pk).update(status='pause')
+        self.client.force_authenticate(user=self.member)
+        r = self.client.patch(f'/api/documents/{doc.id}/', {'title': 'B가 중단 중 수정'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/resume/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+    def test_outsider_cannot_resume(self):
+        doc = self._submitted_by(self.author)
+        RequestDocument.objects.filter(pk=doc.pk).update(status='pause')
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/resume/', {}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_member_can_update_validation_system(self):
+        doc = self._submitted_by(self.author)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_member_can_manage_post_approver(self):
+        from .views import RequestDocumentViewSet
+        doc = self._doc(status='under_review', shared_group=self.group)
+        view = RequestDocumentViewSet()
+        self.assertTrue(view._can_manage_post_approver(self.member, doc))
+        self.assertFalse(view._can_manage_post_approver(self.outsider, doc))
+
+    def test_member_still_cannot_delete(self):
+        for st in ('under_review', 'rejected', 'pause'):
+            doc = self._doc(status=st, shared_group=self.group)
+            self.assertFalse(doc_permissions.can_delete(self.member, doc), st)
+            self.assertTrue(doc_permissions.can_delete(self.author, doc), st)
+
+    # ----- 회차별 실제 상신자 -----
+    def test_round_submitters_record_actual_submitter_per_round(self):
+        """1회차는 A가 상신, 반려 후 B가 수정·재상신 → 1회차 A / 2회차 B. 의뢰자는 계속 A."""
+        doc = self._submitted_by(self.author)
+        RequestDocument.objects.filter(pk=doc.pk).update(status='rejected')
+        self.client.force_authenticate(user=self.member)
+        r = self.client.patch(f'/api/documents/{doc.id}/', {'title': 'B가 수정'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        data = self.client.get(f'/api/documents/{doc.id}/').json()
+        rows = {row['round']: row for row in data['round_submitters']}
+        self.assertEqual(rows[1]['submitter_loginid'], 'sa_author')
+        self.assertEqual(rows[1]['submitter_name'], '작성자A')
+        self.assertEqual(rows[2]['submitter_loginid'], 'sa_member')
+        self.assertEqual(rows[2]['submitter_name'], '그룹원B')
+        self.assertEqual(rows[2]['submitter_email'], 'b@c.com')
+        self.assertTrue(rows[2]['submitted_at'])
+        self.assertEqual(data['requester_name'], '작성자A')
+        self.assertEqual(data['requester_loginid'], 'sa_author')
+
+    def test_first_round_submitter_is_member_when_member_submits_draft(self):
+        doc = self._submitted_by(self.member)
+        row = RoundSubmission.objects.get(document=doc, round=1)
+        self.assertEqual(row.submitter_id, self.member.id)
+        doc.refresh_from_db()
+        self.assertEqual(doc.requester_id, self.author.id)
+
+    def test_requester_resubmit_records_new_round_submitter(self):
+        doc = self._submitted_by(self.author)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(RoundSubmission.objects.get(document=doc, round=2).submitter_id, self.member.id)
+
+    def test_legacy_document_has_no_round_submitters(self):
+        """이 기능 이전 문서는 기록이 없다 — 화면은 의뢰자로 표시한다."""
+        doc = self._doc(status='under_review', shared_group=self.group)
+        self.client.force_authenticate(user=self.author)
+        self.assertEqual(self.client.get(f'/api/documents/{doc.id}/').json()['round_submitters'], [])
+
+    # ----- 반려 메일 -----
+    def test_reject_recipients_include_shared_group_members(self):
+        doc = self._doc(status='rejected', shared_group=self.group)
+        ApprovalStep.objects.create(document=doc, agent='PL', round=1, action='rejected', assignee=self.pl)
+        individual_emails, _ = mailer.resolve_reject_recipients(doc)
+        self.assertEqual(individual_emails.count('a@c.com'), 1)
+        self.assertIn('b@c.com', individual_emails)
+        self.assertNotIn('o@c.com', individual_emails)
+
+    def test_reject_recipients_without_shared_group_unchanged(self):
+        doc = self._doc(status='rejected', shared_group=None)
+        ApprovalStep.objects.create(document=doc, agent='PL', round=1, action='rejected', assignee=self.pl)
+        individual_emails, _ = mailer.resolve_reject_recipients(doc)
+        self.assertEqual(individual_emails, ['a@c.com'])
 
 
 # claude 수정 (2026-10-27): 그룹 생성자 계정 삭제 시 그룹이 사라지지 않고 남은 멤버에게 넘어가는지 고정 (B-31)
