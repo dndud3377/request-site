@@ -63,7 +63,7 @@
 
 > RT-3/RT-4 의 R 제외는 **단계 생성 시점** 판정이다 — R step 이 이미 생성된 진행 중 문서는 그대로
 > `PL → R(+RV) → 3구역` 으로 진행한다(`test_in_progress_overlay_doc_with_r_step_keeps_r`).
-| **RT-5** | `Only MAP` | `PL(+SA) → R(+RV) → RA` | RA 전원(**0명이면 R 합의 즉시 approved**) |
+| **RT-5** | `Only MAP` | `PL(+SA) → R(+RV) → RA` | RA 전원(**0명이면 R 합의 400** — 2026-10-27 B-04 수정, 고정 후결자 필수) |
 | **RT-6** | `MAP 삭제` | `PL(+SA) → P(+PV) ∥ J ∥ O → R(+RV)` (2026-09 R 분리 — P·J·O 셋 다 끝나야 R 생성) | 네 단계 전부(R 이 항상 마지막). **E·RA 없음** |
 
 근거: `views.py:1625` `_advance_to_parallel`, `views.py:1582` `_create_map_delete_edit_parallel`,
@@ -213,7 +213,7 @@
 | R-12 | 일반 경로 | P=4영업일 < J=O=6영업일 | `views.py:1639~1671` |
 | R-13 | 일반 경로 | J 도착 메일이 R 합의 시점, 미배정이면 TE_J 전원 | `views.py:1661` |
 | R-14 | `Only MAP` + RA 있음 | P/J/O/E 없음, RA 만, `under_review` | `views.py:1642` |
-| R-15 | `Only MAP` + RA 0명 | **즉시 approved** | `views.py:1643` |
+| R-15 | `Only MAP` + RA 0명 | **R/RV 합의 400**, R step pending 유지(2026-10-27 B-04 수정). 고정 후결자가 필수 설정이라 러너는 SKIP — `OnlyMapPostApproverRequiredTest` 로 검증 | `views.py` `approve_step` |
 | R-16 | `MAP 삭제` | PL 합의 직후 **P·J·O** 병렬(R 은 아직 없음), E·RA 없음 | `views.py:2490` `_create_map_delete_edit_parallel` |
 
 ### 3.4 그룹 C — 검토중(claim) 6건
@@ -373,6 +373,8 @@ GET  /api/documents/{id}/            ← 결과 검증(status·approval_steps)
 4. 역할 계정 권장 인원: `PL` 3+, `TE_R` 2, `TE_P` 3, `TE_J` 2, `TE_O` 2, **`TE_E` 3**, `MASTER` 1.
    부족하면 해당 케이스가 사유와 함께 `SKIP` 된다.
 5. 메일은 서버 설정을 그대로 따른다(`MAIL_REDIRECT_TO` 가 설정돼 있으면 전부 그 주소로 간다).
+   개발 DB 는 운영 복사본이라 실사용자 주소가 있으므로 dev 는 `MAIL_REDIRECT_TO` 가 비면 **기동하지 않는다**(2026-10-27).
+   고정 후결자(`POST_APPROVER_LOGINID`)도 비면 기동하지 않는다.
 
 ### 4-2. 실행
 ```bash
