@@ -10,7 +10,7 @@ from django.views.decorators.http import require_GET
 from django.db import connections
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-from django.core.exceptions import SuspiciousFileOperation
+from django.core.exceptions import ImproperlyConfigured, SuspiciousFileOperation
 from django.utils._os import safe_join
 from PIL import Image, UnidentifiedImageError
 from rest_framework import viewsets, status, filters, mixins
@@ -1401,6 +1401,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # claude 수정 (2026-10-27): 후결자 필수 — Only MAP 은 후결자(RA)가 유일한 종단 경로라, 0명이면
+        # R 합의 즉시 approved 로 후결 단계가 조용히 사라졌다(B-04). 쓰기 전에 막는다.
+        if (agent in ('R', 'RV') and document.is_only_map()
+                and not self._get_post_approver_users(document)):
+            logging.getLogger(__name__).error(
+                '[B-04] Only MAP 후결자 0명 — 합의 차단 (document=%s, POST_APPROVER_LOGINID=%r)',
+                document.pk, getattr(settings, 'POST_APPROVER_LOGINID', ''),
+            )
+            return Response(
+                {'error': '후결자가 없어 합의할 수 없습니다. 고정 후결자 설정을 확인해 주세요.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # E(MASK) 담당자 합의에는 2차 검토자(EV) 지정이 필수다 — MASK 검증은 2인 확인 절차라서
         # 담당자 혼자 합의로 단계를 넘길 수 없다. (P 단계의 PV 는 지금까지대로 선택 사항이다.)
         #
@@ -2699,7 +2712,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """R단계(담당자[→검토자]) 완료 후 병렬 단계 생성 → 반환할 새 status.
 
         - Only MAP: P/J/O/E 없이 후결자(RA)만 생성(후결자 전원 합의 시 최종 승인).
-          후결자가 하나도 없으면(고정 미설정 + 비 C가문) 기존처럼 즉시 승인한다.
+          후결자가 하나도 없으면 approve_step 이 미리 400 으로 막는다(B-04) — 여기까지 오면 예외로 롤백한다.
         - 일반: P(4영업일)·J(6영업일 병렬)·O(6영업일 병렬)·[E(plel 시 6영업일 병렬)]
           + 후결자(RA, 6영업일 병렬) 생성.
 
@@ -2712,9 +2725,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         ra_due = calculate_business_due_date(base_date, 6)
         post_users = self._get_post_approver_users(document)
 
+        # claude 수정 (2026-10-27): 후결자 0명 Only MAP 을 즉시 승인하던 분기를 예외로 바꿈(B-04, 후결자 필수)
         if document.is_only_map():
             if not post_users:
-                return 'approved'
+                raise ImproperlyConfigured(f'Only MAP 문서 {document.pk} 에 후결자가 없습니다(POST_APPROVER_LOGINID 확인).')
         else:
             p_due = calculate_business_due_date(base_date, 4)
             o_due = calculate_business_due_date(base_date, 6)
