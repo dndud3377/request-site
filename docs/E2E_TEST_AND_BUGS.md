@@ -1100,10 +1100,13 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   **문서가 영영 승인되지 않는다**(MASTER가 대신 합의해야만 탈출) → §5 **B-30** 🟠
 - 조작 주체 주의: **MASTER가 아니어도 같은 역할끼리 서로 삭제 가능**(`UserViewSet.destroy`) — TE_O가 진행 중 O단계 담당자인 동료 TE_O를 지울 수 있다(재현✅ 204)
 
-#### T-S5 그룹 생성자 삭제
+#### T-S5 그룹 생성자 삭제 **(2026-10-27 수정 — B-31)**
 - 조작: 멤버가 여럿인 '나만의 그룹'의 **생성자** 계정을 삭제
-- ❌ `UserGroup.creator`가 `CASCADE`라 **그룹이 통째로 사라진다**(재현✅). 남은 멤버는 예고 없이
-  임시저장 공유·철회 권한·승인 메일 수신 대상에서 빠진다. 주소록(`AddressBook.owner`)도 함께 삭제 → §5 **B-31**
+- ✅ 그룹은 **유지**되고 남은 멤버 중 **무작위 1명이 새 생성자**가 된다. 멤버·임시저장 공유(`shared_group`)·
+  공유 그룹 멤버의 수정·상신·철회 권한이 그대로 남는다.
+- ✅ 남은 멤버가 없는 그룹(생성자 혼자)은 지금처럼 함께 삭제된다.
+- ✅ 새 생성자에게 같은 이름의 그룹이 이미 있으면 이름 뒤에 ` (2)`, ` (3)`… 이 붙는다(`unique_together(creator, name)` 충돌 방지).
+- ⚠️ 주소록(`AddressBook.owner`)은 본인 전용 목록이라 **지금처럼 함께 삭제**된다(삭제 확인 창 문구로 안내). → §5 **B-31**
 
 ---
 
@@ -1662,13 +1665,30 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 부가: **MASTER가 아니어도 같은 역할끼리 서로 삭제 가능**하다(`UserViewSet.destroy`) — 진행 중 결재 담당 여부를 전혀 보지 않는다.
 - 권고: 삭제 전 "진행 중 pending 단계 담당자" 검사 후 차단하거나, `remove-post-approver`가 **고아(assignee=None) RA도 제거**할 수 있게 확장.
 
-### 🟠 B-31 그룹 생성자 계정 삭제 시 그룹이 통째로 사라진다 **재현✅**
+### ✅ B-31 그룹 생성자 계정 삭제 시 그룹이 통째로 사라진다 **재현✅** → ✅**수정완료(2026-10-27)**
 - 위치: `models.py` `UserGroup.creator = ForeignKey(..., on_delete=CASCADE)`, `AddressBook.owner` 동일
 - 재현 결과: `[E-03] 그룹 생성자 삭제 -> 그룹 잔존: False | 주소록 잔존: False`
-- 영향: 그룹은 **임시저장 가시성(T-F3)·철회 권한(T-L1)·승인 메일 수신자** 판정의 근거다.
+- 영향: 그룹은 **임시저장 가시성(T-F3)·철회 권한(T-L1)** 판정의 근거다.
   생성자 한 명이 퇴사 처리되면 남은 멤버들이 **예고 없이** 서로의 draft를 못 보게 되고 철회 권한도 잃는다.
-  이미 발송 대상이던 승인 메일도 조용히 줄어든다(에러 없음 → 인지 불가).
+  (2026-10-27 정정: 예전 문서는 '승인 메일 수신자'도 영향 대상으로 적었으나, 승인 메일은 2026-07부터
+  결재 경로 참여자 기준이라 그룹과 무관하다 — `docs/APPROVAL.md` §4.1)
 - 권고: `SET_NULL` + creator 부재 시 멤버 중 1명 승계, 또는 삭제 전 경고/이관 UI.
+
+> **[2026-10-27 수정 완료]**
+> - **방식**: `UserViewSet.destroy` 가 `user.delete()` **직전에** `_transfer_created_groups(user)` 로 그 사용자가 만든
+>   그룹을 **남은 멤버 중 무작위 1명**에게 넘긴다(`order_by('?')`). 이관과 삭제는 한 `transaction.atomic()` 으로 묶여
+>   삭제가 실패하면 이관도 되돌아간다. 남은 멤버가 없으면 이관하지 않아 기존처럼 CASCADE 로 함께 삭제된다.
+> - **이름 충돌**: 새 생성자에게 같은 이름의 그룹이 있으면 ` (2)`, ` (3)`… 접미사(`GROUP_TRANSFER_NAME_SUFFIX`).
+> - **마이그레이션 없음**: `on_delete` 는 그대로 `CASCADE` 다. `on_delete` 를 커스텀 함수로 바꾸는 방식(A)은 DB 변경은 없지만
+>   (`sqlmigrate` = no-op) Django 상태 기록용 마이그레이션 파일이 필요해, 사용자 결정으로 destroy 방식(B)을 택했다.
+>   현재 사용자 삭제 경로는 `UserViewSet.destroy` 하나뿐이다(`/admin/` 미연결, `UserProfile` admin 미등록).
+>   **새 사용자 삭제 경로를 추가하면 같은 이관을 반드시 호출해야 한다.**
+> - **주소록**: 본인 전용이라 이관하지 않고 지금처럼 함께 삭제한다.
+> - **화면**: 권한 관리의 사용자 삭제 확인 창 문구를 실제 동작(계정 삭제·그룹 이관·주소록 삭제)대로 고쳤다
+>   (`permission.delete_modal_title`/`delete_modal_body`). 삭제 성공 후 그룹 탭을 다시 불러와(`fetchGroups`)
+>   삭제한 사람 화면에 사라진/바뀐 그룹 탭이 그대로 남던 문제도 함께 고쳤다.
+> - **테스트**: `GroupCreatorTransferOnUserDeleteTest` 5건(이관·공유 유지 / 남은 멤버 없음 → 삭제 / 이름 접미사 /
+>   일반 멤버 삭제는 그대로 / 삭제 실패 시 이관 롤백).
 
 ### 🟠 B-32 PL 액션에서 중단 요청 자동취소가 누락돼 요청이 고착된다 **재현✅**
 - 위치: `views.py:234`(`_cancel_active_pause_requests` 정의) — 호출은 `:521`(`approve_step`)·`:723`(`reject_step`) **2곳뿐** ↔
@@ -2603,6 +2623,7 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 ### R-14 🟠 사용자 삭제가 도메인 상태를 고려하지 않는다 (2차 추가)
 `UserViewSet.destroy`는 "같은 역할끼리 삭제 가능"만 검사하고, 그 사용자가 **진행 중 결재의 담당자인지,
 그룹 생성자인지** 전혀 보지 않는다. 결과가 B-30(결재 교착)·B-31(그룹 소실)이다.
+(2026-10-27: B-31 은 destroy 가 삭제 직전에 그룹을 남은 멤버에게 이관하도록 수정 — B-30 은 미수정)
 FK 정책도 일관되지 않다 — `ApprovalStep.assignee`/`RequestDocument.requester`는 `SET_NULL`인데
 `UserGroup.creator`/`AddressBook.owner`는 `CASCADE`다. **삭제 전 영향도 점검(pre-check)** 이 필요하다.
 
@@ -2677,7 +2698,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] B-06(프론트) pause 문서 상세에서 '합의/반려/검토중/담당자 지정' 버튼이 **보이지 않음**
 - [ ] B-32 PL 합의 후 중단요청 state → **cancelled**
 - [ ] B-30 후결자 계정 삭제 후에도 최종 승인 **도달 가능**
-- [ ] B-31 그룹 생성자 삭제 후 그룹 **잔존**
+- [x] B-31 그룹 생성자 삭제 후 그룹 **잔존**(남은 멤버에게 이관 — 2026-10-27 수정)
 - [ ] B-04 `POST_APPROVER_LOGINID` 미설정 + Only MAP → R 합의로 approved 되지 **않음**
 - [ ] B-07 R 담당자로 TE_R 아닌 사용자 지정 → **400**
 
@@ -2755,7 +2776,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 | B-30 담당자 삭제 | RA 담당자 계정 삭제 후 처리 시도 | **claim 400 / 합의 400 / 고아 pending 1건 잔존** |
 | B-30 대조(J/O/E/P) | O 선점자 삭제 후 다른 TE_O 재선점 | **200 (자가 회복)** |
 | B-30 삭제 주체 | TE_O 가 동료 TE_O 삭제 (MASTER 아님) | **204 (허용됨)** |
-| B-31 그룹 CASCADE | 그룹 생성자 계정 삭제 | **그룹·주소록 모두 삭제됨** |
+| B-31 그룹 CASCADE | 그룹 생성자 계정 삭제 | **그룹·주소록 모두 삭제됨** → 2026-10-27 수정 후: 그룹 유지·남은 멤버에게 이관(주소록은 삭제) |
 | B-32 중단요청 고착 | PL 합의 후 PauseRequest 상태 확인 | **requested 잔존** (대조: R 합의는 cancelled) |
 | B-32 후속 영향 | 재-중단요청 / 중단확인 시도 | **403 / 403** |
 | B-38 통계 노출 | 외부인이 `/documents/` 와 `/documents/stats/` 비교 | **목록 0건 vs stats draft 2건** |

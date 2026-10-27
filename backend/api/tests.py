@@ -5097,6 +5097,85 @@ class SharedGroupDraftTest(TestCase):
         self.assertEqual(doc.requester_name, '작성자A')
 
 
+# claude 수정 (2026-10-27): 그룹 생성자 계정 삭제 시 그룹이 사라지지 않고 남은 멤버에게 넘어가는지 고정 (B-31)
+class GroupCreatorTransferOnUserDeleteTest(TestCase):
+    """사용자 삭제(DELETE /api/users/{id}/) 시 그 사용자가 만든 '나만의 그룹' 이관.
+
+    - 남은 멤버 중 무작위 1명이 새 생성자가 되고 그룹·멤버·임시저장 공유가 유지된다.
+    - 남은 멤버가 없으면 그룹은 함께 삭제된다.
+    - 새 생성자에게 같은 이름의 그룹이 있으면 ' (2)', ' (3)'… 접미사가 붙는다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.creator = UserProfile.objects.create(loginid='gt_creator', username='생성자', mail='c@c.com', role='PL')
+        self.jin = UserProfile.objects.create(loginid='gt_jin', username='진', mail='j@c.com', role='PL')
+        self.suga = UserProfile.objects.create(loginid='gt_suga', username='슈가', mail='s@c.com', role='PL')
+
+    def _group(self, name, creator, *members):
+        group = UserGroup.objects.create(name=name, creator=creator)
+        group.members.add(creator, *members)
+        return group
+
+    def _delete(self, target, by):
+        self.client.force_authenticate(user=by)
+        return self.client.delete(f'/api/users/{target.id}/')
+
+    def test_creator_delete_keeps_group_and_transfers_to_remaining_member(self):
+        group = self._group('PA팀', self.creator, self.jin, self.suga)
+        doc = RequestDocument.objects.create(
+            title='진의 임시저장', requester=self.jin, requester_name='진', requester_email='j@c.com',
+            product_name='PROD-1', status='draft', shared_group=group,
+            additional_notes=json.dumps({'detail': {}}),
+        )
+        r = self._delete(self.creator, by=self.jin)
+        self.assertEqual(r.status_code, 204, r.content)
+
+        group.refresh_from_db()
+        self.assertIn(group.creator_id, {self.jin.id, self.suga.id})
+        self.assertEqual(set(group.members.values_list('id', flat=True)), {self.jin.id, self.suga.id})
+        self.assertEqual(group.name, 'PA팀')
+        doc.refresh_from_db()
+        self.assertEqual(doc.shared_group_id, group.id)
+        # 공유 그룹 멤버는 남의 임시저장을 계속 볼 수 있다
+        self.client.force_authenticate(user=self.suga)
+        self.assertEqual(self.client.get(f'/api/documents/{doc.id}/').status_code, 200)
+        self.assertEqual([g['name'] for g in self.client.get('/api/user-groups/').json()], ['PA팀'])
+
+    def test_group_without_remaining_members_is_deleted(self):
+        group = self._group('혼자팀', self.creator)
+        r = self._delete(self.creator, by=self.jin)
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertFalse(UserGroup.objects.filter(pk=group.pk).exists())
+
+    def test_name_conflict_gets_numbered_suffix(self):
+        group = self._group('PA팀', self.creator, self.jin)
+        self._group('PA팀', self.jin)
+        self._group('PA팀 (2)', self.jin)
+        r = self._delete(self.creator, by=self.suga)
+        self.assertEqual(r.status_code, 204, r.content)
+        group.refresh_from_db()
+        self.assertEqual(group.creator_id, self.jin.id)
+        self.assertEqual(group.name, 'PA팀 (3)')
+
+    def test_non_creator_member_delete_keeps_group_unchanged(self):
+        group = self._group('PA팀', self.creator, self.jin, self.suga)
+        r = self._delete(self.suga, by=self.jin)
+        self.assertEqual(r.status_code, 204, r.content)
+        group.refresh_from_db()
+        self.assertEqual(group.creator_id, self.creator.id)
+        self.assertEqual(set(group.members.values_list('id', flat=True)), {self.creator.id, self.jin.id})
+
+    def test_transfer_rolled_back_when_delete_fails(self):
+        group = self._group('PA팀', self.creator, self.jin)
+        with patch.object(UserProfile, 'delete', side_effect=RuntimeError('boom')):
+            r = self._delete(self.creator, by=self.jin)
+        self.assertEqual(r.status_code, 400, r.content)
+        group.refresh_from_db()
+        self.assertEqual(group.creator_id, self.creator.id)
+
+
 class ReviewItemSyncTest(TestCase):
     """J 단계 검토 항목 — 마스터 목록 ↔ 문서 사본 동기화 (review_items.py).
 

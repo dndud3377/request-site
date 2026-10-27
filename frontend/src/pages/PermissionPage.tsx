@@ -1240,12 +1240,14 @@ export default function PermissionPage(): React.ReactElement {
     await applySubmitMail(target, false);
   }, [submitMailOffTarget, applySubmitMail]);
 
+  // claude 수정 (2026-10-27): 삭제된 사용자가 그룹 생성자·멤버였으면 그룹 이관·멤버 수가 바뀌므로 그룹 탭도 다시 불러온다(B-31)
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeletingId(deleteTarget.id);
     try {
       await usersAPI.remove(deleteTarget.id);
       setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      fetchGroups();
       setDeleteTarget(null);
       addToast(t('permission.delete_success'), 'success');
     } catch (err: unknown) {
