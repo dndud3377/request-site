@@ -47,8 +47,12 @@ const cloneResidue = {
   prodc_scope: 'top', prodc_top_line: '라인3', prodc_top_process: 'RC9', prodc_top_product: 'PX9',
   mshot_change: '삭제',
   inter: 'YES', in_apply: 'O',
-  tsv: '적용',
+  // Map Option 은 CLONE/EXISTING 에서 잠기는 옵션(ECC=9번)으로 잔존값을 만든다 — TSV(4번)는 CLONE/EXISTING 에서도 고를 수 있다.
+  ecc: '적용',
 };
+
+const TSV_LABEL = i18n.t('request.map_opt_tsv');
+const ECC_LABEL = i18n.t('request.map_opt_ecc');
 
 const makeDoc = (detail: Record<string, unknown>): RequestDocument => ({
   id: 1,
@@ -137,7 +141,22 @@ describe('상세 MAP 정보 탭 — CLONE/EXISTING 잠금 항목 표시', () => 
     expect(itemBox('request.mshot_change_status').textContent).toContain('삭제');
     expect(itemBox('approval.prodc_detail').textContent).toContain('라인3 / RC9 / PX9');
     expect(itemBox('request.map_opt_inter').textContent).toContain(i18n.t('approval.inter_applied'));
-    expect(itemBox('request.map_option_title').textContent).toContain(i18n.t('request.map_opt_tsv'));
+    expect(itemBox('request.map_option_title').textContent).toContain(ECC_LABEL);
+  });
+
+  it('TSV(4번)만 적용이면 CLONE 에서도 정상 입력이라 경고 없이 [4번]만 보인다', () => {
+    render(<Harness doc={makeDoc({ ...cloneDefaults, tsv: '적용' })} />);
+    expect(screen.queryAllByText(WARNING)).toHaveLength(0);
+    expect(itemBox('request.map_option_title').textContent).toContain(TSV_LABEL);
+  });
+
+  it('TSV 와 잠기는 옵션(9번)이 함께 적용이면 Map Option 카드에 경고가 붙는다', () => {
+    render(<Harness doc={makeDoc({ ...cloneDefaults, tsv: '적용', ecc: '적용' })} />);
+    expect(screen.getAllByText(WARNING)).toHaveLength(1);
+    const box = itemBox('request.map_option_title');
+    expect(box.textContent).toContain(WARNING);
+    expect(box.textContent).toContain(TSV_LABEL);
+    expect(box.textContent).toContain(ECC_LABEL);
   });
 
   it('EXISTING 에서 예외 구역만 기본값이 아니면 그 항목에만 경고가 붙는다', () => {
@@ -172,5 +191,14 @@ describe('MAP 정보 export — CLONE/EXISTING 잠금 항목 표시', () => {
     expect(warned).toHaveLength(LOCKED_ITEM_COUNT);
     expect(warned.some((c) => c.includes('777'))).toBe(true);
     expect(warned.some((c) => c.endsWith('삭제'))).toBe(true);
+  });
+
+  it('TSV(4번)만 적용이면 Map Option 행은 경고 없이 "4번", 9번이 함께면 경고 문구가 붙는다', async () => {
+    const tsvOnly = await exportedCells(makeDoc({ ...cloneDefaults, tsv: '적용' }));
+    expect(tsvOnly).toContain(TSV_LABEL);
+    expect(tsvOnly.some((c) => c.includes(WARNING))).toBe(false);
+
+    const withEcc = await exportedCells(makeDoc({ ...cloneDefaults, tsv: '적용', ecc: '적용' }));
+    expect(withEcc).toContain(`${WARNING} — ${TSV_LABEL}, ${ECC_LABEL}`);
   });
 });
