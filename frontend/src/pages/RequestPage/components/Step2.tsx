@@ -10,8 +10,6 @@ import { numberBoundaryMatch } from '../../../utils/specMatch';
 
 interface Step2Props {
   jayerRows: JayerRow[];
-  jayerSortBySp: boolean;
-  setJayerSortBySp: React.Dispatch<React.SetStateAction<boolean>>;
   jayerFilterSets: FilterSet[];
   setJayerFilterModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   mappedJayerRowIds: Set<string>;
@@ -37,8 +35,6 @@ const ST_OPTIONS = ['O', 'O (D)', 'X'];
 
 const Step2: React.FC<Step2Props> = ({
   jayerRows,
-  jayerSortBySp,
-  setJayerSortBySp,
   jayerFilterSets,
   setJayerFilterModalOpen,
   mappedJayerRowIds,
@@ -60,7 +56,8 @@ const Step2: React.FC<Step2Props> = ({
   // claude 수정 (2026-10-20): 잠긴 버튼·칸은 마우스 이벤트를 받지 않게 해 감싼 요소의 툴팁이 뜨게 한다.
   const stLockTitle = stLocked ? t('request.st_locked_by_ref_doc') : undefined;
   const stLockStyle = stLocked ? { pointerEvents: 'none' as const, opacity: 0.4 } : undefined;
-  const renderedJayerRows = [...jayerRows].sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder);
+  // claude 수정 (2026-10-28): 'STEP 정렬' 토글 폐지 — 항상 sortOrder 순(SP 정렬은 '다음'·'상신' 시 자동 적용)
+  const renderedJayerRows = [...jayerRows].sort((a, b) => a.sortOrder - b.sortOrder);
   const renderedJayerIds = renderedJayerRows.map(r => r.id);
   return (
     <div className="form-section">
@@ -102,14 +99,6 @@ const Step2: React.FC<Step2Props> = ({
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>{t('request.btn_all_new')}</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '차용')}>{t('request.btn_all_copy')}</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
-          <button
-            type="button"
-            className="th-header-btn"
-            onClick={() => setJayerSortBySp(v => !v)}
-            style={jayerSortBySp ? { background: 'var(--accent)', color: 'white' } : undefined}
-          >
-            {t('request.btn_sort_by_step')}{jayerSortBySp ? ' ▲' : ''}
-          </button>
         </div>
         <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
           {jayerFilterSets.map(fs => (

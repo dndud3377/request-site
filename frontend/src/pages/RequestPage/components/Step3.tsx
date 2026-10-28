@@ -20,8 +20,6 @@ const tbvTdStyle: React.CSSProperties = {
 
 interface Step3Props {
   oayerRows: OayerRow[];
-  oayerSortBySp: boolean;
-  setOayerSortBySp: React.Dispatch<React.SetStateAction<boolean>>;
   oayerFilterSets: FilterSet[];
   setOayerFilterModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   oayerInfoTab: 'table' | 'info';
@@ -49,8 +47,6 @@ interface Step3Props {
 
 const Step3: React.FC<Step3Props> = ({
   oayerRows,
-  oayerSortBySp,
-  setOayerSortBySp,
   oayerFilterSets,
   setOayerFilterModalOpen,
   oayerInfoTab,
@@ -77,7 +73,8 @@ const Step3: React.FC<Step3Props> = ({
   // claude 수정 (2026-10-20): 잠긴 버튼·칸은 마우스 이벤트를 받지 않게 해 감싼 요소의 툴팁이 뜨게 한다.
   const stLockTitle = stLocked ? t('request.st_locked_by_ref_doc') : undefined;
   const stLockStyle = stLocked ? { pointerEvents: 'none' as const, opacity: 0.4 } : undefined;
-  const renderedOayerRows = [...oayerRows].sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder);
+  // claude 수정 (2026-10-28): 'STEP 정렬' 토글 폐지 — 항상 sortOrder 순(SP 정렬은 '다음'·'상신' 시 자동 적용)
+  const renderedOayerRows = [...oayerRows].sort((a, b) => a.sortOrder - b.sortOrder);
   const renderedOayerIds = renderedOayerRows.map(r => r.id);
   const tbvtlvSdOptions = Array.from(
     new Set(
@@ -185,14 +182,6 @@ const Step3: React.FC<Step3Props> = ({
               <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '신규')}>{t('request.btn_all_new')}</button>
               <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '차용')}>{t('request.btn_all_copy')}</button>
               <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
-              <button
-                type="button"
-                className="th-header-btn"
-                onClick={() => setOayerSortBySp(v => !v)}
-                style={oayerSortBySp ? { background: 'var(--accent)', color: 'white' } : undefined}
-              >
-                {t('request.btn_sort_by_step')}{oayerSortBySp ? ' ▲' : ''}
-              </button>
             </div>
             <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
               {oayerFilterSets.map(fs => (
