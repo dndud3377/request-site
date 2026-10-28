@@ -125,7 +125,7 @@ import {
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra,
-  isInterAutoYesProcess, isNumericValue,
+  isInterAutoYesProcess, isNumericValue, sortRowsBySp,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -507,8 +507,6 @@ export default function RequestPage(): React.ReactElement {
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
   const [jayerNewFilter, setJayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [oayerNewFilter, setOayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
-  const [jayerSortBySp, setJayerSortBySp] = useState(false);
-  const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [productionDate, setProductionDate] = useState<string>('');
   // 제품 해당 위치 전환 확인 모달(전환하면 지워질 입력이 있을 때만 값이 들어간다)
   const [prodcScopeConfirm, setProdcScopeConfirm] = useState<ProdcScope | null>(null);
@@ -4035,14 +4033,11 @@ export default function RequestPage(): React.ReactElement {
     addToast(t('request.filter_all_delete_toast'), 'info');
   };
 
-  const handleSortBbRows = () => {
-    setBbRows(prev => {
-      const sorted = [...prev].sort((a, b) =>
-        a.ss.localeCompare(b.ss, undefined, { numeric: true })
-      );
-      return sorted;
-    });
-  };
+  // claude 수정 (2026-10-28): 수동 정렬(bb SP 헤더 클릭·J/O 'STEP 정렬' 토글)을 없애고 '다음'·'상신' 시 SP 자동 정렬로 대체.
+  // J/O 는 화면이 sortOrder 순으로 보이므로 그 순서를, bb 는 배열 순서를 "기존 순서"로 삼아 SP(bb 는 ss) 기준으로 정렬한다.
+  const sortJayerRowsBySp = () => setJayerRows((prev) => sortRowsBySp([...prev].sort((a, b) => a.sortOrder - b.sortOrder), (r) => r.sp));
+  const sortOayerRowsBySp = () => setOayerRows((prev) => sortRowsBySp([...prev].sort((a, b) => a.sortOrder - b.sortOrder), (r) => r.sp));
+  const sortBbRowsBySp = () => setBbRows((prev) => sortRowsBySp(prev, (r) => r.ss));
 
   // ===== Validation =====
   /**
@@ -4746,8 +4741,9 @@ export default function RequestPage(): React.ReactElement {
         // Only MAP·MAP 삭제·ADI CD 변경은 StepMap 정보까지만(또는 그보다 적게) 필요 → J/O/bb 표를 비워 저장한다.
         // 비활성(st==='X') 행도 임시저장과 동일하게 항상 포함해서 저장한다 — 반려·중단 후
         // 재상신 편집 화면에서 상신 전 상태(비활성 행 포함) 그대로 복원할 수 있어야 한다.
-        jayerRows: isStep1OnlyScope ? [] : [...jayerRows].sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: isStep1OnlyScope ? [] : [...oayerRows].sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        // claude 수정 (2026-10-28): 'STEP 정렬' 토글 폐지 — 화면에 보이는 순서(sortOrder) 그대로 저장한다(SP 정렬은 '다음'·'상신' 시 자동 적용)
+        jayerRows: isStep1OnlyScope ? [] : [...jayerRows].sort((a, b) => a.sortOrder - b.sortOrder),
+        oayerRows: isStep1OnlyScope ? [] : [...oayerRows].sort((a, b) => a.sortOrder - b.sortOrder),
         bbRows: isStep1OnlyScope ? [] : bbRows,
         history,
         // 참조 요청서 '재선택'으로 J/O 를 Merge 이전으로 되돌리기 위한 스냅샷.
@@ -4864,6 +4860,9 @@ export default function RequestPage(): React.ReactElement {
         scrollToFirstError(errorStep);
         return;
       }
+      // claude 수정 (2026-10-28): J-ayer(STEP3)·O-ayer(STEP4) 단계를 통과하면 그 표를 SP 순서로 자동 정렬한다
+      if (s === 3) sortJayerRowsBySp();
+      if (s === 4) sortOayerRowsBySp();
       // 검증은 통과했으나 사용자 확인이 필요한 관문. 확인 후 원래 목적지까지 이어서 가야 하므로
       // 목적지를 보관하고, 관문이 있는 단계로 먼저 이동해 둔다(취소하면 그 단계에 머문다).
       // claude 수정 (2026-10-20): 참조 요청서 '없음' 표를 확정하지 않았으면 확정 모달을 먼저 띄운다 — 확인하면 확정 후 이어서 이동한다.
@@ -4976,6 +4975,10 @@ export default function RequestPage(): React.ReactElement {
       scrollToFirstError(result.redirectStep ?? 5);
       return;
     }
+    // claude 수정 (2026-10-28): 상신 전에 J/O/bb 세 표를 SP 순서로 자동 정렬한다(이전 단계로 돌아가 고쳤거나 불러온 문서 대비)
+    sortJayerRowsBySp();
+    sortOayerRowsBySp();
+    sortBbRowsBySp();
     // peer review 모드가 아닐 때만 PL 목록 로드
     if (!isPeerReviewMode && plUserOptions.length === 0) {
       try {
@@ -5387,8 +5390,6 @@ export default function RequestPage(): React.ReactElement {
         <Step2
           jayerRows={jayerRows}
           stLocked={refDocStLocked}
-          jayerSortBySp={jayerSortBySp}
-          setJayerSortBySp={setJayerSortBySp}
           jayerFilterSets={jayerFilterSets}
           setJayerFilterModalOpen={setJayerFilterModalOpen}
           mappedJayerRowIds={mappedJayerRowIds}
@@ -5413,8 +5414,6 @@ export default function RequestPage(): React.ReactElement {
         <Step3
           oayerRows={oayerRows}
           stLocked={refDocStLocked}
-          oayerSortBySp={oayerSortBySp}
-          setOayerSortBySp={setOayerSortBySp}
           oayerFilterSets={oayerFilterSets}
           setOayerFilterModalOpen={setOayerFilterModalOpen}
           oayerInfoTab={oayerInfoTab}
@@ -5471,7 +5470,6 @@ export default function RequestPage(): React.ReactElement {
           handleBbCheckAll={handleBbCheckAll}
           handleBbCheckToggle={handleBbCheckToggle}
           handleBbChange={handleBbChange}
-          handleSortBbRows={handleSortBbRows}
           handleBbBulkDelete={handleBbBulkDelete}
           GuideTourBadge={<StepTourBadge step={5} />}
           GuideBadge={GuideBadge}
