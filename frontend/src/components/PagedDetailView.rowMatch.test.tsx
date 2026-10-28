@@ -12,7 +12,8 @@ import { RequestDocument } from '../types';
 
 beforeAll(async () => { await i18n.changeLanguage('ko'); });
 
-const TAB = { jayer: 2, oayer: 3, bb: 4 } as const;
+// claude 수정 (2026-10-28): OVL 뒤에 XXXXXX 페이지가 생겨 BB 인덱스가 4 → 5 로 밀렸다
+const TAB = { jayer: 2, oayer: 3, extra: 4, bb: 5 } as const;
 const base = { request_purpose: '신규', line: 'L_A', process_selection: 'PROC1', partid_selection: 'FP1', process_id: 'FPID1', map_type: 'NEW' };
 
 type LayerRowSeed = { id: string; sp: string; pp: string; layerid: string };

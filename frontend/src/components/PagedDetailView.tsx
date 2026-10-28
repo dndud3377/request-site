@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, LayerFilterSet, ColorFilterSet, RoundSubmitter } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, LayerFilterSet, ColorFilterSet, RoundSubmitter } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -13,12 +13,13 @@ import {
   VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, isOverlayOnlyPurpose, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
   isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
 } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText, toExtraLayerRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
 import {
   exportJayer as exportJayerXlsx,
   exportOayer as exportOayerXlsx,
+  exportExtraLayer as exportExtraLayerXlsx,
   exportBb as exportBbXlsx,
   exportDetailInfoImage as exportDetailInfoImageXlsx,
   exportMapInfoImage as exportMapInfoImageXlsx,
@@ -297,6 +298,13 @@ const OAYER_DIFF_FIELDS: DiffFieldDef[] = [
   { key: 'step',         labelKey: 'request.col_step' },
 ];
 
+// claude 수정 (2026-10-28): XXXXXX 스냅샷 행 임시 id 접두어 — 현재 회차 / 지난 회차(뒤에 회차 번호가 붙는다)
+const EXTRA_CURRENT_ID_PREFIX = 'extra-cur';
+const EXTRA_ROUND_ID_PREFIX = 'extra-r';
+
+// claude 수정 (2026-10-28): XXXXXX 표 비교 컬럼 — J-layer 앞 6개 컬럼과 같다(사용자 입력 컬럼은 없다)
+const EXTRA_DIFF_FIELDS: DiffFieldDef[] = JAYER_DIFF_FIELDS.slice(0, 6);
+
 const BB_DIFF_FIELDS: DiffFieldDef[] = [
   { key: 'process_id',    labelKey: 'request.process_id' },
   { key: 'ss',            labelKey: 'request.col_sp' },
@@ -330,6 +338,9 @@ interface RoundSnapshot {
   jayerRows: JayerRow[];
   oayerRows: OayerRow[];
   bbRows: BbTableRow[];
+  // claude 수정 (2026-10-28): XXXXXX 상신 스냅샷 행 + 그 회차에 스냅샷이 기록됐는지(기능 배포 전 회차는 false — 비교에서 뺀다)
+  extraRows: ExtraLayerRow[];
+  extraTracked: boolean;
 }
 
 const fmtRoundTime = (ts: string | null): string => (ts ? new Date(ts).toLocaleString('ko-KR') : '-');
@@ -1071,6 +1082,61 @@ function OayerTable({
   );
 }
 
+// claude 수정 (2026-10-28): 상세 모달 XXXXXX 표 — 상신 시점 스냅샷(조회 전용). J/O-layer 표와 같은 변경 강조·'이력 확인'
+// 을 쓰되, 사용자 입력 컬럼(ST·신규/차용 등)·필터·색상 적용은 없다.
+function ExtraLayerTable({
+  rows,
+  changedRowIds = new Set<string>(),
+  prevRowMap,
+  historyMode = false,
+  rounds = [],
+}: { rows: ExtraLayerRow[] } & TableHistoryProps<ExtraLayerRow>) {
+  const { t } = useTranslation();
+  const [diffId, setDiffId] = useState<string | null>(null);
+  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
+  const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
+  const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
+  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.extraRows, diffId, LAYER_ROW_MATCH_KEYS) : null;
+  const fields = toDiffFields(EXTRA_DIFF_FIELDS, t);
+  const hasPrev = rounds.length > 1;
+  return (
+    <>
+      {diffRounds
+        ? <RowRoundHistoryModal title={t('request.extra_row_history')} fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
+        : diffCur && (
+          <RowDiffModal title={t('request.extra_row_history')} fields={fields} curRow={diffCur} prevRow={diffPrev ?? null} onClose={() => setDiffId(null)} />
+        )}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table table-compact" style={{ marginBottom: 8 }}>
+          <thead>
+            <tr>
+              {hasPrev && <th style={{ width: 64 }}></th>}
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const isChanged = changedRowIds.has(r.id);
+              return (
+                <tr key={r.id} style={isChanged ? changedRowStyle : undefined}>
+                  {hasPrev && (
+                    <td style={{ textAlign: 'center' }}>
+                      {isChanged && canOpenRowHistory(r.id, { prevRowMap, historyMode, rounds }) && (
+                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>{t('request.history_check_btn')}</button>
+                      )}
+                    </td>
+                  )}
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.layerid}</td><td>{r.pp}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 /**
  * J/O-layer "색상 적용" 툴바 — 위 공유 필터 툴바와 같은 자리에, 같은 스타일로 한 줄 더 보여준다.
  * 칩(색상 필터)은 여러 개 동시에 켤 수 있는 토글이고, 켜진 칩의 점들이 그 필터 안에 서로
@@ -1374,7 +1440,8 @@ function computeTableEverChanged<T extends { id: string }>(
 // (1차→2차, 2차→3차 …, 직전→현재)마다 모아 보여주는 창. 값이 되돌아온 변경(A→B→A)과 지워진 행도 보인다.
 
 /** 탭 export 옆 '모든 이력 확인' 버튼을 다는 탭 식별자 */
-type AllHistoryTabKey = 'detail' | 'r' | 'jayer' | 'oayer' | 'bb' | 'etc';
+// claude 수정 (2026-10-28): XXXXXX 페이지('extra')에도 '모든 이력 확인'을 단다
+type AllHistoryTabKey = 'detail' | 'r' | 'jayer' | 'oayer' | 'extra' | 'bb' | 'etc';
 
 type RowChangeKind = 'added' | 'changed' | 'removed';
 
@@ -1718,6 +1785,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   // 공유하므로 utils/detailExport 에 모아 두고 여기서는 그대로 호출만 한다.
   const exportJayer = () => exportJayerXlsx(doc, t, jayerColorFilterSets, activeJayerColorFilterIds);
   const exportOayer = () => exportOayerXlsx(doc, t, oayerColorFilterSets, activeOayerColorFilterIds);
+  const exportExtra = () => exportExtraLayerXlsx(doc, t);
   const exportBb = () => exportBbXlsx(doc, t);
   const exportDetail = async () => {
     const screenshot = await captureNodeFullscreen(detailTabRef.current);
@@ -1756,6 +1824,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
 
   // 회차 축 — 1차~직전 회차 + 현재. 이력 조회의 모든 이력 UI 가 이 배열 하나를 공유한다.
   // (결재 경로 섹션의 `rounds`(회차 번호 배열)와 다른 값이라 이름을 구분한다.)
+  // claude 수정 (2026-10-28): 회차마다 XXXXXX 스냅샷(extraRows)도 싣는다. id 접두어를 회차마다 달리해 내용으로 짝짓게 한다.
+  const extra = toExtraLayerRows(doc.extra_layer_snapshot, EXTRA_CURRENT_ID_PREFIX);
   const roundSnaps: RoundSnapshot[] = [
     ...history.map((snap, i) => ({
       label: roundLabel(t, i),
@@ -1764,9 +1834,13 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
       jayerRows: snap.jayerRows ?? [],
       oayerRows: snap.oayerRows ?? [],
       bbRows: snap.bbRows ?? [],
+      extraRows: toExtraLayerRows(snap.extraRows, `${EXTRA_ROUND_ID_PREFIX}${i}`),
+      extraTracked: Array.isArray(snap.extraRows),
     })),
-    { label: currentRoundLabel(t), timestamp: null, detail, jayerRows: jayer, oayerRows: oayer, bbRows: bb },
+    { label: currentRoundLabel(t), timestamp: null, detail, jayerRows: jayer, oayerRows: oayer, bbRows: bb, extraRows: extra, extraTracked: true },
   ];
+  // XXXXXX 는 스냅샷이 기록된 회차끼리만 비교한다 — 기능 배포 전 회차(extraRows 없음)를 넣으면 전부 '신규'로 잡힌다.
+  const extraRoundSnaps = roundSnaps.filter((r) => r.extraTracked);
   /** 이력 UI 를 띄울 회차가 있는지 — 재상신이 한 번도 없으면 비교 대상 자체가 없다. */
   const hasRounds = history.length > 0;
 
@@ -1798,6 +1872,14 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const changedOayerIds = historyMode
     ? computeTableEverChanged(oayer, roundSnaps, (r) => r.oayerRows, OAYER_DIFF_FIELDS, LAYER_ROW_MATCH_KEYS)
     : prevChangedOayerIds;
+  const prevRound = roundSnaps.length > 1 ? roundSnaps[roundSnaps.length - 2] : null;
+  const prevExtraSnap = prevRound && prevRound.extraTracked ? prevRound : null;
+  const { changedIds: prevChangedExtraIds, prevRowMap: prevExtraMap } = prevExtraSnap
+    ? computeTableDiff(extra, prevExtraSnap.extraRows, EXTRA_DIFF_FIELDS, LAYER_ROW_MATCH_KEYS)
+    : { changedIds: new Set<string>(), prevRowMap: new Map<string, ExtraLayerRow>() };
+  const changedExtraIds = historyMode
+    ? computeTableEverChanged(extra, extraRoundSnaps, (r) => r.extraRows, EXTRA_DIFF_FIELDS, LAYER_ROW_MATCH_KEYS)
+    : prevChangedExtraIds;
   const changedBbIds = historyMode
     ? computeTableEverChanged(bb, roundSnaps, (r) => r.bbRows, BB_DIFF_FIELDS)
     : prevChangedBbIds;
@@ -2402,6 +2484,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
         tableItem('request.tbvtlv', buildTbvtlvTable(d?.tbvtlv_entries, t)),
       ],
     },
+    extra: { title: t('request.extra_li'), rows: { pick: (r) => r.extraRows, defs: EXTRA_DIFF_FIELDS, matchKeys: LAYER_ROW_MATCH_KEYS } },
     bb: { title: t('request.bb_li'), rows: { pick: (r) => r.bbRows, defs: BB_DIFF_FIELDS } },
     etc: { title: t('request.section_etc') },
   };
@@ -3364,6 +3447,36 @@ type Page = { label: string; content: React.ReactNode; key?: string };
       })(),
     });
   }
+  // claude 수정 (2026-10-28): XXXXXX 페이지 — 상신 시점 스냅샷을 J/O-layer 처럼 표로 보여준다(조회 전용, 모든 문서 유형)
+  pages.push({
+    label: t('request.extra_li'),
+    content: (
+      <div style={cardStyle}>
+        <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{t('request.extra_li')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>{t('request.total_count_items', { count: extra.length })}</span>
+            <button onClick={exportExtra} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
+            {allHistBtn('extra')}
+          </div>
+        </div>
+        {doc.layer_drift_detected && onOpenLayerDrift && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <button
+              type="button"
+              className="badge badge-layer-drift"
+              style={{ cursor: 'pointer' }}
+              title={t('approval.layer_drift_badge_tooltip')}
+              onClick={onOpenLayerDrift}
+            >
+              {t('approval.layer_drift_badge')}
+            </button>
+          </div>
+        )}
+        <ExtraLayerTable rows={extra} changedRowIds={changedExtraIds} prevRowMap={prevExtraMap} historyMode={historyMode} rounds={extraRoundSnaps} />
+      </div>
+    ),
+  });
   if (showBb) {
     pages.push({
       label: t('request.bb_li'),
@@ -3921,7 +4034,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
       {currentPage.content}
       {/* claude 수정 (2026-10-19): 탭별 '모든 이력 확인' 창 — 닫으면 상태가 초기화된다. */}
       {allHistTab && (
-        <TabAllHistoryModal spec={allHistSpecs[allHistTab]} rounds={roundSnaps} onClose={() => setAllHistTab(null)} />
+        <TabAllHistoryModal spec={allHistSpecs[allHistTab]} rounds={allHistTab === 'extra' ? extraRoundSnaps : roundSnaps} onClose={() => setAllHistTab(null)} />
       )}
       {zoomedImage && (
         <div

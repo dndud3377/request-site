@@ -54,8 +54,9 @@ const makeShareGuideDemoDoc = (loginid: string): RequestDocument => ({
 });
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
-// (MASTER 역할 기준 페이지 순서: 0 상세 · 1 R · 2 JOB · 3 OVL · 4 BB · 5 기타 · 6 결재 경로)
-const TOUR_PAGE_IDX: Record<string, number> = { jayer: 2, route: 6 };
+// (MASTER 역할 기준 페이지 순서: 0 상세 · 1 R · 2 JOB · 3 OVL · 4 XXXXXX · 5 BB · 6 기타 · 7 결재 경로)
+// claude 수정 (2026-10-28): OVL 뒤에 XXXXXX 페이지가 생겨 결재 경로 인덱스가 6 → 7 로 밀렸다
+const TOUR_PAGE_IDX: Record<string, number> = { jayer: 2, route: 7 };
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',

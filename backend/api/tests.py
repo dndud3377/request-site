@@ -11194,3 +11194,53 @@ class OnlyMapPostApproverRequiredTest(TestCase):
         ra = ApprovalStep.objects.get(document=self.doc, agent='RA')
         self.assertEqual(ra.assignee, self.fixed_pa)
         self.assertEqual(ra.action, 'pending')
+
+
+# claude 수정 (2026-10-28): 상세 응답의 XXXXXX 상신 시점 스냅샷 노출 검증
+class ExtraLayerSnapshotSerializerTest(TestCase):
+    """상세 조회(GET /api/documents/{id}/)가 extra_layer_snapshot 을 행 목록으로 내려주는지 검증.
+
+    상세 모달의 XXXXXX 페이지가 이 값을 그대로 표로 그린다. 목록 응답에는 싣지 않는다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='xl_req', mail='xl_req@company.com', role='MASTER')
+        self.client.force_authenticate(user=self.requester)
+
+    def _make_doc(self, snapshot):
+        return RequestDocument.objects.create(
+            title='xl-doc', requester=self.requester, requester_name='요청자',
+            requester_email='xl_req@company.com', requester_department='dept',
+            product_name='PROD-1', status='under_review', extra_layer_snapshot=snapshot,
+            additional_notes=self._json.dumps({'detail': {'line': 'line1', 'process_id': 'P1'}}),
+        )
+
+    def test_detail_returns_snapshot_rows(self):
+        rows = [{'line': 'line1', 'process': 'P1', 'processid': 'P1', 'stepseq': '10', 'descript': 'D1',
+                 'recipeid': 'R1', 'areaname': 'A1', 'layerid': 'L1', 'updated': 'U1'}]
+        doc = self._make_doc(self._json.dumps(rows))
+        data = self.client.get(f'/api/documents/{doc.id}/').json()
+        self.assertEqual(data['extra_layer_snapshot'], rows)
+
+    def test_detail_returns_empty_list_when_not_captured_or_broken(self):
+        for snapshot in ('', 'not-json', '{"a": 1}'):
+            doc = self._make_doc(snapshot)
+            data = self.client.get(f'/api/documents/{doc.id}/').json()
+            self.assertEqual(data['extra_layer_snapshot'], [], snapshot)
+
+    def test_list_does_not_include_snapshot(self):
+        self._make_doc('[]')
+        data = self.client.get('/api/documents/').json()
+        results = data['results'] if isinstance(data, dict) and 'results' in data else data
+        self.assertTrue(results)
+        self.assertNotIn('extra_layer_snapshot', results[0])
+
+    def test_snapshot_is_read_only(self):
+        doc = self._make_doc('[]')
+        self.client.patch(f'/api/documents/{doc.id}/', {'extra_layer_snapshot': [{'stepseq': '99'}]}, format='json')
+        doc.refresh_from_db()
+        self.assertEqual(doc.extra_layer_snapshot, '[]')
