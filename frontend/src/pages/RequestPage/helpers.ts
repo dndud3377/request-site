@@ -117,6 +117,25 @@ export const splitStepseq = (seq: string | undefined): { prefix: string; num: nu
   return { prefix: m[1], num: parseFloat(`${digits.slice(0, STEPSEQ_LEAD_DIGITS)}.${digits.slice(STEPSEQ_LEAD_DIGITS) || '0'}`) };
 };
 
+// claude 수정 (2026-10-28): J/O/bb 표를 SP(stepseq) 순서로 자동 정렬하기 위한 순수 함수 추가
+/**
+ * 행을 SP(stepseq) 순서로 정렬한 새 배열을 돌려준다. 비교 규칙은 splitStepseq 와 같다 —
+ * 접두어(대소문자 무시, 백엔드 _stepseq_sort_key 와 동일) → num(앞 4자리.나머지 자리) 순.
+ * SP 가 비었거나 규칙으로 읽을 수 없는 행(splitStepseq 가 null)은 맨 위에 둔다.
+ * 같은 SP 끼리·맨 위 행들끼리는 입력 배열 순서(= 화면에 보이던 순서)를 유지하고, 결과 행의 sortOrder 는 0,1,2… 로 다시 매긴다.
+ */
+export const sortRowsBySp = <T extends { sortOrder: number }>(rows: readonly T[], getSp: (row: T) => string): T[] =>
+  rows
+    .map((row) => ({ row, key: splitStepseq(getSp(row)) }))
+    .sort((a, b) => {
+      if (!a.key || !b.key) return (a.key ? 1 : 0) - (b.key ? 1 : 0);
+      const pa = a.key.prefix.toLowerCase();
+      const pb = b.key.prefix.toLowerCase();
+      if (pa !== pb) return pa < pb ? -1 : 1;
+      return a.key.num - b.key.num;
+    })
+    .map(({ row }, idx) => ({ ...row, sortOrder: idx }));
+
 export interface FlowStepSeqRow {
   id: string;
   fromSeq: string;
