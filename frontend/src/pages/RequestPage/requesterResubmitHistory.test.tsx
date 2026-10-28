@@ -109,6 +109,12 @@ const fixtureNotes = {
   mergeSnapshot: null,
 };
 
+// claude 수정 (2026-10-28): 불러온 문서의 XXXXXX 상신 스냅샷 — 재상신 시 history[].extraRows 로 그대로 쌓여야 한다
+const FIXTURE_EXTRA_SNAPSHOT = [{
+  line: 'line1', process: PROCESS_ID, processid: PROCESS_ID, stepseq: '10', descript: 'D1',
+  recipeid: 'R1', areaname: 'A1', layerid: 'L1', updated: '202610011030',
+}];
+
 const fixtureDoc = {
   id: 1,
   status: 'under_review',
@@ -120,6 +126,7 @@ const fixtureDoc = {
   production_date: '2026-09-01',
   reference_materials: '',
   additional_notes: JSON.stringify(fixtureNotes),
+  extra_layer_snapshot: FIXTURE_EXTRA_SNAPSHOT,
   approval_steps: [
     { agent: 'PL', round: 1, action: 'pending', assignee_loginid: 'pl1', assignee_name: 'PL담당자' },
   ],
@@ -197,6 +204,8 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     expect(saved.history[0].detail.customer_requirement).not.toBe(saved.detail.customer_requirement);
     // 손대지 않은 필드는 반대로 history와 동일해 '변경 없음'으로 판정돼야 한다(오탐 없음).
     expect(saved.history[0].detail.customer_name).toBe(saved.detail.customer_name);
+    // 직전 회차 XXXXXX 스냅샷도 같은 history 항목에 쌓인다(상세 모달 XXXXXX 회차 비교의 기준값).
+    expect(saved.history[0].extraRows).toEqual(FIXTURE_EXTRA_SNAPSHOT);
   });
 
   it('반려 문서(rejected) 재상신 화면도 프리필된 지정 PL이 모달에서 사라지지 않는다(Case I 검토자 프리필)', async () => {
