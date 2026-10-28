@@ -386,6 +386,8 @@ export default function RequestPage(): React.ReactElement {
   // 임시저장/자동저장/상신이 동시에 create()를 호출해 의뢰서가 중복 생성되는 race 방지 가드
   const isPersistingRef = useRef(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // claude 수정 (2026-10-28): 일반 목적 상신 시 J/O 표가 0행이면 실제 0건이 맞는지 확인받는다 — 비어 있는 표 이름 목록(null=닫힘)
+  const [joEmptyConfirm, setJoEmptyConfirm] = useState<string[] | null>(null);
   const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId ?? peerReviewDocId);
   // 편집 대상 문서의 상태 — 'pause' 이면 상신 대신 '재개'(resume) 로 동작한다.
@@ -2079,6 +2081,15 @@ export default function RequestPage(): React.ReactElement {
       return;
     }
     handleDetailSet('request_purpose', val);
+    if (isStep1OnlyScope) refetchJoOnLeaveStep1OnlyScope();
+  };
+
+  // claude 수정 (2026-10-28): Only MAP·MAP 삭제·ADI CD 변경 진입 때 비운 J/O 를 일반 목적으로 돌아오면 다시 조회한다
+  // (조회는 조리법 변경 effect 에서만 일어나 빈 표로 상신되던 문제). 조건은 그 effect 와 같다 — 라인 + 옵션에 있는 조리법.
+  const refetchJoOnLeaveStep1OnlyScope = () => {
+    if (!detail.line || !detail.process_id || !processIdOptions.includes(detail.process_id)) return;
+    fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
+    fetchOvlLayerAndPopulateOayer(detail.line, detail.process_id);
   };
 
   /**
@@ -2162,7 +2173,10 @@ export default function RequestPage(): React.ReactElement {
     const target = onlyMapConfirm.targetPurpose;
     // 진입(Only MAP·MAP 삭제·ADI CD 변경)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
     if (target === ONLY_MAP_PURPOSE || target === MAP_DELETE_EDIT_PURPOSE || target === ADI_CD_CHANGE_PURPOSE) applyMapOnlyScope(target);
-    else applyLeaveMapOnlyScope(target);
+    else {
+      applyLeaveMapOnlyScope(target);
+      refetchJoOnLeaveStep1OnlyScope();
+    }
     setOnlyMapConfirm(null);
   };
 
@@ -4956,6 +4970,20 @@ export default function RequestPage(): React.ReactElement {
       scrollToFirstError(result.redirectStep ?? 5);
       return;
     }
+    // claude 수정 (2026-10-28): 일반 목적인데 J/O 중 하나라도 0행이면 실제 0건이 맞는지 확인받은 뒤 상신 모달을 연다(차단하지 않음)
+    const emptyTables = isStep1OnlyScope ? [] : [
+      ...(jayerRows.length === 0 ? [t('request.jayer')] : []),
+      ...(oayerRows.length === 0 ? [t('request.oayer')] : []),
+    ];
+    if (emptyTables.length > 0) {
+      setJoEmptyConfirm(emptyTables);
+      return;
+    }
+    await openSubmitConfirm();
+  };
+
+  /** 상신 모달(지정 PL·통보처)을 연다 — 후보 목록을 불러온 뒤 입력 상태를 초기화한다. */
+  const openSubmitConfirm = async () => {
     // peer review 모드가 아닐 때만 PL 목록 로드
     if (!isPeerReviewMode && plUserOptions.length === 0) {
       try {
@@ -6307,6 +6335,16 @@ export default function RequestPage(): React.ReactElement {
                     : t('request.map_only_leave_confirm_msg')
         }
         danger
+      />
+
+      {/* claude 수정 (2026-10-28): 일반 목적 상신 시 J/O 0행 확인 — '상신 계속'이면 기존 상신 모달로 이어진다 */}
+      <ConfirmModal
+        isOpen={joEmptyConfirm !== null}
+        onClose={() => setJoEmptyConfirm(null)}
+        onConfirm={() => { openSubmitConfirm(); }}
+        title={t('request.jo_empty_submit_title')}
+        message={t('request.jo_empty_submit_msg', { tables: (joEmptyConfirm ?? []).join(', ') })}
+        confirmLabel={t('request.jo_empty_submit_confirm')}
       />
 
       <ConfirmModal
