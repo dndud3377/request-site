@@ -12,7 +12,7 @@ import {
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
   deriveAutoOtherPurpose, sameOtherPurpose, computeRefDocStTargets, isRefDocStApplied, RefDocStRow,
   nocOptionsForSt, findStNocMismatchViolations,
-  resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText,
+  resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText, sortRowsBySp,
 } from './helpers';
 import {
   VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES,
@@ -1384,6 +1384,46 @@ describe('흐름도 Step stepseq 검증', () => {
     expect(splitStepseq('AAAA1234-A')).toBeNull();
     expect(splitStepseq('AAAA')).toBeNull();
     expect(splitStepseq('')).toBeNull();
+  });
+
+  // claude 수정 (2026-10-28): J/O/bb 표 SP 자동 정렬 규칙 테스트 추가
+  describe('sortRowsBySp', () => {
+    const rows = (sps: string[]) => sps.map((sp, i) => ({ id: `r${i}`, sortOrder: i, sp }));
+    const ids = (rs: { id: string }[]) => rs.map((r) => r.id);
+    const sps = (rs: { sp: string }[]) => rs.map((r) => r.sp);
+
+    it('숫자 자릿수가 달라도 앞 4자리 → 나머지 자리 순으로 정렬한다', () => {
+      expect(sps(sortRowsBySp(rows(['AAAA1235', 'AAAA12345', 'AAAA1234', 'AAAA0100']), (r) => r.sp)))
+        .toEqual(['AAAA0100', 'AAAA1234', 'AAAA12345', 'AAAA1235']);
+    });
+
+    it('접두어가 다르면 접두어(대소문자 무시) 순으로 먼저 묶는다', () => {
+      expect(sps(sortRowsBySp(rows(['bbbb0100', 'AAAA9000', 'BBBB0050']), (r) => r.sp)))
+        .toEqual(['AAAA9000', 'BBBB0050', 'bbbb0100']);
+    });
+
+    it('SP 가 비었거나 읽을 수 없는 행은 맨 위에 두고 그 행들끼리는 기존 순서를 유지한다', () => {
+      const sorted = sortRowsBySp(rows(['AAAA0200', '', 'AAAA0100', 'AAAA', 'AAAA1-X']), (r) => r.sp);
+      expect(ids(sorted)).toEqual(['r1', 'r3', 'r4', 'r2', 'r0']);
+    });
+
+    it('같은 SP 는 입력 배열 순서를 유지하고, 결과 sortOrder 를 0부터 다시 매긴다', () => {
+      const input = [
+        { id: 'a', sortOrder: 9, sp: 'AAAA0200' },
+        { id: 'c', sortOrder: 9, sp: 'AAAA0100' },
+        { id: 'b', sortOrder: 9, sp: 'AAAA0100' },
+      ];
+      const sorted = sortRowsBySp(input, (r) => r.sp);
+      expect(ids(sorted)).toEqual(['c', 'b', 'a']);
+      expect(sorted.map((r) => r.sortOrder)).toEqual([0, 1, 2]);
+      expect(ids(input)).toEqual(['a', 'c', 'b']); // 원본은 바꾸지 않는다
+      expect(input.map((r) => r.sortOrder)).toEqual([9, 9, 9]);
+    });
+
+    it('getSp 로 정렬 기준 칸을 고른다(bb 는 ss)', () => {
+      const bb = [{ id: 'x', sortOrder: 0, ss: 'AAAA0300' }, { id: 'y', sortOrder: 0, ss: 'AAAA0100' }];
+      expect(ids(sortRowsBySp(bb, (r) => r.ss))).toEqual(['y', 'x']);
+    });
   });
 
   it('resolveFlowStepSeq: 저장된 seq 가 맞으면 그대로, layerid 가 한 번뿐이면 그 seq, 여러 번이면 모호', () => {
