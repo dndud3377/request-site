@@ -18,6 +18,7 @@ import {
   OayerRow,
   BbTableRow,
   HistorySnapshot,
+  ExtraLayerSnapshotRow,
   RequestDocument,
   ExternalBbDataItem,
   PhotoStepOption,
@@ -475,6 +476,8 @@ export default function RequestPage(): React.ReactElement {
     oayerRows: OayerRow[];
     bbRows: BbTableRow[];
     history: HistorySnapshot[];
+    // claude 수정 (2026-10-28): 불러온 시점의 XXXXXX 상신 스냅샷 — 재상신 시 직전 회차 이력(extraRows)으로 쌓는다
+    extraRows: ExtraLayerSnapshotRow[];
   } | null>(null);
   // 편집/지정PL 모드에서 불러온 원본 의뢰자 — 수정/재상신 시에도 최초 작성자로 고정
   const originalRequesterRef = useRef<{ name: string; email: string; department: string } | null>(null);
@@ -1225,6 +1228,7 @@ export default function RequestPage(): React.ReactElement {
           oayerRows: parsed.oayerRows ?? [],
           bbRows: parsed.bbRows ?? [],
           history: parsed.history ?? [],
+          extraRows: doc.extra_layer_snapshot ?? [],
         };
         // 원본 의뢰자 보관 — 수정/재상신 시에도 최초 작성자 유지
         originalRequesterRef.current = {
@@ -4686,6 +4690,7 @@ export default function RequestPage(): React.ReactElement {
           jayerRows: prev.jayerRows,
           oayerRows: prev.oayerRows,
           bbRows: prev.bbRows,
+          extraRows: prev.extraRows,
         },
       ];
     }
