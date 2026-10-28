@@ -43,9 +43,6 @@ const makeJayerCopyPasteDemoRows = (): JayerRow[] =>
     product_name: i === 0 ? 'PART_1234' : '',
   }));
 
-/** BB "정보(적용 결과)" 그룹 시연용 — SP 정렬 전 상태를 보여주기 위해 makeTourBbRows() 순서를 뒤집는다. */
-const makeBbSortDemoRows = (): BbTableRow[] => [...makeTourBbRows()].reverse();
-
 export interface UseStepGuideTour {
   activeStep: number | null;
   openStep: (step: number) => void;
@@ -229,15 +226,11 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
             onEnter: () => setShowAutoFillPanel(true),
           },
           { selectors: ['[data-tour="bb-mapping-panel"]'], ...g('s5g2') },
+          // claude 수정 (2026-10-28): SP 헤더 클릭 정렬 폐지로 'SP 헤더 클릭' 그룹(s5g3b) 삭제 — bb 표는 SP 순서 샘플을 보여준다
           {
             selectors: ['[data-tour="bb-table"]'],
             ...g('s5g3'),
-            onEnter: () => setBbRows(makeBbSortDemoRows()),
-          },
-          {
-            selectors: ['[data-tour="bb-sp-sort"]'],
-            ...g('s5g3b'),
-            onEnter: () => setBbRows(makeBbSortDemoRows()),
+            onEnter: () => setBbRows(makeTourBbRows()),
           },
         ];
 
