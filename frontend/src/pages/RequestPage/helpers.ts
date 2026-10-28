@@ -1,4 +1,4 @@
-import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
+import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ExtraLayerSnapshotRow, ExtraLayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -17,6 +17,23 @@ export const formatUpdatedDate = (updated: string): string => {
   const mm = updated.slice(10, 12);
   return `${yyyyMMdd} ${hh}:${mm}`;
 };
+
+// claude 수정 (2026-10-28): 상세 모달 XXXXXX 표용 — 상신 시점 스냅샷 행을 J-layer 앞 6개 컬럼 이름으로 옮긴다
+/**
+ * XXXXXX 스냅샷 행 → 표시용 행. 업데이트일은 J/O-layer 자동 채움과 같은 형식(formatUpdatedDate)으로 맞춘다.
+ * 스냅샷에는 id 가 없으므로 `idPrefix` 로 회차마다 다른 id 를 붙인다 — 회차끼리 id 가 겹치지 않아야
+ * 회차 비교가 위치가 아니라 내용(공정ID+PP → 공정ID+Layer)으로 짝짓는다.
+ */
+export const toExtraLayerRows = (rows: readonly ExtraLayerSnapshotRow[] | undefined, idPrefix: string): ExtraLayerRow[] =>
+  (rows ?? []).map((r, i) => ({
+    id: `${idPrefix}-${i}`,
+    updated: r.updated ? formatUpdatedDate(r.updated) : '',
+    process_id: r.processid ?? '',
+    sp: r.stepseq ?? '',
+    sd: r.descript ?? '',
+    layerid: r.layerid ?? '',
+    pp: r.recipeid ?? '',
+  }));
 
 /** 키워드 배열 기반 행 비활성화 판정 */
 export const shouldDisableRow = (
