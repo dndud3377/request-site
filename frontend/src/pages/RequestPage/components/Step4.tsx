@@ -46,7 +46,6 @@ interface Step4Props {
   handleBbCheckAll: () => void;
   handleBbCheckToggle: (id: string) => void;
   handleBbChange: (id: string, field: keyof Omit<BbTableRow, 'id'>, value: string) => void;
-  handleSortBbRows: () => void;
   handleBbBulkDelete: () => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
@@ -86,7 +85,6 @@ const Step4: React.FC<Step4Props> = ({
   handleBbCheckAll,
   handleBbCheckToggle,
   handleBbChange,
-  handleSortBbRows,
   handleBbBulkDelete,
   GuideTourBadge,
   GuideBadge,
@@ -488,14 +486,8 @@ const Step4: React.FC<Step4Props> = ({
                 </th>
                 <th>{t('request.col_no')}</th>
                 <th>{t('request.process_id')}</th>
-                <th
-                  data-tour="bb-sp-sort"
-                  style={{ cursor: 'pointer', userSelect: 'none' }}
-                  onClick={handleSortBbRows}
-                  title={t('request.bb_sort_title')}
-                >
-                  {t('request.col_sp')} 🔼
-                </th>
+                {/* claude 수정 (2026-10-28): SP 헤더 클릭 정렬 폐지 — '상신' 시 SP 자동 정렬로 대체 */}
+                <th>{t('request.col_sp')}</th>
                 <th>{t('request.col_sd')}</th>
                 <th>{t('request.col_bb_process_id')}</th>
                 <th>{t('request.col_bb_partid')}</th>

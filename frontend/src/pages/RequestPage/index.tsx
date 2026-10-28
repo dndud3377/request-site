@@ -126,7 +126,7 @@ import {
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra,
-  isInterAutoYesProcess, isNumericValue,
+  isInterAutoYesProcess, isNumericValue, sortRowsBySp,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -512,8 +512,6 @@ export default function RequestPage(): React.ReactElement {
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
   const [jayerNewFilter, setJayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [oayerNewFilter, setOayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
-  const [jayerSortBySp, setJayerSortBySp] = useState(false);
-  const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [productionDate, setProductionDate] = useState<string>('');
   // 제품 해당 위치 전환 확인 모달(전환하면 지워질 입력이 있을 때만 값이 들어간다)
   const [prodcScopeConfirm, setProdcScopeConfirm] = useState<ProdcScope | null>(null);
@@ -3022,13 +3020,31 @@ export default function RequestPage(): React.ReactElement {
   const isBulkStOrNocTarget = (r: { st: string; new_or_copy: string }, field: 'st' | 'new_or_copy'): boolean =>
     !isNocSpecial(r.new_or_copy) && (field !== 'new_or_copy' || !isRowInactive(r.st));
 
+  // claude 수정 (2026-10-27): ST 일괄 버튼('전체 O'·'전체 X'·'초기화')도 반대편 표로 전파 — '전체 X' 는 클릭 후 참여행이 0개라,
+  // 반대편 행이 이미 X 면 '전체 O'·'초기화'는 대상에서 빠져 전파되지 않던 문제. ST 일괄 버튼은 이 표에서 값이 바뀐 행
+  // (기등록/layer삭제/미진행 제외 전체)의 layerid 로, 반대편에서도 ST X 행까지 포함해 그 layerid 행이 정확히 1개일 때만 전파한다.
+  // 요청 기준 일괄 버튼은 종전대로 클릭 후 참여행 기준 → 반대편 참여행 1개일 때만 전파한다.
+  const bulkCrossTargetIds = (
+    field: 'st' | 'new_or_copy',
+    updatedRows: { layerid: string; st: string; new_or_copy: string }[],
+    otherRows: { id: string; layerid: string; st: string; new_or_copy: string }[],
+  ): Set<string> => {
+    const sourceRows = field === 'st'
+      ? updatedRows.filter((r) => isBulkStOrNocTarget(r, 'st'))
+      : updatedRows.filter((r) => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy));
+    const layerids = new Set(sourceRows.map((r) => r.layerid?.trim()).filter((l): l is string => !!l));
+    const soleTarget = (layerid: string) => {
+      if (field !== 'st') return soleParticipantByLayerid(otherRows, layerid);
+      const candidates = otherRows.filter((r) => r.layerid?.trim() === layerid && isBulkStOrNocTarget(r, 'st'));
+      return candidates.length === 1 ? candidates[0] : undefined;
+    };
+    return new Set(Array.from(layerids).map((l) => soleTarget(l)?.id).filter((id): id is string => !!id));
+  };
+
   // 참여행(활성 && 기등록/layer삭제/미진행 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, O 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
-    // layerids는 "이 클릭이 반영된 뒤"의 참여 상태 기준으로 계산한다 — 클릭 이전 상태로 계산하면
-    // st 필드 버튼 자체가 참여 여부를 뒤집는 클릭인 경우(예: 전체 X 다음 전체 O) 자기모순으로 빈 집합이
-    // 되어 반대편 표로 전파되지 않는다.
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP·ITEM_ID 를
     // 비우고 bb 매핑을 푼다(ST X 에는 신규/차용을 쓸 수 없으므로 X 용 요청 기준을 다시 고르게 한다).
     const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
@@ -3037,10 +3053,10 @@ export default function RequestPage(): React.ReactElement {
       : r);
     setJayerRows(updatedRows);
     unmapIfMapped(clearedIds);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
+    // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않는다.
+    const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows);
     if (targetIds.size > 0) {
-      setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, false) } : r));
+      setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) } : r));
     }
   };
 
@@ -3048,8 +3064,7 @@ export default function RequestPage(): React.ReactElement {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
     setJayerRows(updatedRows);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
+    const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
 
@@ -3133,6 +3148,8 @@ export default function RequestPage(): React.ReactElement {
             setJayerRows(rows => rows.map(r => (r.id === target.id
               ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, true) }
               : r)));
+            // claude 수정 (2026-10-27): O→J 전파로 J 행 ST 가 X 가 되면 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다
+            if (field === 'st' && consensusValue === ST_X) unmapIfMapped([target.id]);
           }
         }
       }
@@ -3148,10 +3165,12 @@ export default function RequestPage(): React.ReactElement {
       ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) }
       : r);
     setOayerRows(updatedRows);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
+    // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않고,
+    // 전파로 X 가 된 J 행은 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다.
+    const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows);
     if (targetIds.size > 0) {
-      setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, true) } : r));
+      setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, true)) } : r));
+      if (field === 'st' && value === ST_X) unmapIfMapped(Array.from(targetIds));
     }
   };
 
@@ -3159,8 +3178,7 @@ export default function RequestPage(): React.ReactElement {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
     setOayerRows(updatedRows);
-    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
+    const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
 
@@ -4016,7 +4034,8 @@ export default function RequestPage(): React.ReactElement {
       setOayerFilterSets(updated);
       localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
     }
-    addToast(`필터 "${label}"이 삭제되었습니다.`, 'info');
+    // claude 수정 (2026-10-27): 하드코딩 한글 토스트를 i18n 키로 교체(규칙 G)
+    addToast(t('request.filter_delete_toast', { label }), 'info');
   };
 
   const handleFilterAllDeleteConfirm = () => {
@@ -4028,17 +4047,15 @@ export default function RequestPage(): React.ReactElement {
       setOayerFilterSets([]);
       localStorage.removeItem('oayerFilterSets');
     }
-    addToast('모든 필터가 삭제되었습니다.', 'info');
+    // claude 수정 (2026-10-27): 하드코딩 한글 토스트를 i18n 키로 교체(규칙 G)
+    addToast(t('request.filter_all_delete_toast'), 'info');
   };
 
-  const handleSortBbRows = () => {
-    setBbRows(prev => {
-      const sorted = [...prev].sort((a, b) =>
-        a.ss.localeCompare(b.ss, undefined, { numeric: true })
-      );
-      return sorted;
-    });
-  };
+  // claude 수정 (2026-10-28): 수동 정렬(bb SP 헤더 클릭·J/O 'STEP 정렬' 토글)을 없애고 '다음'·'상신' 시 SP 자동 정렬로 대체.
+  // J/O 는 화면이 sortOrder 순으로 보이므로 그 순서를, bb 는 배열 순서를 "기존 순서"로 삼아 SP(bb 는 ss) 기준으로 정렬한다.
+  const sortJayerRowsBySp = () => setJayerRows((prev) => sortRowsBySp([...prev].sort((a, b) => a.sortOrder - b.sortOrder), (r) => r.sp));
+  const sortOayerRowsBySp = () => setOayerRows((prev) => sortRowsBySp([...prev].sort((a, b) => a.sortOrder - b.sortOrder), (r) => r.sp));
+  const sortBbRowsBySp = () => setBbRows((prev) => sortRowsBySp(prev, (r) => r.ss));
 
   // ===== Validation =====
   /**
@@ -4561,8 +4578,9 @@ export default function RequestPage(): React.ReactElement {
       } // end !isMapRegistered
     }
 
-    // step 3(J-layer)·step 4 O-layer 행은 그 외에는 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
-    // 예외: new_or_copy='차용' 행은 product_name·step 필수(아래). 상신 시 step 5의
+    // claude 수정 (2026-10-27): 실제 검증(addStNocError 가 모든 행의 ST·요청 기준을 필수로 검사)과 맞지 않던 주석을 정정
+    // step 3(J-layer)·step 4(O-layer) 행 검증: 모든 행의 ST·요청 기준은 필수이고 서로 짝이 맞아야 한다(addStNocError).
+    // 그 밖의 칸은 new_or_copy='차용' 행만 product_name·step(J 는 item_id 도) 필수다(아래). 상신 시 step 5의
     // "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로도 간접 검증된다.
 
     if (currentStep === 3) {
@@ -4594,9 +4612,10 @@ export default function RequestPage(): React.ReactElement {
     }
 
     if (currentStep === 4 && !isMapOnlyScope) {
+      // claude 수정 (2026-10-27): 하드코딩 한글 오류 문구를 i18n 키로 교체(규칙 G)
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
-        errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
+        errorMessages.push(t('request.partial_shot_required'));
       }
       addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
       const oViolations = findNocBorrowViolations(oayerRows);
@@ -4614,9 +4633,10 @@ export default function RequestPage(): React.ReactElement {
       const unmappedJayerRows = jayerRows.filter(
         (row) => !isRowInactive(row.st) && !isNocSpecial(row.new_or_copy) && row.process_id && !mappedJayerRowIds.has(row.id)
       );
+      // claude 수정 (2026-10-27): 하드코딩 한글 오류 문구를 i18n 키로 교체(규칙 G)
       if (unmappedJayerRows.length > 0) {
-        newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
-        errorMessages.push('모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.');
+        newErrors['jayer_mapping'] = t('request.jayer_mapping_required');
+        errorMessages.push(t('request.jayer_mapping_required'));
       }
       // 초안 복원 등으로 step 3/4 검증을 건너뛰었을 경우를 대비한 최종 안전망
       const jViolations = findNocBorrowViolations(jayerRows);
@@ -4740,8 +4760,9 @@ export default function RequestPage(): React.ReactElement {
         // Only MAP·MAP 삭제·ADI CD 변경은 StepMap 정보까지만(또는 그보다 적게) 필요 → J/O/bb 표를 비워 저장한다.
         // 비활성(st==='X') 행도 임시저장과 동일하게 항상 포함해서 저장한다 — 반려·중단 후
         // 재상신 편집 화면에서 상신 전 상태(비활성 행 포함) 그대로 복원할 수 있어야 한다.
-        jayerRows: isStep1OnlyScope ? [] : [...jayerRows].sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: isStep1OnlyScope ? [] : [...oayerRows].sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        // claude 수정 (2026-10-28): 'STEP 정렬' 토글 폐지 — 화면에 보이는 순서(sortOrder) 그대로 저장한다(SP 정렬은 '다음'·'상신' 시 자동 적용)
+        jayerRows: isStep1OnlyScope ? [] : [...jayerRows].sort((a, b) => a.sortOrder - b.sortOrder),
+        oayerRows: isStep1OnlyScope ? [] : [...oayerRows].sort((a, b) => a.sortOrder - b.sortOrder),
         bbRows: isStep1OnlyScope ? [] : bbRows,
         history,
         // 참조 요청서 '재선택'으로 J/O 를 Merge 이전으로 되돌리기 위한 스냅샷.
@@ -4858,6 +4879,9 @@ export default function RequestPage(): React.ReactElement {
         scrollToFirstError(errorStep);
         return;
       }
+      // claude 수정 (2026-10-28): J-ayer(STEP3)·O-ayer(STEP4) 단계를 통과하면 그 표를 SP 순서로 자동 정렬한다
+      if (s === 3) sortJayerRowsBySp();
+      if (s === 4) sortOayerRowsBySp();
       // 검증은 통과했으나 사용자 확인이 필요한 관문. 확인 후 원래 목적지까지 이어서 가야 하므로
       // 목적지를 보관하고, 관문이 있는 단계로 먼저 이동해 둔다(취소하면 그 단계에 머문다).
       // claude 수정 (2026-10-20): 참조 요청서 '없음' 표를 확정하지 않았으면 확정 모달을 먼저 띄운다 — 확인하면 확정 후 이어서 이동한다.
@@ -4970,6 +4994,10 @@ export default function RequestPage(): React.ReactElement {
       scrollToFirstError(result.redirectStep ?? 5);
       return;
     }
+    // claude 수정 (2026-10-28): 상신 전에 J/O/bb 세 표를 SP 순서로 자동 정렬한다(이전 단계로 돌아가 고쳤거나 불러온 문서 대비)
+    sortJayerRowsBySp();
+    sortOayerRowsBySp();
+    sortBbRowsBySp();
     // claude 수정 (2026-10-28): 일반 목적인데 J/O 중 하나라도 0행이면 실제 0건이 맞는지 확인받은 뒤 상신 모달을 연다(차단하지 않음)
     const emptyTables = isStep1OnlyScope ? [] : [
       ...(jayerRows.length === 0 ? [t('request.jayer')] : []),
@@ -5395,8 +5423,6 @@ export default function RequestPage(): React.ReactElement {
         <Step2
           jayerRows={jayerRows}
           stLocked={refDocStLocked}
-          jayerSortBySp={jayerSortBySp}
-          setJayerSortBySp={setJayerSortBySp}
           jayerFilterSets={jayerFilterSets}
           setJayerFilterModalOpen={setJayerFilterModalOpen}
           mappedJayerRowIds={mappedJayerRowIds}
@@ -5421,8 +5447,6 @@ export default function RequestPage(): React.ReactElement {
         <Step3
           oayerRows={oayerRows}
           stLocked={refDocStLocked}
-          oayerSortBySp={oayerSortBySp}
-          setOayerSortBySp={setOayerSortBySp}
           oayerFilterSets={oayerFilterSets}
           setOayerFilterModalOpen={setOayerFilterModalOpen}
           oayerInfoTab={oayerInfoTab}
@@ -5479,7 +5503,6 @@ export default function RequestPage(): React.ReactElement {
           handleBbCheckAll={handleBbCheckAll}
           handleBbCheckToggle={handleBbCheckToggle}
           handleBbChange={handleBbChange}
-          handleSortBbRows={handleSortBbRows}
           handleBbBulkDelete={handleBbBulkDelete}
           GuideTourBadge={<StepTourBadge step={5} />}
           GuideBadge={GuideBadge}

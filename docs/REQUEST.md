@@ -93,8 +93,9 @@ pages/RequestPage/
 
 - **옵션 캐시**: `lineOptions`, `processOptions`, `productOptions`, `processIdOptions`, `top/middle/bottomProductOptions`, `top/middle/bottomProcessOptions`, `Bb*Options`, `Flow*Options`, `sourcePartIdOptions`
 - **위저드**: `step`, `form`, `detail`, `errors`
-- **J-layer**: `jayerRows`, `jayerFilterSets`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`, `jayerSortBySp`
-- **O-layer**: `oayerRows`, `oayerFilterSets`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerSortBySp`, `oayerInfoTab`
+- **J-layer**: `jayerRows`, `jayerFilterSets`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`
+- **O-layer**: `oayerRows`, `oayerFilterSets`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerInfoTab`
+  (2026-10-28: `jayerSortBySp`/`oayerSortBySp` 'STEP 정렬' 토글 폐지 — '다음'·'상신' 시 SP 자동 정렬, §4.1 참조)
   (2026-08-25: `jayerChecked`/`jayerDragInfo`/`jayerActiveFilterIds` 와 O-layer 대응 상태 폐지 — "비활성화" 기능 제거 참조)
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
 - **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
@@ -119,7 +120,7 @@ pages/RequestPage/
 | `handleFlow*` | 4 | Flow chart 행 |
 | `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
 | `handleFilter*` / `handleDetail*` / `handleApply*` | 각 2 | |
-| 기타 단일 핸들러 | 각 1 | `handleSubmitClick`, `handleSubmit`, `handleSaveDraft`, `handleIdleAutoSave`, `handleReset`, `handleNextStep`, `handlePrevStep`, `handleRequestPurposeSelect`, `handleOnlyMapConfirm`, `handleOnlyProdcChange`, `handleRegionMapChangeChange`, `handleEaChangeChange`, `handleMshotChangeChange`, `handleRadioChange`, `handleImagePaste`, `handleRefDocSelect`, `handleStageMapping`, `handleClearStaging`, `handleSortBbRows`, `handleResetBbRows`, `handleOpenAutoFillPanel`, `handleAddRange`, `handleRemoveRange`, `handleRangeChange`, `handlePartidSelectionBlur`, `handleDragEnd` 등 (2026-08-20: `handleSelectAdiCdPurpose`/`handleLeaveAdiCd` 제거 — ADI CD 변경 진입/해제가 `handleRequestPurposeSelect` 로 통합됨) |
+| 기타 단일 핸들러 | 각 1 | `handleSubmitClick`, `handleSubmit`, `handleSaveDraft`, `handleIdleAutoSave`, `handleReset`, `handleNextStep`, `handlePrevStep`, `handleRequestPurposeSelect`, `handleOnlyMapConfirm`, `handleOnlyProdcChange`, `handleRegionMapChangeChange`, `handleEaChangeChange`, `handleMshotChangeChange`, `handleRadioChange`, `handleImagePaste`, `handleRefDocSelect`, `handleStageMapping`, `handleClearStaging`, `sortJayerRowsBySp`·`sortOayerRowsBySp`·`sortBbRowsBySp`(2026-10-28 — `handleSortBbRows` 대체), `handleResetBbRows`, `handleOpenAutoFillPanel`, `handleAddRange`, `handleRemoveRange`, `handleRangeChange`, `handlePartidSelectionBlur`, `handleDragEnd` 등 (2026-08-20: `handleSelectAdiCdPurpose`/`handleLeaveAdiCd` 제거 — ADI CD 변경 진입/해제가 `handleRequestPurposeSelect` 로 통합됨) |
 
 ### 2.3 렌더 함수 → Step 컴포넌트 (✅ 분리 완료)
 메인 `return` 은 `step` 값에 따라 §1의 Step 컴포넌트를 렌더한다. 기존 `renderStepN()` 인라인 렌더 함수는 모두 제거되고 `components/StepN.tsx` 로 분리됨.
@@ -332,6 +333,103 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   5. [J/O 데이터가 있는 조리법으로 작성한 일반 목적 문서 상신] → [기대: 확인 모달 없이 바로 상신 모달이 열린다(기존과 동일).]
   6. [`Only MAP`·`MAP 삭제`·`ADI CD 변경` 문서 상신] → [기대: J/O 가 0행이어도 확인 모달이 뜨지 않는다.]
   - 실패 신호: 1~2에서 조회 토스트가 다시 뜨지 않거나 표가 비어 있음 / 3에서 편집 값이 사라짐 / 4에서 모달 없이 상신 모달이 바로 열림.
+
+### 기능 변경 (2026-10-28 — J-ayer·O-ayer·bb 표 SP 순서 자동 정렬 + 수동 정렬 버튼 폐지)
+
+- **의도(사용자)**: 세 표 모두 SP 값 순서대로 작성·저장돼야 한다. 사용자가 직접 정렬하지 않아도 '다음' 단계로 넘어가거나 '상신'할 때 자동으로 맞춘다.
+- **결정(사용자)**
+  - 비교 규칙: 기존 STEPSEQ 규칙(`splitStepseq`) — 접두어(대소문자 무시) → 숫자 앞 4자리 → 나머지 자리. 흐름도 검증·백엔드 Step 목록 정렬(`views.py _stepseq_sort_key`)과 같다.
+    예: `AAAA0100 < AAAA1234 < AAAA12345 < AAAA1235`. 접두어가 다르면 접두어 순으로 먼저 묶인다.
+  - 시점: STEP3(J) 통과 시 J, STEP4(O) 통과 시 O, '상신'(검증 통과 후 확인 모달 열기 전) 시 J·O·bb 모두. '이전'·임시저장은 정렬하지 않는다.
+  - SP 가 비었거나 규칙으로 읽을 수 없는 행은 **맨 위**. 같은 SP 끼리·맨 위 행끼리는 기존(화면) 순서 유지.
+  - 수동 정렬 버튼 제거: J/O 툴바 `STEP 정렬` 토글, bb 결과 표 SP 헤더 클릭 정렬(🔼).
+- **구현**
+  - `helpers.ts`: 순수 함수 `sortRowsBySp(rows, getSp)` — 입력 배열 순서를 기존 순서로 삼아 안정 정렬하고 `sortOrder` 를 0,1,2… 로 다시 매긴다(행 id 불변 → bb 매핑·이력 비교 id 짝짓기 영향 없음).
+  - `index.tsx`: `sortJayerRowsBySp`/`sortOayerRowsBySp`(sortOrder 순으로 놓은 뒤 `sp` 기준)·`sortBbRowsBySp`(배열 순서 그대로 `ss` 기준).
+    `goToStep` 에서 s=3·4 검증 통과 직후(인디케이터로 여러 단계를 건너뛸 때도 지나가는 단계마다), `handleSubmitClick` 검증 통과 직후 호출.
+    `buildEnrichedForm` 은 토글 정렬 대신 `sortOrder` 순으로 저장. `jayerSortBySp`/`oayerSortBySp` state·`handleSortBbRows` 삭제.
+  - `Step2.tsx`/`Step3.tsx`: `STEP 정렬` 버튼·관련 props 삭제, 표는 항상 `sortOrder` 순. `Step4.tsx`: SP 헤더 `onClick`·`title`·🔼·`data-tour="bb-sp-sort"` 삭제.
+  - 가이드 투어(`useStepGuideTour.ts`): STEP5 'SP 헤더 클릭 — SEQ 기준 정렬'(`s5g3b`) 그룹·`makeBbSortDemoRows` 삭제 → STEP5 그룹 4→3개, `s5g3` 는 SP 순 샘플(`makeTourBbRows`).
+  - i18n(ko/en 동시 삭제): `request.btn_sort_by_step`, `request.bb_sort_title`, `guide.tour.step.groups.s5g3b`.
+- **주의**
+  - 임시저장 문서는 다시 열어도 곧바로 정렬되지 않는다 — 그 단계에서 '다음'을 누르거나 상신할 때 정렬된다.
+  - bb 이력 비교는 회차 사이 겹치는 행 id 가 하나도 없을 때만 위치로 짝짓는다 — 그런 회차에서는 정렬로 순서가 바뀐 행이 '변경'으로 보일 수 있다.
+  - 백엔드는 정렬하지 않는다(API 직접 상신은 정렬되지 않음).
+- **검증**: `helpers.test.ts` `sortRowsBySp` 5건, 신규 `RequestPage/spAutoSort.test.tsx` 5건(STEP3 '다음' J 정렬·O 미정렬 / '이전' 미정렬 / STEP4 '다음' O 정렬 /
+  '상신' 세 표 정렬 / bb SP 헤더 정렬 없음 — 동작 3건은 수정 전 실패·수정 후 통과 확인). `npx tsc --noEmit` 0건, 프론트 전체 47 suites / 641건 통과, 변경 파일 ESLint 신규 경고 0.
+  결재 흐름 무관 — `approval_cases` 러너 대상 아님.
+- **수동 검증 시나리오**
+  1. [`/request` → STEP1~2 입력 → STEP3 J-ayer] → [기대: 툴바에 `STEP 정렬` 버튼이 없다. 표는 조회된 순서 그대로.]
+  2. [STEP3 에서 `다음`] → [`이전` 으로 STEP3 복귀] → [기대: J 행이 SP 오름차순(자릿수가 달라도 앞 4자리 기준), SP 빈 행은 맨 위.]
+  3. [STEP4 O-ayer 'OVL Layer 목록'에서 `STEP 정렬` 이 없는지 확인 → `다음` → `이전`] → [기대: O 행이 SP 오름차순.]
+  4. [STEP5 에서 매핑·자동 채움을 SP 와 다른 순서로 적용 → 'bb 정보 (적용 결과)' SP 헤더를 클릭] → [기대: 아무 일도 일어나지 않고 🔼 가 없다.]
+     → [`📤 상신` 클릭(확인 모달이 열림)] → [기대: 모달 뒤 bb 결과 표가 SP 순으로 바뀌어 있다. 상신 후 결재 현황 상세 JOB/OVL/BB 탭도 SP 순.]
+  5. [STEP3 에서 `이전`] → [기대: 순서가 바뀌지 않는다.]
+  6. [STEP5 영상 가이드] → [기대: 3개 그룹(자동 채움 / 매핑 / bb 정보 표)만 나오고 'SP 헤더 클릭' 그룹이 없다.]
+  - 실패 신호: '다음' 후에도 순서가 그대로 / 상신된 문서 상세에서 SP 순이 아님 / 빈 SP 행이 맨 아래.
+
+### 버그 수정 (2026-10-27 — J/O ST 일괄 버튼('전체 O'·'전체 X'·'초기화')이 반대편 표로 전파되지 않던 문제)
+
+- **증상(재현 테스트로 확인)**: J(또는 O) 툴바 `전체 X` 를 눌러도 같은 layerid 의 반대편 행은 ST 가 그대로였다.
+  2026-08-25 항목(시나리오 3)은 전파를 기대했지만, 2026-09-14 수정이 전파 대상 layerid 를 "클릭 후 참여행"으로 고르게 하면서
+  `전체 X` 직후엔 참여행이 0개가 돼 전파가 끊겼다. 또 반대편 대상도 참여행(ST X 아님)만 골라, 반대편이 이미 X 면 `전체 O`·`초기화`도 닿지 않았다.
+- **결정(사용자)**: ST 일괄 버튼은 반대편 표에서 ST X 행도 대상으로 삼아, `전체 X`·`전체 O`·`초기화` 모두 양쪽 표가 함께 움직이게 한다
+  (2026-08-25 `전체 X` 전파 + 2026-09-14 `전체 X → 전체 O` 되돌리기 두 결정을 함께 지킨다).
+- **수정** (`index.tsx`): 새 내부 함수 `bulkCrossTargetIds(field, updatedRows, otherRows)` 로 `handleJayer/OayerSetAll`·`handleJayer/OayerResetField` 4곳의 전파 대상을 고른다.
+  - **ST 버튼**: 이 표에서 값이 바뀐 행(기등록/layer삭제/미진행 제외 전체)의 layerid → 반대편에서 **ST X 행까지 포함해**(기등록/layer삭제/미진행만 제외) 그 layerid 행이 정확히 1개일 때 전파.
+  - **요청 기준 버튼(전체 신규·차용·초기화)**: 종전 그대로 — 클릭 후 참여행 기준, 반대편 참여행 1개일 때만.
+  - 전파로 X 가 되는 반대편 행은 요청 기준·제품 이름·STEP(J 는 ID 도)을 비운다(이미 X 였던 행은 비우지 않음). O→J 로 X 가 된 J 행은 bb 매핑을 푼다.
+- **바뀌지 않은 것**: 한 행씩 바꾸는 편집(`handleJayerChange`/`handleOayerChange`)·붙여넣기·필터 적용의 전파 규칙. 한 행씩 X→O 로 바꾸는 것은 종전대로 반대편에 전파되지 않는다.
+- **동작 차이 주의**: ST 버튼의 반대편 대상이 "참여행 1개"에서 "기등록/layer삭제/미진행이 아닌 행 1개"로 넓어졌다. 한 layerid 에 반대편 행이
+  O 1개 + X 1개 있으면 예전엔 O 행에 전파됐지만 이제는 후보가 2개라 전파하지 않는다.
+- **테스트**: `RequestPage/stNocRule.test.tsx` 5건 추가 — J/O `전체 X` 전파(수정 전 실패 → 수정 후 통과), J/O `전체 X → 전체 O` 되돌리기, O `전체 X → ST 초기화`.
+  `npx tsc --noEmit` 에러 0건, 프론트 전체 46 suites / 631건 통과. 결재 흐름 무관 — `approval_cases` 러너 대상 아님.
+- **수동 검증 시나리오** (J·O 에 같은 layerid 행이 하나씩 있는 문서)
+  1. [STEP3 J-ayer 툴바 ST_J `전체 X`] → [`다음` → STEP4 O-ayer] → [기대: 같은 layerid 의 O 행도 ST X·회색, 요청 기준·제품 이름·STEP 이 비어 있다.]
+  2. [`이전` → STEP3 `전체 O`] → [`다음` → STEP4] → [기대: O 행도 ST O 로 돌아와 있다(요청 기준은 빈 칸 — 다시 골라야 한다).]
+  3. [STEP5 에서 J 행을 bb 에 매핑 → STEP4 O-ayer ST_O `전체 X`] → [STEP3: J 행 ST X / STEP5: 그 J 행의 bb 행이 사라졌다.]
+  4. [STEP4 `전체 X` 후 ST 의 `초기화`] → [STEP3: 같은 layerid 의 J 행 ST 도 빈 칸.]
+  - 실패 신호: 한쪽 표만 바뀌고 반대편 ST 가 그대로 / `전체 O` 후 반대편이 X 로 남음 / ST X 인 J 행의 bb 행이 STEP5 에 남음.
+
+### 버그 수정 (2026-10-27 — O→J ST 'X' 전파 시 J 행 bb 매핑이 풀리지 않던 문제)
+
+- **증상(재현 테스트로 확인)**: STEP4 O-ayer 행 하나의 ST 를 X 로 바꾸면 같은 layerid 의 J-ayer 행도 X 로 바뀌고 요청 기준·제품 이름·STEP·ID 가
+  비워지지만, 그 J 행에 매핑된 bb 행은 결과 표에 그대로 남아 저장·상신됐다. J 에서 직접 X 로 바꾸면 매핑이 풀린다(`handleJayerChange`).
+  J 행이 검증 대상에서 빠지므로 상신이 막히지는 않았다.
+- **결정(사용자)**: J 의 ST 가 X 가 되면 어느 경로든 bb 매핑이 풀리는 것이 맞다.
+- **수정**: `index.tsx` `handleOayerChange` 의 O→J st/new_or_copy 전파에서 대상 J 행의 ST 가 X 가 되면 `unmapIfMapped([target.id])` 호출.
+  bb 행이 지워지고 그 J 행은 STEP5 '원본 데이터 목록'에 다시 나타난다.
+- **테스트**: `RequestPage/stNocRule.test.tsx` 에 1건 추가 — O 행 SP01 의 ST 를 X → 저장 payload 에서 j1 이 X·필드 초기화, bb 행은 j2 것만 남는다.
+  수정 전 실패 / 수정 후 통과 확인. `npx tsc --noEmit` 에러 0건, 프론트 전체 46 suites / 626건 통과. 결재 흐름 무관 — `approval_cases` 러너 대상 아님.
+- **수동 검증 시나리오**
+  1. [`/request` → STEP1~3 입력, STEP5 에서 J 행 하나(layerid A)를 bb 에 매핑 → `이전` 으로 STEP4 O-ayer 'OVL Layer 목록'] →
+     [layerid A 인 O 행의 ST 칸에서 `X` 선택] → [`이전` 으로 STEP3: 같은 layerid 의 J 행이 ST X·회색, 요청 기준·제품 이름·STEP·ID 가 비어 있다] →
+     [`다음` 두 번으로 STEP5: 'bb 정보 (적용 결과)' 표에서 그 J 행의 bb 행이 사라져 있다. 그 J 행은 ST X 라 원본 목록에도 나오지 않는다.]
+  2. (대조) [STEP3 에서 같은 J 행의 ST 를 직접 X] → [STEP5 결과가 1번과 같다.]
+  - 실패 신호: STEP5 결과 표에 ST X 인 J 행의 bb 행이 남아 있다.
+
+### i18n 정리 (2026-10-27 — J/O-ayer·bb 관련 하드코딩 문구 → i18n 키 / STEP3·4 검증 주석 정정)
+
+- **의도(사용자)**: J-ayer·O-ayer·bb 표 기능 점검 중 발견한 규칙 G 위반(하드코딩 한글)과 실제 동작과 어긋난 주석을 고친다.
+  범위는 **J/O/bb 관련 문구만**이다(MAP 정보·이미지 업로드·상신 결과 토스트 등 `validate()` 의 다른 하드코딩 문구는 이번 범위 밖 — 그대로 남아 있다).
+- **바꾼 것** (`index.tsx`)
+  - `handleFilterDeleteConfirm` / `handleFilterAllDeleteConfirm`(J/O 필터 삭제 토스트) → `request.filter_delete_toast`(`{{label}}`) / `request.filter_all_delete_toast`
+  - `validate(4)` Partial Shot 미선택 토스트 → `request.partial_shot_required`(`$t(request.partial_shot)` 중첩)
+  - `validate(5)` bb 미매핑 오류(`errors.jayer_mapping` + 토스트) → `request.jayer_mapping_required`
+  - STEP3·4 검증 블록 위 주석: "행 단위 필수값 검증을 두지 않는다(행은 선택사항)" → 실제 동작대로
+    "모든 행의 ST·요청 기준 필수 + 짝 일치(`addStNocError`), 그 밖의 칸은 차용 행만 필수"로 정정(동작 변경 없음).
+- **i18n(ko/en 동시 4개)**: `request.filter_delete_toast`, `request.filter_all_delete_toast`, `request.partial_shot_required`, `request.jayer_mapping_required`.
+  ko 문구는 예전 하드코딩 문구와 **글자 그대로 같다** — 한국어 화면에서는 보이는 것이 달라지지 않는다. 영어 화면에서 영문으로 나온다.
+- **검증**: `npx tsc --noEmit` 에러 0건(변경 전 0건), 프론트 전체 46 suites / 625건 통과. i18next 로 ko/en 4개 키 렌더 결과 확인.
+  결재 흐름 무관 — `scripts/approval_cases` 러너 대상 아님.
+- **수동 검증 시나리오** (한국어/영어 각각 — 상단 바 사용자 메뉴 드롭다운에서 언어 전환)
+  1. [`/request` → STEP1~3 입력 → STEP4 O-ayer 'OVL 정보' 탭에서 Partial Shot 을 고르지 않고 `다음`] →
+     [기대: ko `Partial Shot 계측 필요: 필수 선택 항목입니다.` / en `Partial Shot Measurement Required: This selection is required.` 토스트]
+  2. [STEP5 뼈찜 정보에서 원본 데이터 목록에 미매핑 행을 남긴 채 `상신`] →
+     [기대: 표 위 빨간 문구와 토스트가 ko `모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.` / en `Every source row must be mapped to a Backbone before submitting.`]
+  3. [STEP3 J-ayer(또는 STEP4 O-ayer) `+ 필터` → 저장된 필터 하나 삭제 → 확인 / '전체 삭제' → 확인] →
+     [기대: ko `필터 "이름"이 삭제되었습니다.`·`모든 필터가 삭제되었습니다.` / en `Filter "name" was deleted.`·`All filters were deleted.`]
+  - 실패 신호: 토스트에 `request.xxx` 처럼 키 이름이 그대로 보이면 ko/en 키 누락이다.
 
 ### 기능 삭제 (2026-10-26 — J-ayer / O-ayer / bb 표 '+ 행 추가'와 J/O 행 `✕` 삭제 폐지)
 
@@ -3491,6 +3589,7 @@ direct-approve)는 그대로다.
 
 ### 추가 변경 이력 (2026-08-16 — Step5(BB) 가이드 투어에 "bb 정보" 표 + SP 정렬 그룹 추가)
 
+- ※ **2026-10-28 폐지**: SP 헤더 클릭 정렬과 `s5g3b` 그룹·`bb-sp-sort`·`makeBbSortDemoRows` 는 SP 자동 정렬 도입으로 삭제됐다(§4.1 2026-10-28 항목).
 - **개요**: Step5(BB) 하이라이트 가이드 투어의 `s5g3`(`bb 정보 (적용 결과)` 표) 그룹이 그동안 빈 표만 보여줬던 것을, 데모 데이터로 실제 채워진 표를 보여주도록 바꾸고, **SP 헤더 클릭 정렬 기능**을 강조하는 그룹(`s5g3b`)을 새로 추가했다(총 4그룹으로 증가).
 - **적용 경로**:
   - `pages/RequestPage/useStepGuideTour.ts`: `UseStepGuideTourArgs`/`BaseSnapshot`에 `bbRows`/`setBbRows` 추가(다른 상태와 동일하게 투어 진입 시 스냅샷, 그룹 전환·종료 시 복원). 신규 헬퍼 `makeBbSortDemoRows()`(기존 `constants.ts`의 `makeTourBbRows()`를 뒤집은 순서 — SP02 → SP01)를 `s5g3`·`s5g3b` 양쪽 그룹의 `onEnter`에서 사용해 "정렬 전" 상태를 보여준다.
