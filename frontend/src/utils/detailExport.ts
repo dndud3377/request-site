@@ -1,13 +1,13 @@
 import ExcelJS from 'exceljs';
 import type { TFunction } from 'i18next';
-import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo, ColorFilterSet } from '../types';
+import { RequestDocument, DetailFormState, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, MergeRowInfo, ColorFilterSet } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
 import {
   VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
   isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
 } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText, toExtraLayerRows } from '../pages/RequestPage/helpers';
 
 const NO_ACTIVE_COLOR_FILTERS = new Set<string>();
 
@@ -152,6 +152,24 @@ function addOvlSheet(
       else if (col === 7) applyFill(cell, ST_CELL_COLOR[r.st]);
       else if (col === 8) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
     });
+  });
+}
+
+// claude 수정 (2026-10-28): 상세 모달 XXXXXX 페이지 export — 상신 시점 스냅샷을 J-layer 앞 6개 컬럼으로 담는다(색상 없음)
+const EXTRA_EXPORT_ID_PREFIX = 'export';
+
+function addExtraSheet(wb: ExcelJS.Workbook, t: TFunction, rows: ExtraLayerRow[]): void {
+  const ws = wb.addWorksheet(t('request.extra_li'));
+  ws.columns = [
+    { header: t('request.col_updated_date'), key: 'updated', width: 16 },
+    { header: t('request.process_id'), key: 'process_id', width: 14 },
+    { header: t('request.col_sp'), key: 'sp', width: 10 },
+    { header: t('request.col_sd'), key: 'sd', width: 10 },
+    { header: t('request.col_layer'), key: 'layerid', width: 10 },
+    { header: t('request.col_pp'), key: 'pp', width: 14 },
+  ];
+  rows.forEach((r) => {
+    ws.addRow({ updated: r.updated, process_id: r.process_id, sp: r.sp, sd: r.sd, layerid: r.layerid, pp: r.pp });
   });
 }
 
@@ -628,6 +646,12 @@ export async function exportOayer(
   await downloadWorkbook(wb, `${doc.title}_OVL_${getNowString()}.xlsx`);
 }
 
+export async function exportExtraLayer(doc: RequestDocument, t: TFunction): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  addExtraSheet(wb, t, toExtraLayerRows(doc.extra_layer_snapshot, EXTRA_EXPORT_ID_PREFIX));
+  await downloadWorkbook(wb, `${doc.title}_${t('request.extra_li')}_${getNowString()}.xlsx`);
+}
+
 export async function exportBb(doc: RequestDocument, t: TFunction): Promise<void> {
   const { detail, bb } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
@@ -696,6 +720,8 @@ export async function exportAll(
   addJobSheet(wb, t, jayer, colorFilters.jayerColorFilterSets, colorFilters.activeJayerColorFilterIds);
   addOvlSheet(wb, t, oayer, colorFilters.oayerColorFilterSets, colorFilters.activeOayerColorFilterIds);
   addOvlInfoSheet(wb, t, detail);
+  // claude 수정 (2026-10-28): 전체 export 에 XXXXXX 시트를 OVL 뒤에 추가(상세 모달 탭 순서와 같다)
+  addExtraSheet(wb, t, toExtraLayerRows(doc.extra_layer_snapshot, EXTRA_EXPORT_ID_PREFIX));
   addBbSheet(wb, t, detail, bb);
   const etcSheetName = t('request.section_etc');
   addScreenshotSheet(wb, etcSheetName, screenshots.etc, t('request.export_capture_failed'));
