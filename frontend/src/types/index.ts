@@ -275,6 +275,8 @@ export interface RequestDocument {
   layer_drift_detected?: boolean;
   // 마스터 DB 변경 감지로 자동 반려된 문서인지 (읽기 전용) — 반려 후에도 결재 현황에 '변경 감지' 배지를 유지한다
   layer_drift_auto_rejected?: boolean;
+  // claude 수정 (2026-10-28): 상세 모달 XXXXXX 페이지용 — 상신 시점 XXXXXX 스냅샷 행 (상세 응답만, 읽기 전용)
+  extra_layer_snapshot?: ExtraLayerSnapshotRow[];
   // 해외 의뢰서 여부 (읽기 전용). 의뢰자 역할로 최초 상신 시 서버가 확정한다.
   // 결재선 후보(지정 PL·영업합의자·후결자) 목록을 어느 역할로 부를지 이 값으로 고른다 — plRoleFor.
   is_overseas?: boolean;
@@ -484,6 +486,30 @@ export interface OayerRow {
   product_name: string;
   step: string;
   loaded?: boolean;     // 자동채움/병합으로 불러온 행 — 불러온 컬럼(LOADED_LOCK_COLS) 읽기전용
+}
+
+// claude 수정 (2026-10-28): 상신 시점 XXXXXX 스냅샷 한 행 — backend layer_drift._row_dict 형식 그대로
+export interface ExtraLayerSnapshotRow {
+  line: string;
+  process: string;
+  processid: string;
+  stepseq: string;
+  descript: string;
+  recipeid: string;
+  areaname: string;
+  layerid: string;
+  updated: string;
+}
+
+// claude 수정 (2026-10-28): 상세 모달 XXXXXX 표의 한 행 — 스냅샷을 J-layer 앞 6개 컬럼 이름으로 옮긴 표시용 행
+export interface ExtraLayerRow {
+  id: string;           // 스냅샷에는 id 가 없어 화면에서 붙인 임시 id(회차끼리 겹치지 않는다)
+  updated: string;
+  process_id: string;
+  sp: string;
+  sd: string;
+  layerid: string;
+  pp: string;
 }
 
 export interface BbTableRow {
@@ -797,6 +823,8 @@ export interface HistorySnapshot {
   jayerRows: JayerRow[];
   oayerRows: OayerRow[];
   bbRows: BbTableRow[];
+  // claude 수정 (2026-10-28): 직전 회차 XXXXXX 스냅샷 — 이 기능 배포 이전에 쌓인 회차에는 없다
+  extraRows?: ExtraLayerSnapshotRow[];
 }
 
 // ===== API Response Wrappers =====
