@@ -6548,6 +6548,59 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   6. [이력 조회 → 승인 완료된 같은 유형의 문서] → [기대 결과: 강조 행이 실제로 바뀐 행뿐. 회차별 모달도 밀린 값이 아니다.]
   - 실패 신호: 다시 조회한 문서에서 끼어든 행 아래 행들이 여전히 강조됨 / '이력 확인' 전후 값이 한 칸 어긋남 / 뼈찜 탭 동작이 종전과 달라짐.
 
+### 기능 추가 (2026-10-28 — 상세 모달 'XXXXXX' 페이지: 상신 시점 스냅샷 표 + 회차 이력)
+- **요청(의도)**: 결재자가 상신 시점의 XXXXXX(`STEP_EXTRA_EQPTYPE`, 임시값) 스텝 목록을 J-layer·O-layer 처럼 표로 확인할 수
+  있게 한다. **조회 전용**(편집 없음). 재상신을 거듭해도 회차별로 무엇이 바뀌었는지 J/O-layer 와 같은 방식으로 본다.
+  이 기능 배포 이전 회차·문서는 신경 쓰지 않는다(안내 문구도 넣지 않는다 — 사용자 결정).
+- **데이터 출처**: 이미 상신 계열 액션(submit/resubmit/requester-resubmit/peer-submit)마다 백엔드가 캡처하던
+  `RequestDocument.extra_layer_snapshot`(`layer_drift.capture_extra_layer_snapshot`, 2026-09-17 도입)을 그대로 쓴다.
+  캡처·변경 감지 로직은 바꾸지 않았다.
+- **변경**
+  - `backend/api/serializers.py`: 상세 응답(`RequestDocumentSerializer`)에 `extra_layer_snapshot` 추가 — **행 목록(JSON 파싱 결과)**,
+    읽기 전용(SerializerMethodField). 캡처 전(빈 문자열)·깨진 JSON·목록이 아닌 값이면 `[]`. **목록 응답에는 싣지 않는다**
+    (`additional_notes` 를 목록에서 뺀 원칙과 같다).
+  - `frontend/src/types/index.ts`: `ExtraLayerSnapshotRow`(스냅샷 한 행 — `_row_dict` 형식), `ExtraLayerRow`(표시용 행),
+    `RequestDocument.extra_layer_snapshot?`, `HistorySnapshot.extraRows?` 추가.
+  - `frontend/src/pages/RequestPage/index.tsx`: 편집 진입 시 불러온 문서의 `extra_layer_snapshot` 을 `prevParsedRef.extraRows` 에 보관하고,
+    **반려 후 재상신으로 `history[]` 에 회차를 쌓을 때 `extraRows` 로 함께 넣는다**. 이후 백엔드가 상신 액션에서 새 스냅샷으로 덮어써도
+    직전 회차 값은 history 에 남는다. J/O-layer 와 같이 history 가 쌓이는 경우(`shouldAddHistory`)에만 쌓는다 —
+    peer-submit 등으로 스냅샷만 바뀐 경우의 이전 값은 남지 않는다(사용자 결정: J/O-layer 와 같게).
+  - `frontend/src/pages/RequestPage/helpers.ts`: `toExtraLayerRows(rows, idPrefix)` — 스냅샷 행을 J-layer 앞 6개 컬럼 이름으로 옮긴다
+    (`updated`→업데이트일(`formatUpdatedDate`), `processid`→조리법(공정ID), `stepseq`→SP, `descript`→SD, `layerid`→Layer, `recipeid`→PP).
+    스냅샷에 id 가 없으므로 회차마다 다른 접두어로 임시 id 를 붙인다 → 회차끼리 id 가 겹치지 않아 **내용으로 짝짓는다**
+    (J/O-layer 와 같은 `process_id+PP → process_id+Layer`, 2026-10-21 절 참고).
+  - `frontend/src/components/PagedDetailView.tsx`: **O-ayer 정보 다음에 'XXXXXX' 페이지**를 추가한다(모든 문서 유형, 결재 현황·이력 조회·홈 상세 공통).
+    - 표: 업데이트일 / 조리법 / SP / SD / Layer / PP(J-layer 앞 6개 컬럼). 데이터가 없으면 `데이터 없음`.
+    - 제목 줄: `전체 N건` · `📊 export` · `🕘 모든 이력 확인`. 문서에 '변경 감지'가 있으면 J/O 페이지와 같은 조건으로 배지를 보이고, 누르면 기존 변경 감지 모달을 연다
+      (모달은 종전처럼 '변경이 있는 첫 탭'을 먼저 연다 — XXXXXX 탭 우선 열기는 이번 범위 아님).
+    - 회차 비교: 진행 중=직전 회차 대비 / 이력 조회=한 번이라도 바뀐 행을 강조하고 '이력 확인'(변경 전/후 · 회차별) 버튼을 단다.
+      `extraRows` 가 **없는 회차(기능 배포 전)는 비교에서 뺀다** — 넣으면 모든 행이 '신규'로 잡힌다. 진행 중 모드는 직전 회차에 `extraRows` 가 없으면 비교하지 않는다.
+    - 레이어 필터(공유 필터, ST 를 'X' 로 바꾸는 기능)·색상 적용은 **넣지 않는다**(사용자 결정 — XXXXXX 는 ST 컬럼이 없는 조회 전용 표).
+  - `frontend/src/utils/detailExport.ts`: `exportExtraLayer`(탭 export, 시트 'XXXXXX') 추가, **전체 export 에 'XXXXXX' 시트를 'OVL 정보' 뒤에** 넣는다. 색상 없음.
+  - `frontend/src/pages/ApprovalPage.tsx`: 가이드 투어용 `TOUR_PAGE_IDX.route` 6 → 7(OVL 뒤 페이지가 하나 늘어 결재 경로 인덱스가 밀림).
+  - i18n(`ko.json`/`en.json` 동시): `request.extra_li`("XXXXXX"), `request.extra_row_history`("XXXXXX 행 변경 이력" / "XXXXXX Row Change History").
+    실제 eqptype 이름이 확정되면 이 두 키의 문구만 바꾸면 된다.
+- **저장 형식**: `additional_notes.history[].extraRows`(선택 키) 추가. 기존 history 항목에는 없다. 백엔드는 history 를 읽지 않는다.
+- **테스트**
+  - 백엔드 `ExtraLayerSnapshotSerializerTest`(4건 — 상세 응답 행 목록 / 캡처 전·깨진 값 `[]` / 목록 응답 미포함 / 읽기 전용).
+  - 프론트 `PagedDetailView.extraLayer.test.tsx`(8건 — 6개 컬럼·값 매핑, 데이터 없음, 내용 매칭 강조, 이력 확인 전/후,
+    배포 전 회차 비교 제외(진행 중·이력 조회), 모든 이력 확인 신규/변경), `requesterResubmitHistory.test.tsx` 에 `history[0].extraRows` 검증 추가
+    (기능을 빼고 돌리면 이 검증이 실패함을 확인). `PagedDetailView.rowMatch.test.tsx` 의 BB 페이지 인덱스 4 → 5.
+- **수동 검증 시나리오**
+  1. [의뢰서 작성 → 라인·조리법이 XXXXXX 마스터에 행이 있는 값으로 상신] → [결재 현황 → 그 문서 행 클릭 → 상세 모달 'XXXXXX' 탭] →
+     [기대: O-ayer 정보 오른쪽에 'XXXXXX' 탭이 있고, 상신 시점 XXXXXX 스텝이 6개 컬럼으로 보인다. `전체 N건` 이 행 수와 같다. ST·신규/차용 컬럼, 필터 버튼은 없다.]
+  2. [그 문서를 반려 → 의뢰자가 수정 후 재상신(그 사이 XXXXXX 마스터가 바뀐 경우)] → [같은 탭] →
+     [기대: 바뀐/새로 생긴 행만 빨간 테두리 + '이력 확인'. 누르면 변경 전/후가 보인다. 중간에 행이 끼어도 아래 행이 밀려 강조되지 않는다.]
+  3. [같은 탭 '🕘 모든 이력 확인'] → [기대: `1차 제출 → 현재 (최신)` 구간에 신규·변경·삭제 행이 모인다.]
+  4. [`📊 export`] → [기대: 'XXXXXX' 시트 1장(6개 컬럼)]. [모달 우측 상단 `📊 전체 export`] → [기대: 'OVL 정보' 다음에 'XXXXXX' 시트.]
+  5. [변경 감지 배지가 있는 문서에서 XXXXXX 탭의 배지 클릭] → [기대: 기존 변경 감지 모달이 열리고, 'XXXXXX' 탭에 마스터 DB 변경 내역.]
+  6. [이력 조회 → 완료 문서 → XXXXXX 탭 → 강조 행 '이력 확인'] → [기대: 회차별(1차 제출 / 현재) 값 표.]
+  - 실패 신호: XXXXXX 탭이 없음 / 상신했는데 항상 `데이터 없음`(아래 주의 참고) / 재상신 후에도 강조가 전혀 없음(history 에 `extraRows` 가 안 쌓임) /
+    배포 전에 쌓인 회차 때문에 모든 행이 '신규'로 강조됨.
+- **주의(발견 보고, 미수정)**: 스냅샷 캡처(`layer_drift.EXTRA_MODEL_MAP`)는 `'line1'` 형식 키를 쓰는데, 의뢰서의 `detail.line` 은
+  화면 표기(`'라인1'`, `OPTION_LINE`)다. 재현 결과 `detail.line='라인1'` 이면 스냅샷이 **0건**, `'line1'` 이면 정상 캡처된다.
+  이 경우 XXXXXX 페이지는 항상 `데이터 없음` 이다(J/O 자동 채움 조회 `job-file-layer`/`ovl-layer` 도 같은 맵을 쓴다). 사용자 결정 대기.
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
