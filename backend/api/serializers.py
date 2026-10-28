@@ -319,6 +319,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
     designated_pl_loginid = serializers.SerializerMethodField()
     notifier_mails = serializers.SerializerMethodField()
     layer_drift_auto_rejected = serializers.SerializerMethodField()
+    extra_layer_snapshot = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
@@ -333,6 +334,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'shared_group', 'shared_group_name', 'review_items', 'layer_drift_detected',
             'layer_drift_auto_rejected', 'is_overseas', 'sales_agreer_none_reasons',
             'requires_sales_agreer', 'can_act_as_requester', 'is_shared_with_me', 'round_submitters',
+            'extra_layer_snapshot',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
         # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
@@ -351,6 +353,20 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
 
     def get_layer_drift_auto_rejected(self, obj):
         return is_layer_drift_auto_rejected(obj)
+
+    # claude 수정 (2026-10-28): 상세 모달 XXXXXX 페이지용 — 상신 시점 스냅샷(JSON 문자열)을 행 목록으로 내려준다
+    def get_extra_layer_snapshot(self, obj):
+        """상신 시점 XXXXXX 스냅샷 행 목록(`layer_drift.capture_extra_layer_snapshot` 형식).
+
+        layer_drift.py(상신 계열 액션)만 쓰는 값이라 읽기 전용이다. 캡처 전(임시저장 등)이거나
+        JSON 이 깨져 있으면 빈 목록을 돌려준다. 목록 응답(RequestDocumentListSerializer)에는 싣지 않는다.
+        """
+        import json
+        try:
+            rows = json.loads(obj.extra_layer_snapshot or '[]')
+        except (TypeError, ValueError):
+            return []
+        return rows if isinstance(rows, list) else []
 
     def get_notifier_mails(self, obj):
         """통보처(detail.notifiers) loginid → mail 매핑. 결재 경로 탭에서 이름 옆 이메일 표시용."""
