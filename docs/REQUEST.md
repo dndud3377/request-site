@@ -93,8 +93,9 @@ pages/RequestPage/
 
 - **옵션 캐시**: `lineOptions`, `processOptions`, `productOptions`, `processIdOptions`, `top/middle/bottomProductOptions`, `top/middle/bottomProcessOptions`, `Bb*Options`, `Flow*Options`, `sourcePartIdOptions`
 - **위저드**: `step`, `form`, `detail`, `errors`
-- **J-layer**: `jayerRows`, `jayerFilterSets`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`, `jayerSortBySp`
-- **O-layer**: `oayerRows`, `oayerFilterSets`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerSortBySp`, `oayerInfoTab`
+- **J-layer**: `jayerRows`, `jayerFilterSets`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`
+- **O-layer**: `oayerRows`, `oayerFilterSets`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerInfoTab`
+  (2026-10-28: `jayerSortBySp`/`oayerSortBySp` 'STEP 정렬' 토글 폐지 — '다음'·'상신' 시 SP 자동 정렬, §4.1 참조)
   (2026-08-25: `jayerChecked`/`jayerDragInfo`/`jayerActiveFilterIds` 와 O-layer 대응 상태 폐지 — "비활성화" 기능 제거 참조)
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
 - **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
@@ -119,7 +120,7 @@ pages/RequestPage/
 | `handleFlow*` | 4 | Flow chart 행 |
 | `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
 | `handleFilter*` / `handleDetail*` / `handleApply*` | 각 2 | |
-| 기타 단일 핸들러 | 각 1 | `handleSubmitClick`, `handleSubmit`, `handleSaveDraft`, `handleIdleAutoSave`, `handleReset`, `handleNextStep`, `handlePrevStep`, `handleRequestPurposeSelect`, `handleOnlyMapConfirm`, `handleOnlyProdcChange`, `handleRegionMapChangeChange`, `handleEaChangeChange`, `handleMshotChangeChange`, `handleRadioChange`, `handleImagePaste`, `handleRefDocSelect`, `handleStageMapping`, `handleClearStaging`, `handleSortBbRows`, `handleResetBbRows`, `handleOpenAutoFillPanel`, `handleAddRange`, `handleRemoveRange`, `handleRangeChange`, `handlePartidSelectionBlur`, `handleDragEnd` 등 (2026-08-20: `handleSelectAdiCdPurpose`/`handleLeaveAdiCd` 제거 — ADI CD 변경 진입/해제가 `handleRequestPurposeSelect` 로 통합됨) |
+| 기타 단일 핸들러 | 각 1 | `handleSubmitClick`, `handleSubmit`, `handleSaveDraft`, `handleIdleAutoSave`, `handleReset`, `handleNextStep`, `handlePrevStep`, `handleRequestPurposeSelect`, `handleOnlyMapConfirm`, `handleOnlyProdcChange`, `handleRegionMapChangeChange`, `handleEaChangeChange`, `handleMshotChangeChange`, `handleRadioChange`, `handleImagePaste`, `handleRefDocSelect`, `handleStageMapping`, `handleClearStaging`, `sortJayerRowsBySp`·`sortOayerRowsBySp`·`sortBbRowsBySp`(2026-10-28 — `handleSortBbRows` 대체), `handleResetBbRows`, `handleOpenAutoFillPanel`, `handleAddRange`, `handleRemoveRange`, `handleRangeChange`, `handlePartidSelectionBlur`, `handleDragEnd` 등 (2026-08-20: `handleSelectAdiCdPurpose`/`handleLeaveAdiCd` 제거 — ADI CD 변경 진입/해제가 `handleRequestPurposeSelect` 로 통합됨) |
 
 ### 2.3 렌더 함수 → Step 컴포넌트 (✅ 분리 완료)
 메인 `return` 은 `step` 값에 따라 §1의 Step 컴포넌트를 렌더한다. 기존 `renderStepN()` 인라인 렌더 함수는 모두 제거되고 `components/StepN.tsx` 로 분리됨.
@@ -287,6 +288,40 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 변경 (2026-10-28 — J-ayer·O-ayer·bb 표 SP 순서 자동 정렬 + 수동 정렬 버튼 폐지)
+
+- **의도(사용자)**: 세 표 모두 SP 값 순서대로 작성·저장돼야 한다. 사용자가 직접 정렬하지 않아도 '다음' 단계로 넘어가거나 '상신'할 때 자동으로 맞춘다.
+- **결정(사용자)**
+  - 비교 규칙: 기존 STEPSEQ 규칙(`splitStepseq`) — 접두어(대소문자 무시) → 숫자 앞 4자리 → 나머지 자리. 흐름도 검증·백엔드 Step 목록 정렬(`views.py _stepseq_sort_key`)과 같다.
+    예: `AAAA0100 < AAAA1234 < AAAA12345 < AAAA1235`. 접두어가 다르면 접두어 순으로 먼저 묶인다.
+  - 시점: STEP3(J) 통과 시 J, STEP4(O) 통과 시 O, '상신'(검증 통과 후 확인 모달 열기 전) 시 J·O·bb 모두. '이전'·임시저장은 정렬하지 않는다.
+  - SP 가 비었거나 규칙으로 읽을 수 없는 행은 **맨 위**. 같은 SP 끼리·맨 위 행끼리는 기존(화면) 순서 유지.
+  - 수동 정렬 버튼 제거: J/O 툴바 `STEP 정렬` 토글, bb 결과 표 SP 헤더 클릭 정렬(🔼).
+- **구현**
+  - `helpers.ts`: 순수 함수 `sortRowsBySp(rows, getSp)` — 입력 배열 순서를 기존 순서로 삼아 안정 정렬하고 `sortOrder` 를 0,1,2… 로 다시 매긴다(행 id 불변 → bb 매핑·이력 비교 id 짝짓기 영향 없음).
+  - `index.tsx`: `sortJayerRowsBySp`/`sortOayerRowsBySp`(sortOrder 순으로 놓은 뒤 `sp` 기준)·`sortBbRowsBySp`(배열 순서 그대로 `ss` 기준).
+    `goToStep` 에서 s=3·4 검증 통과 직후(인디케이터로 여러 단계를 건너뛸 때도 지나가는 단계마다), `handleSubmitClick` 검증 통과 직후 호출.
+    `buildEnrichedForm` 은 토글 정렬 대신 `sortOrder` 순으로 저장. `jayerSortBySp`/`oayerSortBySp` state·`handleSortBbRows` 삭제.
+  - `Step2.tsx`/`Step3.tsx`: `STEP 정렬` 버튼·관련 props 삭제, 표는 항상 `sortOrder` 순. `Step4.tsx`: SP 헤더 `onClick`·`title`·🔼·`data-tour="bb-sp-sort"` 삭제.
+  - 가이드 투어(`useStepGuideTour.ts`): STEP5 'SP 헤더 클릭 — SEQ 기준 정렬'(`s5g3b`) 그룹·`makeBbSortDemoRows` 삭제 → STEP5 그룹 4→3개, `s5g3` 는 SP 순 샘플(`makeTourBbRows`).
+  - i18n(ko/en 동시 삭제): `request.btn_sort_by_step`, `request.bb_sort_title`, `guide.tour.step.groups.s5g3b`.
+- **주의**
+  - 임시저장 문서는 다시 열어도 곧바로 정렬되지 않는다 — 그 단계에서 '다음'을 누르거나 상신할 때 정렬된다.
+  - bb 이력 비교는 회차 사이 겹치는 행 id 가 하나도 없을 때만 위치로 짝짓는다 — 그런 회차에서는 정렬로 순서가 바뀐 행이 '변경'으로 보일 수 있다.
+  - 백엔드는 정렬하지 않는다(API 직접 상신은 정렬되지 않음).
+- **검증**: `helpers.test.ts` `sortRowsBySp` 5건, 신규 `RequestPage/spAutoSort.test.tsx` 5건(STEP3 '다음' J 정렬·O 미정렬 / '이전' 미정렬 / STEP4 '다음' O 정렬 /
+  '상신' 세 표 정렬 / bb SP 헤더 정렬 없음 — 동작 3건은 수정 전 실패·수정 후 통과 확인). `npx tsc --noEmit` 0건, 프론트 전체 47 suites / 641건 통과, 변경 파일 ESLint 신규 경고 0.
+  결재 흐름 무관 — `approval_cases` 러너 대상 아님.
+- **수동 검증 시나리오**
+  1. [`/request` → STEP1~2 입력 → STEP3 J-ayer] → [기대: 툴바에 `STEP 정렬` 버튼이 없다. 표는 조회된 순서 그대로.]
+  2. [STEP3 에서 `다음`] → [`이전` 으로 STEP3 복귀] → [기대: J 행이 SP 오름차순(자릿수가 달라도 앞 4자리 기준), SP 빈 행은 맨 위.]
+  3. [STEP4 O-ayer 'OVL Layer 목록'에서 `STEP 정렬` 이 없는지 확인 → `다음` → `이전`] → [기대: O 행이 SP 오름차순.]
+  4. [STEP5 에서 매핑·자동 채움을 SP 와 다른 순서로 적용 → 'bb 정보 (적용 결과)' SP 헤더를 클릭] → [기대: 아무 일도 일어나지 않고 🔼 가 없다.]
+     → [`📤 상신` 클릭(확인 모달이 열림)] → [기대: 모달 뒤 bb 결과 표가 SP 순으로 바뀌어 있다. 상신 후 결재 현황 상세 JOB/OVL/BB 탭도 SP 순.]
+  5. [STEP3 에서 `이전`] → [기대: 순서가 바뀌지 않는다.]
+  6. [STEP5 영상 가이드] → [기대: 3개 그룹(자동 채움 / 매핑 / bb 정보 표)만 나오고 'SP 헤더 클릭' 그룹이 없다.]
+  - 실패 신호: '다음' 후에도 순서가 그대로 / 상신된 문서 상세에서 SP 순이 아님 / 빈 SP 행이 맨 아래.
 
 ### 버그 수정 (2026-10-27 — J/O ST 일괄 버튼('전체 O'·'전체 X'·'초기화')이 반대편 표로 전파되지 않던 문제)
 
@@ -3509,6 +3544,7 @@ direct-approve)는 그대로다.
 
 ### 추가 변경 이력 (2026-08-16 — Step5(BB) 가이드 투어에 "bb 정보" 표 + SP 정렬 그룹 추가)
 
+- ※ **2026-10-28 폐지**: SP 헤더 클릭 정렬과 `s5g3b` 그룹·`bb-sp-sort`·`makeBbSortDemoRows` 는 SP 자동 정렬 도입으로 삭제됐다(§4.1 2026-10-28 항목).
 - **개요**: Step5(BB) 하이라이트 가이드 투어의 `s5g3`(`bb 정보 (적용 결과)` 표) 그룹이 그동안 빈 표만 보여줬던 것을, 데모 데이터로 실제 채워진 표를 보여주도록 바꾸고, **SP 헤더 클릭 정렬 기능**을 강조하는 그룹(`s5g3b`)을 새로 추가했다(총 4그룹으로 증가).
 - **적용 경로**:
   - `pages/RequestPage/useStepGuideTour.ts`: `UseStepGuideTourArgs`/`BaseSnapshot`에 `bbRows`/`setBbRows` 추가(다른 상태와 동일하게 투어 진입 시 스냅샷, 그룹 전환·종료 시 복원). 신규 헬퍼 `makeBbSortDemoRows()`(기존 `constants.ts`의 `makeTourBbRows()`를 뒤집은 순서 — SP02 → SP01)를 `s5g3`·`s5g3b` 양쪽 그룹의 `onEnter`에서 사용해 "정렬 전" 상태를 보여준다.
