@@ -5,6 +5,7 @@ import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI, markCategori
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
 import AdiCdTargetsCell from '../components/AdiCdTargetsCell';
+import MapPurposeBadge from '../components/MapPurposeBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
 import LayerDriftModal from '../components/LayerDriftModal';
 import { useToast } from '../components/Toast';
@@ -2069,19 +2070,17 @@ export default function ApprovalPage(): React.ReactElement {
                         )}
                       </div>
                     </td>
+                    {/* claude 수정 (2026-10-29): MAP 목적 값 아래 줄에 '예정 → 완료' 뱃지 1개(MapPurposeBadge) */}
                     <td>
-                      {detail.isAdiCd ? (
-                        <span className="map-purpose-na">{t('approval.step_na')}</span>
-                      ) : (detail.mapType || '-')}
-                      {doc.mail_completion_matched && (
-                        <span
-                          className="badge badge-mail-complete"
-                          style={{ marginLeft: 6 }}
-                          title={t('approval.map_mail_complete_badge_tooltip')}
-                        >
-                          {t('approval.map_mail_complete_badge')}
-                        </span>
-                      )}
+                      <div className="map-purpose-cell">
+                        {detail.isAdiCd ? (
+                          <span className="map-purpose-na">{t('approval.step_na')}</span>
+                        ) : (<span>{detail.mapType || '-'}</span>)}
+                        <MapPurposeBadge
+                          completed={doc.mail_completion_matched}
+                          scheduledDate={doc.map_scheduled_date}
+                        />
+                      </div>
                     </td>
                     <td>
                       <div style={{ display: 'flex', alignItems: hasAdiTargets ? 'flex-start' : 'center', gap: 4 }}>
