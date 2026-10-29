@@ -11,6 +11,8 @@
 - 프론트 표시: `frontend/src/pages/ApprovalPage.tsx`(결재현황) / `frontend/src/pages/HomePage.tsx`
   ('나의 의뢰 현황' 미리보기) — MAP 목적 컬럼에 뱃지 추가
 - 테스트: `backend/api/tests.py` `MapCompletionMailMatchTest`
+- (2026-10-29) 완료 전 `MM/DD 예정` 뱃지: §10 — `MapSchedule` 모델 / `scheduler.sync_map_schedule` /
+  `RequestDocumentListSerializer.map_scheduled_date` / `frontend/src/components/MapPurposeBadge.tsx`
 
 ---
 
@@ -87,8 +89,8 @@ AND product_name != ''                                 # 빈 값은 항상 매�
 ## 6. 화면 표시
 
 `ApprovalPage.tsx`(결재현황)와 `HomePage.tsx`('나의 의뢰 현황' 미리보기)의 **MAP 목적** 컬럼에,
-`doc.mail_completion_matched === true`이면 텍스트 옆에 전용 뱃지(`badge-mail-complete`, 보라색,
-`global.css`)를 붙인다. 문구는 `approval.map_mail_complete_badge`(ko: "완료" / en: "Complete"),
+`doc.mail_completion_matched === true`이면 텍스트 **아래 줄**에 전용 뱃지(`badge-mail-complete`, 보라 채움,
+`global.css`)를 붙인다(2026-10-29부터 옆 → 아래 줄, `MapPurposeBadge` 컴포넌트가 그린다 — §10). 문구는 `approval.map_mail_complete_badge`(ko: "완료" / en: "Complete"),
 툴팁은 `approval.map_mail_complete_badge_tooltip`.
 
 - 기존 문서 상태 뱃지(`StatusBadge`, `.badge-approved` 등)와 **혼동하지 않도록 별도 색상**을
@@ -145,7 +147,75 @@ docker exec -it <backend_container> python manage.py test api.tests.MapCompletio
 아닌 문서 제외, draft·rejected 상태 제외, 빈 제목 목록 조기 반환을 검증한다(POP3 접속 없이
 순수 DB 로직만 테스트, 외부 서버 mock 불필요).
 
+(2026-10-29, §10) `MapScheduleSyncTest` — 날짜만 저장·같은 날 중복 합치기·시간 없는 행 혼재·빈 결과/세션 실패 시 알림과
+기존 데이터 보존. `MapScheduledDateSerializerTest` — 가장 가까운 미래 날짜(오늘 포함)·라인 불일치·비대상 문서·목록 1회
+쿼리. 프론트 `src/components/MapPurposeBadge.test.tsx` — 예정/완료 우선/없음/형식 오류 분기.
+
+## 10. 완료 전 단계 — `MM/DD 예정` 뱃지 (2026-10-29)
+
+완료 알림 메일이 오기 전, DCQ 에 등록된 예정일을 먼저 보여준다. **예정 → 완료** 순서의 단계 표시다.
+
+### 10.1 화면
+
+```
+예정 단계:  NEW                완료 단계:  NEW
+            [11/03 예정]                   [완료]
+            보라 테두리만(배경 없음)        보라 채움(기존 뱃지 그대로)
+```
+
+- 위치: MAP 목적 값 **아래 줄**(`.map-purpose-cell`). 결재현황·홈 '나의 의뢰 현황' 동일.
+- 한 번에 **하나만** 보인다 — `mail_completion_matched` 가 true 면 예정일이 있어도 완료 뱃지만 보인다.
+- 문구: `approval.map_scheduled_badge` (ko `{{date}} 예정` / en `Scheduled {{date}}`, date = `MM/DD`).
+  툴팁 `approval.map_scheduled_badge_tooltip` 은 `YYYY-MM-DD`(연도 포함)로 보여 연말·연초 혼동을 막는다.
+- 스타일: `.badge-mail-scheduled`(배경 transparent, `#7c3aed` 1px 테두리, 테두리만큼 padding 을 줄여 완료 뱃지와 크기 동일).
+- 예정일이 지나도 모양은 바뀌지 않는다(지연 표시 없음) — 다만 아래 10.3 규칙상 지난 날짜는 애초에 내려오지 않는다.
+
+### 10.2 데이터 — DCQ 동기화 (`scheduler.sync_map_schedule`, 매일 02:00)
+
+```sql
+SELECT DISTINCT line, date, process, product
+FROM sd.tg
+WHERE line IS NOT NULL AND line != ''
+```
+
+> ⚠️ 테이블·컬럼 이름은 **자리표시 값**이다(사용자가 실제 값으로 채운다, 2026-10-29). 실제 컬럼 이름이
+> 다르면 쿼리만이 아니라 `sync_map_schedule()` 의 `rename(columns={'date': 'scheduled_date'})` 와
+> `product`/`process` 참조도 함께 바꿔야 한다.
+
+- `date` 값은 `2026-11-03 09:30:00` 처럼 시간이 섞여 오지만 **날짜만** `api_mapschedule.scheduled_date`(DateField)에
+  저장한다(`pd.to_datetime(..., errors='coerce', format='mixed').dt.date`). `format='mixed'` 가 없으면 pandas 2 가 첫 행
+  형식으로 고정해 시간 없는 행을 버리므로 반드시 둔다. 날짜로 해석되지 않는 행·제품이 빈 행은 버리고, 날짜만 남긴 뒤
+  중복(같은 날 여러 시각)은 하나로 합친다.
+- 전체 갱신(`DELETE` 후 `to_sql`). **조회 실패·DCQ 세션 실패·빈 결과(정리 후 0건 포함)** 이면 기존 테이블을 지우지 않고
+  DCQ 동기화 실패 알림(구분 `-` / 대상 `MAP 예정일`)을 적재한다(`docs/SCHEDULER.md`).
+- `HEAVY_SYNC_JOB_IDS` 포함 → 개발 환경(`SKIP_SCHEDULER=true`)에서는 돌지 않는다. dev DB 는 db-sync(운영 전체
+  mysqldump)로 채워지므로 운영에 이 테이블이 생긴 뒤 재빌드하면 dev 에도 값이 들어온다.
+
+### 10.3 매칭 — 목록 API `map_scheduled_date`
+
+`RequestDocumentListSerializer.get_map_scheduled_date` (읽기 전용, 목록 응답에만 있음):
+
+- 대상: §2 와 같다 — 상태 `submitted`/`under_review`/`pause`(`pop3_mail.TARGET_STATUSES` 공유) + `detail.map_type == 'NEW'` + product_name 있음.
+  그 외 문서는 `null`.
+- 키: 문서의 `(detail.line, product_name)` ↔ `MapSchedule.(line, product)` **둘 다 일치**. `process` 는 저장만 하고 매칭에 쓰지 않는다.
+- 값: 일치 행 중 **오늘(Asia/Seoul) 포함 이후** 가장 가까운 날짜(`YYYY-MM-DD`). 지난 날짜뿐이면 `null`.
+- 목록 1회 직렬화에 `api_mapschedule` 쿼리는 **1번**(목록 문서들의 product_name 으로 범위를 좁혀 `Min` 집계).
+- 완료와의 우선순위는 프론트(`MapPurposeBadge`)가 정한다 — 서버는 완료 여부와 무관하게 예정일을 내려준다.
+
+### 10.4 수동 검증 시나리오
+
+1. **예정 뱃지**: MAP 목적 NEW·검토중 문서(라인 `L1`, 제품 `PROD-1`)를 준비 → Django shell 에서
+   `MapSchedule.objects.create(line='L1', process='', product='PROD-1', scheduled_date=<오늘+3일>)` →
+   결재현황(`/approval`) → 그 행 MAP 목적 칸. **기대**: `NEW` 아래 줄에 배경 없는 보라 테두리 `MM/DD 예정`,
+   마우스를 올리면 `예정일: YYYY-MM-DD`. 홈(`/`) '나의 의뢰 현황'에도 같은 뱃지.
+2. **완료로 전환**: 같은 문서의 `mail_completion_matched=True` → 새로고침. **기대**: 예정 뱃지가 사라지고 같은 자리에
+   보라 채움 `완료` 하나만. **실패 신호**: 두 뱃지가 함께 보임.
+3. **가까운 미래 날짜 선택**: 같은 (라인, 제품)에 어제·+3일·+10일 3행 → **기대**: +3일 날짜. 어제 행만 남기면 뱃지 없음.
+4. **라인 불일치**: 제품은 같고 라인만 `L2` 인 행만 있으면 → **기대**: 뱃지 없음.
+5. **비대상**: 같은 제품의 MAP 목적 CLONE 문서, 반려 문서 → **기대**: 예정 뱃지 없음.
+6. **영어**: 언어를 en 으로 → **기대**: `Scheduled 11/03`.
+
 ---
 
-*이 기능이 바뀌면 이 문서와 `docs/SCHEDULER.md`(등록 잡 표) · `docs/APPROVAL.md`(MAP 목적
+*이 기능이 바뀌면 이 문서와 `docs/SCHEDULER.md`(등록 잡 표 — `check_map_completion_mail`·`sync_map_schedule`) · `docs/APPROVAL.md`(MAP 목적
 컬럼 설명)를 반드시 함께 갱신한다.*
