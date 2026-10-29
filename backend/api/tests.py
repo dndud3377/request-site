@@ -11408,3 +11408,118 @@ class ExtraLayerSnapshotSerializerTest(TestCase):
         self.client.patch(f'/api/documents/{doc.id}/', {'extra_layer_snapshot': [{'stepseq': '99'}]}, format='json')
         doc.refresh_from_db()
         self.assertEqual(doc.extra_layer_snapshot, '[]')
+
+
+# claude 수정 (2026-10-29): 반려 후 새로 써서 같은 의뢰서가 쌓이던 문제 — 중복 상신 차단 검증
+class DuplicateDocumentSubmitTest(TestCase):
+    """같은 (문서 유형, 제품, Process ID) 의뢰서가 반려·검토중·중단이면 상신·재상신·재개를 막는다.
+
+    - 모든 사용자의 문서가 대상(다른 의뢰자의 문서도 중복)
+    - 완료(approved)·임시저장(draft) 문서는 중복으로 보지 않는다
+    - ADI CD 변경은 검사하지 않는다
+    - 반려된 자기 자신을 재상신하는 것은 막지 않는다
+    """
+
+    PURPOSE = '신규'
+    PARTID = 'PROD-1'
+    PROCESS_ID = 'PID-1'
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='dreq', mail='dreq@c.com', role='NONE')
+        self.other = UserProfile.objects.create(loginid='dother', mail='dother@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='dpl', mail='dpl@c.com', role='PL')
+
+    def _make_doc(self, status='draft', requester=None, purpose=None, partid=None, process_id=None):
+        requester = requester or self.requester
+        detail = {
+            'request_purpose': self.PURPOSE if purpose is None else purpose,
+            'partid_selection': self.PARTID if partid is None else partid,
+            'process_id': self.PROCESS_ID if process_id is None else process_id,
+        }
+        return RequestDocument.objects.create(
+            title=f'dup-{status}', requester=requester, requester_name=requester.loginid,
+            requester_email=requester.mail, requester_department='dept',
+            product_name=detail['partid_selection'], status=status,
+            additional_notes=json.dumps({'detail': detail, 'jayerRows': []}),
+        )
+
+    def _post(self, doc, action, user=None):
+        self.client.force_authenticate(user=user or self.requester)
+        return self.client.post(f'/api/documents/{doc.id}/{action}/',
+                                {'designated_pl_loginids': [self.pl_user.loginid]}, format='json')
+
+    def test_submit_blocked_when_same_doc_in_progress(self):
+        for existing_status in ('rejected', 'under_review', 'pause'):
+            with self.subTest(existing_status=existing_status):
+                existing = self._make_doc(existing_status)
+                doc = self._make_doc('draft')
+                res = self._post(doc, 'submit')
+                self.assertEqual(res.status_code, 400, res.content)
+                self.assertIn(f'#{existing.pk}', res.json()['error'])
+                doc.refresh_from_db()
+                self.assertEqual(doc.status, 'draft')
+                existing.delete()
+                doc.delete()
+
+    def test_submit_blocked_for_other_users_doc(self):
+        self._make_doc('rejected', requester=self.other)
+        res = self._post(self._make_doc('draft'), 'submit')
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_submit_allowed_when_existing_is_approved_or_draft(self):
+        self._make_doc('approved')
+        self._make_doc('draft')
+        res = self._post(self._make_doc('draft'), 'submit')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_submit_allowed_when_any_key_differs(self):
+        self._make_doc('rejected')
+        for kwargs in ({'purpose': 'Only MAP'}, {'partid': 'PROD-2'}, {'process_id': 'PID-2'}):
+            with self.subTest(**kwargs):
+                res = self._post(self._make_doc('draft', **kwargs), 'submit')
+                self.assertEqual(res.status_code, 200, res.content)
+
+    def test_key_compared_after_trimming_whitespace(self):
+        self._make_doc('rejected')
+        res = self._post(self._make_doc('draft', partid=f' {self.PARTID} ', process_id=f'{self.PROCESS_ID} '), 'submit')
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_adi_cd_change_is_not_checked(self):
+        purpose = RequestDocument.ADI_CD_CHANGE_PURPOSE
+        self._make_doc('rejected', purpose=purpose)
+        res = self._post(self._make_doc('draft', purpose=purpose), 'submit')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_resubmit_self_allowed_but_blocked_by_other_in_progress(self):
+        rejected = self._make_doc('rejected')
+        self.assertEqual(self._post(rejected, 'resubmit').status_code, 200)
+
+        RequestDocument.objects.filter(pk=rejected.pk).update(status='rejected')
+        self._make_doc('under_review', requester=self.other)
+        res = self._post(rejected, 'resubmit')
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_requester_resubmit_blocked_by_other_in_progress(self):
+        doc = self._make_doc('draft')
+        self.assertEqual(self._post(doc, 'submit').status_code, 200)
+        self._make_doc('rejected', requester=self.other)
+        res = self._post(doc, 'requester-resubmit')
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_peer_submit_blocked_by_other_in_progress(self):
+        doc = self._make_doc('draft')
+        self.assertEqual(self._post(doc, 'submit').status_code, 200)
+        self._make_doc('rejected', requester=self.other)
+        res = self._post(doc, 'peer-submit', user=self.pl_user)
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertEqual(ApprovalStep.objects.get(document=doc, agent='PL').action, 'pending')
+
+    def test_resume_blocked_by_other_in_progress(self):
+        doc = self._make_doc('pause')
+        self._make_doc('rejected', requester=self.other)
+        res = self._post(doc, 'resume')
+        self.assertEqual(res.status_code, 400, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'pause')
