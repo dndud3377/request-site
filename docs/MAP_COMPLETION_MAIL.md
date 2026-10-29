@@ -70,6 +70,9 @@ AND product_name != ''                                 # 빈 값은 항상 매�
 - 매칭되면 `mail_completion_matched = True`로 저장(`update_fields=['mail_completion_matched']`)하고
   로그를 남긴다. 이후 주기부터는 §2 조건(`mail_completion_matched == False`)에 의해 이 문서를
   다시 확인하지 않는다.
+- **(2026-10-29 사용자 결정) 완료는 영구 유지한다.** 한 번 True 가 되면 이후 반려·재상신·제품/라인
+  수정이 있어도 False 로 되돌리지 않는다 — 그 문서는 계속 '완료' 로 보이고, 예정 뱃지(§10)는 다시
+  뜨지 않는다. 되돌리는 코드가 없는 것은 의도된 동작이다.
 - POP3 I/O와 분리된 순수 함수라 실제 메일 서버 없이 문자열 리스트만으로 단위 테스트할 수 있다
   (`tests.py` `MapCompletionMailMatchTest`).
 
@@ -125,11 +128,13 @@ AND product_name != ''                                 # 빈 값은 항상 매�
       "완료 알림 메일에서 이 제품명을 확인했습니다" 툴팁이 보여야 한다.
    4. 홈(`/`) 화면 '나의 의뢰 현황'에도 같은 문서가 뜨는 경우, 같은 칸에 동일한 뱃지가 보여야
       한다(내가 작성한 문서 또는 내 차례인 문서일 때만 노출).
-2. **완료(approved)·반려(rejected)·임시저장(draft) 문서는 뱃지 대상이 아님**
-   1. 위 세 상태의 문서에 `mail_completion_matched=True`를 심어도(테스트 목적으로만),
-      결재현황 목록 자체가 approved를 이미 제외하고 보여주므로 실질적으로 뱃지가 노출되지
-      않는다. → **실패로 보이는 신호**: 반려/임시저장 문서 목록에 이 뱃지가 보인다면 스케줄러
-      매칭 대상 필터(§2)가 깨진 것이다.
+2. **반려(rejected)·임시저장(draft) 상태에서는 새로 매칭되지 않음**
+   1. 반려·임시저장 상태인 동안에는 스케줄러가 매칭하지 않는다(§2). 완료(approved)는 결재현황
+      목록에서 빠지므로 화면에 나오지 않는다.
+   2. 단, **진행 중에 이미 매칭된 문서가 나중에 반려되면 '완료' 뱃지는 그대로 보인다** — §4 의
+      '완료 영구 유지' 결정(2026-10-29)에 따른 정상 동작이다.
+      → **실패로 보이는 신호**: 진행 중에 매칭된 적이 없는(예: 처음부터 반려 상태에서 메일이 온)
+      문서에 뱃지가 보인다면 스케줄러 매칭 대상 필터(§2)가 깨진 것이다.
 3. **스케줄러 잡 등록 확인**(운영/스테이징, `.env` 3개 변수 설정 후)
    1. `scheduler` 서비스 로그에서 `check_map_completion_mail` 잡이 10분 주기로 등록·실행되는지
       확인한다(`docs/SCHEDULER.md` 로그 문구 참고).
@@ -149,7 +154,7 @@ docker exec -it <backend_container> python manage.py test api.tests.MapCompletio
 
 (2026-10-29, §10) `MapScheduleSyncTest` — 날짜만 저장·같은 날 중복 합치기·시간 없는 행 혼재·빈 결과/세션 실패 시 알림과
 기존 데이터 보존. `MapScheduledDateSerializerTest` — 가장 가까운 미래 날짜(오늘 포함)·라인 불일치·비대상 문서·목록 1회
-쿼리. 프론트 `src/components/MapPurposeBadge.test.tsx` — 예정/완료 우선/없음/형식 오류 분기.
+쿼리·완료 문서는 예정일 null. 프론트 `src/components/MapPurposeBadge.test.tsx` — 예정/완료 우선/없음/형식 오류 분기.
 
 ## 10. 완료 전 단계 — `MM/DD 예정` 뱃지 (2026-10-29)
 
@@ -164,7 +169,9 @@ docker exec -it <backend_container> python manage.py test api.tests.MapCompletio
 ```
 
 - 위치: MAP 목적 값 **아래 줄**(`.map-purpose-cell`). 결재현황·홈 '나의 의뢰 현황' 동일.
-- 한 번에 **하나만** 보인다 — `mail_completion_matched` 가 true 면 예정일이 있어도 완료 뱃지만 보인다.
+- 한 번에 **하나만** 보인다 — 예정과 완료는 공존하지 않는다. 완료가 뜨면 예정은 사라지고, 예정은 완료가
+  아닌 문서에만 뜬다. 서버가 완료 문서의 `map_scheduled_date` 를 `null` 로 주고(§10.3), 화면
+  (`MapPurposeBadge`)도 완료를 먼저 판정해 이중으로 막는다. 완료는 한 번 뜨면 계속 유지된다(§4).
 - 문구: `approval.map_scheduled_badge` (ko `{{date}} 예정` / en `Scheduled {{date}}`, date = `MM/DD`).
   툴팁 `approval.map_scheduled_badge_tooltip` 은 `YYYY-MM-DD`(연도 포함)로 보여 연말·연초 혼동을 막는다.
 - 스타일: `.badge-mail-scheduled`(배경 transparent, `#7c3aed` 1px 테두리, 테두리만큼 padding 을 줄여 완료 뱃지와 크기 동일).
@@ -200,7 +207,9 @@ WHERE line IS NOT NULL AND line != ''
 - 키: 문서의 `(detail.line, product_name)` ↔ `MapSchedule.(line, product)` **둘 다 일치**. `process` 는 저장만 하고 매칭에 쓰지 않는다.
 - 값: 일치 행 중 **오늘(Asia/Seoul) 포함 이후** 가장 가까운 날짜(`YYYY-MM-DD`). 지난 날짜뿐이면 `null`.
 - 목록 1회 직렬화에 `api_mapschedule` 쿼리는 **1번**(목록 문서들의 product_name 으로 범위를 좁혀 `Min` 집계).
-- 완료와의 우선순위는 프론트(`MapPurposeBadge`)가 정한다 — 서버는 완료 여부와 무관하게 예정일을 내려준다.
+- **완료 문서(`mail_completion_matched=True`)는 예정일이 있어도 `null`** 이다(2026-10-29 사용자 결정 — 예정과
+  완료는 데이터에서부터 공존하지 않는다). 그래서 엑셀·외부 API 등 다른 곳에서 이 값을 써도 완료 문서에
+  예정이 붙지 않는다.
 
 ### 10.4 수동 검증 시나리오
 
@@ -209,7 +218,8 @@ WHERE line IS NOT NULL AND line != ''
    결재현황(`/approval`) → 그 행 MAP 목적 칸. **기대**: `NEW` 아래 줄에 배경 없는 보라 테두리 `MM/DD 예정`,
    마우스를 올리면 `예정일: YYYY-MM-DD`. 홈(`/`) '나의 의뢰 현황'에도 같은 뱃지.
 2. **완료로 전환**: 같은 문서의 `mail_completion_matched=True` → 새로고침. **기대**: 예정 뱃지가 사라지고 같은 자리에
-   보라 채움 `완료` 하나만. **실패 신호**: 두 뱃지가 함께 보임.
+   보라 채움 `완료` 하나만. 브라우저 개발자도구 Network 탭의 `/api/documents/` 응답에서도 그 문서는
+   `map_scheduled_date: null` 이어야 한다. **실패 신호**: 두 뱃지가 함께 보이거나, 응답에 완료 문서의 날짜가 남아 있음.
 3. **가까운 미래 날짜 선택**: 같은 (라인, 제품)에 어제·+3일·+10일 3행 → **기대**: +3일 날짜. 어제 행만 남기면 뱃지 없음.
 4. **라인 불일치**: 제품은 같고 라인만 `L2` 인 행만 있으면 → **기대**: 뱃지 없음.
 5. **비대상**: 같은 제품의 MAP 목적 CLONE 문서, 반려 문서 → **기대**: 예정 뱃지 없음.
