@@ -425,14 +425,17 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
     def get_layer_drift_auto_rejected(self, obj):
         return is_layer_drift_auto_rejected(obj)
 
-    # claude 수정 (2026-10-29): 결재현황 MAP 목적 'MM/DD 예정' 배지용 예정일(라인+제품 기준 가장 가까운 미래 날짜) 추가
+    # claude 수정 (2026-10-29): 'MM/DD 예정' 배지용 예정일 추가 — 완료(mail_completion_matched) 문서는 예정과 공존할 수 없어 None
     def get_map_scheduled_date(self, obj):
         """MAP 예정일(YYYY-MM-DD) — 완료 배지(`mail_completion_matched`)와 같은 대상 문서만 값이 있다.
 
-        대상: 진행 중(pop3_mail.TARGET_STATUSES)이고 MAP 목적이 'NEW' 인 문서. `MapSchedule`
-        에서 문서의 (detail.line, product_name) 이 같은 행 중 오늘 이후(오늘 포함) 가장 가까운 날짜를
-        준다. 없으면 None. 완료 배지와 둘 다 있을 때 무엇을 보일지는 프론트가 정한다(완료 우선).
+        대상: 진행 중(pop3_mail.TARGET_STATUSES)이고 MAP 목적이 'NEW' 이며 **아직 완료되지 않은** 문서.
+        `MapSchedule` 에서 문서의 (detail.line, product_name) 이 같은 행 중 오늘 이후(오늘 포함) 가장
+        가까운 날짜를 준다. 없으면 None. 완료된 문서는 예정일이 있어도 None 이다 — 예정과 완료는 동시에
+        존재하지 않는다(완료는 한 번 켜지면 계속 유지된다, docs/MAP_COMPLETION_MAIL.md §10.3).
         """
+        if obj.mail_completion_matched:
+            return None
         if obj.status not in MAP_BADGE_TARGET_STATUSES or not obj.product_name:
             return None
         detail = obj.get_detail().get('detail', {}) or {}
