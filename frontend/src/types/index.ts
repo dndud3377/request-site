@@ -271,6 +271,8 @@ export interface RequestDocument {
   my_mark_category?: number | null;            // 내 개인 마킹 범주 id (목록 응답, 표시 없으면 null). 다른 사용자에게는 노출되지 않는다.
   // POP3 완료 알림 메일 제목에 product_name 이 포함된 적이 있는지 (읽기 전용, 서버 스케줄러만 갱신)
   mail_completion_matched?: boolean;
+  // claude 수정 (2026-10-29): MAP 목적 'MM/DD 예정' 배지용 — 라인+제품 기준 가장 가까운 미래 예정일(YYYY-MM-DD, 목록 응답 전용, 대상 아니면 null)
+  map_scheduled_date?: string | null;
   // J/O-layer 자동 채움 값이 마스터 DB와 달라졌는지 (읽기 전용, 스케줄러 10분 주기 갱신 — docs/REQUEST.md 참고)
   layer_drift_detected?: boolean;
   // 마스터 DB 변경 감지로 자동 반려된 문서인지 (읽기 전용) — 반려 후에도 결재 현황에 '변경 감지' 배지를 유지한다
