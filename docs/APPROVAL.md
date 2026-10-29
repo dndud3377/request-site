@@ -227,7 +227,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   상신할 수 있다(그 외 403). draft 를 **볼 수 있는 사람**과 **상신할 수 있는 사람**을 분리하기 위해
   조회 스코프와 별개로 검사한다. `resubmit` 도 같은 규칙이다(반려 문서는 의뢰자·지정 PL·공유 그룹 멤버·MASTER).
 - **검증 순서**(하나라도 걸리면 400, 이 시점까지 DB 변경 없음): 지정 PL 파싱·검증 →
-  `_validate_bb_mapping` → `_validate_ref_doc_st` → `_validate_post_approvers` → `_resolve_sales_agreers` →
+  `_validate_bb_mapping` → `_validate_ref_doc_st` → `_validate_post_approvers` → `_validate_ea_value_not_default` →
+  `_validate_no_duplicate_document`(2026-10-29, 중복 의뢰서 차단 — **Case U**) → `_resolve_sales_agreers` →
   `_validate_sales_agreers`. 통과 후 한 트랜잭션에서 상태 전이 + step 생성이 이뤄진다.
   **(2026-10-20 추가)** `_validate_ref_doc_st`: 참조 요청서 '없음' 변경전/변경후 표가 켜진 문서(`merge_ref_mode=='none'`·
   `merge_applied`·Merge 사용 목적 선택)는 변경후 값과 4값이 같은 J/O 행만 st 'O', 나머지는 'X' 여야 하고 'O' 행의 요청 기준이
@@ -1027,6 +1028,29 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   운영은 고정 후결자가 항상 있어 실제로 발생하지 않는다. 'Overlay만 변경' 단독 문서도 같다.
 - 테스트: `backend/api/tests.py::ShouldSkipRStageTest`, `RSkipStageIntegrationTest`
 
+### Case U — 중복 의뢰서 상신 차단 (`_validate_no_duplicate_document`, 2026-10-29)
+
+배경: 반려된 의뢰서를 '수정·재상신'하지 않고 새로 작성해 상신하는 경우가 많아, 반려 문서는 남고 같은 내용의
+새 의뢰서만 계속 늘었다. **결재 현황에 같은 의뢰서가 하나만 남도록** 상신 단계에서 막는다(사용자 결정 2026-10-29).
+
+- **중복 기준**: `detail.request_purpose`(문서 유형) + `detail.partid_selection`(제품) + `detail.process_id`
+  세 값이 **모두** 같으면(앞뒤 공백 제거 후 비교) 같은 의뢰서로 본다.
+- **비교 대상**: **모든 사용자**의 문서 중 `rejected`(반려) / `under_review`(검토중) / `pause`(중단) 상태.
+  자기 자신·임시저장(`draft`)·결재 완료(`approved`)는 대상이 아니다.
+- **제외**: 요청 목적이 **ADI CD 변경**인 문서는 검사하지 않는다(대상이 여러 개라 사용자 결정으로 제외).
+  세 값 중 하나라도 비어 있으면 검사하지 않는다 — 화면은 STEP1 필수값(`DETAIL_REQUIRED`)으로 이미 막는다.
+- **적용 지점(전부 400)**: `submit`(Case A) · `resubmit`(Case I) · `requester_resubmit`(Case R) ·
+  `peer_submit`(Case D) · `resume`(Case M). 반려된 **자기 자신**을 재상신하는 것은 막지 않는다 — 다른 문서가
+  같은 내용으로 반려·진행 중일 때만 막힌다. `direct_approve`(MASTER 이력 바로 등록, 결재 현황에 안 뜸)는 적용하지 않는다.
+- **차단 메시지**: 기존 문서의 번호·제목·의뢰자·상태를 함께 알려 주고 '수정·재상신'을 안내한다.
+  예) `같은 문서 유형·제품·Process ID 의 의뢰서가 이미 반려됨 상태입니다 (#12 '…', 의뢰자 홍길동). …`
+- **화면 흐름**: 작성 화면은 `create`/`update`(임시저장) 후 `submit` 을 부르므로, 신규 작성이 막히면 내용은
+  **임시저장 문서로 남고** 상신만 실패한다(오류 토스트). 작성한 내용을 잃지 않게 하려는 의도다(사용자 결정).
+- ⚠️ **기존 중복 문서**: 이 기능 이전에 이미 쌓인 중복 문서끼리는 서로를 막는다(예: 반려 A·검토중 B 가 같으면
+  A 재상신, B 의 PL 수정 후 상신·작성자 재상신·재개가 400). 한쪽을 철회(삭제)해야 진행된다.
+- ⚠️ 동시에 두 건을 상신하는 경쟁 상태는 잠그지 않는다(둘 다 통과할 수 있다).
+- 테스트: `backend/api/tests.py::DuplicateDocumentSubmitTest`(10건).
+
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
 
@@ -1423,6 +1447,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 ---
 
 ## 4. API 엔드포인트 (모두 `POST /documents/{id}/...`)
+
+> **(2026-10-29)** `submit/` · `resubmit/` · `requester-resubmit/` · `peer-submit/` · `resume/` 은 같은 문서 유형·제품·Process ID 의
+> 의뢰서가 반려·검토중·중단 상태로 이미 있으면 400 을 돌려준다(ADI CD 변경 제외) — §2 **Case U** 참조.
 
 | 액션 | URL | 핵심 payload |
 |------|-----|------|
