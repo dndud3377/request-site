@@ -8718,6 +8718,160 @@ class MapCompletionMailMatchTest(TestCase):
         self.assertEqual(matched, 0)
 
 
+# claude 수정 (2026-10-29): MAP 예정일 DCQ 동기화(sync_map_schedule) 테스트 추가
+class MapScheduleSyncTest(TestCase):
+    """scheduler.sync_map_schedule() — DCQ 조회 결과를 날짜만 남겨 api_mapschedule 에 전체 갱신하는지,
+    실패/빈 결과 때 알림을 적재하고 기존 데이터를 보존하는지 검증한다(DCQ·MySQL 없이 임시 sqlite 엔진 사용)."""
+
+    def _make_engine(self):
+        import os
+        import tempfile
+        from sqlalchemy import create_engine, text
+        fd, path = tempfile.mkstemp(suffix='.sqlite3')
+        os.close(fd)
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        engine = create_engine(f'sqlite:///{path}')
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE api_mapschedule (line TEXT, process TEXT, product TEXT, "
+                "scheduled_date TEXT, last_synced TEXT)"
+            ))
+        return engine
+
+    def _rows(self):
+        from sqlalchemy import text
+        with self.engine.connect() as conn:
+            return [tuple(r) for r in conn.execute(text(
+                "SELECT line, process, product, scheduled_date FROM api_mapschedule ORDER BY product, scheduled_date"
+            ))]
+
+    def _run(self, df, dcq_id='dcq-user'):
+        with patch.object(self.scheduler, 'get_django_engine', return_value=self.engine), \
+                patch.object(self.scheduler, 'ensure_dcq_session', return_value=dcq_id), \
+                patch.object(self.scheduler, 'get_data_from_dcq', return_value=df), \
+                patch.object(self.scheduler, '_send_sync_failure_alert') as alert:
+            self.scheduler.sync_map_schedule()
+        return alert
+
+    def setUp(self):
+        from . import scheduler
+        self.scheduler = scheduler
+        self.engine = self._make_engine()
+
+    def test_saves_date_only_and_dedupes_same_day(self):
+        import pandas as pd
+        df = pd.DataFrame([
+            {'line': 'L1', 'date': '2026-11-03 09:30:00', 'process': 'PC', 'product': 'PROD-1'},
+            {'line': 'L1', 'date': '2026-11-03 18:00:00', 'process': 'PC', 'product': 'PROD-1'},
+            {'line': 'L1', 'date': '2026-11-10', 'process': None, 'product': 'PROD-2'},
+            {'line': 'L1', 'date': 'not-a-date', 'process': 'PC', 'product': 'PROD-3'},
+            {'line': 'L1', 'date': '2026-11-11 00:00:00', 'process': 'PC', 'product': ''},
+        ])
+        alert = self._run(df)
+        alert.assert_not_called()
+        self.assertEqual(self._rows(), [
+            ('L1', 'PC', 'PROD-1', '2026-11-03'),
+            ('L1', '', 'PROD-2', '2026-11-10'),
+        ])
+
+    def test_empty_result_alerts_and_keeps_existing_rows(self):
+        import pandas as pd
+        self._run(pd.DataFrame([{'line': 'L1', 'date': '2026-11-03', 'process': 'PC', 'product': 'PROD-1'}]))
+        alert = self._run(pd.DataFrame(columns=['line', 'date', 'process', 'product']))
+        alert.assert_called_once_with('enqueue_dcq_sync_failed', self.scheduler.MAP_SCHEDULE_ALERT_TARGET)
+        self.assertEqual(self._rows(), [('L1', 'PC', 'PROD-1', '2026-11-03')])
+
+    def test_all_rows_invalid_date_counts_as_empty(self):
+        import pandas as pd
+        self._run(pd.DataFrame([{'line': 'L1', 'date': '2026-11-03', 'process': 'PC', 'product': 'PROD-1'}]))
+        alert = self._run(pd.DataFrame([{'line': 'L1', 'date': 'bad', 'process': 'PC', 'product': 'PROD-9'}]))
+        alert.assert_called_once()
+        self.assertEqual(self._rows(), [('L1', 'PC', 'PROD-1', '2026-11-03')])
+
+    def test_dcq_session_failure_alerts_without_query(self):
+        with patch.object(self.scheduler, 'get_django_engine', return_value=self.engine), \
+                patch.object(self.scheduler, 'ensure_dcq_session', return_value=None), \
+                patch.object(self.scheduler, 'get_data_from_dcq') as get_data, \
+                patch.object(self.scheduler, '_send_sync_failure_alert') as alert:
+            self.scheduler.sync_map_schedule()
+        get_data.assert_not_called()
+        alert.assert_called_once_with('enqueue_dcq_sync_failed', self.scheduler.MAP_SCHEDULE_ALERT_TARGET)
+
+    def test_registered_as_heavy_sync_job(self):
+        self.assertIn('sync_map_schedule', self.scheduler.HEAVY_SYNC_JOB_IDS)
+
+
+# claude 수정 (2026-10-29): 목록 응답 map_scheduled_date(라인+제품 기준 가장 가까운 미래 예정일) 테스트 추가
+class MapScheduledDateSerializerTest(TestCase):
+    """RequestDocumentListSerializer.map_scheduled_date — 완료 배지와 같은 대상(진행 중 + MAP 목적 NEW)만,
+    (detail.line, product_name) 이 같은 MapSchedule 중 오늘 포함 가장 가까운 미래 날짜를 준다."""
+
+    def _doc(self, product='PROD-1', line='L1', status='under_review', map_type='NEW'):
+        return RequestDocument.objects.create(
+            title='MAP 예정 문서', requester_name='요청자', requester_email='req@company.com',
+            requester_department='개발팀', product_name=product, status=status,
+            additional_notes=json.dumps({'detail': {'map_type': map_type, 'line': line}}),
+        )
+
+    def _schedule(self, product, days, line='L1'):
+        from .models import MapSchedule
+        MapSchedule.objects.create(
+            line=line, process='PC', product=product,
+            scheduled_date=timezone.localdate() + timedelta(days=days),
+        )
+
+    def _serialize(self, docs):
+        from .serializers import RequestDocumentListSerializer
+        qs = RequestDocument.objects.filter(id__in=[d.id for d in docs]).order_by('id')
+        return {row['id']: row['map_scheduled_date'] for row in RequestDocumentListSerializer(qs, many=True).data}
+
+    def _iso(self, days):
+        return (timezone.localdate() + timedelta(days=days)).isoformat()
+
+    def test_nearest_future_date_including_today(self):
+        doc = self._doc()
+        self._schedule('PROD-1', -1)
+        self._schedule('PROD-1', 0)
+        self._schedule('PROD-1', 5)
+        self.assertEqual(self._serialize([doc])[doc.id], self._iso(0))
+
+    def test_only_past_dates_gives_none(self):
+        doc = self._doc()
+        self._schedule('PROD-1', -3)
+        self.assertIsNone(self._serialize([doc])[doc.id])
+
+    def test_line_must_match(self):
+        doc = self._doc(line='L1')
+        self._schedule('PROD-1', 2, line='L2')
+        self.assertIsNone(self._serialize([doc])[doc.id])
+
+    def test_non_target_documents_give_none(self):
+        clone = self._doc(map_type='CLONE')
+        rejected = self._doc(status='rejected')
+        draft = self._doc(status='draft')
+        approved = self._doc(status='approved')
+        self._schedule('PROD-1', 2)
+        result = self._serialize([clone, rejected, draft, approved])
+        self.assertEqual(set(result.values()), {None})
+
+    def test_target_statuses_all_get_date(self):
+        docs = [self._doc(status=s) for s in ('submitted', 'under_review', 'pause')]
+        self._schedule('PROD-1', 2)
+        self.assertEqual(set(self._serialize(docs).values()), {self._iso(2)})
+
+    def test_single_schedule_query_for_whole_list(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        docs = [self._doc(product=f'PROD-{i}') for i in range(5)]
+        for i in range(5):
+            self._schedule(f'PROD-{i}', i + 1)
+        with CaptureQueriesContext(connection) as ctx:
+            result = self._serialize(docs)
+        schedule_queries = [q for q in ctx.captured_queries if 'api_mapschedule' in q['sql']]
+        self.assertEqual(len(schedule_queries), 1)
+        self.assertEqual([result[d.id] for d in docs], [self._iso(i + 1) for i in range(5)])
+
+
 @override_settings(POST_APPROVER_LOGINID='fixed_ra')
 class ShouldSkipRStageTest(TestCase):
     """RequestDocumentViewSet._should_skip_r_stage — 반려 후 재상신 시 2구역(R) 생략 판정.
