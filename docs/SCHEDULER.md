@@ -38,14 +38,15 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 / MAP 테이블 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송 |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장). 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신. 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
+| `sync_map_schedule` | 매일 02:00 | `sync_map_schedule()` | 라인-제품 예정일(DCQ `sd.tg`) 동기화 → `api_mapschedule` 전체 갱신(날짜만 저장). 결재현황 MAP 목적 `MM/DD 예정` 뱃지용. 실패·빈 결과 시 기존 데이터를 지우지 않고 **DCQ 동기화 실패** 알림 메일 발송(구분 `-` / 대상 `MAP 예정일`). `HEAVY_SYNC_JOB_IDS` 포함 → 개발 환경에서는 실행되지 않는다. 상세는 `docs/MAP_COMPLETION_MAIL.md` §10 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
 | `check_map_completion_mail` | **10분** | `pop3_mail.check_map_completion_mail()` | POP3 메일함의 '완료 알림' 메일 제목 ↔ MAP 목적 'NEW' 상신 문서 product_name 매칭. `HEAVY_SYNC_JOB_IDS`에 포함되어 개발 환경(`SKIP_SCHEDULER=true`)에서는 실행되지 않는다. 상세는 `docs/MAP_COMPLETION_MAIL.md` 참고 |
 
-> `sync_rtdb_options`는 RTDB(REST API) 소스만, `sync_form_options`/`sync_holidays`/`sync_design_rule`는
+> `sync_rtdb_options`는 RTDB(REST API) 소스만, `sync_form_options`/`sync_holidays`/`sync_design_rule`/`sync_map_schedule`는
 > DCQ 소스만 다루므로 실패 알림도 그에 맞춰 각각 `rtdb_sync_failed`(RTDB) / `dcq_sync_failed`(DCQ)로
 > 나뉜다. 두 알림 모두 수신자는 같은 `.env`의 `RTDB_SYNC_ALERT_MAIL`을 공유한다(§"동기화 실패 알림 메일" 참고).
 
-> `scheduler` 서비스(`run_scheduler`) 기동 시 `sync_rtdb_options` / `sync_form_options` / `sync_holidays` / `sync_design_rule` 는 각각 스레드로 1회 즉시 실행된다.
+> `scheduler` 서비스(`run_scheduler`) 기동 시 `sync_rtdb_options` 는 별도 스레드로, `sync_form_options` / `sync_holidays` / `sync_design_rule` / `sync_map_schedule` 는 한 스레드에서 이 순서대로 1회 즉시 실행된다.
 > (구 `sync_process_product` 잡은 `sync_rtdb_options` 로 통합되었으며, `start()` 에서 잔여 잡을 제거한다.)
 
 ## 데이터 소스 구조 (RTDB 단독 + 재시도 + 실패 알림)
@@ -483,7 +484,7 @@ for eqptype_value, table, table_type, target_label in STEP_EQPTYPE_TARGETS:
 | 소스 | 대상 잡 | `event_type` | 적재 함수 | 표 첫 컬럼 |
 |------|---------|--------------|-----------|-----------|
 | RTDB | `sync_rtdb_options` | `rtdb_sync_failed` | `mailer.enqueue_rtdb_sync_failed(failures)` | 라인 |
-| DCQ | `sync_form_options` / `sync_holidays` / `sync_design_rule` | `dcq_sync_failed` | `mailer.enqueue_dcq_sync_failed(failures)` | 구분 |
+| DCQ | `sync_form_options` / `sync_holidays` / `sync_design_rule` / `sync_map_schedule` | `dcq_sync_failed` | `mailer.enqueue_dcq_sync_failed(failures)` | 구분 |
 
 - 구현: 각 스케줄러 함수가 실패 목록(`failures: [{'context':.., 'target':..}, ...]`)을 모아 함수
   종료 시(또는 로그인 자체가 실패해 조기 종료할 때) `scheduler._send_sync_failure_alert(mailer_func_name,
