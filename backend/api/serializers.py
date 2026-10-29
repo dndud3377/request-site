@@ -1,12 +1,16 @@
 import re
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.db.models import Min
+from django.utils import timezone
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
     RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory, RoundSubmission,
+    MapSchedule,
 )
 from . import doc_permissions
+from .pop3_mail import TARGET_STATUSES as MAP_BADGE_TARGET_STATUSES
 from . import design_rule_stats
 from .mailer import AUTO_REJECT_COMMENT_PREFIX
 
@@ -397,6 +401,7 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
     my_mark_category = serializers.SerializerMethodField()
     detail_summary = serializers.SerializerMethodField()
     layer_drift_auto_rejected = serializers.SerializerMethodField()
+    map_scheduled_date = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
@@ -406,7 +411,7 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
             'detail_summary', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
-            'post_approver_fixed_loginid', 'mail_completion_matched',
+            'post_approver_fixed_loginid', 'mail_completion_matched', 'map_scheduled_date',
             'shared_group', 'shared_group_name', 'my_pending_review_items', 'my_mark_category',
             'layer_drift_detected', 'layer_drift_auto_rejected', 'is_overseas',
             'can_act_as_requester', 'is_shared_with_me',
@@ -419,6 +424,42 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
 
     def get_layer_drift_auto_rejected(self, obj):
         return is_layer_drift_auto_rejected(obj)
+
+    # claude 수정 (2026-10-29): 결재현황 MAP 목적 'MM/DD 예정' 배지용 예정일(라인+제품 기준 가장 가까운 미래 날짜) 추가
+    def get_map_scheduled_date(self, obj):
+        """MAP 예정일(YYYY-MM-DD) — 완료 배지(`mail_completion_matched`)와 같은 대상 문서만 값이 있다.
+
+        대상: 진행 중(pop3_mail.TARGET_STATUSES)이고 MAP 목적이 'NEW' 인 문서. `MapSchedule`
+        에서 문서의 (detail.line, product_name) 이 같은 행 중 오늘 이후(오늘 포함) 가장 가까운 날짜를
+        준다. 없으면 None. 완료 배지와 둘 다 있을 때 무엇을 보일지는 프론트가 정한다(완료 우선).
+        """
+        if obj.status not in MAP_BADGE_TARGET_STATUSES or not obj.product_name:
+            return None
+        detail = obj.get_detail().get('detail', {}) or {}
+        if detail.get('map_type') != 'NEW':
+            return None
+        nearest = self._map_schedule_lookup().get((detail.get('line') or '', obj.product_name))
+        return nearest.isoformat() if nearest else None
+
+    def _map_schedule_lookup(self):
+        """{(line, product): 가장 가까운 미래 예정일} — 목록 직렬화 1회당 쿼리 1번만 낸다.
+
+        many=True 면 이 child 인스턴스 하나가 목록 전체를 직렬화하므로 인스턴스에 담아 재사용한다.
+        조회 범위는 목록에 있는 문서들의 product_name 으로 좁힌다.
+        """
+        lookup = getattr(self, '_map_schedule_cache', None)
+        if lookup is None:
+            docs = self.parent.instance if isinstance(self.parent, serializers.ListSerializer) else [self.instance]
+            products = {doc.product_name for doc in docs if doc.product_name}
+            rows = (
+                MapSchedule.objects
+                .filter(product__in=products, scheduled_date__gte=timezone.localdate())
+                .values('line', 'product')
+                .annotate(nearest=Min('scheduled_date'))
+            )
+            lookup = {(row['line'], row['product']): row['nearest'] for row in rows}
+            self._map_schedule_cache = lookup
+        return lookup
 
     def get_detail_summary(self, obj):
         """목록 화면이 실제로 쓰는 detail 값만 추린 요약(2026-09, 결재 현황 로딩 속도 개선).
