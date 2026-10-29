@@ -8806,10 +8806,11 @@ class MapScheduledDateSerializerTest(TestCase):
     """RequestDocumentListSerializer.map_scheduled_date — 완료 배지와 같은 대상(진행 중 + MAP 목적 NEW)만,
     (detail.line, product_name) 이 같은 MapSchedule 중 오늘 포함 가장 가까운 미래 날짜를 준다."""
 
-    def _doc(self, product='PROD-1', line='L1', status='under_review', map_type='NEW'):
+    def _doc(self, product='PROD-1', line='L1', status='under_review', map_type='NEW', matched=False):
         return RequestDocument.objects.create(
             title='MAP 예정 문서', requester_name='요청자', requester_email='req@company.com',
             requester_department='개발팀', product_name=product, status=status,
+            mail_completion_matched=matched,
             additional_notes=json.dumps({'detail': {'map_type': map_type, 'line': line}}),
         )
 
@@ -8853,6 +8854,15 @@ class MapScheduledDateSerializerTest(TestCase):
         self._schedule('PROD-1', 2)
         result = self._serialize([clone, rejected, draft, approved])
         self.assertEqual(set(result.values()), {None})
+
+    def test_completed_document_gives_none_even_with_schedule(self):
+        """예정과 완료는 공존하지 않는다 — 완료 문서는 예정일이 있어도 None(같은 제품의 미완료 문서는 그대로 값)."""
+        completed = self._doc(matched=True)
+        pending = self._doc()
+        self._schedule('PROD-1', 2)
+        result = self._serialize([completed, pending])
+        self.assertIsNone(result[completed.id])
+        self.assertEqual(result[pending.id], self._iso(2))
 
     def test_target_statuses_all_get_date(self):
         docs = [self._doc(status=s) for s in ('submitted', 'under_review', 'pause')]
