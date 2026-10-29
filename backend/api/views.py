@@ -601,6 +601,39 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     '기본값을 사용하려면 \'변경 없음\'을 선택하거나, 기본값과 다른 값을 입력해주세요.')
         return None
 
+    # claude 수정 (2026-10-29): 반려 후 재상신 대신 새로 써서 같은 의뢰서가 쌓이던 문제 — 중복 상신 차단 대상 상태
+    DUPLICATE_CHECK_STATUSES = ('rejected', 'under_review', 'pause')
+    DUPLICATE_KEY_FIELDS = ('request_purpose', 'partid_selection', 'process_id')
+
+    # claude 수정 (2026-10-29): 같은 문서 유형·제품·Process ID 의뢰서가 반려·검토중·중단이면 상신·재상신·재개를 막는다
+    def _validate_no_duplicate_document(self, document):
+        """같은 (문서 유형, 제품, Process ID) 의뢰서가 반려·검토중·중단 상태로 이미 있으면 막는다.
+
+        결재 현황에 같은 의뢰서가 하나만 남도록 — 반려되면 새로 쓰지 말고 그 문서를 재상신하게 한다.
+        모든 사용자의 문서가 대상이고 자기 자신은 제외한다. ADI CD 변경은 검사하지 않는다.
+        문제 있으면 error 문자열, 없으면 None.
+        """
+        detail = document.get_detail().get('detail', {}) or {}
+        key = tuple(str(detail.get(f) or '').strip() for f in self.DUPLICATE_KEY_FIELDS)
+        if key[0] == RequestDocument.ADI_CD_CHANGE_PURPOSE or not all(key):
+            return None
+        candidates = (
+            RequestDocument.objects
+            .filter(status__in=self.DUPLICATE_CHECK_STATUSES)
+            .exclude(pk=document.pk)
+            .only('id', 'title', 'status', 'requester_name', 'additional_notes')
+            .order_by('id')
+        )
+        for other in candidates:
+            other_detail = other.get_detail().get('detail', {}) or {}
+            other_key = tuple(str(other_detail.get(f) or '').strip() for f in self.DUPLICATE_KEY_FIELDS)
+            if other_key == key:
+                return (f'같은 문서 유형·제품·Process ID 의 의뢰서가 이미 {other.get_status_display()} 상태입니다 '
+                        f'(#{other.pk} \'{other.title}\', 의뢰자 {other.requester_name}). '
+                        '새로 상신하지 말고 기존 의뢰서를 이용해 주세요 — 반려된 의뢰서는 결재 현황의 '
+                        '\'수정·재상신\'으로 다시 상신할 수 있습니다.')
+        return None
+
     def _validate_sales_agreers(self, document, sa_users):
         """예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 합의자 지정이 필수다.
 
@@ -682,6 +715,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_ea_value_not_default(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        # claude 수정 (2026-10-29): 같은 의뢰서가 반려·검토중·중단이면 상신 차단(결재 현황에 하나만 남게)
+        err = self._validate_no_duplicate_document(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -800,6 +838,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        # claude 수정 (2026-10-29): 같은 의뢰서가 반려·검토중·중단이면 상신 차단(결재 현황에 하나만 남게)
+        err = self._validate_no_duplicate_document(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         sa_users, err = self._resolve_sales_agreers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -906,6 +949,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_ea_value_not_default(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        # claude 수정 (2026-10-29): 같은 의뢰서가 반려·검토중·중단이면 상신 차단(결재 현황에 하나만 남게)
+        err = self._validate_no_duplicate_document(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2111,6 +2159,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '재개 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
         if document.status != 'pause':
             return Response({'error': '중단된 문서만 재개할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-10-29): 재개 시 내용을 고쳐 다른 진행 중 의뢰서와 같아졌으면 차단(결재 현황에 하나만 남게)
+        err = self._validate_no_duplicate_document(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         # ✅ (2026-09) 재개 시 중단 시점 구역(zone) 전체를 처음부터 다시 합의하도록 초기화한다.
         # - 검토중/지정 담당자(R/P/J/O/E)는 담당자를 완전히 비우고 대기중으로 되돌린다
@@ -2956,6 +3008,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step = self._get_caller_pl_step(document, request.user)
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-10-29): 지정 PL 이 고친 내용이 다른 진행 중 의뢰서와 같아졌으면 차단(결재 현황에 하나만 남게)
+        err = self._validate_no_duplicate_document(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
         tagged = f'[수정 후 상신] {comment}'.strip()
