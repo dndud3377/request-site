@@ -851,6 +851,68 @@ def sync_design_rule():
                 engine.dispose()
 
 
+MAP_SCHEDULE_ALERT_TARGET = [{'context': '-', 'target': 'MAP 예정일'}]
+
+
+# claude 수정 (2026-10-29): 결재현황 MAP 목적 'MM/DD 예정' 배지용 DCQ 예정일 동기화 잡 추가
+def sync_map_schedule():
+    """
+    DCQ 에서 라인-제품 예정일 데이터를 매일 1회 가져와 api_mapschedule 테이블에 저장
+    - 소스 날짜 값에 시간이 섞여 있어도 날짜만 남긴다(날짜로 해석되지 않는 행은 버린다).
+      format='mixed' 는 행마다 형식을 따로 해석한다 — 없으면 첫 행 형식으로 고정돼 시간 없는 행이 버려진다.
+    - 로그인 실패/계정 조회 실패/조회 예외/빈 결과(날짜 정리 후 0건 포함) 모두 실패로 기록하고
+      `mailer.enqueue_dcq_sync_failed()` 로 알림 메일을 큐에 적재한다 — 이때 기존 테이블은 지우지 않는다.
+    """
+    engine = None
+    try:
+        engine = get_django_engine()
+    except Exception as e:
+        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
+        return
+
+    with external_sync_lock():
+        dcq_id = ensure_dcq_session()
+        if not dcq_id:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', MAP_SCHEDULE_ALERT_TARGET)
+            logger.error(_("[scheduler] DCQ 세션 확보 실패로 인해 MAP 예정일 동기화를 중단합니다"))
+            return
+
+        try:
+            query = """
+                SELECT DISTINCT line, date, process, product
+                FROM sd.tg
+                WHERE line IS NOT NULL AND line != ''
+            """
+            df = get_data_from_dcq(query, dcq_id)
+
+            if df is not None and len(df) > 0:
+                df = df.rename(columns={'date': 'scheduled_date'})
+                df['scheduled_date'] = pd.to_datetime(df['scheduled_date'], errors='coerce', format='mixed').dt.date
+                df = df.dropna(subset=['scheduled_date'])
+                df = df[df['product'].notna() & (df['product'] != '')]
+                df['process'] = df['process'].fillna('')
+                df = df[['line', 'process', 'product', 'scheduled_date']].drop_duplicates()
+
+            if df is None or len(df) == 0:
+                _send_sync_failure_alert('enqueue_dcq_sync_failed', MAP_SCHEDULE_ALERT_TARGET)
+                logger.warning(_("[scheduler] MAP 예정일 데이터가 없습니다"))
+                return
+
+            df['last_synced'] = pd.Timestamp.now()
+
+            with engine.begin() as db_conn:
+                db_conn.execute(text("DELETE FROM api_mapschedule"))
+                df.to_sql('api_mapschedule', db_conn, if_exists='append', index=False)
+
+            logger.info(_("[scheduler] MAP 예정일 {count}건 동기화 완료").format(count=len(df)))
+        except Exception as e:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', MAP_SCHEDULE_ALERT_TARGET)
+            logger.error(_("[scheduler] MAP 예정일 동기화 실패: {e}").format(e=e), exc_info=True)
+        finally:
+            if engine:
+                engine.dispose()
+
+
 # start_mail_only()(SKIP_SCHEDULER=true, 예: 개발)에서는 add_job 하지 않는 무거운 외부 동기화
 # 잡 ID. DjangoJobStore 는 DB(django_apscheduler_djangojob 테이블)에 저장된 잡을 연결 시 그대로
 # 복원하므로, 이 잡들이 (예: db-sync 로 운영 잡 상태가 dev DB 에 유입되는 등) DB 에 남아있으면
@@ -858,7 +920,7 @@ def sync_design_rule():
 # 이 ID 들을 `DjangoJob` ORM 으로 직접 지워 이를 막는다(이유는 start_mail_only() 자체 docstring 참고).
 HEAVY_SYNC_JOB_IDS = [
     'sync_form_options', 'sync_rtdb_options', 'sync_holidays', 'sync_design_rule',
-    'check_map_completion_mail',
+    'check_map_completion_mail', 'sync_map_schedule',
 ]
 
 
@@ -910,6 +972,16 @@ def start():
             max_instances=1,
         )
 
+        # claude 수정 (2026-10-29): MAP 예정일 동기화 잡 등록(매일 02:00, 다른 DCQ 일일 잡과 같은 시각)
+        scheduler.add_job(
+            sync_map_schedule,
+            trigger=CronTrigger(hour=2, minute=0),
+            id='sync_map_schedule',
+            name='MAP 예정일 동기화',
+            replace_existing=True,
+            max_instances=1,
+        )
+
         from .mailer import process_mail_queue
         scheduler.add_job(
             process_mail_queue,
@@ -937,15 +1009,17 @@ def start():
             pass
 
         scheduler.start()
-        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰 동기화 등록"))
+        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰·MAP 예정일 동기화 등록"))
 
+        # claude 수정 (2026-10-29): 기동 시 순차 실행 DCQ 잡에 sync_map_schedule 추가
         def _run_dcq_jobs_sequentially():
-            # sync_form_options/sync_holidays/sync_design_rule 는 모두 DCQ 를 사용한다.
-            # external_sync_lock() 이 DCQ-DCQ, DCQ-RTDB 세션 겹침을 막아주지만, 4 개 daemon
+            # sync_form_options/sync_holidays/sync_design_rule/sync_map_schedule 는 모두 DCQ 를 사용한다.
+            # external_sync_lock() 이 DCQ-DCQ, DCQ-RTDB 세션 겹침을 막아주지만, 여러 daemon
             # 스레드가 기동 시 동시에 시작되는 것 자체를 없애기 위해 하나의 스레드에서 순차 실행한다.
             sync_form_options()
             sync_holidays()
             sync_design_rule()
+            sync_map_schedule()
 
         threading.Thread(target=_run_dcq_jobs_sequentially, daemon=True).start()
         threading.Thread(target=sync_rtdb_options, daemon=True).start()

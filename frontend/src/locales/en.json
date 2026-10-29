@@ -789,6 +789,8 @@
     "col_map_purpose": "MAP Purpose",
     "map_mail_complete_badge": "Complete",
     "map_mail_complete_badge_tooltip": "Confirmed this product name in a completion notification email",
+    "map_scheduled_badge": "Scheduled {{date}}",
+    "map_scheduled_badge_tooltip": "Scheduled date: {{date}}",
     "layer_drift_badge": "Change Detected",
     "layer_drift_badge_tooltip": "The master DB's J-layer/O-layer/XXXXXX data has changed since submission. Click to view.",
     "layer_drift_modal_title": "Layer Data Change Detected",

@@ -838,6 +838,28 @@ class DesignRule(models.Model):
         return f"{self.process} / {self.design_rule}"
 
 
+# claude 수정 (2026-10-29): 결재현황 MAP 목적 'MM/DD 예정' 배지용 DCQ 예정일 캐시 추가
+class MapSchedule(models.Model):
+    """외부 DB(DCQ) 에서 매일 1회 동기화되는 라인-제품 예정일 캐시.
+
+    결재현황 MAP 목적 칸의 'MM/DD 예정' 배지가 (라인, 제품) 기준 가장 가까운 미래 날짜를 읽는다
+    (docs/MAP_COMPLETION_MAIL.md 참고). 소스 값에 시간이 섞여 있어도 날짜만 저장한다.
+    """
+    line = models.CharField(max_length=50, verbose_name='{{request.line}}')
+    process = models.CharField(max_length=200, blank=True, verbose_name='공정')
+    product = models.CharField(max_length=200, verbose_name='{{request.partid_selection}}')
+    scheduled_date = models.DateField(verbose_name='예정일')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        verbose_name = 'MAP 예정일 캐시'
+        verbose_name_plural = 'MAP 예정일 캐시 목록'
+        indexes = [models.Index(fields=['line', 'product'], name='api_mapschedule_line_prod_idx')]
+
+    def __str__(self):
+        return f"{self.line} / {self.product} / {self.scheduled_date}"
+
+
 class ProcessDesignRuleOverride(models.Model):
     """{{request.process_selection}} 단위 디자인룰 수동 매핑 (MASTER 전용).
 
