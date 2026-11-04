@@ -226,6 +226,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - ✅ **인가(`_can_edit` = `doc_permissions.can_edit`)**: 작성자 본인 / 문서 공유 그룹 멤버 / MASTER 만
   상신할 수 있다(그 외 403). draft 를 **볼 수 있는 사람**과 **상신할 수 있는 사람**을 분리하기 위해
   조회 스코프와 별개로 검사한다. `resubmit` 도 같은 규칙이다(반려 문서는 의뢰자·지정 PL·공유 그룹 멤버·MASTER).
+- ✅ **(2026-11-04) 중복 상신 차단**: 인가 직후 `_validate_not_duplicate` — 같은 라인·제품·process_id 의
+  반려/검토중/중단 문서가 있으면 400. 규칙은 아래 "중복 상신 차단" 절. `resubmit` 등 이미 상신된 문서의 결재 동작에는 없다.
 - **검증 순서**(하나라도 걸리면 400, 이 시점까지 DB 변경 없음): 지정 PL 파싱·검증 →
   `_validate_bb_mapping` → `_validate_ref_doc_st` → `_validate_post_approvers` → `_resolve_sales_agreers` →
   `_validate_sales_agreers`. 통과 후 한 트랜잭션에서 상태 전이 + step 생성이 이뤄진다.
@@ -1428,6 +1430,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 |------|-----|------|
 | 상신 | `submit/` | **`designated_pl_loginids`(배열, 2026-07)** — 단일 `designated_pl_loginid` 도 호환(`_resolve_designated_pls`) |
 | 재상신 | `resubmit/` | 상신과 동일(배열 우선 + 단일 호환) |
+| 상신 전 중복 확인 (2026-11-04) | **`GET /documents/duplicate-check/`**(목록 경로, `{id}` 없음) | 쿼리 `line`·`partid_selection`·`process_id`·`request_purpose`·`exclude_id` → `{duplicate: null \| {id, title, status, requester_name, can_open}}`. 아래 "중복 상신 차단" 절 |
 | 철회 | `withdraw/` | `reason`(진행 중 문서는 필수) |
 | 철회 확인 | `confirm-withdraw/` | `agent` |
 | 철회 거부 | `reject-withdraw/` | - |
@@ -2368,3 +2371,50 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
   화면 표시값끼리 비교하므로 화면에 안 보이는 잔여 값만 다르면 강조되지 않는다.
 - 결재 흐름(상신·합의·반려·중단·철회·결재선) 로직은 바뀌지 않았다 — 화면 표시만 추가. 상세(동작 규칙·i18n 키·테스트·수동 검증)는
   `docs/REQUEST.md` 의 "기능 추가 (2026-10-19 — 상세 보기 '모든 이력 확인' …)" 절 참조.
+
+## 중복 상신 차단 (2026-11-04)
+
+**배경**: 반려된 요청서를 수정·재상신하지 않고 새 요청서를 작성해 상신하는 일이 잦아, 반려 문서는 남고 새 문서만
+늘어났다. 같은 요청서의 **최초 상신**을 막고, 반려 문서면 그 문서를 수정 후 재상신하도록 안내한다.
+
+### 판정 규칙 (`RequestDocument.find_duplicate`, `backend/api/models.py`)
+- **기준 키**: `detail.line` · `detail.partid_selection` · `detail.process_id` 세 값이 **모두 완전 일치**(공백 정리 없음 —
+  제목·흐름도 굵은 행 `flowComboKey` 와 같은 키). 하나라도 비어 있으면 판정하지 않는다.
+- **막는 상태**: `rejected`(반려) · `under_review`(검토중) · `pause`(중단). `draft`·`approved` 는 막지 않는다.
+- **범위**: 작성자·지역(국내/해외)과 무관하게 **전체 문서**(2026-11-04 사용자 결정).
+- **요청 목적**: 'MAP 삭제' 문서는 'MAP 삭제' 문서끼리만, 그 외 목적(일반·Only MAP·ADI CD 변경)은 'MAP 삭제' 가 아닌
+  문서끼리만 비교한다 — MAP 정보가 잠긴 반려 문서도 'MAP 삭제 후 새 요청서' 처리(§2 Case M 'MAP 정보 잠금')를 할 수 있게.
+- 여러 건이면 **반려 문서를 먼저**, 같은 상태끼리는 최신(id 큰) 문서 1건을 돌려준다.
+- 키가 `additional_notes` JSON 안에 있어 상태 + `product_name`(저장 시 항상 `detail.partid_selection` 값)으로 먼저 좁힌 뒤 비교한다.
+
+### 적용 지점
+| 지점 | 동작 |
+|---|---|
+| 프론트 `RequestPage` `openSubmitConfirm` | **신규·임시저장 문서**에서 '상신'을 누르면 상신 모달을 열기 전에 `duplicate-check` 호출. 중복이면 상신 모달 대신 안내 모달 |
+| 백엔드 `submit` `_validate_not_duplicate` | 같은 규칙으로 400(API 직접 호출 우회 방지 안전망). 인가 직후, 다른 검증보다 먼저 |
+| `resubmit` · `requester-resubmit` · `resume` · `peer-submit` 등 | **검사하지 않는다** — 이미 결재 현황에 있는 문서(기존 중복 문서 포함)의 결재에 영향을 주지 않기 위해(2026-11-04 사용자 결정) |
+
+### 안내 모달
+- 반려 문서와 중복: `request.duplicate_rejected_msg`(새로 작성하지 말고 반려된 요청서를 수정 후 재상신).
+- 검토중·중단 문서와 중복: `request.duplicate_in_progress_msg`.
+- 문서 제목 · 상태(`common.status_*`) · 의뢰자를 보여 준다.
+- `can_open`(호출자의 조회 스코프 `get_queryset` 에 그 문서가 있는가)이 참이면 **[요청서로 이동]** → `/approval?id={id}`(상세 모달 자동 오픈).
+  거짓(해외 PL 이 국내 문서와 겹친 경우)이면 버튼 없이 의뢰자에게 문의하라는 문구(`request.duplicate_contact_requester`).
+- 확인 API 호출이 실패하면 경고 토스트(`request.duplicate_check_failed`) 후 상신 모달을 그대로 연다 — 서버 `submit` 이 다시 막는다.
+- 작성 중이던 새 문서는 임시저장(draft) 상태로 남는다(삭제하지 않는다).
+
+### 설정 — `DUPLICATE_SUBMIT_CHECK_ENABLED` (`config/settings/base.py`)
+- 기본 켜짐. 환경변수 값이 정확히 `False` 일 때만 끈다(끄면 `duplicate-check` 는 항상 `{duplicate: null}`, `submit` 도 검사 안 함).
+- **개발환경에서 결재 케이스 러너를 돌릴 때만 끈다** — 러너는 같은 마스터 데이터 조합으로 여러 문서를 상신하고 지우지 않는다.
+  절차는 `scripts/approval_cases/README.md` 준비 6번. 운영 `.env` 에는 넣지 않는다.
+
+### 알려진 한계
+- **이미 쌓인 중복 문서는 정리하지 않는다**(이번 범위 밖). 기존 반려 문서와 같은 키의 새 문서는 이제부터 상신이 막힌다.
+- MAP 정보가 잠긴 반려 문서: 'MAP 삭제' 요청서는 상신되지만, **그 뒤의 새 일반 요청서는 원래 반려 문서에 계속 막힌다**.
+  반려 문서는 철회가 안 되므로(Case J) 이때는 MASTER 가 원래 반려 문서를 삭제해야 한다.
+- 다른 사람의 반려 문서와 겹치면 본인은 그 문서를 재상신할 권한이 없다(의뢰자·공유 그룹 멤버·MASTER 만). 모달의 의뢰자 이름으로 연락한다.
+- 반려 문서를 편집하면서 라인·제품·process_id 를 다른 진행 중 문서와 같게 바꿔 재상신하는 것은 막지 않는다(재상신은 검사하지 않음).
+
+### 테스트
+`backend/api/tests.py` `DuplicateSubmitBlockTest` 11건 — 반려/검토중/중단 차단, draft·approved 허용, 키 하나라도 다르면 허용,
+MAP 삭제 그룹 분리, 빈 키 미판정, 기존 반려 문서 재상신 비차단, 확인 API 응답(반려 우선·필드·자기 제외·해외 PL `can_open=false`), 설정 off.
