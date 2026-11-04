@@ -146,6 +146,11 @@ APPROVAL_EMAIL_LIST = os.environ.get('APPROVAL_EMAIL_LIST', '').split(',')
 # C가문(only_prodc=YES) 문서는 이 고정 후결자에 더해 상신 시 지정한 PL(들)이 추가된다.
 POST_APPROVER_LOGINID = os.environ.get('POST_APPROVER_LOGINID', '')
 
+# claude 수정 (2026-11-04): 중복 상신 차단 on/off — 반려 문서를 두고 새 요청서로 다시 상신해 문서가 쌓이는 것을 막는다.
+# 기본은 켜짐. 'False' 일 때만 끈다 — 개발환경에서 결재 케이스 러너(scripts/approval_cases)를 돌릴 때만 끈다
+# (러너는 같은 마스터 데이터 조합으로 여러 문서를 상신하고 지우지 않는다). 상세는 docs/APPROVAL.md "중복 상신 차단".
+DUPLICATE_SUBMIT_CHECK_ENABLED = os.environ.get('DUPLICATE_SUBMIT_CHECK_ENABLED', 'True') != 'False'
+
 # DXHUB 메일 API (결재 알림 발송)
 DXHUB_MAIL_URL = os.environ.get('DXHUB_MAIL_URL', '')
 DXHUB_API_KEY = os.environ.get('DXHUB_API_KEY', '')

@@ -28,6 +28,8 @@ import {
   SubmitMailResponse,
   CreateUserInput,
   UserForAssignment,
+  DuplicateCheckParams,
+  DuplicateCheckResponse,
   UserGroup,
   AvailableGroupMember,
   UserRole,
@@ -210,6 +212,20 @@ const resubmitDocument = async (id: number, designatedPlLoginids: string[]) => {
     `/documents/${id}/resubmit/`,
     { designated_pl_loginids: designatedPlLoginids }
   );
+  return { data };
+};
+
+// claude 수정 (2026-11-04): 중복 상신 차단 — 상신 모달을 열기 전 같은 요청서(라인·제품·process_id)가 있는지 확인
+/** 상신 전 중복 확인. 반려/검토중/중단 상태의 같은 요청서가 있으면 그 문서를 돌려준다. */
+const duplicateCheck = async (params: DuplicateCheckParams) => {
+  const query = new URLSearchParams({
+    line: params.line,
+    partid_selection: params.partid_selection,
+    process_id: params.process_id,
+    request_purpose: params.request_purpose,
+  });
+  if (params.exclude_id) query.append('exclude_id', String(params.exclude_id));
+  const data = await get<DuplicateCheckResponse>(`/documents/duplicate-check/?${query.toString()}`);
   return { data };
 };
 
@@ -622,6 +638,7 @@ export const documentsAPI = {
   submit: submitDocument,
   resubmit: resubmitDocument,
   requesterResubmit: requesterResubmitDocument,
+  duplicateCheck,
   directApprove: directApproveDocument,
   withdraw: withdrawDocument,
   confirmWithdraw,

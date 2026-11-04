@@ -643,6 +643,52 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.sales_agreer_none_reasons = reasons
         document.save(update_fields=['sales_agreer_none_reasons'])
 
+    # claude 수정 (2026-11-04): 중복 상신 차단 — 최초 상신(submit) 전용 안전망. 이미 상신된 문서의 결재(재상신 포함)는 건드리지 않는다.
+    def _validate_not_duplicate(self, document):
+        """같은 라인·제품·process_id 의 반려/검토중/중단 문서가 있으면 오류 문구를, 없으면 None 을 돌려준다.
+
+        프론트는 상신 모달을 열기 전에 `duplicate-check` 로 먼저 막고 안내한다 — 이건 API 직접 호출
+        우회를 막는 서버측 안전망이다. `settings.DUPLICATE_SUBMIT_CHECK_ENABLED` 가 False 면 검사하지 않는다.
+        """
+        if not getattr(settings, 'DUPLICATE_SUBMIT_CHECK_ENABLED', True):
+            return None
+        inner_detail = document.get_detail().get('detail', {}) or {}
+        dup = RequestDocument.find_duplicate(inner_detail, exclude_id=document.id)
+        if dup is None:
+            return None
+        return (
+            f'같은 라인·제품·process_id 의 요청서가 이미 있습니다 '
+            f'({dup.get_status_display()}, {dup.requester_name}): {dup.title}. '
+            f'반려된 요청서는 새로 작성하지 말고 그 요청서를 수정 후 재상신하세요.'
+        )
+
+    @action(detail=False, methods=['get'], url_path='duplicate-check')
+    def duplicate_check(self, request):
+        """상신 전 중복 확인 — 새로 상신하려는 내용과 같은 요청서로 보이는 기존 문서를 알려준다.
+
+        쿼리: `line`, `partid_selection`, `process_id`, `request_purpose`(선택), `exclude_id`(선택,
+        상신하려는 문서 자신). 판정 규칙은 `RequestDocument.find_duplicate`.
+        응답: `{"duplicate": null}` 또는 `{"duplicate": {id, title, status, requester_name, can_open}}`.
+        `can_open` 은 호출자가 그 문서를 결재 현황에서 열 수 있는지(조회 스코프 `get_queryset` 기준).
+        """
+        if not getattr(settings, 'DUPLICATE_SUBMIT_CHECK_ENABLED', True):
+            return Response({'duplicate': None})
+        params = request.query_params
+        inner_detail = {f: params.get(f, '') for f in RequestDocument.DUPLICATE_KEY_FIELDS}
+        inner_detail['request_purpose'] = params.get('request_purpose', '')
+        exclude_raw = params.get('exclude_id')
+        exclude_id = int(exclude_raw) if exclude_raw and exclude_raw.isdigit() else None
+        dup = RequestDocument.find_duplicate(inner_detail, exclude_id=exclude_id)
+        if dup is None:
+            return Response({'duplicate': None})
+        return Response({'duplicate': {
+            'id': dup.id,
+            'title': dup.title,
+            'status': dup.status,
+            'requester_name': dup.requester_name,
+            'can_open': self.get_queryset().filter(id=dup.id).exists(),
+        }})
+
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
         """상신: draft → under_review, PL 검토 단계 생성 (지정 PL 필수)
@@ -659,6 +705,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
         if not self._can_edit(request.user, document):
             return Response({'error': '상신 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        err = self._validate_not_duplicate(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         # 문서의 지역(국내/해외)을 여기서 **확정**한다 — 상신하는 사람이 아니라 **의뢰자**의
         # 역할로 판정한다(공유 그룹 멤버가 남의 임시저장을 대신 상신할 수 있기 때문).
