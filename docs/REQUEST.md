@@ -295,6 +295,21 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-11-04 — 상신 전 중복 요청서 확인: 같은 라인·제품·process_id 의 반려/진행 중 요청서가 있으면 상신 차단)
+
+**요청**: 반려된 요청서를 수정·재상신하지 않고 새로 작성해 상신하는 바람에 불필요한 요청서가 쌓인다 — 반려 요청서를
+다시 상신하도록 유도하고 중복 상신을 막는다. 판정 규칙·서버 동작·설정·한계는 `docs/APPROVAL.md` "중복 상신 차단" 절.
+
+- **어디서**: `index.tsx` `openSubmitConfirm`(상신 모달을 여는 함수 — '상신' 버튼과 J/O 0행 확인 '상신 계속' 둘 다 여기로 온다).
+- **언제**: `!isPeerReviewMode && (editDocStatus === null || editDocStatus === 'draft')` — 신규 작성·임시저장 문서의 최초 상신만.
+  반려 재상신·중단 재개·의뢰자 재상신·지정 PL 수정 상신은 확인하지 않는다(기존 결재 현황 문서에 영향 없음).
+- **무엇을**: `documentsAPI.duplicateCheck({line, partid_selection, process_id, request_purpose, exclude_id: savedId})`.
+  중복이면 `duplicateDoc` 상태에 담아 안내 모달을 열고 상신 모달은 열지 않는다. 실패하면 `warning` 토스트 후 그대로 진행.
+- **모달**: 제목·상태·의뢰자 + 반려/진행 중별 문구. 열 수 있는 문서면 [요청서로 이동](`APPROVAL_PATH` = `/approval`, `?id=`).
+- **i18n**: `request.duplicate_title` / `duplicate_rejected_msg` / `duplicate_in_progress_msg` / `duplicate_doc_title` /
+  `duplicate_doc_status` / `duplicate_doc_requester` / `duplicate_contact_requester` / `duplicate_go` / `duplicate_check_failed` (ko·en).
+- **타입**: `types/index.ts` `DuplicateDocument` / `DuplicateCheckResponse` / `DuplicateCheckParams`.
+
 ### 버그 수정 + 기능 추가 (2026-10-28 — J-ayer/O-ayer 표가 빈 채로 상신되던 문제: 목적 복귀 시 재조회 + 0행 상신 확인 모달)
 
 - **증상(사용자 보고)**: 가끔 일반 목적 요청서가 J-ayer·O-ayer 표가 비어 있는 채로 상신된다.
