@@ -141,15 +141,22 @@ def route_agents_for(document):
     - 'Overlay만 변경' 단독(`skip_r_stage`): 현재 회차에 R step 이 없으면 뺀다(PL 단계 포함).
       R 이 이미 생성된 진행 중 회차는 그대로 R 을 거치므로 유지한다.
     - 반려 후 재상신 R 생략(`is_r_skipped`): R 없이 3구역이 열린 회차면 뺀다.
+
+    O 재합의가 생략된 회차(`is_o_skipped`, Case U)는 O 가 있는 모든 경로에서 O 를 뺀다.
     """
-    if document.is_map_delete_edit():
-        return ROUTE_AGENTS_MAP_DELETE_EDIT
     if document.is_only_map():
         return ROUTE_AGENTS_ONLY_MAP
     if document.is_adi_cd_change():
         return ROUTE_AGENTS_ADI_CD
-    route = ROUTE_AGENTS_NO_J if document.skip_j_stage() else ROUTE_AGENTS_DEFAULT
     max_round = _current_round(document)
+    # claude 수정 (2026-11-04): O 재합의 생략(Case U) 회차는 O 를 결재선에서 뺀다 — TE_O 반려 메일 제외·경로 카드 해당없음
+    o_skipped = max_round is not None and document.is_o_skipped(max_round)
+    if document.is_map_delete_edit():
+        route = ROUTE_AGENTS_MAP_DELETE_EDIT
+        return tuple(a for a in route if a != 'O') if o_skipped else route
+    route = ROUTE_AGENTS_NO_J if document.skip_j_stage() else ROUTE_AGENTS_DEFAULT
+    if o_skipped:
+        route = tuple(a for a in route if a != 'O')
     has_r = max_round is not None and ApprovalStep.objects.filter(
         document=document, round=max_round, agent__in=R_ZONE_AGENTS,
     ).exists()
@@ -1528,7 +1535,8 @@ def enqueue_pause_rejected(document, pause_request):
     return _enqueue(document, 'pause_rejected', recipients)
 
 
-def enqueue_pause_resumed(document, step_ids):
+# claude 수정 (2026-11-04): exclude_step_ids 추가 — 재개 시 합의를 유지한 O(Case U)는 재개 알림에서 뺀다
+def enqueue_pause_resumed(document, step_ids, exclude_step_ids=None):
     """결재 재개 알림 적재 — 재개 시점 pending 단계가 속한 **구역 전체** 대상.
 
     중단 중에는 결재 액션이 막혀 있어 구역 구성이 바뀌지 않으므로, `enqueue_pause_requested`
@@ -1536,8 +1544,12 @@ def enqueue_pause_resumed(document, step_ids):
     받는다"가 자동으로 성립한다. withdraw_requested 와 동일한 수신자 규칙
     (`resolve_withdraw_target_recipients`)을 재사용한다. 배정된 개인들을 묶은 메일 1통 +
     미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
+
+    exclude_step_ids: 구역 전체로 넓힌 뒤에도 뺄 step id — 재개 때 합의를 그대로 유지한 O
+    (내용 변경 없음, `docs/APPROVAL.md` Case U)는 다시 할 일이 없으므로 알림을 받지 않는다.
     """
-    zone_step_ids = _pause_zone_step_ids(document, step_ids)
+    excluded = set(exclude_step_ids or [])
+    zone_step_ids = [sid for sid in _pause_zone_step_ids(document, step_ids) if sid not in excluded]
     individual_emails, team_groups = resolve_withdraw_target_recipients(document, zone_step_ids)
     notis = [_enqueue(document, 'pause_resumed', individual_emails, dispatch=False)]
     for team_key, emails in team_groups.items():
