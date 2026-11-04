@@ -86,6 +86,30 @@ export type Status =
   | 'approved'
   | 'rejected';
 
+// claude 수정 (2026-11-04): 중복 상신 차단 — GET /documents/duplicate-check/ 응답 타입 신설
+/** 새로 상신하려는 내용과 같은(라인·제품·process_id) 반려/검토중/중단 문서. */
+export interface DuplicateDocument {
+  id: number;
+  title: string;
+  status: Extract<Status, 'rejected' | 'under_review' | 'pause'>;
+  requester_name: string;
+  /** 호출자가 결재 현황에서 이 문서를 열 수 있는지(해외 PL 은 국내 문서를 못 연다). */
+  can_open: boolean;
+}
+
+export interface DuplicateCheckResponse {
+  duplicate: DuplicateDocument | null;
+}
+
+export interface DuplicateCheckParams {
+  line: string;
+  partid_selection: string;
+  process_id: string;
+  request_purpose: string;
+  /** 상신하려는 문서 자신(이미 저장된 경우). */
+  exclude_id?: number | null;
+}
+
 // VOC 는 결재가 아니므로 반려 개념이 없다 — 잘못 올린 글도 답변 완료로 마무리한다.
 export type VocStatus = 'checking' | 'completed';
 
