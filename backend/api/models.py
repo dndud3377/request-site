@@ -520,6 +520,51 @@ class RequestDocument(models.Model):
             if old_detail.get(f) != new_detail.get(f)
         ]
 
+    # claude 수정 (2026-11-04): 중복 상신 차단 — 반려 문서를 두고 새 요청서로 다시 상신하는 것을 막는 판정 신설.
+    # 같은 요청서로 보는 기준 키. 제목·흐름도 굵은 행(flowComboKey)과 같은 3개 값이다(완전 일치, 공백 정리 없음).
+    DUPLICATE_KEY_FIELDS = ('line', 'partid_selection', 'process_id')
+    # 이 상태의 문서가 같은 키로 있으면 새 상신을 막는다. 반려 문서가 앞에 오도록 순서를 둔다
+    # (반려 문서는 '수정 후 재상신'으로 안내해야 하므로 진행 중 문서보다 먼저 알려준다).
+    DUPLICATE_BLOCK_STATUSES = ('rejected', 'under_review', 'pause')
+
+    @classmethod
+    def find_duplicate(cls, inner_detail, exclude_id=None):
+        """새로 상신하려는 내용(`detail`)과 같은 요청서로 보이는 기존 문서 1건을 돌려준다(없으면 None).
+
+        - 기준 키(`DUPLICATE_KEY_FIELDS`) 3개가 모두 같고, 상태가 `DUPLICATE_BLOCK_STATUSES` 인 문서.
+          작성자와 무관하게 전체 문서를 본다(2026-11-04 사용자 결정).
+        - 요청 목적이 'MAP 삭제' 인 문서는 'MAP 삭제' 문서끼리만, 그 외 목적은 'MAP 삭제' 가 아닌
+          문서끼리만 비교한다 — MAP 정보가 잠긴 반려 문서를 'MAP 삭제 후 새 요청서'로 처리할 수 있게.
+        - 기준 키 중 하나라도 비어 있으면 판정하지 않는다(None).
+        - 키가 additional_notes JSON 안에 있어 DB 에서 직접 거를 수 없으므로, 상태와 `product_name`
+          (저장 시 항상 `detail.partid_selection` 으로 채워진다)으로 먼저 좁힌 뒤 JSON 을 비교한다.
+        """
+        inner_detail = inner_detail or {}
+        key = tuple(inner_detail.get(f) or '' for f in cls.DUPLICATE_KEY_FIELDS)
+        if not all(key):
+            return None
+        is_map_delete = inner_detail.get('request_purpose') == cls.MAP_DELETE_EDIT_PURPOSE
+
+        qs = cls.objects.filter(
+            status__in=cls.DUPLICATE_BLOCK_STATUSES,
+            product_name=inner_detail.get('partid_selection'),
+        )
+        if exclude_id is not None:
+            qs = qs.exclude(id=exclude_id)
+
+        candidates = []
+        for doc in qs:
+            other = doc.get_detail().get('detail', {}) or {}
+            if tuple(other.get(f) or '' for f in cls.DUPLICATE_KEY_FIELDS) != key:
+                continue
+            if (other.get('request_purpose') == cls.MAP_DELETE_EDIT_PURPOSE) != is_map_delete:
+                continue
+            candidates.append(doc)
+        if not candidates:
+            return None
+        candidates.sort(key=lambda d: (cls.DUPLICATE_BLOCK_STATUSES.index(d.status), -d.id))
+        return candidates[0]
+
 
 class LayerFilterSet(models.Model):
     """결재 상세페이지의 J/O-layer 공유 필터.
