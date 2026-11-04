@@ -417,6 +417,41 @@ class RequestDocument(models.Model):
         has_zone3 = steps.filter(agent__in=('P', 'J', 'O', 'E', 'RA')).exists()
         return (not has_r) and has_zone3
 
+    # claude 수정 (2026-11-04): O 재합의 생략(Case U) 판정 — 비교 구간 정의와 회차 판정 추가
+    # O(OVL) 재합의 생략 판정에서 비교하는 표 — 이 둘과 MAP 정보(MAP_INFO_FIELDS)가 모두
+    # 그대로일 때만 O 가 이전에 마친 합의를 유지한다(R 생략의 비교 구간과는 별개 규칙).
+    O_REVIEW_ROW_KEYS = ('jayerRows', 'oayerRows')
+
+    @classmethod
+    def o_review_content_same(cls, prev_data, curr_data):
+        """두 additional_notes(파싱된 dict)의 O 검토 대상 구간이 같은가.
+
+        비교 구간 = `jayerRows` + `oayerRows` + 상세의 `MAP_INFO_FIELDS`. 그 외 필드(의뢰 상세
+        line~process_id, Backbone 등)는 O 생략 판정에 영향을 주지 않는다.
+        """
+        prev_data = prev_data or {}
+        curr_data = curr_data or {}
+        for key in cls.O_REVIEW_ROW_KEYS:
+            if (prev_data.get(key) or []) != (curr_data.get(key) or []):
+                return False
+        prev_detail = prev_data.get('detail') or {}
+        curr_detail = curr_data.get('detail') or {}
+        return all(prev_detail.get(f) == curr_detail.get(f) for f in cls.MAP_INFO_FIELDS)
+
+    def is_o_skipped(self, round=None):
+        """지정(또는 현재) 회차에서 O 재합의가 생략됐는지 여부(Case U).
+
+        O 가 있는 경로(일반·'Overlay만 변경' 단독·'MAP 삭제')에서는 P 와 O 가 항상 같은 시점에
+        함께 만들어진다. 그래서 P step 은 있는데 O step 이 없으면 생략된 것으로 본다.
+        O 가 원래 없는 'Only MAP'·'ADI CD 변경'은 항상 False(별도의 '해당없음' 규칙을 탄다).
+        """
+        if self.is_only_map() or self.is_adi_cd_change():
+            return False
+        if round is None:
+            round = self.approval_steps.aggregate(models.Max('round'))['round__max'] or 1
+        steps = self.approval_steps.filter(round=round)
+        return steps.filter(agent='P').exists() and not steps.filter(agent='O').exists()
+
     # 중단 요청 메일 수신 범위·MAP 정보 잠금 판정에 쓰는 "구역(zone)" — CLAUDE.md "용어 정리" 표와
     # 같다. 구역은 순서대로 진행되며(2구역이 없는 경로는 건너뛴다), 같은 구역 안은 병렬이다.
     PAUSE_ZONE_1_AGENTS = ('PL', 'SA')
@@ -698,6 +733,10 @@ class PauseRequest(models.Model):
     confirmed_step_ids = models.JSONField(default=list, verbose_name='확인된 단계 id')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='요청일시')
     confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name='중단 확정일시')
+    # claude 수정 (2026-11-04): 재개 시 O 합의 유지 판정(Case U)의 비교 기준 — 중단 확정 시점 내용
+    # 중단이 확정되는 순간의 문서 additional_notes 원문. 재개 때 지금 내용과 비교해
+    # Jayer·Oayer·MAP 정보가 그대로면 이미 합의한 O 를 초기화하지 않는다. 기존 행은 빈 값이다.
+    content_snapshot = models.TextField(blank=True, default='', verbose_name='중단 확정 시점 내용(JSON)')
 
     class Meta:
         verbose_name = '중단 요청'
@@ -710,6 +749,17 @@ class PauseRequest(models.Model):
     def is_active(self):
         """확인 대기 또는 중단 확정 상태(진행 중인 요청)."""
         return self.state in ('requested', 'confirmed')
+
+    # claude 수정 (2026-11-04): 재개 시 O 합의 유지 판정(Case U)용 스냅샷 파싱
+    def get_content_snapshot(self):
+        """중단 확정 시점 내용(content_snapshot)을 dict 로 파싱한다. 비었거나 깨졌으면 None."""
+        if not self.content_snapshot:
+            return None
+        try:
+            data = json.loads(self.content_snapshot)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return data if isinstance(data, dict) else None
 
 
 class WithdrawRequest(models.Model):
