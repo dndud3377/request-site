@@ -11408,3 +11408,140 @@ class ExtraLayerSnapshotSerializerTest(TestCase):
         self.client.patch(f'/api/documents/{doc.id}/', {'extra_layer_snapshot': [{'stepseq': '99'}]}, format='json')
         doc.refresh_from_db()
         self.assertEqual(doc.extra_layer_snapshot, '[]')
+
+
+# claude 수정 (2026-11-04): 중복 상신 차단 테스트 신설 — 같은 라인·제품·process_id 의 반려/검토중/중단 문서가 있으면 최초 상신 차단.
+class DuplicateSubmitBlockTest(TestCase):
+    """중복 상신 차단(`RequestDocument.find_duplicate`, `submit`, `duplicate-check`).
+
+    - 최초 상신(draft → submit)만 막는다. 이미 상신된 문서의 재상신(resubmit)은 막지 않는다
+      (기존 결재 현황 문서에 영향을 주지 않기 위해, 2026-11-04 사용자 결정).
+    - 'MAP 삭제' 문서는 'MAP 삭제' 문서끼리만, 그 외 목적은 'MAP 삭제' 가 아닌 문서끼리만 비교한다.
+    """
+
+    KEY = {'line': 'L1', 'partid_selection': 'PROD-1', 'process_id': 'PID-1'}
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.other = UserProfile.objects.create(loginid='oth', mail='oth@c.com', role='NONE')
+        self.pl = UserProfile.objects.create(loginid='pla', mail='pla@c.com', role='PL')
+        self.client.force_authenticate(user=self.requester)
+
+    def _doc(self, status, requester=None, purpose=None, **key_override):
+        detail = dict(self.KEY, **key_override)
+        if purpose:
+            detail['request_purpose'] = purpose
+        requester = requester or self.requester
+        return RequestDocument.objects.create(
+            title=f'doc-{status}-{RequestDocument.objects.count()}', requester=requester,
+            requester_name=requester.loginid, requester_email=requester.mail,
+            requester_department='dept', product_name=detail['partid_selection'], status=status,
+            additional_notes=json.dumps({'detail': detail, 'jayerRows': []}),
+        )
+
+    def _submit(self, doc):
+        return self.client.post(f'/api/documents/{doc.id}/submit/', {
+            'designated_pl_loginids': [self.pl.loginid],
+        }, format='json')
+
+    def _check(self, **params):
+        query = dict(self.KEY, **params)
+        return self.client.get('/api/documents/duplicate-check/', query)
+
+    def test_submit_blocked_when_rejected_duplicate_exists(self):
+        rejected = self._doc('rejected', requester=self.other)
+        draft = self._doc('draft')
+        r = self._submit(draft)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn(rejected.title, r.json()['error'])
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, 'draft')
+        self.assertFalse(ApprovalStep.objects.filter(document=draft).exists())
+
+    def test_submit_blocked_when_under_review_or_pause_duplicate_exists(self):
+        for st in ('under_review', 'pause'):
+            with self.subTest(status=st):
+                existing = self._doc(st)
+                draft = self._doc('draft')
+                self.assertEqual(self._submit(draft).status_code, 400)
+                existing.delete()
+
+    def test_submit_allowed_when_only_draft_or_approved_matches(self):
+        self._doc('draft')
+        self._doc('approved')
+        draft = self._doc('draft')
+        r = self._submit(draft)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_submit_allowed_when_any_key_differs(self):
+        for field, value in (('line', 'L2'), ('partid_selection', 'PROD-2'), ('process_id', 'PID-2')):
+            with self.subTest(field=field):
+                existing = self._doc('rejected', **{field: value})
+                draft = self._doc('draft')
+                self.assertIsNone(RequestDocument.find_duplicate(draft.get_detail()['detail'], draft.id))
+                existing.delete()
+
+    def test_map_delete_is_compared_only_with_map_delete(self):
+        map_delete = RequestDocument.MAP_DELETE_EDIT_PURPOSE
+        self._doc('rejected')  # 일반 반려 문서
+        # MAP 삭제 새 문서는 일반 반려 문서에 막히지 않는다.
+        md_draft = self._doc('draft', purpose=map_delete)
+        self.assertIsNone(RequestDocument.find_duplicate(md_draft.get_detail()['detail'], md_draft.id))
+        # MAP 삭제 문서가 진행 중이면 다른 MAP 삭제 새 문서는 막힌다.
+        md_existing = self._doc('under_review', purpose=map_delete)
+        found = RequestDocument.find_duplicate(md_draft.get_detail()['detail'], md_draft.id)
+        self.assertEqual(found.id, md_existing.id)
+        # 진행 중인 MAP 삭제 문서는 일반 새 문서를 막지 않는다(일반 반려 문서가 막는다).
+        normal_draft = self._doc('draft')
+        found = RequestDocument.find_duplicate(normal_draft.get_detail()['detail'], normal_draft.id)
+        self.assertNotEqual(found.id, md_existing.id)
+        self.assertEqual(found.status, 'rejected')
+
+    def test_empty_key_is_not_checked(self):
+        self._doc('rejected', process_id='')
+        draft = self._doc('draft', process_id='')
+        self.assertIsNone(RequestDocument.find_duplicate(draft.get_detail()['detail'], draft.id))
+
+    def test_resubmit_of_existing_rejected_doc_is_not_blocked(self):
+        """기존 결재 현황 문서(반려)의 재상신은 같은 키의 진행 중 문서가 있어도 막지 않는다."""
+        self._doc('under_review', requester=self.other)
+        rejected = self._doc('rejected')
+        r = self.client.post(f'/api/documents/{rejected.id}/resubmit/', {
+            'designated_pl_loginids': [self.pl.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_duplicate_check_prefers_rejected_and_reports_fields(self):
+        self._doc('under_review')
+        rejected = self._doc('rejected', requester=self.other)
+        r = self._check()
+        self.assertEqual(r.status_code, 200)
+        dup = r.json()['duplicate']
+        self.assertEqual(dup['id'], rejected.id)
+        self.assertEqual(dup['status'], 'rejected')
+        self.assertEqual(dup['title'], rejected.title)
+        self.assertEqual(dup['requester_name'], self.other.loginid)
+        self.assertTrue(dup['can_open'])
+
+    def test_duplicate_check_excludes_self_and_returns_null(self):
+        rejected = self._doc('rejected')
+        self.assertIsNone(self._check(exclude_id=rejected.id).json()['duplicate'])
+        self.assertIsNone(self._check(process_id='PID-X').json()['duplicate'])
+
+    def test_duplicate_check_can_open_false_for_overseas_pl_on_domestic_doc(self):
+        """해외 PL 은 국내 문서를 볼 수 없으므로 이동 버튼 대신 의뢰자 이름만 안내한다."""
+        self._doc('rejected', requester=self.other)
+        overseas = UserProfile.objects.create(
+            loginid='ovs', mail='ovs@c.com', role=UserProfile.OVERSEAS_PL_ROLE)
+        self.client.force_authenticate(user=overseas)
+        dup = self._check().json()['duplicate']
+        self.assertFalse(dup['can_open'])
+
+    @override_settings(DUPLICATE_SUBMIT_CHECK_ENABLED=False)
+    def test_disabled_setting_skips_check(self):
+        self._doc('rejected')
+        draft = self._doc('draft')
+        self.assertIsNone(self._check().json()['duplicate'])
+        self.assertEqual(self._submit(draft).status_code, 200)
