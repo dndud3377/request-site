@@ -38,6 +38,7 @@ import {
   MergeTable,
   AdiCdStep,
   MapInfo,
+  DuplicateDocument,
   plRoleFor,
 } from '../../types';
 import StepGuideTour from '../../components/StepGuideTour';
@@ -111,6 +112,7 @@ import {
   mapInfoDefaults,
   MERGE_MANUAL_FIELDS,
   TITLE_DEFAULT_LABEL,
+  APPROVAL_PATH,
   MAP_TYPE_NEW,
   INTER_YES,
   INTER_NO,
@@ -388,6 +390,8 @@ export default function RequestPage(): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   // claude 수정 (2026-10-28): 일반 목적 상신 시 J/O 표가 0행이면 실제 0건이 맞는지 확인받는다 — 비어 있는 표 이름 목록(null=닫힘)
   const [joEmptyConfirm, setJoEmptyConfirm] = useState<string[] | null>(null);
+  // claude 수정 (2026-11-04): 중복 상신 차단 — 같은 라인·제품·process_id 의 반려/진행 중 요청서(null=모달 닫힘)
+  const [duplicateDoc, setDuplicateDoc] = useState<DuplicateDocument | null>(null);
   const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId ?? peerReviewDocId);
   // 편집 대상 문서의 상태 — 'pause' 이면 상신 대신 '재개'(resume) 로 동작한다.
@@ -5012,6 +5016,27 @@ export default function RequestPage(): React.ReactElement {
 
   /** 상신 모달(지정 PL·통보처)을 연다 — 후보 목록을 불러온 뒤 입력 상태를 초기화한다. */
   const openSubmitConfirm = async () => {
+    // claude 수정 (2026-11-04): 중복 상신 차단 — 최초 상신(신규·임시저장)일 때만 같은 요청서가 있는지 먼저 확인한다.
+    // 반려 재상신·중단 재개·의뢰자 재상신·지정 PL 수정 상신은 이미 결재 현황에 있는 문서라 확인하지 않는다.
+    const isFirstSubmit = !isPeerReviewMode && (editDocStatus === null || editDocStatus === 'draft');
+    if (isFirstSubmit) {
+      try {
+        const res = await documentsAPI.duplicateCheck({
+          line: detail.line,
+          partid_selection: detail.partid_selection,
+          process_id: detail.process_id,
+          request_purpose: detail.request_purpose,
+          exclude_id: savedId,
+        });
+        if (res.data.duplicate) {
+          setDuplicateDoc(res.data.duplicate);
+          return;
+        }
+      } catch {
+        // 확인 실패로 상신 자체를 막지는 않는다 — 서버 submit 이 같은 규칙으로 다시 막는다(안전망).
+        addToast(t('request.duplicate_check_failed'), 'warning');
+      }
+    }
     // peer review 모드가 아닐 때만 PL 목록 로드
     if (!isPeerReviewMode && plUserOptions.length === 0) {
       try {
@@ -6369,6 +6394,51 @@ export default function RequestPage(): React.ReactElement {
         message={t('request.jo_empty_submit_msg', { tables: (joEmptyConfirm ?? []).join(', ') })}
         confirmLabel={t('request.jo_empty_submit_confirm')}
       />
+
+      {/* claude 수정 (2026-11-04): 중복 상신 차단 — 같은 요청서가 있으면 상신 모달 대신 안내하고, 열 수 있으면 그 요청서로 이동시킨다 */}
+      <Modal
+        isOpen={duplicateDoc !== null}
+        onClose={() => setDuplicateDoc(null)}
+        title={t('request.duplicate_title')}
+        size="sm"
+        hideFullscreen
+        style={{ maxWidth: '480px' }}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setDuplicateDoc(null)}>
+              {t('common.close')}
+            </button>
+            {duplicateDoc?.can_open && (
+              <button
+                className="btn btn-primary"
+                onClick={() => navigate(`${APPROVAL_PATH}?id=${duplicateDoc.id}`)}
+              >
+                {t('request.duplicate_go')}
+              </button>
+            )}
+          </>
+        }
+      >
+        {duplicateDoc && (
+          <div data-testid="duplicate-doc-modal">
+            <p style={{ marginTop: 0 }}>
+              {duplicateDoc.status === 'rejected'
+                ? t('request.duplicate_rejected_msg')
+                : t('request.duplicate_in_progress_msg')}
+            </p>
+            <div style={{ fontSize: '0.9em', lineHeight: 1.7, wordBreak: 'break-all' }}>
+              <div><strong>{t('request.duplicate_doc_title')}</strong>: {duplicateDoc.title}</div>
+              <div><strong>{t('request.duplicate_doc_status')}</strong>: {t(`common.status_${duplicateDoc.status}`)}</div>
+              <div><strong>{t('request.duplicate_doc_requester')}</strong>: {duplicateDoc.requester_name}</div>
+            </div>
+            {!duplicateDoc.can_open && (
+              <p style={{ marginBottom: 0 }}>
+                {t('request.duplicate_contact_requester', { name: duplicateDoc.requester_name })}
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <ConfirmModal
         isOpen={mergeReselectConfirm}
