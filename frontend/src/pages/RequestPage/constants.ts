@@ -21,6 +21,9 @@ export const OPTION_OTHER_PURPOSE = ['FirstA 변경', 'Layer 추가/삭제', 'ST
 // 백엔드 `backfill_title_flow_step` 커맨드의 TITLE_DEFAULT_LABEL 과 같은 값이어야 한다.
 export const TITLE_DEFAULT_LABEL = '요청서';
 
+// claude 수정 (2026-11-04): 중복 상신 차단 모달의 '요청서로 이동' 대상 — 결재 현황 경로(`?id=` 로 상세 모달 자동 오픈).
+export const APPROVAL_PATH = '/approval';
+
 // claude 수정 (2026-10-15): 흐름도 행에서 위치(라인)를 바꾸면 함께 비우는 칸 / 목록 밖 값일 때의 안내 i18n 키.
 export const FLOW_LOCATION_DEPENDENT_FIELDS: readonly (keyof Omit<FlowChartRow, 'id' | 'location'>)[] = ['product_name', 'process_id', 'step_from', 'step_to', 'step_from_seq', 'step_to_seq'];
 export const FLOW_NOT_IN_LIST_MSG_KEY = {
