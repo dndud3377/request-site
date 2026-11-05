@@ -256,8 +256,8 @@ def can_resume(user, document, my_group_ids=None):
 MAP_INFO_LOCK_STATUSES = ('rejected', 'under_review', 'submitted', 'pause')
 
 
-# claude 수정 (2026-10-19): 중단(pause) 전용·현재 회차 기준이던 잠금을 수정 가능 상태 전체·지난 회차 합의 이력 기준으로 넓힘
-def map_info_locked(document):
+# claude 수정 (2026-11-05): MASTER 예외 추가(user 인자) — MASTER 는 어떤 상황에서든 대처할 수 있어야 한다
+def map_info_locked(document, user=None):
     """편집 화면에서 MAP 정보와 요청 목적·라인~조리법을 잠가야 하는가.
 
     지난 회차를 포함해 R(+RV) 전원 합의 또는 고정 후결자 합의가 한 번이라도 있었다면
@@ -265,7 +265,12 @@ def map_info_locked(document):
     바꿀 수 없다 — 바꾸려면 MAP 삭제 후 새 요청서로 올린다. 잠그는 필드는
     `RequestDocument.MAP_INFO_FIELDS` + `MAP_LOCK_STEP1_FIELDS`. R 단계 자체가 없는 문서
     (ADI CD 변경)는 합의 이력이 생기지 않아 항상 False다.
+
+    MASTER 는 잠기지 않는다(2026-11-05 사용자 결정). `user` 를 넘기지 않으면 MASTER 예외 없이
+    문서 기준으로만 판정한다.
     """
+    if user is not None and getattr(user, 'role', '') == 'MASTER':
+        return False
     if document.status not in MAP_INFO_LOCK_STATUSES:
         return False
     return document.has_map_info_approval()
