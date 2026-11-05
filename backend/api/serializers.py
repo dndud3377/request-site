@@ -108,14 +108,14 @@ class DocPermFieldsMixin(serializers.Serializer):
         """문서의 공유 그룹이 내가 멤버인 그룹인가 — 결재 현황·홈의 '공유' 탭 판정용(의뢰자 무관)."""
         return bool(obj.shared_group_id and obj.shared_group_id in self._my_group_ids())
 
-    # claude 수정 (2026-10-19): 잠금 조건 변경(지난 회차 포함 R/고정 후결자 합의 이력)에 맞춰 설명 갱신
+    # claude 수정 (2026-11-05): 요청자 기준으로 계산 — MASTER 는 MAP 정보 잠금 예외(항상 False)
     def get_map_info_locked(self, obj):
         """R(+RV) 또는 고정 후결자 합의 이력이 있는 문서면 True — 편집 화면이 MAP 정보와
         요청 목적·라인~조리법을 read-only로 막는다(`doc_permissions.map_info_locked`).
 
-        사용자와 무관한 문서 상태 판정이라 로그인 여부와 상관없이 계산한다.
+        요청자가 MASTER 면 항상 False 다(어떤 상황에서든 대처할 수 있어야 하므로).
         """
-        return doc_permissions.map_info_locked(obj)
+        return doc_permissions.map_info_locked(obj, self._perm_user())
 
     # claude 수정 (2026-11-05): Partial Shot 잠금 플래그 — 진행 중 변경 버튼·편집 화면 Step3 토글 공용
     def get_partial_shot_locked(self, obj):
