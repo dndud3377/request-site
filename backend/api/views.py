@@ -58,6 +58,9 @@ import logging
 from urllib.parse import quote
 import re
 
+# claude 수정 (2026-11-05): Partial Shot 잠금(O 합의 이력, MASTER 예외) 거부 메시지 — partial-shot API·update 공용
+PARTIAL_SHOT_LOCKED_MESSAGE = 'O 단계 합의 이력이 있는 의뢰서는 Partial Shot 을 변경할 수 없습니다.'
+
 
 def _is_dev() -> bool:
     return getattr(settings, 'AUTH_MODE', 'sso') == 'dev'
@@ -2342,10 +2345,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        max_round = self._max_round(document)
-        if self._stage_reviewers_complete(document, 'O', max_round):
+        # claude 수정 (2026-11-05): 이번 회차 O 합의 → 지난 회차 포함 O 합의 이력으로 잠금 확대, MASTER 예외
+        # (O 재합의 생략 회차는 O step 이 없어 예전 판정으로는 열려 있었다 — docs/APPROVAL.md Case U)
+        if doc_permissions.partial_shot_locked(document, request.user):
             return Response(
-                {'error': 'O 단계 검토가 끝난 의뢰서는 변경할 수 없습니다.'},
+                {'error': PARTIAL_SHOT_LOCKED_MESSAGE},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -3891,6 +3895,21 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 if new_detail is not None and document.changed_map_info_fields(new_detail):
                     return Response(
                         {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+        # claude 수정 (2026-11-05): O 합의 이력이 있으면 편집 화면에서도 Partial Shot 변경 거부(MASTER 예외)
+        if doc_permissions.partial_shot_locked(document, request.user):
+            raw_notes = request.data.get('additional_notes')
+            if raw_notes is not None:
+                import json
+                try:
+                    new_detail = json.loads(raw_notes).get('detail', {}) or {}
+                except (TypeError, ValueError, AttributeError):
+                    new_detail = None
+                old_detail = document.get_detail().get('detail', {}) or {}
+                if new_detail is not None and new_detail.get('partial_shot') != old_detail.get('partial_shot'):
+                    return Response(
+                        {'error': PARTIAL_SHOT_LOCKED_MESSAGE},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
         return super().update(request, *args, **kwargs)
