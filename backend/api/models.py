@@ -517,6 +517,17 @@ class RequestDocument(models.Model):
             for actions in r_actions_by_round.values()
         )
 
+    # claude 수정 (2026-11-05): Partial Shot 잠금 판정용 — O 합의 이력(지난 회차 포함) 확인
+    def has_o_approval(self):
+        """지난 회차를 포함해 어느 회차에서든 O(OVL)가 합의(approved)한 적이 있는가.
+
+        참이면 Partial Shot 은 MASTER 외에는 더 이상 바꿀 수 없다(`doc_permissions.partial_shot_locked`).
+        O 가 합의한 값을 합의 뒤에 바꾸는 것은 말이 안 되고, O 재합의 생략(Case U) 회차에서는
+        바뀐 값을 O 가 다시 볼 기회도 없기 때문이다. 이후 회차에 O 가 반려해도 풀리지 않는다.
+        목록 직렬화에서도 호출되므로 `approval_steps.all()`(prefetch 캐시)만 사용한다.
+        """
+        return any(s.agent == 'O' and s.action == 'approved' for s in self.approval_steps.all())
+
     # StepMap(2단계)이 소유한 모든 DetailFormState 필드 — 프론트 `RequestPage/constants.ts` 의
     # mapInfoDefaults() 와 반드시 같은 키 목록이어야 한다(2026-09, MAP 정보 잠금 판정에 재사용).
     MAP_INFO_FIELDS = (
