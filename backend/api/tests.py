@@ -9977,6 +9977,23 @@ class MapInfoLockAfterApprovalHistoryTest(TestCase):
         body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
         self.assertTrue(body['map_info_locked'])
 
+    # claude 수정 (2026-11-05): MASTER 는 MAP 정보 잠금 예외 — 저장(PATCH)·응답 플래그·판정 함수 모두
+    def test_master_is_exempt_from_lock(self):
+        master = UserProfile.objects.create(loginid='mlh_m', mail='mlh_m@company.com', role='MASTER')
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        self.assertTrue(doc_permissions.map_info_locked(doc, self.author))
+        self.assertFalse(doc_permissions.map_info_locked(doc, master))
+        self.client.force_authenticate(user=master)
+        res = self.client.get(f'/api/documents/{doc.id}/')
+        body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        self.assertFalse(body['map_info_locked'], 'MASTER 화면은 MAP 정보가 잠기지 않아야 한다')
+        payload = {'detail': {**self.BASE_DETAIL, 'map_type': 'EXISTING', 'line': '라인2'},
+                   'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        res = self.client.patch(f'/api/documents/{doc.id}/',
+                                {'additional_notes': json.dumps(payload, ensure_ascii=False)}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+
 
 class FormOptionsLineProcessProductProcessIdTest(TestCase):
     """의뢰서 작성 Step1 의 라인/조합법/제품이름/조리법 옵션 API.
