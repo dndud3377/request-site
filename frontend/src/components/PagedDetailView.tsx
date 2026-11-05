@@ -3738,6 +3738,13 @@ type Page = { label: string; content: React.ReactNode; key?: string };
       return [{ status: 'waiting', label: t('approval.step_pending') }];
     }
     const steps = allSteps.filter((s) => s.agent === agent && (s.round ?? 1) === round);
+    // claude 수정 (2026-11-04): O 재합의 생략(Case U) 회차는 '대기'가 아니라 '해당없음'(백엔드 is_o_skipped 와 동일)
+    // O 가 있는 경로는 P 와 O 를 항상 함께 만든다 — P step 이 있는데 O step 이 없으면 생략된 회차다.
+    // (Only MAP·ADI CD 변경의 O 는 위 na 분기에서 이미 처리된다)
+    if (agent === 'O' && steps.length === 0
+        && allSteps.some((s) => s.agent === 'P' && (s.round ?? 1) === round)) {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
     if (steps.length === 0) return [{ status: 'waiting', label: t('approval.step_pending') }];
     return steps.map(stepToInfo);
   };

@@ -9151,6 +9151,517 @@ class RSkipStageIntegrationTest(TestCase):
         )
 
 
+# claude 수정 (2026-11-04): O 재합의 생략(Case U) 회귀 테스트 — 판정 단위·재상신 통합·중단→재개
+@override_settings(POST_APPROVER_LOGINID='fixed_ra_o')
+class ShouldSkipOStageTest(TestCase):
+    """RequestDocumentViewSet._should_skip_o_stage — O 재합의 생략 판정(단위).
+
+    O 본인 반려만 재합의 대상이고(고정 후결자 반려 포함 그 외는 생략 가능), 비교 구간은
+    jayerRows·oayerRows·MAP 정보(MAP_INFO_FIELDS)다. O step 이 없는 회차는 건너뛰고 O 가
+    마지막으로 있었던 회차의 합의 여부·반려 스냅샷 내용을 기준으로 삼는다.
+    """
+
+    def setUp(self):
+        from .views import RequestDocumentViewSet
+        self.viewset = RequestDocumentViewSet()
+        self.requester = UserProfile.objects.create(loginid='skipo_req', mail='skipo_req@company.com', role='NONE')
+
+    def _payload(self, detail=None, jayer=None, oayer=None, extra=None):
+        data = {'detail': detail or {}, 'jayerRows': jayer or [], 'oayerRows': oayer or []}
+        data.update(extra or {})
+        return json.dumps(data, ensure_ascii=False)
+
+    def _make_doc(self, **kw):
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='skipo_req@company.com', requester_department='개발팀',
+            product_name='PROD-1', status='under_review', additional_notes=self._payload(**kw),
+        )
+
+    def _snapshot(self, doc, round_no, agent, loginid='', **kw):
+        return RejectionSnapshot.objects.create(
+            document=doc, source_document_id=doc.id, title=doc.title,
+            product_name=doc.product_name, requester_name=doc.requester_name,
+            requester_department=doc.requester_department, round=round_no,
+            rejected_at=timezone.now(), rejected_agent=agent, rejected_by_loginid=loginid,
+            additional_notes=self._payload(**kw),
+        )
+
+    def _step(self, doc, agent, action, round_no):
+        return ApprovalStep.objects.create(document=doc, agent=agent, action=action, round=round_no)
+
+    def _round1_o_approved_rejected_by(self, agent, loginid='', snap_kw=None, doc_kw=None):
+        doc = self._make_doc(**(doc_kw or {}))
+        self._step(doc, 'P', 'rejected' if agent == 'P' else 'approved', 1)
+        self._step(doc, 'O', 'approved', 1)
+        self._snapshot(doc, 1, agent, loginid, **(snap_kw or {}))
+        return doc
+
+    def test_first_round_never_skips(self):
+        doc = self._make_doc()
+        self.assertFalse(self.viewset._should_skip_o_stage(doc, 1))
+
+    def test_unchanged_after_p_reject_skips(self):
+        doc = self._round1_o_approved_rejected_by('P', snap_kw={'oayer': [{'id': 'o1'}]},
+                                                  doc_kw={'oayer': [{'id': 'o1'}]})
+        self.assertTrue(self.viewset._should_skip_o_stage(doc, 2))
+
+    def test_fixed_post_approver_reject_still_skips(self):
+        """R 과 다른 규칙 — 고정 후결자 반려여도 O 는 생략할 수 있다."""
+        doc = self._round1_o_approved_rejected_by('RA', loginid='fixed_ra_o')
+        self.assertTrue(self.viewset._should_skip_o_stage(doc, 2))
+
+    def test_o_reject_never_skips(self):
+        doc = self._make_doc()
+        self._step(doc, 'O', 'rejected', 1)
+        self._snapshot(doc, 1, 'O')
+        self.assertFalse(self.viewset._should_skip_o_stage(doc, 2))
+
+    def test_o_still_pending_when_other_rejected_does_not_skip(self):
+        doc = self._make_doc()
+        self._step(doc, 'P', 'rejected', 1)
+        self._step(doc, 'O', 'pending', 1)
+        self._snapshot(doc, 1, 'P')
+        self.assertFalse(self.viewset._should_skip_o_stage(doc, 2))
+
+    def test_compared_section_change_blocks_skip(self):
+        cases = {
+            'jayer': ({'jayer': [{'id': 'j1', 'pp': 'A'}]}, {'jayer': [{'id': 'j1', 'pp': 'B'}]}),
+            'oayer': ({'oayer': [{'id': 'o1', 'st': 'O'}]}, {'oayer': [{'id': 'o1', 'st': 'X'}]}),
+            'map_info': ({'detail': {'map_type': 'NEW'}}, {'detail': {'map_type': 'CLONE'}}),
+        }
+        for name, (snap_kw, doc_kw) in cases.items():
+            doc = self._round1_o_approved_rejected_by('P', snap_kw=snap_kw, doc_kw=doc_kw)
+            self.assertFalse(self.viewset._should_skip_o_stage(doc, 2), name)
+
+    def test_uncompared_section_change_still_skips(self):
+        """의뢰 상세 line~process_id·Backbone 은 O 의 비교 대상이 아니다."""
+        doc = self._round1_o_approved_rejected_by(
+            'P',
+            snap_kw={'detail': {'process_id': 'PID-1'}, 'extra': {'bbRows': [{'id': 'b1'}]}},
+            doc_kw={'detail': {'process_id': 'PID-2'}, 'extra': {'bbRows': [{'id': 'b2'}]}},
+        )
+        self.assertTrue(self.viewset._should_skip_o_stage(doc, 2))
+
+    def test_walks_back_over_rounds_without_o(self):
+        """2회차가 O 없이 끝났으면(R 반려·O 생략) 1회차 O 합의를 기준으로 판정한다."""
+        doc = self._round1_o_approved_rejected_by('P')
+        self._step(doc, 'R', 'rejected', 2)
+        self._snapshot(doc, 2, 'R')
+        self.assertTrue(self.viewset._should_skip_o_stage(doc, 3))
+
+    def test_walks_back_but_compares_with_round_o_approved(self):
+        """비교 기준은 O 가 합의한 회차의 스냅샷이다 — 중간 회차와 같아도 그 회차와 다르면 재합의."""
+        doc = self._round1_o_approved_rejected_by('P', snap_kw={'oayer': [{'id': 'o1'}]},
+                                                  doc_kw={'oayer': [{'id': 'o2'}]})
+        self._step(doc, 'R', 'rejected', 2)
+        self._snapshot(doc, 2, 'R', oayer=[{'id': 'o2'}])
+        self.assertFalse(self.viewset._should_skip_o_stage(doc, 3))
+
+    def test_missing_snapshot_does_not_skip(self):
+        doc = self._make_doc()
+        self._step(doc, 'O', 'approved', 1)
+        self.assertFalse(self.viewset._should_skip_o_stage(doc, 2))
+
+    def test_routes_without_o_never_skip(self):
+        for purpose in (RequestDocument.ONLY_MAP_PURPOSE, RequestDocument.ADI_CD_CHANGE_PURPOSE):
+            detail = {'request_purpose': purpose}
+            doc = self._round1_o_approved_rejected_by('P', snap_kw={'detail': detail}, doc_kw={'detail': detail})
+            self.assertFalse(self.viewset._should_skip_o_stage(doc, 2), purpose)
+
+
+@override_settings(POST_APPROVER_LOGINID='')
+class OSkipStageIntegrationTest(TestCase):
+    """O 재합의 생략 — 실제 API 흐름(상신→PL→R→3구역→반려→재상신→PL)으로 검증.
+
+    jayer pp 에 plel 이 없어 E 는 생기지 않고, 고정 후결자를 비워 RA 도 없다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='osk_req', mail='osk_req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='osk_pl', mail='osk_pl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='osk_r', mail='osk_r@c.com', role='TE_R')
+        self.p_user = UserProfile.objects.create(loginid='osk_p', mail='osk_p@c.com', role='TE_P')
+        self.j_user = UserProfile.objects.create(loginid='osk_j', mail='osk_j@c.com', role='TE_J')
+        self.o_user = UserProfile.objects.create(loginid='osk_o', mail='osk_o@c.com', role='TE_O')
+        self.users = {'P': self.p_user, 'J': self.j_user, 'O': self.o_user}
+
+    def _make_doc(self, detail=None):
+        payload = {
+            'detail': {'line': 'L1', 'process_id': 'PID-1', 'map_type': 'NEW', **(detail or {})},
+            'jayerRows': [{'id': 'j1', 'pp': 'NORMAL'}],
+            'oayerRows': [{'id': 'o1', 'st': 'O'}],
+        }
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='osk_req@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='draft', additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _edit(self, doc, fn):
+        doc.refresh_from_db()
+        payload = json.loads(doc.additional_notes)
+        fn(payload)
+        doc.additional_notes = json.dumps(payload, ensure_ascii=False)
+        doc.save()
+
+    def _post(self, user, doc, path, data=None):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{doc.id}/{path}/', data or {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        return r
+
+    def _submit(self, doc):
+        self._post(self.requester, doc, 'submit', {'designated_pl_loginid': self.pl_user.loginid})
+        self._post(self.pl_user, doc, 'peer-approve')
+
+    def _resubmit(self, doc):
+        self._post(self.requester, doc, 'resubmit', {'designated_pl_loginid': self.pl_user.loginid})
+        self._post(self.pl_user, doc, 'peer-approve')
+
+    def _approve_r(self, doc):
+        self._post(self.r_user, doc, 'assign-step',
+                   {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'r'})
+        self._post(self.r_user, doc, 'approve-step', {'agent': 'R'})
+
+    def _act(self, agent, doc, verb):
+        self._post(self.users[agent], doc, 'claim-step', {'agent': agent})
+        return self._post(self.users[agent], doc, f'{verb}-step', {'agent': agent, 'comment': verb})
+
+    def _agents(self, doc, round_no):
+        return set(ApprovalStep.objects.filter(document=doc, round=round_no).values_list('agent', flat=True))
+
+    def _round1_o_approved_then_rejected_by(self, agent, doc=None):
+        doc = doc or self._make_doc()
+        self._submit(doc)
+        self._approve_r(doc)
+        if agent != 'O':
+            self._act('O', doc, 'approve')
+        self._act(agent, doc, 'reject')
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        return doc
+
+    def test_unchanged_resubmit_skips_o_and_final_approval_works(self):
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._resubmit(doc)
+        self.assertEqual(self._agents(doc, 2), {'PL', 'P', 'J'}, 'R(Case T)·O(Case U) 모두 생략돼야 한다')
+        self.assertTrue(doc.is_o_skipped(2))
+        self.assertNotIn('O', mailer.route_agents_for(doc))
+        self._act('J', doc, 'approve')
+        r = self._act('P', doc, 'approve')
+        self.assertEqual(r.data['status'], 'approved', 'O 없이 나머지가 끝나면 최종 승인돼야 한다')
+
+    def test_oayer_change_recreates_o(self):
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._edit(doc, lambda p: p['oayerRows'][0].update({'st': 'X'}))
+        self._resubmit(doc)
+        self.assertIn('O', self._agents(doc, 2))
+        self.assertNotIn('R', self._agents(doc, 2), 'R 은 Oayer 를 비교하지 않으므로 그대로 생략')
+
+    def test_map_info_change_recreates_o(self):
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._edit(doc, lambda p: p['detail'].update({'map_type': 'CLONE'}))
+        self._resubmit(doc)
+        self._approve_r(doc)
+        self.assertIn('O', self._agents(doc, 2))
+
+    def test_line_change_keeps_r_skips_o_and_sends_rjo_notice(self):
+        """line~process_id 는 R 만 본다 — R 은 다시 거치고 O 는 생략, R+J 완료 시 P팀 참고 통보 발송."""
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._edit(doc, lambda p: p['detail'].update({'process_id': 'PID-2'}))
+        self._resubmit(doc)
+        self.assertIn('R', self._agents(doc, 2))
+        self._approve_r(doc)
+        self.assertNotIn('O', self._agents(doc, 2))
+        before = MailNotification.objects.filter(event_type='notify_rjo_completed').count()
+        self._act('J', doc, 'approve')
+        self.assertEqual(
+            MailNotification.objects.filter(event_type='notify_rjo_completed').count(), before + 1,
+            'O 생략 회차도 R+J 완료 시 P팀 참고 통보를 보내야 한다(사용자 결정 2번 (가))',
+        )
+
+    def test_o_reject_recreates_o(self):
+        doc = self._round1_o_approved_then_rejected_by('O')
+        self._resubmit(doc)
+        self.assertIn('O', self._agents(doc, 2))
+
+    def test_reject_while_o_pending_recreates_o(self):
+        doc = self._make_doc()
+        self._submit(doc)
+        self._approve_r(doc)
+        self._act('P', doc, 'reject')
+        self._resubmit(doc)
+        self.assertIn('O', self._agents(doc, 2))
+
+    def test_chain_through_o_skipped_round(self):
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._resubmit(doc)
+        self.assertNotIn('O', self._agents(doc, 2))
+        self._act('P', doc, 'reject')
+        self._resubmit(doc)
+        self.assertNotIn('O', self._agents(doc, 3), '1회차 O 합의 내용 그대로면 3회차도 생략(사용자 결정 1번 (나))')
+
+    def test_chain_through_round_that_never_reached_zone3(self):
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._edit(doc, lambda p: p['detail'].update({'process_id': 'PID-2'}))
+        self._resubmit(doc)
+        self._post(self.r_user, doc, 'assign-step',
+                   {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'r'})
+        self._post(self.r_user, doc, 'reject-step', {'agent': 'R', 'comment': 'r'})
+        self._resubmit(doc)
+        self._approve_r(doc)
+        self.assertEqual(self._agents(doc, 3), {'PL', 'R', 'P', 'J'})
+
+    def test_reject_in_o_skipped_round_excludes_te_o_from_mail(self):
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._resubmit(doc)
+        self._act('P', doc, 'reject')
+        doc.refresh_from_db()
+        _individual, teams = mailer.resolve_reject_recipients(doc)
+        self.assertNotIn('O', teams, f'O 가 없던 회차의 반려 메일은 TE_O 에 가지 않아야 한다: {teams}')
+        self.assertIn('J', teams)
+
+    def test_route_card_shows_o_not_applicable(self):
+        doc = self._round1_o_approved_then_rejected_by('P')
+        self._resubmit(doc)
+        rows = {label: status for label, _name, status, _c in mailer._route_rows(doc)}
+        self.assertEqual(rows.get(mailer.AGENT_LABEL['O']), 'na')
+
+    def test_map_delete_route_skips_o_and_opens_r(self):
+        doc = self._make_doc({'request_purpose': RequestDocument.MAP_DELETE_EDIT_PURPOSE})
+        self._submit(doc)
+        self.assertEqual(self._agents(doc, 1), {'PL', 'P', 'J', 'O'})
+        self._act('O', doc, 'approve')
+        self._act('P', doc, 'reject')
+        self._resubmit(doc)
+        self.assertEqual(self._agents(doc, 2), {'PL', 'P', 'J'})
+        self._act('P', doc, 'approve')
+        self._act('J', doc, 'approve')
+        self.assertIn('R', self._agents(doc, 2), 'O 생략 회차도 P·J 완료 시 R 이 열려야 한다')
+        self._post(self.r_user, doc, 'assign-step',
+                   {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'r'})
+        r = self._post(self.r_user, doc, 'approve-step', {'agent': 'R'})
+        self.assertEqual(r.data['status'], 'approved')
+
+    def test_overlay_only_route_skips_o(self):
+        doc = self._make_doc({'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY]})
+        self._submit(doc)
+        self.assertEqual(self._agents(doc, 1), {'PL', 'P', 'O'})
+        self._act('O', doc, 'approve')
+        self._act('P', doc, 'reject')
+        self._resubmit(doc)
+        self.assertEqual(self._agents(doc, 2), {'PL', 'P'})
+        r = self._act('P', doc, 'approve')
+        self.assertEqual(r.data['status'], 'approved')
+
+
+@override_settings(POST_APPROVER_LOGINID='')
+class OSkipPauseResumeTest(TestCase):
+    """중단→재개 시 이미 합의한 O 를 유지하는지(Case U) — 비교 기준은 중단 확정 시점 스냅샷."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='osp_a', mail='osp_a@c.com', role='PL', username='의뢰자')
+        self.p_user = UserProfile.objects.create(loginid='osp_p', mail='osp_p@c.com', role='TE_P', username='P담당')
+        self.j_user = UserProfile.objects.create(loginid='osp_j', mail='osp_j@c.com', role='TE_J', username='J담당')
+        self.o_user = UserProfile.objects.create(loginid='osp_o', mail='osp_o@c.com', role='TE_O', username='O담당')
+        self.o_user2 = UserProfile.objects.create(loginid='osp_o2', mail='osp_o2@c.com', role='TE_O', username='O팀원')
+        payload = {'detail': {'map_type': 'NEW'}, 'jayerRows': [{'id': 'j1'}], 'oayerRows': [{'id': 'o1', 'st': 'O'}]}
+        self.doc = RequestDocument.objects.create(
+            title='osp', requester=self.author, requester_name='의뢰자', requester_email='osp_a@c.com',
+            requester_department='d', product_name='p', status='under_review',
+            additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+        for agent, action, user in (('PL', 'approved', self.author), ('R', 'approved', None),
+                                    ('P', 'pending', self.p_user), ('J', 'approved', self.j_user),
+                                    ('O', 'approved', self.o_user)):
+            ApprovalStep.objects.create(
+                document=self.doc, agent=agent, action=action, round=1, assignee=user,
+                assignee_name=(user.username if user else ''),
+            )
+
+    def _post(self, user, path, data=None):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{self.doc.id}/{path}/', data or {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        return r
+
+    def _pause(self):
+        self._post(self.author, 'request-pause', {'reason': '사유'})
+        self._post(self.p_user, 'confirm-pause', {'agent': 'P'})
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.status, 'pause')
+
+    def _o_step(self):
+        return ApprovalStep.objects.get(document=self.doc, agent='O', round=1)
+
+    def _resume_mail_recipients(self):
+        return [m for n in MailNotification.objects.filter(event_type='pause_resumed') for m in n.recipients]
+
+    def test_confirm_pause_stores_snapshot(self):
+        self._pause()
+        pr = PauseRequest.objects.get(document=self.doc, state='confirmed')
+        self.assertEqual(pr.content_snapshot, self.doc.additional_notes)
+
+    def test_unchanged_resume_keeps_o_approved_and_skips_o_mail(self):
+        self._pause()
+        self._post(self.author, 'resume')
+        o = self._o_step()
+        self.assertEqual(o.action, 'approved')
+        self.assertEqual(o.assignee_id, self.o_user.id, '유지된 O 는 담당자도 그대로여야 한다')
+        j = ApprovalStep.objects.get(document=self.doc, agent='J', round=1)
+        self.assertEqual(j.action, 'pending', '같은 구역의 다른 합의(J)는 기존처럼 초기화')
+        recipients = self._resume_mail_recipients()
+        self.assertTrue(recipients, '재개 알림 자체는 발송돼야 한다')
+        self.assertNotIn('osp_o@c.com', recipients)
+        self.assertNotIn('osp_o2@c.com', recipients)
+
+    def test_changed_oayer_resume_resets_o(self):
+        self._pause()
+        payload = json.loads(self.doc.additional_notes)
+        payload['oayerRows'][0]['st'] = 'X'
+        self.doc.additional_notes = json.dumps(payload, ensure_ascii=False)
+        self.doc.save()
+        self._post(self.author, 'resume')
+        o = self._o_step()
+        self.assertEqual(o.action, 'pending')
+        self.assertIsNone(o.assignee_id)
+
+    def test_legacy_pause_without_snapshot_resets_o(self):
+        self._pause()
+        PauseRequest.objects.filter(document=self.doc).update(content_snapshot='')
+        self._post(self.author, 'resume')
+        self.assertEqual(self._o_step().action, 'pending')
+
+
+# claude 수정 (2026-11-05): Partial Shot 잠금(O 합의 이력, MASTER 예외) 회귀 테스트 — 발견 보고 A3·B1·B2 고정
+@override_settings(POST_APPROVER_LOGINID='')
+class PartialShotLockTest(TestCase):
+    """지난 회차를 포함해 O 가 한 번이라도 합의했으면 Partial Shot 은 MASTER 외에는 바꿀 수 없다.
+
+    진행 중 변경 버튼(`partial-shot` API)과 편집 화면 저장(`PATCH /documents/`) 모두 같은 규칙이다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        mk = lambda lid, role: UserProfile.objects.create(loginid=lid, mail=f'{lid}@c.com', role=role)
+        self.req, self.pl, self.r = mk('psl_req', 'PL'), mk('psl_pl', 'PL'), mk('psl_r', 'TE_R')
+        self.users = {'P': mk('psl_p', 'TE_P'), 'J': mk('psl_j', 'TE_J'), 'O': mk('psl_o', 'TE_O')}
+        self.master = mk('psl_m', 'MASTER')
+        payload = {'detail': {'line': 'L1', 'map_type': 'NEW', 'partial_shot': 'O'},
+                   'jayerRows': [{'id': 'j1', 'pp': 'NORMAL'}], 'oayerRows': [{'id': 'o1', 'st': 'O'}]}
+        self.doc = RequestDocument.objects.create(
+            title='psl', requester=self.req, requester_name='요청자', requester_email='psl_req@c.com',
+            requester_department='d', product_name='P', status='draft',
+            additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _post(self, user, path, data=None, expect=200):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{self.doc.id}/{path}/', data or {}, format='json')
+        self.assertEqual(r.status_code, expect, r.content)
+        return r
+
+    def _act(self, agent, verb):
+        self._post(self.users[agent], 'claim-step', {'agent': agent})
+        self._post(self.users[agent], f'{verb}-step', {'agent': agent})
+
+    def _to_zone3(self):
+        self._post(self.req, 'submit', {'designated_pl_loginid': self.pl.loginid})
+        self._post(self.pl, 'peer-approve')
+        self._post(self.r, 'assign-step', {'agent': 'R', 'assignee_loginid': self.r.loginid, 'assignee_name': 'r'})
+        self._post(self.r, 'approve-step', {'agent': 'R'})
+
+    def _o_approved_then_p_rejected(self):
+        self._to_zone3()
+        self._act('O', 'approve')
+        self._act('P', 'reject')
+
+    def _patch_partial_shot(self, user, value):
+        self.doc.refresh_from_db()
+        notes = json.loads(self.doc.additional_notes)
+        notes['detail']['partial_shot'] = value
+        self.client.force_authenticate(user=user)
+        return self.client.patch(f'/api/documents/{self.doc.id}/',
+                                 {'additional_notes': json.dumps(notes, ensure_ascii=False)}, format='json')
+
+    def _locked_flag(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client.get(f'/api/documents/{self.doc.id}/').data['partial_shot_locked']
+
+    def _saved(self):
+        self.doc.refresh_from_db()
+        return json.loads(self.doc.additional_notes)['detail']['partial_shot']
+
+    def test_api_open_before_o_approval(self):
+        self._to_zone3()
+        self.assertFalse(self._locked_flag(self.req))
+        self._post(self.req, 'partial-shot', {'value': 'X'})
+        self.assertEqual(self._saved(), 'X')
+
+    def test_api_locked_after_o_approval_in_same_round_but_master_allowed(self):
+        self._to_zone3()
+        self._act('O', 'approve')
+        self._post(self.req, 'partial-shot', {'value': 'X'}, expect=400)
+        self._post(self.master, 'partial-shot', {'value': 'X'})
+        self.assertEqual(self._saved(), 'X', 'MASTER 는 O 합의 뒤에도 바꿀 수 있어야 한다')
+
+    def test_api_locked_in_o_skipped_round(self):
+        """A3 — O 생략 회차는 O step 이 없어도 지난 회차 O 합의 이력으로 잠긴다."""
+        self._o_approved_then_p_rejected()
+        self._post(self.req, 'resubmit', {'designated_pl_loginid': self.pl.loginid})
+        self._post(self.pl, 'peer-approve')
+        self.assertTrue(self.doc.is_o_skipped(2))
+        self.assertTrue(self._locked_flag(self.req))
+        self.assertFalse(self._locked_flag(self.master))
+        self._post(self.req, 'partial-shot', {'value': 'X'}, expect=400)
+        self.assertEqual(self._saved(), 'O')
+
+    def test_form_edit_locked_after_reject(self):
+        """B1 — 반려 후 편집 화면 저장에서 Partial Shot 만 막고, 다른 수정은 그대로 허용한다."""
+        self._o_approved_then_p_rejected()
+        r = self._patch_partial_shot(self.req, 'X')
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self._patch_partial_shot(self.req, 'O')
+        self.assertEqual(r.status_code, 200, '값이 같으면 저장은 막지 않는다')
+        r = self._patch_partial_shot(self.master, 'X')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._saved(), 'X')
+
+    def test_form_edit_locked_during_pause(self):
+        """B2 — 중단 후 편집 화면 저장도 막는다."""
+        self._to_zone3()
+        self._act('O', 'approve')
+        self._post(self.req, 'request-pause', {'reason': '사유'})
+        for agent in ApprovalStep.objects.filter(document=self.doc, action='pending', round=1).values_list('agent', flat=True):
+            self._post(self.users[agent], 'confirm-pause', {'agent': agent})
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.status, 'pause')
+        r = self._patch_partial_shot(self.req, 'X')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_lock_survives_later_o_rejection(self):
+        """O 가 나중 회차에 반려해도 잠금은 풀리지 않는다(사용자 결정 (가))."""
+        self._o_approved_then_p_rejected()
+        # 2회차에 O 본인이 반려한 상태를 만든다(가장 최근 O 판단이 반려)
+        ApprovalStep.objects.create(document=self.doc, agent='O', action='rejected', round=2)
+        r = self._patch_partial_shot(self.req, 'X')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_draft_and_approved_are_not_locked(self):
+        ApprovalStep.objects.create(document=self.doc, agent='O', action='approved', round=1)
+        self.assertFalse(self._locked_flag(self.req), 'draft 는 잠금 대상 상태가 아니다')
+        self.doc.status = 'approved'
+        self.doc.save()
+        r = self._patch_partial_shot(self.master, 'X')
+        self.assertEqual(r.status_code, 200, '승인 완료 문서도 MASTER 는 수정할 수 있다(B4)')
+
+
 class OverseasScopeTest(TestCase):
     """해외 제품 담당자(PL_GL)의 조회 격리 — 국내/해외 단방향 분리.
 
@@ -9465,6 +9976,23 @@ class MapInfoLockAfterApprovalHistoryTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
         self.assertTrue(body['map_info_locked'])
+
+    # claude 수정 (2026-11-05): MASTER 는 MAP 정보 잠금 예외 — 저장(PATCH)·응답 플래그·판정 함수 모두
+    def test_master_is_exempt_from_lock(self):
+        master = UserProfile.objects.create(loginid='mlh_m', mail='mlh_m@company.com', role='MASTER')
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        self.assertTrue(doc_permissions.map_info_locked(doc, self.author))
+        self.assertFalse(doc_permissions.map_info_locked(doc, master))
+        self.client.force_authenticate(user=master)
+        res = self.client.get(f'/api/documents/{doc.id}/')
+        body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        self.assertFalse(body['map_info_locked'], 'MASTER 화면은 MAP 정보가 잠기지 않아야 한다')
+        payload = {'detail': {**self.BASE_DETAIL, 'map_type': 'EXISTING', 'line': '라인2'},
+                   'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        res = self.client.patch(f'/api/documents/{doc.id}/',
+                                {'additional_notes': json.dumps(payload, ensure_ascii=False)}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
 
 
 class FormOptionsLineProcessProductProcessIdTest(TestCase):

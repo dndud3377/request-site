@@ -58,6 +58,9 @@ import logging
 from urllib.parse import quote
 import re
 
+# claude 수정 (2026-11-05): Partial Shot 잠금(O 합의 이력, MASTER 예외) 거부 메시지 — partial-shot API·update 공용
+PARTIAL_SHOT_LOCKED_MESSAGE = 'O 단계 합의 이력이 있는 의뢰서는 Partial Shot 을 변경할 수 없습니다.'
+
 
 def _is_dev() -> bool:
     return getattr(settings, 'AUTH_MODE', 'sso') == 'dev'
@@ -814,6 +817,38 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         curr_detail = curr.get('detail') or {}
         compare_fields = RequestDocument.MAP_INFO_FIELDS + RequestDocument.DETAIL_LINE_TO_PROCESS_ID_FIELDS
         return all(prev_detail.get(f) == curr_detail.get(f) for f in compare_fields)
+
+    # claude 수정 (2026-11-04): O 재합의 생략(Case U) 판정 신설 — R 생략과 별개 규칙
+    def _should_skip_o_stage(self, document, round_no):
+        """새 회차(`round_no`)에서 O 단계를 만들지 않아도 되는가(O 재합의 생략, Case U).
+
+        O 가 있는 모든 경로(일반·'Overlay만 변경' 단독·'MAP 삭제')에 적용한다. 판정은 O 가
+        생성될 시점(3구역, MAP 삭제는 2구역이 열릴 때)에 한다 — 재상신 뒤 PL 이 고친 내용도 반영된다.
+
+        이전 회차를 최근부터 거슬러 올라가며 **O step 이 있었던 마지막 회차**를 찾는다.
+        O step 이 없는 회차(그 구역까지 가지 못했거나 이미 O 가 생략된 회차)는 건너뛴다.
+        - 그 회차의 O 가 합의(approved)가 아니면(O 본인 반려·대기 중 다른 단계 반려) → 생략하지 않는다.
+        - 합의였으면 그 회차의 반려 스냅샷(`RejectionSnapshot`)과 지금 내용을 비교해
+          Jayer·Oayer·MAP 정보(`RequestDocument.o_review_content_same`)가 모두 같을 때만 생략한다.
+        누가 반려했는지(고정 후결자 포함)는 보지 않는다 — O 본인 반려만 재합의 대상이다.
+        """
+        if document.is_only_map() or document.is_adi_cd_change():
+            return False
+        for prev_round in range(round_no - 1, 0, -1):
+            o_step = ApprovalStep.objects.filter(
+                document=document, agent='O', round=prev_round,
+            ).order_by('-id').first()
+            if not o_step:
+                continue
+            if o_step.action != 'approved':
+                return False
+            snapshot = RejectionSnapshot.objects.filter(
+                document=document, round=prev_round,
+            ).order_by('-id').first()
+            if not snapshot:
+                return False
+            return RequestDocument.o_review_content_same(snapshot.get_detail(), document.get_detail())
+        return False
 
     @action(detail=True, methods=['post'])
     def resubmit(self, request, pk=None):
@@ -1603,7 +1638,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     True if document.skip_j_stage()
                     else (len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps))
                 )
-                o_approved = o_step and o_step.action == 'approved'
+                # claude 수정 (2026-11-04): O 재합의 생략(Case U) 회차는 O step 이 없어도 완료로 본다
+                # (O step 이 없는데 생략이 아니면 기존처럼 미완료 — 경로 오류를 승인으로 덮지 않는다)
+                o_approved = (
+                    o_step.action == 'approved' if o_step
+                    else document.is_o_skipped(current_round)
+                )
                 # P: 담당자 합의 + 지정된 검토자(PV) 전원 합의까지 끝나야 완료.
                 # J 분리 전에는 "J 가 존재한다 = P 가 끝났다" 였기에 판정에서 생략했지만,
                 # 이제 J 는 P 와 무관하게 R 합의 시점부터 존재하므로 명시적으로 확인해야 한다.
@@ -2095,6 +2135,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if all_confirmed:
             pr.state = 'confirmed'
             pr.confirmed_at = timezone.now()
+            # claude 수정 (2026-11-04): 재개 시 O 합의 유지 판정(Case U)용 — 중단 확정 시점 내용 저장
+            pr.content_snapshot = document.additional_notes or ''
             pr.save()
             document.status = 'pause'
             document.save()
@@ -2178,6 +2220,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         for step in ApprovalStep.objects.filter(document=document, action='pending', round=reset_round):
             zone = document.pause_zone_for_agent(step.agent)
             zone_agents.update(zone if zone else (step.agent,))
+        pr = PauseRequest.objects.filter(
+            document=document, state='confirmed'
+        ).order_by('-created_at').first()
+        # claude 수정 (2026-11-04): O 재합의 생략(Case U) — 이미 합의한 O 는 내용이 그대로면 초기화하지 않는다
+        # 중단 확정 시점 내용(content_snapshot)과 지금 내용의 Jayer·Oayer·MAP 정보가 같으면 O 를
+        # 초기화 대상(zone_agents)에서 빼고, 재개 알림 수신에서도 뺀다. 스냅샷이 없는(기능 도입 전)
+        # 중단 건은 비교할 수 없으므로 기존처럼 초기화한다.
+        kept_o_step_ids = []
+        if 'O' in zone_agents and pr and pr.content_snapshot:
+            o_step = ApprovalStep.objects.filter(
+                document=document, agent='O', round=reset_round,
+            ).order_by('-id').first()
+            snapshot_data = pr.get_content_snapshot()
+            if (o_step and o_step.action == 'approved' and snapshot_data is not None
+                    and RequestDocument.o_review_content_same(snapshot_data, document.get_detail())):
+                zone_agents.discard('O')
+                kept_o_step_ids.append(o_step.id)
         if zone_agents:
             ApprovalStep.objects.filter(
                 document=document, round=reset_round, agent__in=(zone_agents & _CLAIM_MAIN_AGENTS),
@@ -2194,9 +2253,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 멈춘 기간(중단 확정~재개)만큼 현재 pending 단계의 마감 기한을 미뤄, 중단 동안
         # 남은 기한이 깎이지 않게 한다(감사 #1). 달력일 기준으로 밀어 남은 여유를 보존한다.
         import datetime
-        pr = PauseRequest.objects.filter(
-            document=document, state='confirmed'
-        ).order_by('-created_at').first()
         if pr and pr.confirmed_at:
             paused_days = (timezone.now().date() - pr.confirmed_at.date()).days
             if paused_days > 0:
@@ -2216,7 +2272,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         resumed_step_ids = list(ApprovalStep.objects.filter(
             document=document, action='pending', round=self._max_round(document)
         ).values_list('id', flat=True))
-        mailer.enqueue_pause_resumed(document, resumed_step_ids)
+        mailer.enqueue_pause_resumed(document, resumed_step_ids, exclude_step_ids=kept_o_step_ids)
 
         return Response({
             'message': '결재를 재개했습니다. 멈춘 단계부터 이어집니다.',
@@ -2339,10 +2395,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        max_round = self._max_round(document)
-        if self._stage_reviewers_complete(document, 'O', max_round):
+        # claude 수정 (2026-11-05): 이번 회차 O 합의 → 지난 회차 포함 O 합의 이력으로 잠금 확대, MASTER 예외
+        # (O 재합의 생략 회차는 O step 이 없어 예전 판정으로는 열려 있었다 — docs/APPROVAL.md Case U)
+        if doc_permissions.partial_shot_locked(document, request.user):
             return Response(
-                {'error': 'O 단계 검토가 끝난 의뢰서는 변경할 수 없습니다.'},
+                {'error': PARTIAL_SHOT_LOCKED_MESSAGE},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -2673,7 +2730,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         ).exists():
             return  # 동시 합의 중복 생성 방지
         due = calculate_business_due_date(datetime.date.today(), 6)
-        for agent in ('P', 'J', 'O'):
+        # claude 수정 (2026-11-04): O 재합의 생략(Case U) 회차는 O step·도착 메일을 만들지 않는다
+        agents = ('P', 'J') if self._should_skip_o_stage(document, round_no) else ('P', 'J', 'O')
+        for agent in agents:
             created = ApprovalStep.objects.create(
                 document=document, agent=agent, action='pending',
                 is_parallel=True, round=round_no, due_date=due,
@@ -2689,11 +2748,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         P는 담당자 + 지정된 검토자(PV) 전원 합의, J·O는 검토자 없이 담당자 1인 합의로
         완료된다(_stage_reviewers_complete 와 동일 규칙).
+        O 재합의가 생략된 회차(Case U)는 O step 이 없으므로 O 를 완료로 본다.
         """
+        # claude 수정 (2026-11-04): O 재합의 생략 회차는 O 없이도 2구역 완료로 판정
+        o_skipped = document.is_o_skipped(round_no)
         for agent in ('P', 'J', 'O'):
             main = ApprovalStep.objects.select_for_update().filter(
                 document=document, agent=agent, round=round_no,
             ).first()
+            if agent == 'O' and not main and o_skipped:
+                continue
             if not main or main.action != 'approved':
                 return False
             if agent == 'P' and not self._stage_reviewers_complete(document, 'P', round_no):
@@ -2782,14 +2846,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         else:
             p_due = calculate_business_due_date(base_date, 4)
             o_due = calculate_business_due_date(base_date, 6)
+            skip_o = self._should_skip_o_stage(document, round_no)
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
-            o_step = ApprovalStep.objects.create(
-                document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
-            )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
-            mailer.enqueue_stage_arrival(document, 'O', o_step)
+            # claude 수정 (2026-11-04): O 재합의 생략(Case U) 회차는 O step·도착 메일을 만들지 않는다
+            if not skip_o:
+                o_step = ApprovalStep.objects.create(
+                    document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+                )
+                mailer.enqueue_stage_arrival(document, 'O', o_step)
             # 기타 목적이 'Overlay 변경' 하나뿐이면 J 단계 자체를 만들지 않는다(경로에서 제외).
             if not document.skip_j_stage():
                 j_step = ApprovalStep.objects.create(
@@ -3867,7 +3934,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = self.get_object()
         if not self._can_edit(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-        if doc_permissions.map_info_locked(document):
+        # claude 수정 (2026-11-05): MASTER 는 MAP 정보 잠금 예외
+        if doc_permissions.map_info_locked(document, request.user):
             raw_notes = request.data.get('additional_notes')
             if raw_notes is not None:
                 import json
@@ -3878,6 +3946,21 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 if new_detail is not None and document.changed_map_info_fields(new_detail):
                     return Response(
                         {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+        # claude 수정 (2026-11-05): O 합의 이력이 있으면 편집 화면에서도 Partial Shot 변경 거부(MASTER 예외)
+        if doc_permissions.partial_shot_locked(document, request.user):
+            raw_notes = request.data.get('additional_notes')
+            if raw_notes is not None:
+                import json
+                try:
+                    new_detail = json.loads(raw_notes).get('detail', {}) or {}
+                except (TypeError, ValueError, AttributeError):
+                    new_detail = None
+                old_detail = document.get_detail().get('detail', {}) or {}
+                if new_detail is not None and new_detail.get('partial_shot') != old_detail.get('partial_shot'):
+                    return Response(
+                        {'error': PARTIAL_SHOT_LOCKED_MESSAGE},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
         return super().update(request, *args, **kwargs)

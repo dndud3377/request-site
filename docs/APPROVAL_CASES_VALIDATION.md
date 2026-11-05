@@ -143,12 +143,12 @@
  + 반려 지점 9 (§2.4)
  + 진행 중 이벤트 9 (§2.5)
  + 권한·인가·동시성 분기 (§3.10, §3.11)
-→ 동작이 갈리는 지점으로 압축한 실행 케이스 124건 (§3)
+→ 동작이 갈리는 지점으로 압축한 실행 케이스 133건 (§3)
 ```
 
 ---
 
-## 3. 검증 케이스 124건 (러너 케이스 ID 와 1:1)
+## 3. 검증 케이스 133건 (러너 케이스 ID 와 1:1)
 
 각 케이스는 `python3 -m scripts.approval_cases.run_cases --case <ID>` 로 **개별 실행**된다.
 표의 "기대 결과"가 러너의 판정 기준이고, "근거"는 코드 대조 지점이다.
@@ -266,7 +266,7 @@
 | F-14 | 추가 후결자 | 일부만 합의 | approved 아님 | `views.py:978` |
 | F-15 | 승인 시 | approved·notify_approved 메일 | `views.py:1005` |
 
-### 3.7 그룹 X — 반려·재상신 9건
+### 3.7 그룹 X — 반려·재상신 16건
 
 | ID | 케이스 | 기대 결과 | 근거 |
 |---|---|---|---|
@@ -279,8 +279,15 @@
 | X-07 | 재상신 전 목적 변경(`Overlay만 변경` 단독으로) | **새 회차부터** 새 경로 규칙 적용 — R·J 미생성 | Case G 주석 |
 | X-08 | 이전 회차 잔여 pending | '내 차례'에 안 잡힘 | `utils/approvalTable.ts` |
 | X-09 | E/EV 반려 | 즉시 `rejected`(다른 단계와 동일, 2026-09부터) | `views.py:1210` |
+| X-10 | O 합의 후 P 반려 → 무변경 재상신 (2026-11-04) | 새 회차에 **O 미생성**(해당없음), P·J·RA 합의로 `approved` | Case U |
+| X-11 | O 본인 반려 → 무변경 재상신 | O 재생성(대기) | Case U |
+| X-12 | O 합의 후 P 반려 → Oayer 변경 재상신 | O 재생성(대기) | Case U |
+| X-13 | O 합의 후 **고정 후결자** 반려 → 무변경 재상신 | R 재생성(Case T) + **O 미생성**(Case U) — 두 규칙이 다르다 | Case T·U |
+| X-14 | 'MAP 삭제': O 합의 후 P 반려 → 무변경 재상신 | 2구역 P·J 만 생성, P·J 완료 시 R 생성 | Case U |
+| X-15 | O 합의 후 반려 → 편집 저장으로 Partial Shot 변경 (2026-11-05) | 작성자 **400**, MASTER 200 | REQUEST.md 2026-11-05 |
+| X-16 | O 생략 회차 → 진행 중 Partial Shot 변경 버튼 | `partial_shot_locked=true`, 작성자 **400**, MASTER 200 | 〃 |
 
-### 3.8 그룹 M — 중단(PAUSE) 9건 / 3.9 그룹 W — 철회 15건
+### 3.8 그룹 M — 중단(PAUSE) 11건 / 3.9 그룹 W — 철회 15건
 
 | ID | 케이스 | 기대 결과 |
 |---|---|---|
@@ -293,6 +300,8 @@
 | M-07 | 재개 | 기한이 멈춘 달력일수만큼 연장 |
 | M-08 | 요청 확인 대기 중 결재 진행 | 선점·합의 **400**(`_blocked_progress_response`), 요청 `requested` 유지 |
 | M-09 | pause 문서 철회 | 400 |
+| M-10 | 3구역 중단(O 합의 완료) → 무변경 재개 (2026-11-04) | O `approved` 유지(담당자 그대로), 나머지 구역 단계는 초기화 |
+| M-11 | 3구역 중단(O 합의 완료) → Oayer 변경 후 재개 | O `pending`(담당자 비움) — 기존 동작 |
 | W-01 | draft 철회 | 즉시 삭제(`deleted=true`) |
 | W-02 | rejected 철회 | **400**(철회 불가), 문서 `rejected` 유지 — MASTER 는 상태 무관 즉시 삭제 |
 | W-03 | approved 철회 | MASTER 만, 그 외 403 |
@@ -378,7 +387,7 @@ GET  /api/documents/{id}/            ← 결과 검증(status·approval_steps)
 
 ### 4-2. 실행
 ```bash
-python3 -m scripts.approval_cases.run_cases --list                  # 124건 목록
+python3 -m scripts.approval_cases.run_cases --list                  # 133건 목록
 python3 -m scripts.approval_cases.run_cases                         # 전체
 python3 -m scripts.approval_cases.run_cases --group F --group PE    # 그룹만
 python3 -m scripts.approval_cases.run_cases --case F-05 --case X-09 # 개별
@@ -471,6 +480,11 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
    → **기대**: 6칸이 전부 `PAUSE`, '최종 완료예정' 칸이 회색 `중단`. 재개하면 멈춘 단계부터 이어진다.
 8. **철회 확정(W-08)** ⚠️ 문서가 삭제된다 — 러너가 만든 문서로만 수행
    → **기대**: 전원 확인 즉시 목록에서 사라진다.
+9. **O 재합의 생략(X-10, 2026-11-04)** — O 합의 후 PHPSI 반려된 러너 문서 → 결재 현황 행 클릭 → '결재 경로' 탭
+   → **기대**: 2회차 OVL 행이 `해당없음`, 1회차 OVL 행은 `합의`. 목록 그리드도 OVL `해당없음`.
+   (실패 신호: 2회차 OVL 이 `대기`로 남거나, 나머지가 모두 끝났는데 문서가 `검토중`에 머문다.)
+10. **재개 시 O 합의 유지(M-10)** — 재개된 러너 문서 → '결재 경로' 탭
+   → **기대**: OVL 행이 `합의`(담당자·합의 시각 그대로), PHPSI·JOB 은 `대기`. M-11 문서는 OVL 도 `대기`.
 
 ---
 
@@ -516,7 +530,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 
 ## 9. 보고 형식
 
-### 9-1. 케이스 결과표(124행)
+### 9-1. 케이스 결과표(133행)
 러너의 `--report` 출력을 그대로 붙이고, SKIP 은 사유까지 남긴다.
 
 | ID | 판정 | 근거(실행 출력) | 비고 |
@@ -546,7 +560,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 
 1. `CLAUDE.md` → `docs/APPROVAL.md` → 이 문서 순으로 읽는다.
 2. §5 로 백엔드 전체 테스트를 돌려 기준선을 잡는다.
-3. §4 러너로 **124건을 전부** 실행하고 `--report` 로 결과를 남긴다.
+3. §4 러너로 **133건을 전부** 실행하고 `--report` 로 결과를 남긴다.
 4. FAIL·SKIP 은 §9 형식으로 보고한다. **SKIP 을 통과로 바꿔 적지 않는다.**
 5. §6 수동 시나리오로 화면 표시를 확인한다(러너가 만든 문서를 그대로 쓴다).
 6. **버그를 발견해도 고치지 않는다.** §9-2 로 보고하고 사용자의 결정을 기다린다.

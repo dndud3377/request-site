@@ -620,11 +620,18 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
     - 다른 구역(이미 끝난 이전 구역, 아직 시작 안 한 다음 구역)은 손대지 않는다.
     - 메일 문구도 "확인해 주세요" → **"재개되었습니다. 확인 후 재합의 부탁드립니다."**로 바꿔 재합의가 필요함을 명시했다(`mailer.py`).
     - 구현: `views.py` `resume()`, 마이그레이션 불필요(기존 필드만 사용).
+    - ✅ **(2026-11-04) 예외 — 이미 합의한 O 는 내용이 그대로면 유지(Case U)**: 중단 확정 시점(`confirm_pause`)에 문서
+      `additional_notes` 원문을 `PauseRequest.content_snapshot` 에 저장해 두고(마이그레이션 `0058`), 재개 시 O step 이
+      `approved` 이고 스냅샷과 지금 내용의 **Jayer·Oayer·MAP 정보**(`RequestDocument.o_review_content_same`)가 같으면
+      O 만 초기화 대상에서 뺀다 — 담당자·합의 시각·코멘트가 그대로 남고, 재개 알림(`enqueue_pause_resumed` 의
+      `exclude_step_ids`)도 받지 않는다. 같은 구역의 다른 단계는 기존대로 초기화된다. 스냅샷이 없는 중단 건(기능 배포 전
+      확정분)은 비교할 수 없어 기존처럼 초기화한다. 상세는 §2 Case U.
   - ✅ **재개 알림도 같은 구역 전체(2026-09)**: 중단 중엔 결재 액션이 막혀 있어(아래 "동결") 구역 구성이 바뀌지 않으므로, 재개 시점의 pending 단계에 `_pause_zone_step_ids`(위 "중단 요청"과 동일 로직)를 적용하면 **중단 요청 메일을 받았던 사람 전원이 재개 알림도 받는다**(별도 이력 추적 없이 구역 재계산만으로 성립). 위 초기화로 재개 시점엔 이미 구역 전체가 pending이라, 이 시점엔 사실상 위 초기화 대상과 같은 집합이 된다.
   - ✅ **MAP 정보 잠금(2026-09)**: R(+RV) 단계가 **이미 합의(approved)를 마친 뒤에 중단**됐다면(경로 무관 — 일반/Only MAP 은 2구역 완료, 'MAP 삭제'는 R이 3구역 소속이라 다른 병렬 단계보다 먼저 끝났을 수도 있음, `RequestDocument.is_r_stage_completed`), 재개 전 편집에서 **MAP 정보(StepMap 소유 필드, `RequestDocument.MAP_INFO_FIELDS`) 를 바꿀 수 없다**(`doc_permissions.map_info_locked`). R 이 이미 검토를 마친 MAP 정보를 되돌아가 바꾸는 걸 막기 위해서다. R 단계 자체가 없는 'ADI CD 변경'은 대상이 아니다(MAP 정보 필드 자체가 없음). 프론트(`StepMap`, `map_info_locked` 응답 필드)는 read-only 처리 + 안내 문구로 막고, 백엔드(`RequestDocumentViewSet.update`)는 값이 실제로 달라지면 400 으로 재차 거부한다(직접 API 호출 우회 방지).
     - **(2026-10-19 확대 — 중단 전용 → 수정 가능 상태 전체, 지난 회차 합의 이력 기준)**: 3회차에 R 합의 → 이후 반려 → 재상신 편집 중 제품 이름을 지웠다 다시 입력하자 MAP 목적이 NEW 에서 EXISTING 으로 바뀌어 상신된 사례(사용자 보고)가 있었다. 사용자 결정에 따라 아래처럼 바꿨다.
       - **조건**: 지난 회차를 포함해 **R(+RV) 전원 합의 회차가 하나라도 있거나, 고정 후결자(`settings.POST_APPROVER_LOGINID`) RA 가 합의한 적이 있으면** 잠근다(`RequestDocument.has_map_info_approval` — `approval_steps.all()` prefetch 캐시만 사용). 이후 회차에서 R 이 직접 반려해도 잠금은 풀리지 않는다(MAP 을 바꿔야 하면 MAP 삭제 후 새 요청서).
       - **상태**: `pause` 뿐 아니라 `rejected`·`under_review`·`submitted` 에도 적용(`doc_permissions.MAP_INFO_LOCK_STATUSES`). `draft`·`approved`(MASTER 수정)는 대상이 아니다.
+      - ✅ **(2026-11-05) MASTER 예외**: MASTER 는 잠기지 않는다 — 편집 화면 read-only 도 풀리고(상세 응답 `map_info_locked` 를 요청자 기준으로 계산, MASTER 는 항상 false) `update` 의 400 도 적용되지 않는다(`doc_permissions.map_info_locked(document, user)`). 사용자 결정: "MASTER 는 대부분의 제약에서 예외가 되어야 한다. 어떤 상황에서든 대처를 해줄 수 있어야 하기 때문이다." 테스트: `MapInfoLockAfterApprovalHistoryTest.test_master_is_exempt_from_lock`.
       - **범위**: MAP 정보에 더해 의뢰 상세의 **요청 목적·라인·조합법·제품 이름·조리법**도 잠근다(`RequestDocument.MAP_LOCK_STEP1_FIELDS`). 라인/제품이 바뀌면 StepMap 이 초기화되고 EXISTING 이 자동 재매칭되며, 조합법·조리법을 바꾸면 제품 이름이 지워지기 때문이다. 프론트는 `Step1` 의 해당 입력·버튼을 disabled + 안내 문구(`request.step1_locked_notice`), 백엔드 `update` 는 값이 달라지면 400.
       - **R 이 나중 회차에 다시 열리는 경우(검토 결과)**: 일반 경로는 고정 후결자 반려, 또는 P/J/O/E·비고정 RA 반려 후 Jayer·조합법·조리법이 바뀐 재상신이면 R 이 다시 생성돼 R 이 반려할 수 있다(`_should_skip_r_stage`). Only MAP·MAP 삭제의 재상신과 PL 단계 중 작성자 재상신(`requester_resubmit`)은 항상 R 이 다시 생성된다. 이때도 MAP 정보는 잠겨 있으므로 R 반려 사유가 MAP 변경이면 MAP 삭제 후 새 요청서로 처리한다.
       - 판정 함수 `is_r_stage_completed`(현재 회차 기준)는 더 이상 잠금 판정에 쓰이지 않는다(남겨 둠).
@@ -1028,6 +1035,47 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   결재 경로 변경도 RA step 을 만들지 않는다(`_post_approver_due_date` 가 R 합의일만 기준으로 쓴다).
   운영은 고정 후결자가 항상 있어 실제로 발생하지 않는다. 'Overlay만 변경' 단독 문서도 같다.
 - 테스트: `backend/api/tests.py::ShouldSkipRStageTest`, `RSkipStageIntegrationTest`
+
+### Case U — O 재합의 생략 (반려 후 재상신 · 중단 후 재개, 2026-11-04)
+
+O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oayerRows`)·MAP 정보(`MAP_INFO_FIELDS`)**가
+그대로면 O 를 다시 거치지 않는다(O팀 반복 합의 부담 감소). **Case T(R 생략)와 별개 규칙**이다 — 비교 구간·
+예외·적용 경로가 다르다.
+
+| 항목 | Case T (R 생략) | Case U (O 생략) |
+|---|---|---|
+| 적용 경로 | 일반만 | **O 가 있는 모든 경로** — 일반 · 'Overlay만 변경' 단독 · 'MAP 삭제' |
+| 비교 구간 | Jayer + MAP 정보 + 의뢰 상세 line~process_id | **Jayer + Oayer + MAP 정보** (line~process_id·Backbone 등은 보지 않음) |
+| 항상 다시 거치는 반려 | R 본인 · 고정 후결자 · PL/SA | **O 본인만** (고정 후결자 반려도 생략 가능) |
+| 판정 시점 | 재상신(`resubmit`) 시점 | **O 가 생성될 시점**(일반: 3구역, MAP 삭제: 2구역) — PL 이 고친 내용도 반영 |
+| 중단 → 재개 | 해당 없음 | 적용(아래) |
+
+- **반려 후 재상신 판정(`RequestDocumentViewSet._should_skip_o_stage(document, round_no)`)**: 이전 회차를 최근부터
+  거슬러 올라가며 **O step 이 있었던 마지막 회차**를 찾는다. O step 이 없는 회차(그 구역까지 못 간 회차 — R·PL 반려 등,
+  또는 이미 O 가 생략된 회차)는 건너뛴다(사용자 결정 2026-11-04 — "O 가 마지막으로 합의한 회차까지 거슬러 비교").
+  - 그 회차의 O 가 `approved` 가 아니면(O 본인 반려, 다른 단계가 먼저 반려해 O 는 대기 중) → 생략하지 않는다.
+  - `approved` 였으면 그 회차의 `RejectionSnapshot` 과 지금 내용을 비교해 세 구간이 모두 같을 때만 생략한다.
+    스냅샷이 없으면 생략하지 않는다. 'Only MAP'·'ADI CD 변경'은 O 가 원래 없어 항상 거짓이다.
+- **동작**: 생략 회차는 O step 과 O팀 도착 메일을 만들지 않는다(`_advance_to_parallel`, `_create_map_delete_edit_parallel`).
+  P 와 O 는 항상 같은 시점에 함께 만들어지므로 "P step 은 있는데 O step 이 없다"로 생략 회차를 판정한다
+  (`RequestDocument.is_o_skipped(round)`) — 별도 플래그·마이그레이션 없음.
+- **완료 판정**: 최종 승인(`approve_step` 의 `o_approved`)과 'MAP 삭제' 2구역 완료(`_map_delete_edit_zone2_complete`)에서
+  생략 회차의 O 를 완료로 본다. O step 이 없는데 생략 회차도 아니면 기존처럼 미완료다.
+- **R+J+O 완료 P팀 참고 통보(`notify_rjo_completed`)**: 생략 회차도 O 를 완료로 보고 **발송한다**(사용자 결정 2026-11-04).
+  단 R 도 생략된 회차는 Case T 규칙대로 R 이 없어 발송되지 않는다.
+- **표시·메일**: 결재 상세 '결재 경로' 탭(`PagedDetailView.getStepDisplays`)·메일 결재 경로 카드(`mailer._route_rows`)에서
+  O 를 '해당없음'으로 표시한다. 목록 그리드(`approvalTable.buildParallelGrid`)는 step 이 없으면 원래 '해당없음'이라 변경이 없다.
+  `mailer.route_agents_for` 가 생략 회차의 O 를 결재선에서 빼므로 그 회차 반려 메일은 TE_O 에 가지 않는다.
+- **중단 → 재개**: Case M "재개" 항목의 예외 참조 — 중단 확정 시점 스냅샷(`PauseRequest.content_snapshot`)과 비교해
+  세 구간이 같으면 이미 합의한 O 를 초기화하지 않는다(같은 회차의 실제 합의라 '해당없음'이 아니라 '합의'로 보인다).
+- ✅ **(2026-11-05) Partial Shot 잠금**: O 가 한 번이라도 합의한 문서는 Partial Shot 을 MASTER 외에는 바꿀 수 없다
+  (진행 중 변경 버튼·편집 화면 모두, `doc_permissions.partial_shot_locked`). 그래서 Partial Shot 은 O 생략 비교 대상에
+  넣지 않는다 — O 합의 뒤에 바뀔 길이 MASTER 수정뿐이다. 상세는 `docs/REQUEST.md` 2026-11-05 항목.
+- 🔎 **기록만 한 관련 사항(2026-11-04, 사용자 확인 대기)**: 생략 회차에도 P 완료 참고 통보(`notify_p_completed`)는 TE_O 에
+  그대로 발송된다. O-layer 공유 필터 사용은 "O 단계 완료 전"을 O step 존재로 판정해 생략 회차에는 계속 열려 있고,
+  J·O 필터로 바뀐 표 내용이 다음 회차 O 생략 판정에서 변경으로 잡힌다.
+- 테스트: `backend/api/tests.py::ShouldSkipOStageTest`, `OSkipStageIntegrationTest`, `OSkipPauseResumeTest`,
+  `frontend/src/components/PagedDetailView.oSkipRoute.test.tsx`. 러너: `X-10`~`X-14`, `M-10`·`M-11`.
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
@@ -1452,7 +1500,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | MASK 검토자(EV) 추가 (2026-09) | `add-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, E 담당자 합의 후 |
 | MASK 검토자(EV) 제거 (2026-09) | `remove-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, pending인 EV만, 최소 1명 유지 |
 | Validation System 변경 (2026-08) | `validation-system/` | `value`(`'YES'`/`'NO'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, E 단계 완료 전까지. 메일 없음(2026-09) |
-| Partial Shot 변경 (2026-09) | `partial-shot/` | `value`(`'O'`/`'X'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, O 단계 완료 전까지(O 는 검토자가 없어 담당자 합의 즉시 닫힘). 메일 없음 |
+| Partial Shot 변경 (2026-09, 2026-11-05 잠금 변경) | `partial-shot/` | `value`(`'O'`/`'X'`) — 상신자 본인·공유 그룹 멤버 또는 MASTER, `under_review`/`pause` 에서만. **지난 회차 포함 O 합의 이력이 있으면 400**(`partial_shot_locked`, 예전엔 "이번 회차 O 합의 전까지"라 O 생략 회차에 열려 있었다). **MASTER 는 잠금 예외**. 메일 없음 |
 | 이력 바로 등록 (MASTER 전용) | `direct-approve/` | `submitted_at`, `approved_at` — 결재선을 만들지 않고 `draft → approved` |
 | 검토 항목 추가 (2026-08) | `review-item-add/` | `title` |
 | 검토 항목 제목 수정 (2026-08) | `review-item-rename/` | `item_id`, `title` |

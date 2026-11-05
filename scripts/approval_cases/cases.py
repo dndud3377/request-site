@@ -979,6 +979,172 @@ def x09(ctx):
     return f'doc={doc_id} E.action=rejected comment={(e_step.get("comment") or "")[:40]!r}'
 
 
+# claude 수정 (2026-11-04): O 재합의 생략(Case U) 케이스 X-10~X-14 추가
+def _patch_notes(author, doc_id, fn):
+    """문서 additional_notes 를 읽어 fn(notes) 로 고친 뒤 PATCH 한다."""
+    import json
+    doc = F.fetch(author, doc_id)
+    notes = json.loads(doc['additional_notes'])
+    fn(notes)
+    res = author.patch(f'/api/documents/{doc_id}/',
+                       {'additional_notes': json.dumps(notes, ensure_ascii=False)})
+    if not res.ok:
+        raise CaseFailure(f'문서 수정 실패: {res.status} {res.error_text()}')
+
+
+def _mark_oayer_changed(notes):
+    """O 비교 구간(oayerRows)에 변경을 만든다 — 마스터 값(sp/sd/pp)은 건드리지 않는다(변경 감지 오탐 방지)."""
+    rows = notes.get('oayerRows') or []
+    if not rows:
+        raise CaseSkip('이 마스터 조합에는 O-layer 행이 없어 Oayer 변경을 만들 수 없다.')
+    rows[0]['case_runner_note'] = 'oayer-changed'
+
+
+def _reject_after_o_approved(ctx, rejector, **kw):
+    """병렬 단계 진입 → O 합의 → rejector 반려까지 진행한다 → (doc_id, author, pls)."""
+    doc_id, author, pls = F.to_parallel(ctx, **kw)
+    F.complete_o(ctx, doc_id)
+    if rejector == 'RA':
+        doc = F.fetch(author, doc_id)
+        fixed = (doc.get('post_approver_fixed_loginid') or '').strip()
+        ra = next((s for s in F.steps(doc, agent='RA', action='pending')
+                   if s.get('assignee_loginid') == fixed), None)
+        if not fixed or not ra:
+            raise CaseSkip('고정 후결자 RA step 이 없다(POST_APPROVER_LOGINID 확인).')
+        F.reject_step(F._actor_for_loginid(ctx, fixed), doc_id, 'RA')
+    else:
+        actor = _team_actor(ctx, rejector, F.fetch(author, doc_id))
+        F.claim_step(actor, doc_id, rejector)
+        F.reject_step(actor, doc_id, rejector)
+    F.expect_doc_status(author, doc_id, 'rejected')
+    return doc_id, author, pls
+
+
+def _resubmit_to_parallel(ctx, doc_id, author, pls):
+    """재상신 → PL 합의 → (R 이 다시 열렸으면) R 합의까지 → 최신 문서."""
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls])
+    F.pass_pl_stage(ctx, doc_id, pls)
+    if F.steps(F.fetch(author, doc_id), agent='R', action='pending'):
+        F.pass_r_stage(ctx, doc_id)
+    return F.fetch(author, doc_id)
+
+
+@case('X-10', 'X', 'O 합의 후 P 반려 → 무변경 재상신 → O 미생성(해당없음), 나머지 합의로 approved')
+def x10(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
+    doc_id, author, pls = _reject_after_o_approved(ctx, 'P')
+    doc = _resubmit_to_parallel(ctx, doc_id, author, pls)
+    F.expect_no_step(doc, 'O', '(O 재합의 생략 대상인데 O 가 생성됐다)')
+    F.expect_steps(doc, 'P', count=1, action='pending')
+    F.complete_p(ctx, doc_id)
+    F.complete_j(ctx, doc_id)
+    F.complete_ra(ctx, doc_id)
+    F.expect_doc_status(author, doc_id, 'approved', '(O 없이 나머지 합의로 승인돼야 한다)')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('X-11', 'X', 'O 본인 반려 → 무변경 재상신이어도 O 재생성')
+def x11(ctx):
+    ctx.need(PL=2, TE_R=1, TE_O=1)
+    doc_id, author, pls = F.to_parallel(ctx)
+    F.claim_step(ctx.actor('TE_O', 0), doc_id, 'O')
+    F.reject_step(ctx.actor('TE_O', 0), doc_id, 'O')
+    doc = _resubmit_to_parallel(ctx, doc_id, author, pls)
+    F.expect_steps(doc, 'O', count=1, action='pending')
+    return f'doc={doc_id}'
+
+
+@case('X-12', 'X', 'O 합의 후 P 반려 → Oayer 변경 재상신 → O 재생성')
+def x12(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_O=1)
+    doc_id, author, pls = _reject_after_o_approved(ctx, 'P')
+    _patch_notes(author, doc_id, _mark_oayer_changed)
+    doc = _resubmit_to_parallel(ctx, doc_id, author, pls)
+    F.expect_steps(doc, 'O', count=1, action='pending')
+    return f'doc={doc_id}'
+
+
+@case('X-13', 'X', 'O 합의 후 고정 후결자 반려 → 무변경 재상신 → R 재생성, O 미생성')
+def x13(ctx):
+    ctx.need(PL=2, TE_R=1, TE_O=1)
+    doc_id, author, pls = _reject_after_o_approved(ctx, 'RA')
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls])
+    F.pass_pl_stage(ctx, doc_id, pls)
+    F.expect_steps(F.fetch(author, doc_id), 'R', count=1, action='pending',
+                   note='(고정 후결자 반려는 R 을 다시 거쳐야 한다 — Case T)')
+    F.pass_r_stage(ctx, doc_id)
+    doc = F.fetch(author, doc_id)
+    F.expect_no_step(doc, 'O', '(고정 후결자 반려여도 O 는 생략 대상 — Case U)')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('X-14', 'X', "'MAP 삭제': O 합의 후 P 반려 → 무변경 재상신 → P·J 만 생성, 완료 시 R 생성")
+def x14(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
+    doc_id, author, pls = F.submitted_doc(ctx, request_purpose=P.MAP_DELETE_EDIT_PURPOSE)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    F.complete_o(ctx, doc_id)
+    F.claim_step(ctx.actor('TE_P', 0), doc_id, 'P')
+    F.reject_step(ctx.actor('TE_P', 0), doc_id, 'P')
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls])
+    F.pass_pl_stage(ctx, doc_id, pls)
+    doc = F.fetch(author, doc_id)
+    F.expect_no_step(doc, 'O', '(MAP 삭제도 O 재합의 생략 대상)')
+    F.complete_p(ctx, doc_id)
+    F.complete_j(ctx, doc_id)
+    F.expect_steps(F.fetch(author, doc_id), 'R', count=1, action='pending',
+                   note='(O 생략 회차도 P·J 완료 시 R 이 열려야 한다)')
+    return f'doc={doc_id}'
+
+
+# claude 수정 (2026-11-05): Partial Shot 잠금(O 합의 이력, MASTER 예외) 케이스 X-15·X-16 추가
+def _partial_shot_patch(actor, doc_id, value):
+    """편집 화면 저장과 같은 경로(PATCH)로 detail.partial_shot 만 바꿔 본다 → 응답."""
+    import json
+    doc = F.fetch(actor, doc_id)
+    notes = json.loads(doc['additional_notes'])
+    notes['detail']['partial_shot'] = value
+    return actor.patch(f'/api/documents/{doc_id}/', {'additional_notes': json.dumps(notes, ensure_ascii=False)})
+
+
+def _other_partial_shot(doc):
+    import json
+    current = (json.loads(doc['additional_notes']).get('detail') or {}).get('partial_shot')
+    return 'X' if current == 'O' else 'O'
+
+
+@case('X-15', 'X', 'O 합의 후 반려 → 편집 저장으로 Partial Shot 변경 시 400, MASTER 는 200')
+def x15(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_O=1, MASTER=1)
+    doc_id, author, pls = _reject_after_o_approved(ctx, 'P')
+    value = _other_partial_shot(F.fetch(author, doc_id))
+    res = _partial_shot_patch(author, doc_id, value)
+    if res.status != 400:
+        raise CaseFailure(f'O 합의 이력이 있는데 Partial Shot 변경이 허용됐다: {res.status}')
+    res = _partial_shot_patch(ctx.actor('MASTER', 0), doc_id, value)
+    if not res.ok:
+        raise CaseFailure(f'MASTER 변경이 막혔다: {res.status} {res.error_text()}')
+    return f'doc={doc_id} 작성자 400 / MASTER {res.status}'
+
+
+@case('X-16', 'X', 'O 생략 회차 → 진행 중 Partial Shot 변경 버튼(API) 400, MASTER 는 200')
+def x16(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_O=1, MASTER=1)
+    doc_id, author, pls = _reject_after_o_approved(ctx, 'P')
+    doc = _resubmit_to_parallel(ctx, doc_id, author, pls)
+    F.expect_no_step(doc, 'O', '(O 생략 회차를 만들지 못했다)')
+    if not doc.get('partial_shot_locked'):
+        raise CaseFailure('작성자 기준 partial_shot_locked 가 true 여야 한다.')
+    value = _other_partial_shot(doc)
+    res = author.post(f'/api/documents/{doc_id}/partial-shot/', {'value': value})
+    if res.status != 400:
+        raise CaseFailure(f'O 생략 회차에서 Partial Shot 변경이 허용됐다: {res.status}')
+    res = ctx.actor('MASTER', 0).post(f'/api/documents/{doc_id}/partial-shot/', {'value': value})
+    if not res.ok:
+        raise CaseFailure(f'MASTER 변경이 막혔다: {res.status} {res.error_text()}')
+    return f'doc={doc_id} 작성자 400 / MASTER {res.status}'
+
+
 # ============================================================ M. 중단(PAUSE)
 
 @case('M-01', 'M', '중단 요청 생성 — 상태는 under_review 유지')
@@ -1075,6 +1241,43 @@ def m09(ctx):
     ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
     doc_id = m04(ctx).split('doc=')[1].split()[0]
     F.withdraw(ctx.actor('PL', 0), doc_id, expect=400)
+    return f'doc={doc_id}'
+
+
+# claude 수정 (2026-11-04): 재개 시 O 합의 유지(Case U) 케이스 M-10·M-11 추가
+def _pause_after_o_approved(ctx):
+    """병렬 단계 진입 → O 합의 → 중단 요청 → pending 대상 전원 확인(pause) → (doc_id, author)."""
+    doc_id, author, pls = F.to_parallel(ctx)
+    F.complete_o(ctx, doc_id)
+    F.request_pause(author, doc_id)
+    doc = F.fetch(author, doc_id)
+    for agent in sorted({s['agent'] for s in F.steps(doc, action='pending')}):
+        actor = _team_actor(ctx, agent, doc)
+        if actor is None:
+            raise CaseSkip(f'{agent} 단계를 확인할 계정을 찾지 못했다.')
+        F.confirm_pause(actor, doc_id, agent)
+    F.expect_doc_status(author, doc_id, 'pause')
+    return doc_id, author
+
+
+@case('M-10', 'M', '3구역 중단(O 합의 완료) → 무변경 재개 → O 완료 유지')
+def m10(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
+    doc_id, author = _pause_after_o_approved(ctx)
+    F.resume(author, doc_id)
+    doc = F.expect_doc_status(author, doc_id, 'under_review')
+    F.expect_steps(doc, 'O', count=1, action='approved', note='(내용이 그대로면 O 합의를 유지해야 한다)')
+    return f'doc={doc_id}'
+
+
+@case('M-11', 'M', '3구역 중단(O 합의 완료) → Oayer 변경 후 재개 → O 대기중으로 초기화')
+def m11(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
+    doc_id, author = _pause_after_o_approved(ctx)
+    _patch_notes(author, doc_id, _mark_oayer_changed)
+    F.resume(author, doc_id)
+    doc = F.expect_doc_status(author, doc_id, 'under_review')
+    F.expect_steps(doc, 'O', count=1, action='pending', note='(Oayer 가 바뀌었으면 O 를 다시 합의해야 한다)')
     return f'doc={doc_id}'
 
 
