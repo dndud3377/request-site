@@ -266,6 +266,8 @@ export interface RequestDocument {
   post_approver_fixed_name?: string | null;    // 고정 후결자(.env) 표시 이름 — RA 단계 생성 전 결재 경로 탭 미리보기용
   // claude 수정 (2026-10-19): 잠금 조건(지난 회차 포함 R/고정 후결자 합의 이력)·범위(요청 목적·라인~조리법) 확대
   map_info_locked?: boolean;                   // R(+RV)/고정 후결자 합의 이력이 있는 문서 — 편집 화면 MAP 정보·요청 목적·라인~조리법 read-only
+  // claude 수정 (2026-11-05): O 합의 이력(지난 회차 포함)이 있으면 Partial Shot 잠금 — MASTER 는 항상 false(상세 응답)
+  partial_shot_locked?: boolean;
   review_items?: ReviewItem[];                 // J-ayer 검토 항목 (상세 응답)
   my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
   my_mark_category?: number | null;            // 내 개인 마킹 범주 id (목록 응답, 표시 없으면 null). 다른 사용자에게는 노출되지 않는다.
