@@ -930,19 +930,17 @@ export default function ApprovalPage(): React.ReactElement {
 
   /**
    * Partial Shot 수정 창.
-   * 상신자 본인·공유 그룹 멤버(또는 MASTER)이고, 진행 중이며, O 단계 검토가 끝나기 전까지 열려 있다.
-   * O 는 검토자(OV)가 없어(백엔드 `_REVIEW_AGENT_OF`에 'O' 없음) O 담당자 본인 합의 시점에
-   * 곧바로 닫힌다 — `canEditValidationSystem`의 EV 루프가 여기엔 없다.
+   * 상신자 본인·공유 그룹 멤버(또는 MASTER)이고, 진행 중이며, 서버가 잠금이 아니라고 알려줄 때만 열린다.
+   * claude 수정 (2026-11-05): 이번 회차 O 합의 판정 → 서버 `partial_shot_locked`(지난 회차 포함 O 합의 이력,
+   * MASTER 예외)로 교체 — O 재합의 생략 회차는 O step 이 없어 예전 판정으로는 열려 있었다.
+   * 상세 조회 실패로 목록 응답(필드 없음)이 선택돼 있으면 열지 않는다(서버도 같은 규칙으로 거부한다).
    */
   const canEditPartialShot = (doc: RequestDocument | null): boolean => {
     if (!doc || isTourMode) return false;
     if (doc.status !== 'under_review' && doc.status !== 'pause') return false;
     const isOwner = currentUser.role === 'MASTER' || actsAsRequester(doc);
     if (!isOwner) return false;
-    const steps = doc.approval_steps ?? [];
-    const maxRound = steps.reduce((m, st) => Math.max(m, st.round), 1);
-    const oStep = steps.find((st) => st.agent === 'O' && st.round === maxRound);
-    return !oStep || oStep.action !== 'approved';
+    return doc.partial_shot_locked === false;
   };
 
   /**
