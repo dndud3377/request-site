@@ -264,7 +264,7 @@ export interface RequestDocument {
   withdraw_request?: WithdrawRequestInfo | null; // 확인 대기 중인 철회 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
   post_approver_fixed_name?: string | null;    // 고정 후결자(.env) 표시 이름 — RA 단계 생성 전 결재 경로 탭 미리보기용
-  // claude 수정 (2026-10-19): 잠금 조건(지난 회차 포함 R/고정 후결자 합의 이력)·범위(요청 목적·라인~조리법) 확대
+  // claude 수정 (2026-11-05): 요청자 기준 값으로 변경 — MASTER 는 항상 false(MAP 정보 잠금 예외)
   map_info_locked?: boolean;                   // R(+RV)/고정 후결자 합의 이력이 있는 문서 — 편집 화면 MAP 정보·요청 목적·라인~조리법 read-only
   // claude 수정 (2026-11-05): O 합의 이력(지난 회차 포함)이 있으면 Partial Shot 잠금 — MASTER 는 항상 false(상세 응답)
   partial_shot_locked?: boolean;
