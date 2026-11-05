@@ -53,6 +53,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     post_approver_fixed_loginid = serializers.SerializerMethodField()
     post_approver_fixed_name = serializers.SerializerMethodField()
     map_info_locked = serializers.SerializerMethodField()
+    partial_shot_locked = serializers.SerializerMethodField()
     requires_sales_agreer = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
     shared_group_name = serializers.CharField(source='shared_group.name', read_only=True, default=None)
@@ -115,6 +116,12 @@ class DocPermFieldsMixin(serializers.Serializer):
         사용자와 무관한 문서 상태 판정이라 로그인 여부와 상관없이 계산한다.
         """
         return doc_permissions.map_info_locked(obj)
+
+    # claude 수정 (2026-11-05): Partial Shot 잠금 플래그 — 진행 중 변경 버튼·편집 화면 Step3 토글 공용
+    def get_partial_shot_locked(self, obj):
+        """O 합의 이력이 있어 이 사용자가 Partial Shot 을 바꿀 수 없으면 True
+        (`doc_permissions.partial_shot_locked`). MASTER 는 항상 False 라 요청자 기준으로 계산한다."""
+        return doc_permissions.partial_shot_locked(obj, self._perm_user())
 
     def get_requires_sales_agreer(self, obj):
         """합의자(SA) 지정이 필수인 문서인가 — 결재 경로 변경 모달이 미지정 사유 입력칸을 보여줄지 판단한다."""
@@ -334,7 +341,8 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
-            'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'mail_completion_matched',
+            'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'partial_shot_locked',
+            'mail_completion_matched',
             'shared_group', 'shared_group_name', 'review_items', 'layer_drift_detected',
             'layer_drift_auto_rejected', 'is_overseas', 'sales_agreer_none_reasons',
             'requires_sales_agreer', 'can_act_as_requester', 'is_shared_with_me', 'round_submitters',
