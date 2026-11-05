@@ -1097,6 +1097,54 @@ def x14(ctx):
     return f'doc={doc_id}'
 
 
+# claude 수정 (2026-11-05): Partial Shot 잠금(O 합의 이력, MASTER 예외) 케이스 X-15·X-16 추가
+def _partial_shot_patch(actor, doc_id, value):
+    """편집 화면 저장과 같은 경로(PATCH)로 detail.partial_shot 만 바꿔 본다 → 응답."""
+    import json
+    doc = F.fetch(actor, doc_id)
+    notes = json.loads(doc['additional_notes'])
+    notes['detail']['partial_shot'] = value
+    return actor.patch(f'/api/documents/{doc_id}/', {'additional_notes': json.dumps(notes, ensure_ascii=False)})
+
+
+def _other_partial_shot(doc):
+    import json
+    current = (json.loads(doc['additional_notes']).get('detail') or {}).get('partial_shot')
+    return 'X' if current == 'O' else 'O'
+
+
+@case('X-15', 'X', 'O 합의 후 반려 → 편집 저장으로 Partial Shot 변경 시 400, MASTER 는 200')
+def x15(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_O=1, MASTER=1)
+    doc_id, author, pls = _reject_after_o_approved(ctx, 'P')
+    value = _other_partial_shot(F.fetch(author, doc_id))
+    res = _partial_shot_patch(author, doc_id, value)
+    if res.status != 400:
+        raise CaseFailure(f'O 합의 이력이 있는데 Partial Shot 변경이 허용됐다: {res.status}')
+    res = _partial_shot_patch(ctx.actor('MASTER', 0), doc_id, value)
+    if not res.ok:
+        raise CaseFailure(f'MASTER 변경이 막혔다: {res.status} {res.error_text()}')
+    return f'doc={doc_id} 작성자 400 / MASTER {res.status}'
+
+
+@case('X-16', 'X', 'O 생략 회차 → 진행 중 Partial Shot 변경 버튼(API) 400, MASTER 는 200')
+def x16(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_O=1, MASTER=1)
+    doc_id, author, pls = _reject_after_o_approved(ctx, 'P')
+    doc = _resubmit_to_parallel(ctx, doc_id, author, pls)
+    F.expect_no_step(doc, 'O', '(O 생략 회차를 만들지 못했다)')
+    if not doc.get('partial_shot_locked'):
+        raise CaseFailure('작성자 기준 partial_shot_locked 가 true 여야 한다.')
+    value = _other_partial_shot(doc)
+    res = author.post(f'/api/documents/{doc_id}/partial-shot/', {'value': value})
+    if res.status != 400:
+        raise CaseFailure(f'O 생략 회차에서 Partial Shot 변경이 허용됐다: {res.status}')
+    res = ctx.actor('MASTER', 0).post(f'/api/documents/{doc_id}/partial-shot/', {'value': value})
+    if not res.ok:
+        raise CaseFailure(f'MASTER 변경이 막혔다: {res.status} {res.error_text()}')
+    return f'doc={doc_id} 작성자 400 / MASTER {res.status}'
+
+
 # ============================================================ M. 중단(PAUSE)
 
 @case('M-01', 'M', '중단 요청 생성 — 상태는 under_review 유지')
