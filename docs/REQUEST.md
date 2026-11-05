@@ -334,6 +334,29 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   6. [`Only MAP`·`MAP 삭제`·`ADI CD 변경` 문서 상신] → [기대: J/O 가 0행이어도 확인 모달이 뜨지 않는다.]
   - 실패 신호: 1~2에서 조회 토스트가 다시 뜨지 않거나 표가 비어 있음 / 3에서 편집 값이 사라짐 / 4에서 모달 없이 상신 모달이 바로 열림.
 
+### 기능 변경 (2026-11-05 — Partial Shot 잠금: O 합의 이력이 있으면 MASTER 외 수정 불가)
+
+- **배경**: O 재합의 생략(`docs/APPROVAL.md` Case U) 도입 후, O 가 이미 합의한 요청서의 Partial Shot 을 바꿔도
+  O 가 그 변경을 다시 보지 않고 승인까지 갈 수 있었다(재현: O 생략 회차의 진행 중 변경 버튼 `200`, 반려 후 편집 저장 `200`
+  → 2회차 O 미생성, 중단 중 편집 저장 `200` → 재개 후 O 합의 유지). 사용자 결정: "O팀이 합의한 이후 Partial Shot 은
+  수정하지 못하도록 한다. 합의 완료했는데 수정한다는 건 말이 안 된다. 단 MASTER 는 어떤 상황에서든 대처할 수 있어야 하므로 예외."
+- **조건**: 지난 회차를 포함해 O 가 한 번이라도 합의(approved)했으면 잠근다(`RequestDocument.has_o_approval`).
+  이후 회차에 O 가 반려해도 풀리지 않는다(MAP 정보 잠금과 같은 방식). 상태는 MAP 정보 잠금과 같은
+  `rejected`·`under_review`·`submitted`·`pause`(`doc_permissions.MAP_INFO_LOCK_STATUSES`) — `draft`·`approved` 는 대상이 아니다.
+- **MASTER 예외**: `doc_permissions.partial_shot_locked(document, user)` 가 MASTER 면 항상 거짓. 승인 완료 문서의 MASTER 수정도 그대로 허용.
+- **잠그는 곳**
+  - 편집 화면 STEP4 'OVL 정보' 탭 Partial Shot O/X 토글: `disabled` + `🔒 request.partial_shot_locked_notice` 안내
+    (`Step3.tsx` `partialShotLocked` prop ← 상세 응답 `partial_shot_locked`).
+  - 백엔드 `RequestDocumentViewSet.update`: 잠긴 문서에서 `detail.partial_shot` 값이 실제로 바뀌면 400
+    (`PARTIAL_SHOT_LOCKED_MESSAGE`). 값이 같으면 다른 수정은 그대로 저장된다.
+  - 결재 상세 진행 중 변경 버튼(`partial-shot` API)은 `docs/APPROVAL.md` 표 참고.
+- **응답 필드**: 상세 응답(`RequestDocumentSerializer`)에 `partial_shot_locked`(요청자 기준, MASTER 는 false). 목록 응답에는 없다.
+- **i18n(ko/en 동시 1개)**: `request.partial_shot_locked_notice`.
+- **테스트**: `backend/api/tests.py::PartialShotLockTest`(7건), `frontend/src/pages/RequestPage/components/Step3.partialShotLock.test.tsx`.
+  러너 `X-15`(반려 후 편집 저장)·`X-16`(O 생략 회차 진행 중 버튼).
+- **수동 검증**: 1회차 OVL 합의 → PHPSI 반려된 문서를 작성자로 `/request` 편집 → STEP4 'OVL 정보' 탭 →
+  Partial Shot O/X 가 눌리지 않고 🔒 안내가 보이면 정상. MASTER 로 같은 화면을 열면 토글이 눌려야 한다.
+
 ### 기능 변경 (2026-10-28 — J-ayer·O-ayer·bb 표 SP 순서 자동 정렬 + 수동 정렬 버튼 폐지)
 
 - **의도(사용자)**: 세 표 모두 SP 값 순서대로 작성·저장돼야 한다. 사용자가 직접 정렬하지 않아도 '다음' 단계로 넘어가거나 '상신'할 때 자동으로 맞춘다.
