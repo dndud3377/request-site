@@ -3884,7 +3884,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = self.get_object()
         if not self._can_edit(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-        if doc_permissions.map_info_locked(document):
+        # claude 수정 (2026-11-05): MASTER 는 MAP 정보 잠금 예외
+        if doc_permissions.map_info_locked(document, request.user):
             raw_notes = request.data.get('additional_notes')
             if raw_notes is not None:
                 import json
