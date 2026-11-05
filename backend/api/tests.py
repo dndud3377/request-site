@@ -9538,6 +9538,130 @@ class OSkipPauseResumeTest(TestCase):
         self.assertEqual(self._o_step().action, 'pending')
 
 
+# claude 수정 (2026-11-05): Partial Shot 잠금(O 합의 이력, MASTER 예외) 회귀 테스트 — 발견 보고 A3·B1·B2 고정
+@override_settings(POST_APPROVER_LOGINID='')
+class PartialShotLockTest(TestCase):
+    """지난 회차를 포함해 O 가 한 번이라도 합의했으면 Partial Shot 은 MASTER 외에는 바꿀 수 없다.
+
+    진행 중 변경 버튼(`partial-shot` API)과 편집 화면 저장(`PATCH /documents/`) 모두 같은 규칙이다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        mk = lambda lid, role: UserProfile.objects.create(loginid=lid, mail=f'{lid}@c.com', role=role)
+        self.req, self.pl, self.r = mk('psl_req', 'PL'), mk('psl_pl', 'PL'), mk('psl_r', 'TE_R')
+        self.users = {'P': mk('psl_p', 'TE_P'), 'J': mk('psl_j', 'TE_J'), 'O': mk('psl_o', 'TE_O')}
+        self.master = mk('psl_m', 'MASTER')
+        payload = {'detail': {'line': 'L1', 'map_type': 'NEW', 'partial_shot': 'O'},
+                   'jayerRows': [{'id': 'j1', 'pp': 'NORMAL'}], 'oayerRows': [{'id': 'o1', 'st': 'O'}]}
+        self.doc = RequestDocument.objects.create(
+            title='psl', requester=self.req, requester_name='요청자', requester_email='psl_req@c.com',
+            requester_department='d', product_name='P', status='draft',
+            additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _post(self, user, path, data=None, expect=200):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{self.doc.id}/{path}/', data or {}, format='json')
+        self.assertEqual(r.status_code, expect, r.content)
+        return r
+
+    def _act(self, agent, verb):
+        self._post(self.users[agent], 'claim-step', {'agent': agent})
+        self._post(self.users[agent], f'{verb}-step', {'agent': agent})
+
+    def _to_zone3(self):
+        self._post(self.req, 'submit', {'designated_pl_loginid': self.pl.loginid})
+        self._post(self.pl, 'peer-approve')
+        self._post(self.r, 'assign-step', {'agent': 'R', 'assignee_loginid': self.r.loginid, 'assignee_name': 'r'})
+        self._post(self.r, 'approve-step', {'agent': 'R'})
+
+    def _o_approved_then_p_rejected(self):
+        self._to_zone3()
+        self._act('O', 'approve')
+        self._act('P', 'reject')
+
+    def _patch_partial_shot(self, user, value):
+        self.doc.refresh_from_db()
+        notes = json.loads(self.doc.additional_notes)
+        notes['detail']['partial_shot'] = value
+        self.client.force_authenticate(user=user)
+        return self.client.patch(f'/api/documents/{self.doc.id}/',
+                                 {'additional_notes': json.dumps(notes, ensure_ascii=False)}, format='json')
+
+    def _locked_flag(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client.get(f'/api/documents/{self.doc.id}/').data['partial_shot_locked']
+
+    def _saved(self):
+        self.doc.refresh_from_db()
+        return json.loads(self.doc.additional_notes)['detail']['partial_shot']
+
+    def test_api_open_before_o_approval(self):
+        self._to_zone3()
+        self.assertFalse(self._locked_flag(self.req))
+        self._post(self.req, 'partial-shot', {'value': 'X'})
+        self.assertEqual(self._saved(), 'X')
+
+    def test_api_locked_after_o_approval_in_same_round_but_master_allowed(self):
+        self._to_zone3()
+        self._act('O', 'approve')
+        self._post(self.req, 'partial-shot', {'value': 'X'}, expect=400)
+        self._post(self.master, 'partial-shot', {'value': 'X'})
+        self.assertEqual(self._saved(), 'X', 'MASTER 는 O 합의 뒤에도 바꿀 수 있어야 한다')
+
+    def test_api_locked_in_o_skipped_round(self):
+        """A3 — O 생략 회차는 O step 이 없어도 지난 회차 O 합의 이력으로 잠긴다."""
+        self._o_approved_then_p_rejected()
+        self._post(self.req, 'resubmit', {'designated_pl_loginid': self.pl.loginid})
+        self._post(self.pl, 'peer-approve')
+        self.assertTrue(self.doc.is_o_skipped(2))
+        self.assertTrue(self._locked_flag(self.req))
+        self.assertFalse(self._locked_flag(self.master))
+        self._post(self.req, 'partial-shot', {'value': 'X'}, expect=400)
+        self.assertEqual(self._saved(), 'O')
+
+    def test_form_edit_locked_after_reject(self):
+        """B1 — 반려 후 편집 화면 저장에서 Partial Shot 만 막고, 다른 수정은 그대로 허용한다."""
+        self._o_approved_then_p_rejected()
+        r = self._patch_partial_shot(self.req, 'X')
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self._patch_partial_shot(self.req, 'O')
+        self.assertEqual(r.status_code, 200, '값이 같으면 저장은 막지 않는다')
+        r = self._patch_partial_shot(self.master, 'X')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._saved(), 'X')
+
+    def test_form_edit_locked_during_pause(self):
+        """B2 — 중단 후 편집 화면 저장도 막는다."""
+        self._to_zone3()
+        self._act('O', 'approve')
+        self._post(self.req, 'request-pause', {'reason': '사유'})
+        for agent in ApprovalStep.objects.filter(document=self.doc, action='pending', round=1).values_list('agent', flat=True):
+            self._post(self.users[agent], 'confirm-pause', {'agent': agent})
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.status, 'pause')
+        r = self._patch_partial_shot(self.req, 'X')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_lock_survives_later_o_rejection(self):
+        """O 가 나중 회차에 반려해도 잠금은 풀리지 않는다(사용자 결정 (가))."""
+        self._o_approved_then_p_rejected()
+        # 2회차에 O 본인이 반려한 상태를 만든다(가장 최근 O 판단이 반려)
+        ApprovalStep.objects.create(document=self.doc, agent='O', action='rejected', round=2)
+        r = self._patch_partial_shot(self.req, 'X')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_draft_and_approved_are_not_locked(self):
+        ApprovalStep.objects.create(document=self.doc, agent='O', action='approved', round=1)
+        self.assertFalse(self._locked_flag(self.req), 'draft 는 잠금 대상 상태가 아니다')
+        self.doc.status = 'approved'
+        self.doc.save()
+        r = self._patch_partial_shot(self.master, 'X')
+        self.assertEqual(r.status_code, 200, '승인 완료 문서도 MASTER 는 수정할 수 있다(B4)')
+
+
 class OverseasScopeTest(TestCase):
     """해외 제품 담당자(PL_GL)의 조회 격리 — 국내/해외 단방향 분리.
 
