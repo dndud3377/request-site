@@ -1065,9 +1065,12 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
   `mailer.route_agents_for` 가 생략 회차의 O 를 결재선에서 빼므로 그 회차 반려 메일은 TE_O 에 가지 않는다.
 - **중단 → 재개**: Case M "재개" 항목의 예외 참조 — 중단 확정 시점 스냅샷(`PauseRequest.content_snapshot`)과 비교해
   세 구간이 같으면 이미 합의한 O 를 초기화하지 않는다(같은 회차의 실제 합의라 '해당없음'이 아니라 '합의'로 보인다).
+- ✅ **(2026-11-05) Partial Shot 잠금**: O 가 한 번이라도 합의한 문서는 Partial Shot 을 MASTER 외에는 바꿀 수 없다
+  (진행 중 변경 버튼·편집 화면 모두, `doc_permissions.partial_shot_locked`). 그래서 Partial Shot 은 O 생략 비교 대상에
+  넣지 않는다 — O 합의 뒤에 바뀔 길이 MASTER 수정뿐이다. 상세는 `docs/REQUEST.md` 2026-11-05 항목.
 - 🔎 **기록만 한 관련 사항(2026-11-04, 사용자 확인 대기)**: 생략 회차에도 P 완료 참고 통보(`notify_p_completed`)는 TE_O 에
-  그대로 발송된다. Partial Shot 변경(`partial-shot`)·O-layer 공유 필터 사용은 "O 단계 완료 전"을 O step 존재로 판정해,
-  생략 회차에는 계속 열려 있다.
+  그대로 발송된다. O-layer 공유 필터 사용은 "O 단계 완료 전"을 O step 존재로 판정해 생략 회차에는 계속 열려 있고,
+  J·O 필터로 바뀐 표 내용이 다음 회차 O 생략 판정에서 변경으로 잡힌다.
 - 테스트: `backend/api/tests.py::ShouldSkipOStageTest`, `OSkipStageIntegrationTest`, `OSkipPauseResumeTest`,
   `frontend/src/components/PagedDetailView.oSkipRoute.test.tsx`. 러너: `X-10`~`X-14`, `M-10`·`M-11`.
 
@@ -1493,7 +1496,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | MASK 검토자(EV) 추가 (2026-09) | `add-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, E 담당자 합의 후 |
 | MASK 검토자(EV) 제거 (2026-09) | `remove-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, pending인 EV만, 최소 1명 유지 |
 | Validation System 변경 (2026-08) | `validation-system/` | `value`(`'YES'`/`'NO'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, E 단계 완료 전까지. 메일 없음(2026-09) |
-| Partial Shot 변경 (2026-09) | `partial-shot/` | `value`(`'O'`/`'X'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, O 단계 완료 전까지(O 는 검토자가 없어 담당자 합의 즉시 닫힘). 메일 없음 |
+| Partial Shot 변경 (2026-09, 2026-11-05 잠금 변경) | `partial-shot/` | `value`(`'O'`/`'X'`) — 상신자 본인·공유 그룹 멤버 또는 MASTER, `under_review`/`pause` 에서만. **지난 회차 포함 O 합의 이력이 있으면 400**(`partial_shot_locked`, 예전엔 "이번 회차 O 합의 전까지"라 O 생략 회차에 열려 있었다). **MASTER 는 잠금 예외**. 메일 없음 |
 | 이력 바로 등록 (MASTER 전용) | `direct-approve/` | `submitted_at`, `approved_at` — 결재선을 만들지 않고 `draft → approved` |
 | 검토 항목 추가 (2026-08) | `review-item-add/` | `title` |
 | 검토 항목 제목 수정 (2026-08) | `review-item-rename/` | `item_id`, `title` |
