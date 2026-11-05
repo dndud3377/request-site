@@ -43,6 +43,8 @@ interface Step3Props {
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
   /** claude 수정 (2026-10-20): 참조 요청서 '없음' 변경전/변경후 표가 켜져 있어 st 를 표가 정하는가 — st 칸·st 일괄 버튼·필터 적용을 잠근다 */
   stLocked: boolean;
+  /** claude 수정 (2026-11-05): O 합의 이력이 있어 Partial Shot 을 바꿀 수 없는가 (partial_shot_locked, MASTER 는 false) */
+  partialShotLocked: boolean;
 }
 
 const Step3: React.FC<Step3Props> = ({
@@ -68,6 +70,7 @@ const Step3: React.FC<Step3Props> = ({
   GuideTourBadge,
   GuideBadge,
   stLocked,
+  partialShotLocked,
 }) => {
   const { t } = useTranslation();
   // claude 수정 (2026-10-20): 잠긴 버튼·칸은 마우스 이벤트를 받지 않게 해 감싼 요소의 툴팁이 뜨게 한다.
@@ -314,13 +317,19 @@ const Step3: React.FC<Step3Props> = ({
                       setDetail(prev => ({ ...prev, partial_shot: prev.partial_shot === val ? '' : val }));
                       if (errors['partial_shot']) setErrors(prev => ({ ...prev, partial_shot: '' }));
                     }}
-                    disabled={oayerInfoLocked}
+                    disabled={oayerInfoLocked || partialShotLocked}
                   >
                     {val}
                   </button>
                 ))}
               </div>
             </div>
+            {/* claude 수정 (2026-11-05): O 합의 이력이 있으면 Partial Shot 잠금 안내 */}
+            {partialShotLocked && (
+              <p className="form-hint" style={{ color: 'var(--text-muted)', margin: 0 }}>
+                🔒 {t('request.partial_shot_locked_notice')}
+              </p>
+            )}
             {errors['partial_shot'] && <span className="form-error">{errors['partial_shot']}</span>}
           </div>
 
