@@ -395,6 +395,8 @@ export default function RequestPage(): React.ReactElement {
   const isResumeMode = editDocStatus === 'pause';
   // R(+RV) 합의 완료 후 중단된 문서 — StepMap(MAP 정보)을 read-only로 막는다(서버가 계산해 내려줌, 2026-09).
   const [mapInfoLocked, setMapInfoLocked] = useState(false);
+  // claude 수정 (2026-11-05): O 합의 이력이 있으면 Step3 Partial Shot 토글 잠금(MASTER 는 서버가 false 로 준다)
+  const [partialShotLocked, setPartialShotLocked] = useState(false);
   // 편집 대상 문서의 지역(국내/해외). 결재선 후보(지정 PL·통보자)를 어느 역할로 부를지 정한다.
   // 새 의뢰서는 아직 문서가 없으므로 작성자 역할로 판정한다 — 공유 그룹 멤버가 남의 임시저장을
   // 대신 상신할 때 로그인 역할로 판단하면 지역이 어긋나 서버 검증(400)에 걸리므로,
@@ -1219,6 +1221,7 @@ export default function RequestPage(): React.ReactElement {
       const doc = res.data;
       setEditDocStatus(doc.status);
       setMapInfoLocked(Boolean(doc.map_info_locked));
+      setPartialShotLocked(Boolean(doc.partial_shot_locked));
       editDocIsOverseasRef.current = Boolean(doc.is_overseas);
       try {
         const parsed = JSON.parse(doc.additional_notes ?? '{}');
@@ -5452,6 +5455,7 @@ export default function RequestPage(): React.ReactElement {
           oayerInfoTab={oayerInfoTab}
           setOayerInfoTab={setOayerInfoTab}
           oayerInfoLocked={isMapOnlyScope}
+          partialShotLocked={partialShotLocked}
           detail={detail}
           setDetail={setDetail}
           errors={errors}
