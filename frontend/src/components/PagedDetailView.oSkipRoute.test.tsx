@@ -9,13 +9,13 @@ import React, { useState } from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import PagedDetailView from './PagedDetailView';
 import i18n from '../i18n';
-import { RequestDocument, ApprovalStepFrontend } from '../types';
+import { RequestDocument, ApprovalStepFrontend, AgentType, StepAction } from '../types';
 
 const O_LABEL = i18n.t('approval.agent_O');
 const NA = i18n.t('approval.step_na');
 const PENDING = i18n.t('approval.step_pending');
 
-const step = (id: number, agent: string, action: string, round: number): ApprovalStepFrontend => ({
+const step = (id: number, agent: AgentType, action: StepAction, round: number): ApprovalStepFrontend => ({
   id, agent, action, acted_at: action === 'pending' ? null : '2026-11-01T00:00:00Z',
   assignee_name: action === 'pending' ? '' : `${agent}담당`, round,
 });
