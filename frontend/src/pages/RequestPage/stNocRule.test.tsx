@@ -7,6 +7,9 @@
  * - 타이핑·붙여넣기·예전 문서로 들어온 불일치 조합은 STEP3/4 '다음'과 상신에서 막는다.
  * - '전체 X' 는 한 행씩 X 로 바꿀 때와 같이 요청 기준·제품 이름·STEP·ITEM_ID 를 비우고 bb 매핑을 푼다.
  * claude 수정 (2026-10-27): O→J 전파로 J 가 X 가 되면 bb 매핑을 푼다 / ST 일괄 버튼(전체 O·전체 X·초기화)은 반대편 표에도 전파한다.
+ * claude 수정 (2026-11-06): ST 를 먼저 골라야 요청 기준을 입력한다(ST 공란이면 요청 기준 칸 비활성) / 기등록·layer삭제·미진행을
+ *   골라도 ST 는 바뀌지 않고 ST 는 항상 고칠 수 있다 / 새 ST 에서 쓸 수 없는 요청 기준(X→O, ST 공란)은 비운다 /
+ *   ST 버튼은 기등록 등 행도 대상, 요청 기준 버튼·전파는 ST 공란 행을 건너뛴다 / 한 행 X→O 도 반대편 표로 전파한다.
  */
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
@@ -310,33 +313,111 @@ describe('J/O 표 ST ↔ 요청 기준 짝 규칙', () => {
     localStorage.clear();
   });
 
-  it('ST 가 O 면 신규·차용, ST 미선택이면 전체, ST 를 X 로 바꾸면 기등록·layer삭제·미진행만 보인다', async () => {
+  it('ST 가 O 면 신규·차용, ST 미선택이면 요청 기준 칸 비활성, ST 를 X 로 바꾸면 기등록·layer삭제·미진행만 보인다', async () => {
     const { container } = await renderAtStep(J_TABLE);
     expect(await nocOptionsOf(rowOf(container, J_TABLE, 'SP01'))).toEqual(['신규', '차용']);
-    expect(await nocOptionsOf(lastRowOf(container, J_TABLE))).toEqual(['신규', '차용', '기등록', 'layer삭제', '미진행']);
+    expect(nocInputOf(lastRowOf(container, J_TABLE)).disabled).toBe(true);
+    expect(await nocOptionsOf(lastRowOf(container, J_TABLE))).toEqual([]);
 
     await setValue(stInputOf(rowOf(container, J_TABLE, 'SP02')), 'X');
     expect(nocInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('');
     expect(await nocOptionsOf(rowOf(container, J_TABLE, 'SP02'))).toEqual(['기등록', 'layer삭제', '미진행']);
   });
 
-  it('ST 를 고르지 않고 미진행을 고르면 ST 가 X 가 된다(기존 동작)', async () => {
+  it('ST 를 고르면 요청 기준 칸이 열리고, 기등록을 골라도 ST 칸은 잠기지 않으며 X→O 로 바꾸면 요청 기준이 비워진다', async () => {
     const { container } = await renderAtStep(J_TABLE);
-    await setValue(nocInputOf(lastRowOf(container, J_TABLE)), '미진행');
+    await setValue(stInputOf(lastRowOf(container, J_TABLE)), 'X');
+    expect(nocInputOf(lastRowOf(container, J_TABLE)).disabled).toBe(false);
+    await setValue(nocInputOf(lastRowOf(container, J_TABLE)), '기등록');
     expect(stInputOf(lastRowOf(container, J_TABLE)).value).toBe('X');
+    expect(stInputOf(lastRowOf(container, J_TABLE)).disabled).toBe(false);
+    await setValue(stInputOf(lastRowOf(container, J_TABLE)), 'O');
+    expect(nocInputOf(lastRowOf(container, J_TABLE)).value).toBe('');
+    expect(await nocOptionsOf(lastRowOf(container, J_TABLE))).toEqual(['신규', '차용']);
+  });
+
+  it('ST 를 O → O (D) 로 바꾸면 요청 기준이 유지되고, ST 를 비우면 요청 기준도 비워진다', async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    await setValue(stInputOf(rowOf(container, J_TABLE, 'SP02')), 'O (D)');
+    expect(nocInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('신규');
+    await setValue(stInputOf(rowOf(container, J_TABLE, 'SP02')), '');
+    expect(nocInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('');
+    expect(nocInputOf(rowOf(container, J_TABLE, 'SP02')).disabled).toBe(true);
+  });
+
+  it('ST 공란 행에 ST·요청 기준을 함께 붙여넣으면 ST 만 들어간다', async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    const table = container.querySelector(`${J_TABLE} table`) as HTMLTableElement;
+    const td = lastRowOf(container, J_TABLE).querySelectorAll('td')[7];
+    await act(async () => { fireEvent.mouseDown(td); fireEvent.mouseUp(td); });
+    await act(async () => { fireEvent.paste(table, { clipboardData: { getData: () => 'O\t신규' } }); });
+    await flush(3);
+    expect(stInputOf(lastRowOf(container, J_TABLE)).value).toBe('O');
+    expect(nocInputOf(lastRowOf(container, J_TABLE)).value).toBe('');
+  });
+
+  it('ST X 행에 ST 를 O 로 붙여넣으면 X 용 요청 기준이 비워진다', async () => {
+    const rows = [{ ...fixtureJayerRows[0] }, { ...fixtureJayerRows[1], st: 'X', new_or_copy: '기등록', product_name: '', step: '', item_id: '' }];
+    mockState.doc = docWithRows(rows);
+    const { container } = await renderAtStep(J_TABLE);
+    const table = container.querySelector(`${J_TABLE} table`) as HTMLTableElement;
+    const td = rowOf(container, J_TABLE, 'SP02').querySelectorAll('td')[7];
+    await act(async () => { fireEvent.mouseDown(td); fireEvent.mouseUp(td); });
+    await act(async () => { fireEvent.paste(table, { clipboardData: { getData: () => 'O' } }); });
+    await flush(3);
+    expect(stInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('O');
+    expect(nocInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('');
+  });
+
+  it("ST '전체 O' 는 기등록 행에도 적용되고 그 행의 요청 기준을 비운다 / ST '초기화' 는 요청 기준도 비운다", async () => {
+    const rows = [{ ...fixtureJayerRows[0] }, { ...fixtureJayerRows[1], st: 'X', new_or_copy: '기등록', product_name: '', step: '', item_id: '' }];
+    mockState.doc = docWithRows(rows);
+    const { container } = await renderAtStep(J_TABLE);
+    const stGroup = (container.querySelector(J_TABLE)!.previousElementSibling as HTMLElement).querySelector('.wizard-table-toolbar-group') as HTMLElement;
+    await act(async () => { buttonWith(stGroup, i18n.t('request.btn_all_o'))!.click(); });
+    await flush(3);
+    let saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'O', new_or_copy: '신규' });
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O', new_or_copy: '' });
+    await act(async () => { buttonWith(stGroup, i18n.t('request.btn_reset'))!.click(); });
+    await flush(3);
+    saved = await saveDraftAndCapture();
+    saved.jayerRows.forEach((r) => expect(r).toMatchObject({ st: '', new_or_copy: '' }));
+  });
+
+  it('Delete 키로 ST 를 비우면 요청 기준도 비워진다', async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    const td = rowOf(container, J_TABLE, 'SP02').querySelectorAll('td')[7];
+    await act(async () => { fireEvent.mouseDown(td); fireEvent.mouseUp(td); stInputOf(rowOf(container, J_TABLE, 'SP02')).focus(); });
+    await act(async () => { fireEvent.keyDown(document, { key: 'Delete' }); });
+    await flush(3);
+    expect(stInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('');
+    expect(nocInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('');
+  });
+
+  it("'전체 신규' 는 ST 공란 행(요청 기준 칸 비활성)을 건너뛴다", async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    await act(async () => { buttonWith(container, i18n.t('request.btn_all_new'))!.click(); });
+    await flush(3);
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j3')).toMatchObject({ st: '', new_or_copy: '' });
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O', new_or_copy: '신규' });
   });
 
   it('O 표도 같은 목록 규칙을 따른다', async () => {
     mockState.doc = docWithRows(J_ROWS_FILLED);
     const { container } = await renderAtStep(O_TABLE);
     expect(await nocOptionsOf(rowOf(container, O_TABLE, 'SP01'))).toEqual(['신규', '차용']);
-    expect(await nocOptionsOf(lastRowOf(container, O_TABLE))).toHaveLength(5);
+    expect(nocInputOf(lastRowOf(container, O_TABLE)).disabled).toBe(true);
+    await setValue(stInputOf(lastRowOf(container, O_TABLE)), 'X');
+    expect(await nocOptionsOf(lastRowOf(container, O_TABLE))).toEqual(['기등록', 'layer삭제', '미진행']);
   });
 
   it('ST X 행에 신규를 직접 입력하면 다음 단계로 넘어가지 못하고 칸이 오류로 표시된다', async () => {
     const { container } = await renderAtStep(J_TABLE);
     await setValue(stInputOf(rowOf(container, J_TABLE, 'SP02')), 'X');
     await setValue(nocInputOf(rowOf(container, J_TABLE, 'SP02')), '신규');
+    await setValue(stInputOf(lastRowOf(container, J_TABLE)), 'X');
     await setValue(nocInputOf(lastRowOf(container, J_TABLE)), '미진행');
     await act(async () => { buttonWith(container, '다음')!.click(); });
     await flush(5);
@@ -361,6 +442,7 @@ describe('J/O 표 ST ↔ 요청 기준 짝 규칙', () => {
   it('붙여넣기로 ST X 행에 신규를 넣으면 다음 단계에서 막힌다', async () => {
     const { container } = await renderAtStep(J_TABLE);
     await setValue(stInputOf(rowOf(container, J_TABLE, 'SP02')), 'X');
+    await setValue(stInputOf(lastRowOf(container, J_TABLE)), 'X');
     await setValue(nocInputOf(lastRowOf(container, J_TABLE)), '미진행');
     const table = container.querySelector(`${J_TABLE} table`) as HTMLTableElement;
     const td = rowOf(container, J_TABLE, 'SP02').querySelectorAll('td')[8];
@@ -462,6 +544,25 @@ describe("J↔O ST 'X' 전파와 bb 매핑", () => {
     ['j1', 'j2'].forEach((id) => {
       expect(saved.jayerRows.find((r) => r.id === id)).toMatchObject({ st: 'O' });
     });
+  });
+
+  it('O 행 하나의 ST 를 X 로 바꿨다가 다시 O 로 바꾸면 같은 layerid 의 J 행도 O 로 돌아온다', async () => {
+    const { container } = await renderAtStep(O_TABLE);
+    await setValue(stInputOf(rowOf(container, O_TABLE, 'SP01')), 'X');
+    await setValue(stInputOf(rowOf(container, O_TABLE, 'SP01')), 'O');
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'O', new_or_copy: '' });
+    expect(saved.oayerRows.find((r) => r.id === 'o1')).toMatchObject({ st: 'O', new_or_copy: '' });
+  });
+
+  it('J 행 요청 기준을 바꿔도 같은 layerid 의 O 행 ST 가 공란이면(요청 기준 칸 비활성) 전파하지 않는다', async () => {
+    const oRows = fixtureOayerRows.map((r) => (r.id === 'o2' ? { ...r, st: '', new_or_copy: '' } : r));
+    mockState.doc = docWithRows(J_ROWS_FILLED, oRows);
+    const { container } = await renderAtStep(J_TABLE);
+    await setValue(nocInputOf(rowOf(container, J_TABLE, 'SP02')), '차용');
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ new_or_copy: '차용' });
+    expect(saved.oayerRows.find((r) => r.id === 'o2')).toMatchObject({ st: '', new_or_copy: '' });
   });
 
   it("O '전체 X' → ST '초기화' 를 누르면 같은 layerid 의 J 행 ST 도 빈 값이 된다", async () => {
