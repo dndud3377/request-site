@@ -284,18 +284,39 @@ export const findEmptyStNocViolations = (
     .filter((r) => !r.st?.trim() || !r.new_or_copy?.trim())
     .map((r) => r.id);
 
-// claude 수정 (2026-10-20): ST 와 요청 기준(new_or_copy)의 짝 규칙 — ST 가 O 계열('O'·'O (D)')이면 신규/차용,
-// X 이면 기등록/layer삭제/미진행만 쓸 수 있다. ST 를 아직 고르지 않았으면 5개 모두 고를 수 있다
-// (기등록/layer삭제/미진행을 고르면 기존대로 ST 가 'X' 가 된다).
+// claude 수정 (2026-11-06): ST 와 요청 기준(new_or_copy)의 짝 규칙 — ST 가 O 계열('O'·'O (D)')이면 신규/차용,
+// X 이면 기등록/layer삭제/미진행만 쓸 수 있다. ST 를 먼저 골라야 요청 기준을 입력할 수 있다(ST 공란이면 선택지 없음·칸 비활성).
 const NOC_OPTIONS_ST_O = [NOC_NEW, NOC_BORROW];
 const NOC_OPTIONS_ST_X = [NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING];
 const NOC_OPTIONS_ALL = [...NOC_OPTIONS_ST_O, ...NOC_OPTIONS_ST_X];
 
-/** 이 ST 에서 고를 수 있는 요청 기준 목록 (J/O-ayer 공용) */
+/** 요청 기준 칸에 값을 넣을 수 있는가 — ST 가 채워져 있어야 한다 (J/O-ayer 공용) */
+export const isNocEditable = (st?: string): boolean => (st ?? '').trim() !== '';
+
+/** 이 ST 에서 고를 수 있는 요청 기준 목록 (J/O-ayer 공용). ST 공란이면 빈 목록. */
 export const nocOptionsForSt = (st?: string): string[] => {
+  if (!isNocEditable(st)) return [];
   if (isStO(st)) return NOC_OPTIONS_ST_O;
   if (isRowInactive(st)) return NOC_OPTIONS_ST_X;
   return NOC_OPTIONS_ALL;
+};
+
+/**
+ * claude 수정 (2026-11-06): ST 가 prevSt → nextSt 로 바뀔 때 행에 더할 패치 (J/O-ayer 공용 — 직접 편집·일괄 버튼·반대편 전파).
+ * - X 가 되면(X 가 아니던 행) 요청 기준·제품 이름·STEP(J 는 ITEM_ID 도)을 비운다(stClearExtra 와 같다).
+ * - 그 밖에는 새 ST 에서 고를 수 없는 요청 기준이면 비운다 — X→O, ST 공란(초기화·Delete). O↔O (D) 는 유지.
+ * ST 가 그대로면 빈 객체.
+ */
+export const stChangeExtra = (
+  prevSt: string | undefined,
+  nextSt: string,
+  noc: string | undefined,
+  hasItemId: boolean,
+): Record<string, string> => {
+  if ((prevSt ?? '').trim() === nextSt.trim()) return {};
+  if (isRowInactive(nextSt)) return isRowInactive(prevSt) ? {} : stClearExtra('st', ST_X, hasItemId);
+  const current = noc ?? '';
+  return current !== '' && !nocOptionsForSt(nextSt).includes(current.trim()) ? { new_or_copy: '' } : {};
 };
 
 /**
@@ -422,14 +443,16 @@ const isSyncParticipant = (r: LayerSyncRow): boolean => !isRowInactive(r.st) && 
  *   조작 전에는 참여행이었다면 포함시켜야 그 전환 자체가 전파될 수 있다).
  * - `postOpRows`: 이번 조작 **후** 상태 — 실제 비교할 값.
  */
+// claude 수정 (2026-11-06): includeIds — 조작 전에는 참여행이 아니었지만 합의에 넣을 행(ST 를 X 에서 되돌린 행). 기본은 없음.
 export const layeridFieldConsensus = (
   preOpRows: LayerSyncRow[],
   postOpRows: LayerSyncRow[],
   layerid: string,
   field: 'st' | 'new_or_copy',
+  includeIds: string[] = [],
 ): string | undefined => {
   const eligibleIds = new Set(
-    preOpRows.filter((r) => r.layerid?.trim() === layerid && isSyncParticipant(r)).map((r) => r.id)
+    preOpRows.filter((r) => r.layerid?.trim() === layerid && (isSyncParticipant(r) || includeIds.includes(r.id))).map((r) => r.id)
   );
   if (eligibleIds.size === 0) return undefined;
   const group = postOpRows.filter((r) => eligibleIds.has(r.id));
@@ -443,6 +466,18 @@ export const soleParticipantByLayerid = <T extends LayerSyncRow>(
   layerid: string,
 ): T | undefined => {
   const candidates = rows.filter((r) => r.layerid?.trim() === layerid && isSyncParticipant(r));
+  return candidates.length === 1 ? candidates[0] : undefined;
+};
+
+/**
+ * claude 수정 (2026-11-06): ST 를 X 에서 되돌리는 전파(일괄 ST 버튼·단건 X→O)의 반대편 대상 — ST X 행까지 포함해
+ * 기등록/layer삭제/미진행이 아닌 행이 그 layerid 에 정확히 1개일 때만 그 행(0개/2개 이상이면 undefined).
+ */
+export const soleStSyncRowByLayerid = <T extends LayerSyncRow>(
+  rows: T[],
+  layerid: string,
+): T | undefined => {
+  const candidates = rows.filter((r) => r.layerid?.trim() === layerid && !isNocSpecial(r.new_or_copy));
   return candidates.length === 1 ? candidates[0] : undefined;
 };
 
