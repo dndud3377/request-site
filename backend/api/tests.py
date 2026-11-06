@@ -3825,6 +3825,19 @@ class WithdrawFlowTest(TestCase):
         self.assertTrue(res.data['deleted'])
         self.assertFalse(self._exists(doc))
 
+    # claude 수정 (2026-11-06): draft 철회(즉시 삭제)가 can_delete 기준을 따르는지 회귀 테스트
+    def test_shared_group_member_cannot_withdraw_draft(self):
+        """공유 그룹 멤버는 남의 임시저장을 철회(=삭제)할 수 없다 — 삭제(can_delete)와 같은 기준."""
+        member = UserProfile.objects.create(loginid='wd_member', mail='wd_mb@c.com', role='PL')
+        group = UserGroup.objects.create(name='wd-share', creator=self.author)
+        group.members.add(self.author, member)
+        doc = self._doc('draft')
+        doc.shared_group = group
+        doc.save(update_fields=['shared_group'])
+        res = self._post(member, doc, 'withdraw', {'reason': ''})
+        self.assertEqual(res.status_code, 403, res.content)
+        self.assertTrue(self._exists(doc))
+
     def test_rejected_cannot_be_withdrawn(self):
         """반려 문서는 철회할 수 없다(2026-08) — 수정 후 재상신해야 한다."""
         doc = self._doc('rejected')
