@@ -9,7 +9,8 @@
  * claude 수정 (2026-10-27): O→J 전파로 J 가 X 가 되면 bb 매핑을 푼다 / ST 일괄 버튼(전체 O·전체 X·초기화)은 반대편 표에도 전파한다.
  * claude 수정 (2026-11-06): ST 를 먼저 골라야 요청 기준을 입력한다(ST 공란이면 요청 기준 칸 비활성) / 기등록·layer삭제·미진행을
  *   골라도 ST 는 바뀌지 않고 ST 는 항상 고칠 수 있다 / 새 ST 에서 쓸 수 없는 요청 기준(X→O, ST 공란)은 비운다 /
- *   ST 버튼은 기등록 등 행도 대상, 요청 기준 버튼·전파는 ST 공란 행을 건너뛴다 / 한 행 X→O 도 반대편 표로 전파한다.
+ *   ST 버튼은 기등록 등 행도 대상, 요청 기준 버튼·전파는 ST 공란 행을 건너뛴다 / 한 행 X→O 도 반대편 표로 전파한다 /
+ *   붙여넣기로 ST 를 바꿔도 직접 선택과 같다(O→X 값 비움·bb 매핑 해제, X→O 반대편 전파).
  */
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
@@ -385,6 +386,30 @@ describe('J/O 표 ST ↔ 요청 기준 짝 규칙', () => {
     saved.jayerRows.forEach((r) => expect(r).toMatchObject({ st: '', new_or_copy: '' }));
   });
 
+  /** 표의 한 칸을 선택해 텍스트를 붙여넣는다 */
+  const pasteAt = async (c: HTMLElement, tableSelector: string, tr: HTMLTableRowElement, col: number, text: string) => {
+    const table = c.querySelector(`${tableSelector} table`) as HTMLTableElement;
+    const td = tr.querySelectorAll('td')[col];
+    await act(async () => { fireEvent.mouseDown(td); fireEvent.mouseUp(td); });
+    await act(async () => { fireEvent.paste(table, { clipboardData: { getData: () => text } }); });
+    await flush(3);
+  };
+
+  it('ST O 행에 ST 를 X 로 붙여넣으면 직접 선택처럼 요청 기준·제품 이름·STEP·ITEM_ID 를 비우고 bb 매핑을 푼다', async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    await pasteAt(container, J_TABLE, rowOf(container, J_TABLE, 'SP02'), 7, 'X');
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' });
+    expect(saved.bbRows.map((b) => b.sourceJayerRowId)).toEqual(['j1']);
+  });
+
+  it("ST·요청 기준을 'X<Tab>미진행' 으로 함께 붙여넣으면 미진행은 남고 제품 이름·STEP 은 비워진다", async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    await pasteAt(container, J_TABLE, rowOf(container, J_TABLE, 'SP02'), 7, 'X\t미진행');
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'X', new_or_copy: '미진행', product_name: '', step: '', item_id: '' });
+  });
+
   it('Delete 키로 ST 를 비우면 요청 기준도 비워진다', async () => {
     const { container } = await renderAtStep(J_TABLE);
     const td = rowOf(container, J_TABLE, 'SP02').querySelectorAll('td')[7];
@@ -553,6 +578,26 @@ describe("J↔O ST 'X' 전파와 bb 매핑", () => {
     const saved = await saveDraftAndCapture();
     expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'O', new_or_copy: '' });
     expect(saved.oayerRows.find((r) => r.id === 'o1')).toMatchObject({ st: 'O', new_or_copy: '' });
+  });
+
+  it('O 행 ST 를 X 로 붙여넣으면 J 행도 X·bb 매핑 해제, 다시 O 로 붙여넣으면 J 행도 O 로 돌아온다', async () => {
+    const { container } = await renderAtStep(O_TABLE);
+    const paste = async (text: string) => {
+      const table = container.querySelector(`${O_TABLE} table`) as HTMLTableElement;
+      const td = rowOf(container, O_TABLE, 'SP01').querySelectorAll('td')[7];
+      await act(async () => { fireEvent.mouseDown(td); fireEvent.mouseUp(td); });
+      await act(async () => { fireEvent.paste(table, { clipboardData: { getData: () => text } }); });
+      await flush(3);
+    };
+    await paste('X');
+    let saved = await saveDraftAndCapture();
+    expect(saved.oayerRows.find((r) => r.id === 'o1')).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '' });
+    expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' });
+    expect(saved.bbRows.map((b) => b.sourceJayerRowId)).toEqual(['j2']);
+    await paste('O');
+    saved = await saveDraftAndCapture();
+    expect(saved.oayerRows.find((r) => r.id === 'o1')).toMatchObject({ st: 'O' });
+    expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'O', new_or_copy: '' });
   });
 
   it('J 행 요청 기준을 바꿔도 같은 layerid 의 O 행 ST 가 공란이면(요청 기준 칸 비활성) 전파하지 않는다', async () => {
