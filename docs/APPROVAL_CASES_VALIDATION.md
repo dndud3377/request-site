@@ -129,7 +129,7 @@
 | 중단 → 재개 | `under_review`, 멈춘 단계 유지 + 기한 연장 | M-06, M-07 |
 | 중단 요청 확인 대기 중 결재 진행 | **400 동결**(요청 유지, 2026-08) | M-08 |
 | 철회(draft) | 즉시 삭제 | W-01 |
-| 철회(rejected) | **400 철회 불가**(수정 후 재상신, 2026-08) | W-02 |
+| 철회(rejected) | **철회 요청 생성**(2026-11) → 반려 구역부터의 팀(대기중 포함) 전원 확인 시 삭제, 확인 대기 중 재상신 400 | W-02, W-16 |
 | 철회(approved) | MASTER 만 삭제 | W-03 |
 | 철회(진행 중) → 전원 확인 | **문서 삭제**(복구 불가) | W-08 |
 | 철회 요청 → 거부/취소 | 결재 재개 | W-11, W-12, W-15 |
@@ -143,12 +143,12 @@
  + 반려 지점 9 (§2.4)
  + 진행 중 이벤트 9 (§2.5)
  + 권한·인가·동시성 분기 (§3.10, §3.11)
-→ 동작이 갈리는 지점으로 압축한 실행 케이스 133건 (§3)
+→ 동작이 갈리는 지점으로 압축한 실행 케이스 134건 (§3)
 ```
 
 ---
 
-## 3. 검증 케이스 133건 (러너 케이스 ID 와 1:1)
+## 3. 검증 케이스 134건 (러너 케이스 ID 와 1:1)
 
 각 케이스는 `python3 -m scripts.approval_cases.run_cases --case <ID>` 로 **개별 실행**된다.
 표의 "기대 결과"가 러너의 판정 기준이고, "근거"는 코드 대조 지점이다.
@@ -299,11 +299,11 @@
 | M-06 | 재개 | `under_review`, 멈춘 단계 그대로 |
 | M-07 | 재개 | 기한이 멈춘 달력일수만큼 연장 |
 | M-08 | 요청 확인 대기 중 결재 진행 | 선점·합의 **400**(`_blocked_progress_response`), 요청 `requested` 유지 |
-| M-09 | pause 문서 철회 | 400 |
+| M-09 | pause 문서 철회 | 철회 요청 생성(2026-11), 확인 대기 중 재개 400, 대상 전원 확인 → 삭제 |
 | M-10 | 3구역 중단(O 합의 완료) → 무변경 재개 (2026-11-04) | O `approved` 유지(담당자 그대로), 나머지 구역 단계는 초기화 |
 | M-11 | 3구역 중단(O 합의 완료) → Oayer 변경 후 재개 | O `pending`(담당자 비움) — 기존 동작 |
 | W-01 | draft 철회 | 즉시 삭제(`deleted=true`) |
-| W-02 | rejected 철회 | **400**(철회 불가), 문서 `rejected` 유지 — MASTER 는 상태 무관 즉시 삭제 |
+| W-02 | rejected(1구역) 철회 | 철회 요청 생성(2026-11), 확인 대기 중 재상신 400, PL 확인 → 삭제 — MASTER 는 상태 무관 즉시 삭제 |
 | W-03 | approved 철회 | MASTER 만, 그 외 403 |
 | W-04 | 진행 중 철회 | 요청만 생성 |
 | W-05 | 사유 없음 | 400 |
@@ -317,6 +317,7 @@
 | W-13 | 타인 취소 | 400/403 |
 | W-14 | 확인 대기 중 결재 | 400 |
 | W-15 | 거부 후 | 결재 재개 |
+| W-16 | rejected(3구역) 철회 (2026-11) | 대기중 J 포함·R 제외 확인 대상, 전원 확인 → 삭제 |
 
 ### 3.10 그룹 A — 인가 10건
 
@@ -387,7 +388,7 @@ GET  /api/documents/{id}/            ← 결과 검증(status·approval_steps)
 
 ### 4-2. 실행
 ```bash
-python3 -m scripts.approval_cases.run_cases --list                  # 133건 목록
+python3 -m scripts.approval_cases.run_cases --list                  # 134건 목록
 python3 -m scripts.approval_cases.run_cases                         # 전체
 python3 -m scripts.approval_cases.run_cases --group F --group PE    # 그룹만
 python3 -m scripts.approval_cases.run_cases --case F-05 --case X-09 # 개별
@@ -560,7 +561,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 
 1. `CLAUDE.md` → `docs/APPROVAL.md` → 이 문서 순으로 읽는다.
 2. §5 로 백엔드 전체 테스트를 돌려 기준선을 잡는다.
-3. §4 러너로 **133건을 전부** 실행하고 `--report` 로 결과를 남긴다.
+3. §4 러너로 **134건을 전부** 실행하고 `--report` 로 결과를 남긴다.
 4. FAIL·SKIP 은 §9 형식으로 보고한다. **SKIP 을 통과로 바꿔 적지 않는다.**
 5. §6 수동 시나리오로 화면 표시를 확인한다(러너가 만든 문서를 그대로 쓴다).
 6. **버그를 발견해도 고치지 않는다.** §9-2 로 보고하고 사용자의 결정을 기다린다.
