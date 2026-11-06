@@ -12,6 +12,7 @@ import {
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
   deriveAutoOtherPurpose, sameOtherPurpose, computeRefDocStTargets, isRefDocStApplied, RefDocStRow,
   nocOptionsForSt, findStNocMismatchViolations, isNocEditable, stChangeExtra, soleStSyncRowByLayerid,
+  stPastePatches, stPasteReactivatedIds,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText, sortRowsBySp,
 } from './helpers';
 import {
@@ -1681,6 +1682,45 @@ describe('nocOptionsForSt / findStNocMismatchViolations', () => {
     expect(soleStSyncRowByLayerid(rows, 'L1')?.id).toBe('a');
     expect(soleStSyncRowByLayerid(rows, 'L2')).toBeUndefined();
     expect(soleStSyncRowByLayerid(rows, 'L3')).toBeUndefined();
+  });
+
+  it('stPastePatches: 붙여넣은 ST 로 X 가 되면 직접 선택과 같이 비우되, 같이 붙여넣은 맞는 요청 기준은 남긴다', () => {
+    const rows = [
+      { id: 'o', layerid: 'L1', st: 'O', new_or_copy: '신규' },
+      { id: 'x', layerid: 'L2', st: 'X', new_or_copy: '기등록' },
+      { id: 'e', layerid: 'L3', st: '', new_or_copy: '' },
+    ];
+    const p = stPastePatches(rows, [
+      { rowId: 'o', values: { st: 'X' } },
+      { rowId: 'x', values: { st: 'O' } },
+      { rowId: 'e', values: { st: 'O' } },
+    ], true);
+    expect(p.get('o')).toEqual({ new_or_copy: '', product_name: '', step: '', item_id: '' });
+    expect(p.get('x')).toEqual({ new_or_copy: '' });
+    expect(p.has('e')).toBe(false);
+    const q = stPastePatches(rows, [
+      { rowId: 'o', values: { st: 'X', new_or_copy: '미진행' } },
+      { rowId: 'x', values: { st: 'O', new_or_copy: '신규' } },
+      { rowId: 'e', values: { product_name: 'P' } },
+    ], false);
+    expect(q.get('o')).toEqual({ product_name: '', step: '' });
+    expect(q.has('x')).toBe(false);
+    expect(q.has('e')).toBe(false);
+    expect(stPastePatches(rows, [{ rowId: 'o', values: { st: 'X', new_or_copy: '신규' } }], false).get('o'))
+      .toEqual({ new_or_copy: '', product_name: '', step: '' });
+  });
+
+  it('stPasteReactivatedIds: 붙여넣기 전 X 이고 붙여넣은 ST 가 X 가 아닌 행만', () => {
+    const rows = [
+      { id: 'x1', layerid: 'L1', st: 'X', new_or_copy: '' },
+      { id: 'x2', layerid: 'L2', st: 'X', new_or_copy: '' },
+      { id: 'o1', layerid: 'L3', st: 'O', new_or_copy: '신규' },
+    ];
+    expect(stPasteReactivatedIds(rows, [
+      { rowId: 'x1', values: { st: 'O' } },
+      { rowId: 'x2', values: { st: 'X' } },
+      { rowId: 'o1', values: { st: 'O (D)' } },
+    ])).toEqual(['x1']);
   });
 
   it('layeridFieldConsensus: includeIds 로 넣은 X 행도 합의에 들어간다', () => {
