@@ -112,7 +112,7 @@ GET /api/form-options/ovl-layer/         → O-layer 행
 | 파일 | 역할 |
 |---|---|
 | `run_cases.py` | CLI 진입점 · 결과 표/보고서 출력 |
-| `cases.py` | 케이스 133건 정의(문서의 ID 와 1:1) |
+| `cases.py` | 케이스 134건 정의(문서의 ID 와 1:1) |
 | `flows.py` | 상신·합의·반려·중단·철회 조작 + 검증 헬퍼 |
 | `payload.py` | 화면과 같은 모양의 의뢰서 payload 빌더 |
 | `masterdata.py` | 실제 DB 마스터 데이터·역할 계정 탐색 |
