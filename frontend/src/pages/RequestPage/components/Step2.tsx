@@ -2,8 +2,8 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, isNocSpecial } from '../constants';
-import { isValidationKeywordRow, stripDateBracket, formatMultiItemId, nocOptionsForSt } from '../helpers';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive } from '../constants';
+import { isValidationKeywordRow, stripDateBracket, formatMultiItemId, nocOptionsForSt, isNocEditable } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 import { numberBoundaryMatch } from '../../../utils/specMatch';
@@ -188,8 +188,8 @@ const Step2: React.FC<Step2Props> = ({
                       value={row.st}
                       onChange={(v) => handleJayerChange(row.id, 'st', v)}
                       options={ST_OPTIONS}
-                      // 기등록/layer삭제/미진행 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
-                      disabled={isNocSpecial(row.new_or_copy) || stLocked}
+                      // claude 수정 (2026-11-06): ST 를 먼저 고르도록 순서를 강제해, 요청 기준(기등록/layer삭제/미진행)으로 ST 를 'X' 에 잠그지 않는다.
+                      disabled={stLocked}
                       inputStyle={{
                         backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
                         ...(stLocked ? { pointerEvents: 'none' as const } : {}),
@@ -204,8 +204,9 @@ const Step2: React.FC<Step2Props> = ({
                     <AutocompleteInput
                       value={row.new_or_copy}
                       onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
-                      // claude 수정 (2026-10-20): ST 가 O 계열이면 신규/차용, X 면 기등록/layer삭제/미진행, 미선택이면 전체
+                      // claude 수정 (2026-11-06): ST 를 고른 뒤에만 입력 — ST 공란이면 비활성. ST 가 O 계열이면 신규/차용, X 면 기등록/layer삭제/미진행
                       options={nocOptionsForSt(row.st)}
+                      disabled={!isNocEditable(row.st)}
                       inputStyle={{
                         backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
                         ...(nocError ? { border: '1px solid var(--danger)' } : {}),
