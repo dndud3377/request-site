@@ -389,6 +389,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 
 - ✅ 권한(요청 자격): MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹
   (`shared_group`)의 멤버**(`can_withdraw`). 그 외 호출은 403.
+  ⚠️ 단 **임시저장(`draft`)은 삭제 권한(`can_delete` — 의뢰자·지정 PL·MASTER)만** 철회할 수 있다(2026-11).
   **(2026-08)** 판정 기준을 "의뢰자와 아무 그룹이나 공유" → "문서의 공유 그룹 멤버"로 변경했다(§9 참조).
 - ✅ **MASTER 는 제약 없는 즉시 삭제(2026-08 확장)**: 아래 상태별 분기는 **MASTER 가 아닌
   호출자**에게만 적용된다. `withdraw` 호출자가 MASTER 면 문서 상태·사유·활성 철회 요청 존재
@@ -405,13 +406,21 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 
 | 상태 | 동작 | 사유 |
 |---|---|---|
-| `draft` | 확인 없이 **즉시 삭제** (결재선이 없다). 프론트는 사유 입력란 없이 단순 확인 모달만 띄운다(2026-08) | 선택 |
+| `draft` | 확인 없이 **즉시 삭제** (결재선이 없다). 프론트는 사유 입력란 없이 단순 확인 모달만 띄운다(2026-08). **삭제와 같은 기준(`can_delete`)** — 공유 그룹 멤버는 403, 화면에도 철회 버튼이 보이지 않는다(2026-11, 아래 참고) | 선택 |
 | `rejected` | **철회 불가**(400) — 수정 후 재상신해야 한다(2026-08, 철회 버튼도 노출하지 않음) | - |
 | `approved` | **MASTER 만** 즉시 삭제, 그 외 403 (결재 완료본 = 이력, `can_delete` 와 같은 기준) | 선택 |
 | `under_review` / `submitted` | **철회 요청 생성** → 현재 단계 전원 확인 시 삭제 | **필수** |
 | `pause` | 400 — 재개한 뒤 철회한다 | - |
 
 응답의 `deleted`(bool)로 "이미 삭제됨"과 "요청만 접수됨"을 구분한다.
+
+- 🐛→✅ **(2026-11) 공유 그룹 멤버가 '철회'로 남의 임시저장을 지울 수 있던 우회**: `can_delete` 는 공유 그룹
+  멤버의 삭제를 막는데(2026-08 정책), `withdraw` 의 draft 분기는 `can_withdraw`(공유 그룹 멤버 포함)만 보고
+  즉시 삭제해 '삭제' 대신 '철회' 버튼으로 같은 결과가 났다(재현: delete 403 / withdraw 200·문서 삭제).
+  이제 draft 분기에서 `can_delete` 를 추가로 검사해 403 을 돌려준다. 프론트(`ApprovalPage.tsx`)는 목록·상세의
+  철회 버튼을 draft 일 때 `canWithdrawDraft`(MASTER / 의뢰자 / 지정 PL)로만 노출한다.
+  `can_withdraw` 자체는 바꾸지 않았다 — `can_edit` 의 반려(`rejected`) 분기가 이 함수를 그대로 쓰기 때문이다.
+  테스트: `WithdrawFlowTest.test_shared_group_member_cannot_withdraw_draft`.
 
 **요청 → 확인 → 삭제**
 
@@ -1450,7 +1459,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 결재 경로 변경 (2026-10) | 작성자(`requester_loginid`)/MASTER + under_review + 확인 대기 요청 없음 | `changeRoute` (`RouteChangeModal`) |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
-| 철회 | `can_withdraw` + 철회 요청중이 아닐 때 | 사유 입력 모달 → `withdraw`(진행 중이면 철회 요청, 그 외 즉시 삭제) |
+| 철회 | `can_withdraw` + 철회 요청중이 아닐 때 (draft 는 `canWithdrawDraft` — MASTER/의뢰자/지정 PL, 2026-11) | 사유 입력 모달 → `withdraw`(진행 중이면 철회 요청, 그 외 즉시 삭제) |
 | 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함) | `confirmWithdraw` / `rejectWithdraw` |
 | 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중) | `cancelWithdraw` |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
