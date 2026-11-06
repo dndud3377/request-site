@@ -1186,7 +1186,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         - MASTER           : 문서 상태와 무관하게 사유·확인 절차 없이 **항상 즉시 삭제**한다
           (2026-08 확장). 완료 메일은 보내지 않고 서버 로그만 남긴다.
-        - draft            : 확인할 진행 중 단계가 없다 → 즉시 삭제(사유 선택)
+        - draft            : 확인할 진행 중 단계가 없다 → 즉시 삭제(사유 선택). 삭제와 같은
+          기준(`can_delete` — 의뢰자·지정 PL)만 가능하고, 공유 그룹 멤버는 403(2026-11).
         - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
         - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
           이 경로만 **사유(reason) 필수**이고, 확인 대기 동안 결재가 동결된다.
@@ -1211,6 +1212,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if document.status == 'approved':
                 return Response(
                     {'error': '결재가 완료된 의뢰서는 MASTER 만 철회할 수 있습니다.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            # claude 수정 (2026-11-06): draft 즉시삭제도 삭제 권한(can_delete)을 따른다 — 공유 그룹 멤버가 철회로 남의 임시저장을 지우던 우회 차단
+            if not doc_permissions.can_delete(request.user, document):
+                return Response(
+                    {'error': '임시저장 의뢰서는 의뢰자 또는 지정 PL 만 철회할 수 있습니다.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
             self._delete_withdrawn_document(request, document, reason)
