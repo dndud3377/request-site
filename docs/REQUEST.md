@@ -311,7 +311,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **경로별 적용**:
   - 직접 선택(`handleJayerChange`·`handleOayerChange`) · ST 일괄 버튼 · 반대편 표 전파 — 모두 `stChangeExtra` 로 같은 규칙.
   - **붙여넣기(사용자 결정 3)**: ST 공란 행의 요청 기준은 잠금(`isLayerCellLocked`) — ST·요청 기준을 함께 붙여넣으면 **ST 만** 들어간다.
-    ST 를 붙여넣어 X 가 아닌 값으로 바꾼 행은 쓸 수 없는 요청 기준을 비운다.
+    ST 를 붙여넣어 바꾼 행은 **직접 선택과 같이** 정리한다(`stPastePatches`, 후속 발견 보고 ① → 사용자 결정 1): X 가 되면 요청 기준·제품 이름·STEP(J 는 ID)을
+    비우고 J 는 bb 매핑을 푼다(예전: 붙여넣기 O→X 는 아무것도 비우지 않아 '다음'에서 불일치로 막혔다). X 가 아니면 쓸 수 없는 요청 기준을 비운다.
+    같이 붙여넣은 요청 기준이 새 ST 에 맞으면 남긴다(예: `X<Tab>미진행` → X·미진행). 같이 붙여넣은 ST 로 X 가 된 행의 제품 이름은 반대편으로 전파하지 않는다.
   - **Delete 키**: ST 를 비운 행은 요청 기준도 비운다(`useCellSelection` onAfterClear).
   - **ST 일괄 버튼(사용자 결정 2 — B)**: '전체 O'·'전체 X'·ST '초기화' 가 **기등록/layer삭제/미진행 행에도** 적용된다. '전체 O' 는 그 행들의 요청 기준을 비우고,
     ST '초기화' 는 모든 행의 요청 기준을 비운다. 반대편 표 전파 대상 판정은 종전과 같다(기등록/layer삭제/미진행이 아닌 행 기준).
@@ -319,12 +321,13 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     요청 기준 전파(단건·붙여넣기·일괄)도 반대편 대상의 ST 가 공란이면 넣지 않는다.
 - **발견 보고 → 사용자 결정 1 (X→O 단건 전파)**: 한 행의 ST 를 X 에서 되돌리면 반대편 표로 전파되지 않던 문제(변경 전이 X 라 참여행이 아니었다).
   직접 선택 경로에서 되돌린 행을 합의에 넣고(`layeridFieldConsensus` `includeIds`), 반대편은 ST X 행까지 포함해 기등록/layer삭제/미진행이 아닌 행이
-  정확히 1개일 때 전파한다(`soleStSyncRowByLayerid` — ST 일괄 버튼과 같은 기준). **붙여넣기로 X→O 한 경우는 이번 범위에 넣지 않았다**(종전대로 전파 안 됨).
+  정확히 1개일 때 전파한다(`soleStSyncRowByLayerid` — ST 일괄 버튼과 같은 기준).
+  **붙여넣기로 X→O 한 경우도 같다**(후속 발견 보고 ② → 사용자 결정 1, `stPasteReactivatedIds`). 붙여넣기 O→J 전파로 J 행이 X 가 되면 직접 선택과 같이 bb 매핑을 푼다.
 - **동작 차이 주의**:
   - 불러온 J/O 행은 ST 공란으로 시작하므로 ST 를 먼저 정해야 한다('전체 신규' 를 먼저 누르면 아무 행도 바뀌지 않는다).
   - 예전 문서에 ST 공란 + 요청 기준이 저장돼 있으면 칸이 비활성인 채 값이 보인다 — ST 를 고르면 쓸 수 없는 값은 비워지고, 그대로 두면 기존 공란 검사(ST 필수)가 막는다.
   - 검증(`findEmptyStNocViolations`·`findStNocMismatchViolations`)과 백엔드는 바꾸지 않았다.
-- **테스트**: `stNocRule.test.tsx`(규칙 2건 갱신 + 신규 9건), `helpers.test.ts`(`nocOptionsForSt` 갱신 + `stChangeExtra`·`soleStSyncRowByLayerid`·`includeIds` 신규).
+- **테스트**: `stNocRule.test.tsx`(규칙 2건 갱신 + 신규 12건), `helpers.test.ts`(`nocOptionsForSt` 갱신 + `stChangeExtra`·`soleStSyncRowByLayerid`·`includeIds`·`stPastePatches`·`stPasteReactivatedIds` 신규).
 - **수동 검증 시나리오** (`http://localhost:10011`):
   1. [의뢰서 작성 → STEP3 J-ayer 표, 자동 불러온 ST 공란 행] → [요청 기준 칸 클릭] → [기대: 칸이 회색 비활성이라 열리지 않는다. 실패 신호: 드롭다운이 열림.]
   2. [그 행 ST 를 `X` 선택 → 요청 기준 `기등록` 선택] → [기대: ST 는 X 그대로, ST 칸은 계속 클릭 가능(예전: ST 칸 잠김).]
@@ -334,6 +337,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   6. [툴바 ST '전체 O'] → [기대: 기등록/layer삭제/미진행 행도 ST O 가 되고 그 행 요청 기준이 비워진다.] → [ST '초기화'] → [기대: 모든 행 ST·요청 기준 빈 칸.]
   7. [ST 공란 행이 있는 상태에서 '전체 신규'] → [기대: ST 공란 행은 요청 기준이 빈 채로 남는다.]
   8. [STEP4 O-ayer 에서 layerid A 행 ST 를 X → 다시 O] → ['이전' 으로 STEP3] → [기대: 같은 layerid 의 J 행도 ST O(요청 기준은 빈 칸). 실패 신호: J 행이 X 로 남음.]
+  9. [STEP3 J-ayer, Backbone 에 매핑된 ST O·신규 행의 ST 칸에 엑셀에서 `X` 붙여넣기] → [기대: 요청 기준·제품 이름·STEP·ID 가 비워지고 STEP4 bb 표에서 그 행 매핑이 풀린다.
+     실패 신호: 신규가 남아 '다음'에서 불일치 오류.] → [`X<Tab>미진행` 을 붙여넣으면 미진행은 남는다.]
+  10. [8 을 붙여넣기로: O 행 ST 칸에 `X` 붙여넣기 → 다시 `O` 붙여넣기] → [기대: J 행도 X(bb 매핑 해제) → O 로 돌아온다.]
 
 ### 기능 추가 (2026-11-04 — 상신 전 중복 요청서 확인: 같은 라인·제품·process_id 의 반려/진행 중 요청서가 있으면 상신 차단)
 
