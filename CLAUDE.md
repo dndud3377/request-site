@@ -143,7 +143,7 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
 
    ```bash
    # 개발환경(AUTH_MODE=dev)이 떠 있어야 한다. 실제 DB 마스터 데이터로 상신한다.
-   python3 -m scripts.approval_cases.run_cases --list              # 케이스 133건 목록
+   python3 -m scripts.approval_cases.run_cases --list              # 케이스 134건 목록
    python3 -m scripts.approval_cases.run_cases                     # 전체 실행
    python3 -m scripts.approval_cases.run_cases --group F --group X # 바꾼 영역만
    python3 -m scripts.approval_cases.run_cases --report /tmp/approval_cases.md
