@@ -137,6 +137,9 @@ const canConfirmExtraZoneStep = (
   return !!step.assignee_loginid && step.assignee_loginid === loginid;
 };
 
+// claude 수정 (2026-11-06): 철회가 '요청 → 확인 → 삭제' 절차를 거치는 문서 상태(서버 _WITHDRAW_CONFIRM_STATUSES 와 동일)
+const WITHDRAW_CONFIRM_STATUSES: string[] = ['under_review', 'submitted', 'pause', 'rejected'];
+
 // 어느 구역에도 속하지 않는 단계(zone_index 가 null)를 묶는 그룹 키 — 구역 이름을 붙이지 않는다.
 const NO_ZONE_INDEX = -1;
 
@@ -1612,14 +1615,23 @@ export default function ApprovalPage(): React.ReactElement {
   // 결재가 진행 중인 문서만 '현재 단계 전원 확인' 절차를 거친다.
   // 임시저장은 확인할 상대가 없어 확인만으로 즉시 삭제된다(사유 없음). 반려는 철회 자체가 불가.
   // MASTER 는 상태와 무관하게 항상 즉시 삭제이므로 확인 절차가 필요 없다(2026-08).
+  // claude 수정 (2026-11-06): 반려·중단 문서도 확인 절차(사유 필수)를 거치는 철회 요청으로 동작
   const needsWithdrawConfirm = (doc: RequestDocument): boolean =>
-    currentUser.role !== 'MASTER' && (doc.status === 'under_review' || doc.status === 'submitted');
+    currentUser.role !== 'MASTER' && WITHDRAW_CONFIRM_STATUSES.includes(doc.status);
 
   // claude 수정 (2026-11-06): 임시저장 철회(=즉시 삭제)는 서버 can_delete 와 같은 기준 — 공유 그룹 멤버에게는 버튼을 숨긴다
   const canWithdrawDraft = (doc: RequestDocument): boolean =>
     currentUser.role === 'MASTER'
     || (!!doc.requester_loginid && doc.requester_loginid === currentUser.username)
     || (!!doc.designated_pl_loginid && doc.designated_pl_loginid === currentUser.username);
+
+  // claude 수정 (2026-11-06): 철회 버튼 노출 — 진행 중·반려·중단 + 삭제 권한자의 임시저장(MASTER 는 상태 무관), 철회 요청 중이면 숨김
+  const showWithdrawButton = (doc: RequestDocument): boolean =>
+    !!doc.can_withdraw && !doc.withdraw_request && (
+      currentUser.role === 'MASTER'
+      || WITHDRAW_CONFIRM_STATUSES.includes(doc.status)
+      || (doc.status === 'draft' && canWithdrawDraft(doc))
+    );
 
   const handleWithdrawClick = (doc: RequestDocument) => {
     setWithdrawDoc(doc);
@@ -2164,7 +2176,8 @@ export default function ApprovalPage(): React.ReactElement {
                     <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {doc.can_edit && (doc.status === 'rejected' || doc.status === 'draft') && (
+                        {/* claude 수정 (2026-11-06): 철회 요청 확인 대기 중에는 수정·재상신을 숨긴다(서버도 400) */}
+                        {doc.can_edit && !doc.withdraw_request && (doc.status === 'rejected' || doc.status === 'draft') && (
                           <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
                             {t('approval.edit_resubmit')}
                           </button>
@@ -2179,8 +2192,8 @@ export default function ApprovalPage(): React.ReactElement {
                             👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
                           </button>
                         )}
-                        {/* claude 수정 (2026-11-06): draft 는 canWithdrawDraft(삭제 권한자)일 때만 노출 */}
-                        {doc.can_withdraw && (doc.status === 'under_review' || (doc.status === 'draft' && canWithdrawDraft(doc)) || currentUser.role === 'MASTER') && (
+                        {/* claude 수정 (2026-11-06): 노출 조건은 showWithdrawButton(반려·중단 포함, 철회 요청 중이면 숨김) */}
+                        {showWithdrawButton(doc) && (
                           <button
                             className="btn btn-secondary btn-sm"
                             data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
@@ -2807,12 +2820,13 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 재개 (작성자·pause) */}
-              {selected && selected.can_resume && (
+              {/* claude 수정 (2026-11-06): 철회 요청 확인 대기 중에는 재개·수정 재상신을 숨긴다(서버도 400) */}
+              {selected && selected.can_resume && !wr && (
                 <button className="btn btn-primary" onClick={() => handleResumeNav(selected)} disabled={processing}>
                   {t('approval.resume')}
                 </button>
               )}
-              {selected && selected.can_edit && (selected.status === 'rejected' || selected.status === 'draft') && (
+              {selected && selected.can_edit && !wr && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
                 </button>
@@ -2852,8 +2866,8 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 요청 중에는 중복 요청을 막기 위해 철회 버튼을 감춘다 */}
-              {/* claude 수정 (2026-11-06): draft 는 canWithdrawDraft(삭제 권한자)일 때만 노출 */}
-              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || (selected.status === 'draft' && canWithdrawDraft(selected)) || isMaster) && (
+              {/* claude 수정 (2026-11-06): 노출 조건은 showWithdrawButton(반려·중단 포함, 철회 요청 중이면 숨김) */}
+              {selected && showWithdrawButton(selected) && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
