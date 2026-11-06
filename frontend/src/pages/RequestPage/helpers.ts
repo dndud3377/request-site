@@ -470,6 +470,41 @@ export const soleParticipantByLayerid = <T extends LayerSyncRow>(
 };
 
 /**
+ * claude 수정 (2026-11-06): 붙여넣기로 ST 가 바뀐 행에 더할 패치(행 id → 패치). 직접 선택과 같은 규칙(stChangeExtra)이다 —
+ * X 가 되면 요청 기준·제품 이름·STEP(·ID)을 비우고, 그 밖에는 새 ST 에서 쓸 수 없는 요청 기준을 비운다.
+ * 단, 같이 붙여넣은 요청 기준이 새 ST 에서 쓸 수 있는 값이면 남긴다(예: 'X<Tab>미진행'). `rows` 는 붙여넣기 전 상태.
+ */
+export const stPastePatches = (
+  rows: LayerSyncRow[],
+  changes: { rowId: string; values: Record<string, string> }[],
+  hasItemId: boolean,
+): Map<string, Record<string, string>> => {
+  const patches = new Map<string, Record<string, string>>();
+  changes.forEach(({ rowId, values }) => {
+    if (!('st' in values)) return;
+    const row = rows.find((r) => r.id === rowId);
+    if (!row) return;
+    const pastedNoc = 'new_or_copy' in values ? values.new_or_copy : undefined;
+    const extra = stChangeExtra(row.st, values.st, pastedNoc ?? row.new_or_copy, hasItemId);
+    if (pastedNoc !== undefined && 'new_or_copy' in extra && nocOptionsForSt(values.st).includes(pastedNoc.trim())) {
+      delete extra.new_or_copy;
+    }
+    if (Object.keys(extra).length > 0) patches.set(rowId, extra);
+  });
+  return patches;
+};
+
+/** claude 수정 (2026-11-06): 붙여넣기로 ST 를 X 에서 X 가 아닌 값으로 되돌린 행 id 목록. `rows` 는 붙여넣기 전 상태. */
+export const stPasteReactivatedIds = (
+  rows: LayerSyncRow[],
+  changes: { rowId: string; values: Record<string, string> }[],
+): string[] =>
+  changes
+    .filter(({ rowId, values }) => 'st' in values && !isRowInactive(values.st)
+      && isRowInactive(rows.find((r) => r.id === rowId)?.st))
+    .map((c) => c.rowId);
+
+/**
  * claude 수정 (2026-11-06): ST 를 X 에서 되돌리는 전파(일괄 ST 버튼·단건 X→O)의 반대편 대상 — ST X 행까지 포함해
  * 기등록/layer삭제/미진행이 아닌 행이 그 layerid 에 정확히 1개일 때만 그 행(0개/2개 이상이면 undefined).
  */
