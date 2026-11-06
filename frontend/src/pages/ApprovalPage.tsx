@@ -1615,6 +1615,12 @@ export default function ApprovalPage(): React.ReactElement {
   const needsWithdrawConfirm = (doc: RequestDocument): boolean =>
     currentUser.role !== 'MASTER' && (doc.status === 'under_review' || doc.status === 'submitted');
 
+  // claude 수정 (2026-11-06): 임시저장 철회(=즉시 삭제)는 서버 can_delete 와 같은 기준 — 공유 그룹 멤버에게는 버튼을 숨긴다
+  const canWithdrawDraft = (doc: RequestDocument): boolean =>
+    currentUser.role === 'MASTER'
+    || (!!doc.requester_loginid && doc.requester_loginid === currentUser.username)
+    || (!!doc.designated_pl_loginid && doc.designated_pl_loginid === currentUser.username);
+
   const handleWithdrawClick = (doc: RequestDocument) => {
     setWithdrawDoc(doc);
     setWithdrawReasonInput('');
@@ -2173,7 +2179,8 @@ export default function ApprovalPage(): React.ReactElement {
                             👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
                           </button>
                         )}
-                        {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'draft' || currentUser.role === 'MASTER') && (
+                        {/* claude 수정 (2026-11-06): draft 는 canWithdrawDraft(삭제 권한자)일 때만 노출 */}
+                        {doc.can_withdraw && (doc.status === 'under_review' || (doc.status === 'draft' && canWithdrawDraft(doc)) || currentUser.role === 'MASTER') && (
                           <button
                             className="btn btn-secondary btn-sm"
                             data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
@@ -2845,7 +2852,8 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 요청 중에는 중복 요청을 막기 위해 철회 버튼을 감춘다 */}
-              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft' || isMaster) && (
+              {/* claude 수정 (2026-11-06): draft 는 canWithdrawDraft(삭제 권한자)일 때만 노출 */}
+              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || (selected.status === 'draft' && canWithdrawDraft(selected)) || isMaster) && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
