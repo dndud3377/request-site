@@ -128,6 +128,7 @@ import {
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, soleStSyncRowByLayerid, stClearExtra, stChangeExtra, isNocEditable,
+  stPastePatches, stPasteReactivatedIds,
   isInterAutoYesProcess, isNumericValue, sortRowsBySp,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -2866,26 +2867,20 @@ export default function RequestPage(): React.ReactElement {
       }
     });
     // claude 수정 (2026-11-06): 요청 기준을 붙여넣어도 ST 는 바꾸지 않는다(ST 를 먼저 고르도록 순서를 강제했다).
-    // ST 를 붙여넣어 X 가 아닌 값으로 바꾼 행은 새 ST 에서 고를 수 없는 요청 기준(예: X→O 의 기등록)을 비운다.
-    const stPasteNocClear = new Set(
-      changes.filter(({ rowId, values }) => {
-        if (!('st' in values) || isRowInactive(values.st)) return false;
-        const row = jayerRows.find(r => r.id === rowId);
-        const noc = 'new_or_copy' in values ? values.new_or_copy : row?.new_or_copy;
-        return !!row && 'new_or_copy' in stChangeExtra(row.st, values.st, noc, true);
-      }).map(c => c.rowId)
-    );
-    if (stPasteNocClear.size > 0) {
-      setJayerRows(rows => rows.map(r => stPasteNocClear.has(r.id) ? { ...r, new_or_copy: '' } : r));
+    // ST 를 붙여넣어 바꾼 행은 직접 선택과 같이 정리한다(stPastePatches) — X 가 되면 요청 기준·제품 이름·STEP·ID을 비우고(bb 매핑 해제),
+    // X 가 아니면 새 ST 에서 쓸 수 없는 요청 기준(예: X→O 의 기등록)을 비운다. 같이 붙여넣은 요청 기준이 새 ST 에 맞으면 남긴다.
+    const stPatches = stPastePatches(jayerRows, changes, true);
+    if (stPatches.size > 0) {
+      setJayerRows(rows => rows.map(r => (stPatches.has(r.id) ? { ...r, ...stPatches.get(r.id) } : r)));
     }
+    unmapIfMapped(changes.filter(({ rowId, values }) => 'st' in values && isRowInactive(values.st)
+      && !isRowInactive(jayerRows.find(r => r.id === rowId)?.st)).map(c => c.rowId));
     // J-layer 내부 전파는 하지 않는다(같은 layerid라도 서로 다른 값을 가질 수 있음).
     // J→O 교차 동기화 판정에 쓸 붙여넣기 후 상태만 로컬로 재구성한다.
     const nextJayerRows = jayerRows.map(r => {
       const change = changes.find(c => c.rowId === r.id);
       if (!change) return r;
-      const merged = { ...r, ...change.values };
-      if (stPasteNocClear.has(r.id)) merged.new_or_copy = '';
-      return merged;
+      return { ...r, ...change.values, ...(stPatches.get(r.id) ?? {}) };
     });
     // J→O 동기화: product_name은 참여 소스 행이 있으면 대상 참여행 전체에 무조건 전파(기존 방식 유지).
     const productNamePastedLayerids = new Map<string, string>();
@@ -2893,6 +2888,8 @@ export default function RequestPage(): React.ReactElement {
       if (!('product_name' in values)) return;
       const jRow = jayerRows.find(r => r.id === rowId);
       if (!jRow?.layerid?.trim() || isRowInactive(jRow.st) || isNocSpecial(jRow.new_or_copy)) return;
+      // claude 수정 (2026-11-06): 같이 붙여넣은 ST 로 X 가 된 행은 제품 이름이 비워지므로 전파하지 않는다(직접 선택에서는 X 행 제품 이름 칸이 비활성)
+      if ('st' in values && isRowInactive(values.st)) return;
       productNamePastedLayerids.set(jRow.layerid.trim(), values.product_name);
     });
     if (productNamePastedLayerids.size > 0) {
@@ -2913,12 +2910,16 @@ export default function RequestPage(): React.ReactElement {
       const jRow = jayerRows.find(r => r.id === rowId);
       if (jRow?.layerid?.trim()) touchedLayerids.add(jRow.layerid.trim());
     });
+    // claude 수정 (2026-11-06): ST 를 X 에서 되돌린 행도 직접 선택과 같이 전파한다 — 합의에 넣고, 그 layerid 는 반대편 ST X 행까지 대상으로 본다.
+    const reactivatedIds = stPasteReactivatedIds(jayerRows, changes);
+    const reactivatedLayerids = new Set(jayerRows.filter(r => reactivatedIds.includes(r.id)).map(r => r.layerid?.trim()));
     (['st', 'new_or_copy'] as const).forEach(field => {
       touchedLayerids.forEach(layerid => {
-        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid, field);
+        const reactivated = field === 'st' && reactivatedLayerids.has(layerid);
+        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid, field, reactivated ? reactivatedIds : []);
         if (consensusValue === undefined) return;
         if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
-        const target = soleParticipantByLayerid(oayerRows, layerid);
+        const target = reactivated ? soleStSyncRowByLayerid(oayerRows, layerid) : soleParticipantByLayerid(oayerRows, layerid);
         // claude 수정 (2026-11-06): ST 공란인 행(요청 기준 칸 비활성)에는 요청 기준을 넣지 않고, 전파된 ST 는 직접 바꿀 때와 같이 요청 기준을 정리한다
         if (!target || (field === 'new_or_copy' && !isNocEditable(target.st))) return;
         setOayerRows(rows => rows.map(r => (r.id === target.id
@@ -2941,26 +2942,18 @@ export default function RequestPage(): React.ReactElement {
       }
     });
     // claude 수정 (2026-11-06): 요청 기준을 붙여넣어도 ST 는 바꾸지 않는다(ST 를 먼저 고르도록 순서를 강제했다).
-    // ST 를 붙여넣어 X 가 아닌 값으로 바꾼 행은 새 ST 에서 고를 수 없는 요청 기준(예: X→O 의 기등록)을 비운다.
-    const stPasteNocClear = new Set(
-      changes.filter(({ rowId, values }) => {
-        if (!('st' in values) || isRowInactive(values.st)) return false;
-        const row = oayerRows.find(r => r.id === rowId);
-        const noc = 'new_or_copy' in values ? values.new_or_copy : row?.new_or_copy;
-        return !!row && 'new_or_copy' in stChangeExtra(row.st, values.st, noc, false);
-      }).map(c => c.rowId)
-    );
-    if (stPasteNocClear.size > 0) {
-      setOayerRows(rows => rows.map(r => stPasteNocClear.has(r.id) ? { ...r, new_or_copy: '' } : r));
+    // ST 를 붙여넣어 바꾼 행은 직접 선택과 같이 정리한다(stPastePatches) — X 가 되면 요청 기준·제품 이름·STEP을 비우고,
+    // X 가 아니면 새 ST 에서 쓸 수 없는 요청 기준(예: X→O 의 기등록)을 비운다. 같이 붙여넣은 요청 기준이 새 ST 에 맞으면 남긴다.
+    const stPatches = stPastePatches(oayerRows, changes, false);
+    if (stPatches.size > 0) {
+      setOayerRows(rows => rows.map(r => (stPatches.has(r.id) ? { ...r, ...stPatches.get(r.id) } : r)));
     }
     // O-layer 내부 전파는 하지 않는다(같은 layerid라도 서로 다른 값을 가질 수 있음).
     // O→J 교차 동기화 판정에 쓸 붙여넣기 후 상태만 로컬로 재구성한다.
     const nextOayerRows = oayerRows.map(r => {
       const change = changes.find(c => c.rowId === r.id);
       if (!change) return r;
-      const merged = { ...r, ...change.values };
-      if (stPasteNocClear.has(r.id)) merged.new_or_copy = '';
-      return merged;
+      return { ...r, ...change.values, ...(stPatches.get(r.id) ?? {}) };
     });
     // O→J 동기화: product_name은 참여 소스 행이 있으면 대상 참여행 전체에 무조건 전파(기존 방식 유지).
     const productNamePastedLayerids = new Map<string, string>();
@@ -2968,6 +2961,8 @@ export default function RequestPage(): React.ReactElement {
       if (!('product_name' in values)) return;
       const oRow = oayerRows.find(r => r.id === rowId);
       if (!oRow?.layerid?.trim() || isRowInactive(oRow.st) || isNocSpecial(oRow.new_or_copy)) return;
+      // claude 수정 (2026-11-06): 같이 붙여넣은 ST 로 X 가 된 행은 제품 이름이 비워지므로 전파하지 않는다(직접 선택에서는 X 행 제품 이름 칸이 비활성)
+      if ('st' in values && isRowInactive(values.st)) return;
       productNamePastedLayerids.set(oRow.layerid.trim(), values.product_name);
     });
     if (productNamePastedLayerids.size > 0) {
@@ -3004,17 +2999,23 @@ export default function RequestPage(): React.ReactElement {
       const oRow = oayerRows.find(r => r.id === rowId);
       if (oRow?.layerid?.trim()) touchedLayerids.add(oRow.layerid.trim());
     });
+    // claude 수정 (2026-11-06): ST 를 X 에서 되돌린 행도 직접 선택과 같이 전파한다 — 합의에 넣고, 그 layerid 는 반대편 ST X 행까지 대상으로 본다.
+    const reactivatedIds = stPasteReactivatedIds(oayerRows, changes);
+    const reactivatedLayerids = new Set(oayerRows.filter(r => reactivatedIds.includes(r.id)).map(r => r.layerid?.trim()));
     (['st', 'new_or_copy'] as const).forEach(field => {
       touchedLayerids.forEach(layerid => {
-        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid, field);
+        const reactivated = field === 'st' && reactivatedLayerids.has(layerid);
+        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid, field, reactivated ? reactivatedIds : []);
         if (consensusValue === undefined) return;
         if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
-        const target = soleParticipantByLayerid(jayerRows, layerid);
+        const target = reactivated ? soleStSyncRowByLayerid(jayerRows, layerid) : soleParticipantByLayerid(jayerRows, layerid);
         // claude 수정 (2026-11-06): ST 공란인 행(요청 기준 칸 비활성)에는 요청 기준을 넣지 않고, 전파된 ST 는 직접 바꿀 때와 같이 요청 기준을 정리한다
         if (!target || (field === 'new_or_copy' && !isNocEditable(target.st))) return;
         setJayerRows(rows => rows.map(r => (r.id === target.id
           ? { ...r, [field]: consensusValue, ...(field === 'st' ? stChangeExtra(r.st, consensusValue, r.new_or_copy, true) : {}) }
           : r)));
+        // claude 수정 (2026-11-06): 전파로 J 행 ST 가 X 가 되면 직접 선택(handleOayerChange)과 같이 bb 매핑을 푼다
+        if (field === 'st' && isRowInactive(consensusValue)) unmapIfMapped([target.id]);
       });
     });
   };
