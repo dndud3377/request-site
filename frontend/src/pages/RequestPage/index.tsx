@@ -127,7 +127,8 @@ import {
   computeRefDocStTargets, isRefDocStApplied, findRefDocNocConflictPairIds,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
-  layeridFieldConsensus, soleParticipantByLayerid, stClearExtra,
+  layeridFieldConsensus, soleParticipantByLayerid, soleStSyncRowByLayerid, stClearExtra, stChangeExtra, isNocEditable,
+  stPastePatches, stPasteReactivatedIds,
   isInterAutoYesProcess, isNumericValue, sortRowsBySp,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -2599,8 +2600,8 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== Jayer & Oayer Handlers =====
 
-  // claude 수정 (2026-10-20): 참조 요청서 '없음' 표가 켜져 있는 동안 막는 J/O 편집 — st 변경 전체, 그리고 st 가 'O' 인 행의
-  // 요청 기준을 기등록/layer삭제/미진행으로 바꾸는 것(바꾸면 st 가 'X' 가 된다). 막았으면 true.
+  // claude 수정 (2026-11-06): 참조 요청서 '없음' 표가 켜져 있는 동안 막는 J/O 편집 — st 변경 전체, 그리고 st 가 'O' 인 행의
+  // 요청 기준을 기등록/layer삭제/미진행으로 바꾸는 것(표가 'O' 로 정한 layer 추가 행에 쓸 수 없는 값 — 입력 즉시 알린다). 막았으면 true.
   const blockRefDocStChange = (field: string, value: string, rowSt: string | undefined): boolean => {
     if (!refDocStLocked) return false;
     if (field === 'st') return true;
@@ -2762,7 +2763,9 @@ export default function RequestPage(): React.ReactElement {
     // (같은 J-layer 안에서는 layerid가 같아도 서로 다른 값을 가질 수 있어 더 이상 전파하지 않는다.)
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !isRowInactive(changedRow.st) && !isNocSpecial(changedRow.new_or_copy);
-    const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && sourceParticipant
+    // claude 수정 (2026-11-06): ST 를 X 에서 되돌린 행도 O-layer 로 전파한다(변경 전이 X 라 참여행이 아니어서 전파되지 않던 문제).
+    const stReactivated = field === 'st' && !!changedRow && isRowInactive(changedRow.st) && !isRowInactive(value);
+    const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && (sourceParticipant || stReactivated)
       && !(field === 'new_or_copy' && isNocSpecial(value));
     // st를 'X'로 바꾸면(기존 활성 행) new_or_copy/product_name/step/item_id를 초기화하고 bb 매핑을 해제한다.
     if (field === 'st' && value === ST_X && changedRow && !isRowInactive(changedRow.st)) {
@@ -2773,6 +2776,8 @@ export default function RequestPage(): React.ReactElement {
       if (field === 'st' && value === ST_X) {
         return { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '', item_id: '' };
       }
+      // claude 수정 (2026-11-06): X→O·ST 공란처럼 새 ST 에서 고를 수 없는 요청 기준은 비운다(O↔O (D) 는 유지).
+      if (field === 'st') return { ...r, st: value, ...stChangeExtra(r.st, value, r.new_or_copy, true) };
       if (field === 'product_name') {
         const next = { ...r, product_name: value, item_id: '' };
         // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
@@ -2783,12 +2788,6 @@ export default function RequestPage(): React.ReactElement {
         // step 변경 시 캐시된 후보로 item_id 자동매칭 재실행
         const candidates = jayerBarcodeCache[id] ?? [];
         return { ...r, step: value, item_id: autoMatchItemId({ ...r, step: value }, candidates) };
-      }
-      if (field === 'new_or_copy') {
-        const next = { ...r, new_or_copy: value };
-        // 기등록/layer삭제/미진행 선택 시 st를 자동으로 'X'로 설정
-        if (isNocSpecial(value)) next.st = 'X';
-        return next;
       }
       return { ...r, [field]: value };
     });
@@ -2806,12 +2805,14 @@ export default function RequestPage(): React.ReactElement {
           return next;
         }));
       } else {
-        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid!, field as 'st' | 'new_or_copy');
+        // claude 수정 (2026-11-06): X 에서 되돌린 행은 합의에 넣고 반대편 ST X 행까지 대상으로 본다. 전파된 ST 도
+        // 직접 바꿀 때와 같이 요청 기준을 정리하고, ST 공란인 행(요청 기준 칸 비활성)에는 요청 기준을 넣지 않는다.
+        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid!, field as 'st' | 'new_or_copy', stReactivated ? [id] : []);
         if (consensusValue !== undefined) {
-          const target = soleParticipantByLayerid(oayerRows, layerid!);
-          if (target) {
+          const target = stReactivated ? soleStSyncRowByLayerid(oayerRows, layerid!) : soleParticipantByLayerid(oayerRows, layerid!);
+          if (target && (field === 'st' || isNocEditable(target.st))) {
             setOayerRows(rows => rows.map(r => (r.id === target.id
-              ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, false) }
+              ? { ...r, [field]: consensusValue, ...(field === 'st' ? stChangeExtra(r.st, consensusValue, r.new_or_copy, false) : {}) }
               : r)));
           }
         }
@@ -2865,21 +2866,21 @@ export default function RequestPage(): React.ReactElement {
         setJayerRows((rows) => rows.map((r) => (r.id === rowId ? { ...r, item_id: autoMatchItemId(r, candidates) } : r)));
       }
     });
-    // 기등록/layer삭제/미진행을 붙여넣은 행은 st를 자동으로 'X'로 설정
-    const nocSpecialPastedIds = new Set(
-      changes.filter(c => 'new_or_copy' in c.values && isNocSpecial(c.values.new_or_copy)).map(c => c.rowId)
-    );
-    if (nocSpecialPastedIds.size > 0) {
-      setJayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
+    // claude 수정 (2026-11-06): 요청 기준을 붙여넣어도 ST 는 바꾸지 않는다(ST 를 먼저 고르도록 순서를 강제했다).
+    // ST 를 붙여넣어 바꾼 행은 직접 선택과 같이 정리한다(stPastePatches) — X 가 되면 요청 기준·제품 이름·STEP·ID을 비우고(bb 매핑 해제),
+    // X 가 아니면 새 ST 에서 쓸 수 없는 요청 기준(예: X→O 의 기등록)을 비운다. 같이 붙여넣은 요청 기준이 새 ST 에 맞으면 남긴다.
+    const stPatches = stPastePatches(jayerRows, changes, true);
+    if (stPatches.size > 0) {
+      setJayerRows(rows => rows.map(r => (stPatches.has(r.id) ? { ...r, ...stPatches.get(r.id) } : r)));
     }
+    unmapIfMapped(changes.filter(({ rowId, values }) => 'st' in values && isRowInactive(values.st)
+      && !isRowInactive(jayerRows.find(r => r.id === rowId)?.st)).map(c => c.rowId));
     // J-layer 내부 전파는 하지 않는다(같은 layerid라도 서로 다른 값을 가질 수 있음).
     // J→O 교차 동기화 판정에 쓸 붙여넣기 후 상태만 로컬로 재구성한다.
     const nextJayerRows = jayerRows.map(r => {
       const change = changes.find(c => c.rowId === r.id);
       if (!change) return r;
-      const merged = { ...r, ...change.values };
-      if (nocSpecialPastedIds.has(r.id)) merged.st = 'X';
-      return merged;
+      return { ...r, ...change.values, ...(stPatches.get(r.id) ?? {}) };
     });
     // J→O 동기화: product_name은 참여 소스 행이 있으면 대상 참여행 전체에 무조건 전파(기존 방식 유지).
     const productNamePastedLayerids = new Map<string, string>();
@@ -2887,6 +2888,8 @@ export default function RequestPage(): React.ReactElement {
       if (!('product_name' in values)) return;
       const jRow = jayerRows.find(r => r.id === rowId);
       if (!jRow?.layerid?.trim() || isRowInactive(jRow.st) || isNocSpecial(jRow.new_or_copy)) return;
+      // claude 수정 (2026-11-06): 같이 붙여넣은 ST 로 X 가 된 행은 제품 이름이 비워지므로 전파하지 않는다(직접 선택에서는 X 행 제품 이름 칸이 비활성)
+      if ('st' in values && isRowInactive(values.st)) return;
       productNamePastedLayerids.set(jRow.layerid.trim(), values.product_name);
     });
     if (productNamePastedLayerids.size > 0) {
@@ -2907,15 +2910,20 @@ export default function RequestPage(): React.ReactElement {
       const jRow = jayerRows.find(r => r.id === rowId);
       if (jRow?.layerid?.trim()) touchedLayerids.add(jRow.layerid.trim());
     });
+    // claude 수정 (2026-11-06): ST 를 X 에서 되돌린 행도 직접 선택과 같이 전파한다 — 합의에 넣고, 그 layerid 는 반대편 ST X 행까지 대상으로 본다.
+    const reactivatedIds = stPasteReactivatedIds(jayerRows, changes);
+    const reactivatedLayerids = new Set(jayerRows.filter(r => reactivatedIds.includes(r.id)).map(r => r.layerid?.trim()));
     (['st', 'new_or_copy'] as const).forEach(field => {
       touchedLayerids.forEach(layerid => {
-        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid, field);
+        const reactivated = field === 'st' && reactivatedLayerids.has(layerid);
+        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid, field, reactivated ? reactivatedIds : []);
         if (consensusValue === undefined) return;
         if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
-        const target = soleParticipantByLayerid(oayerRows, layerid);
-        if (!target) return;
+        const target = reactivated ? soleStSyncRowByLayerid(oayerRows, layerid) : soleParticipantByLayerid(oayerRows, layerid);
+        // claude 수정 (2026-11-06): ST 공란인 행(요청 기준 칸 비활성)에는 요청 기준을 넣지 않고, 전파된 ST 는 직접 바꿀 때와 같이 요청 기준을 정리한다
+        if (!target || (field === 'new_or_copy' && !isNocEditable(target.st))) return;
         setOayerRows(rows => rows.map(r => (r.id === target.id
-          ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, false) }
+          ? { ...r, [field]: consensusValue, ...(field === 'st' ? stChangeExtra(r.st, consensusValue, r.new_or_copy, false) : {}) }
           : r)));
       });
     });
@@ -2933,21 +2941,19 @@ export default function RequestPage(): React.ReactElement {
         }));
       }
     });
-    // 기등록/layer삭제/미진행을 붙여넣은 행은 st를 자동으로 'X'로 설정
-    const nocSpecialPastedIds = new Set(
-      changes.filter(c => 'new_or_copy' in c.values && isNocSpecial(c.values.new_or_copy)).map(c => c.rowId)
-    );
-    if (nocSpecialPastedIds.size > 0) {
-      setOayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
+    // claude 수정 (2026-11-06): 요청 기준을 붙여넣어도 ST 는 바꾸지 않는다(ST 를 먼저 고르도록 순서를 강제했다).
+    // ST 를 붙여넣어 바꾼 행은 직접 선택과 같이 정리한다(stPastePatches) — X 가 되면 요청 기준·제품 이름·STEP을 비우고,
+    // X 가 아니면 새 ST 에서 쓸 수 없는 요청 기준(예: X→O 의 기등록)을 비운다. 같이 붙여넣은 요청 기준이 새 ST 에 맞으면 남긴다.
+    const stPatches = stPastePatches(oayerRows, changes, false);
+    if (stPatches.size > 0) {
+      setOayerRows(rows => rows.map(r => (stPatches.has(r.id) ? { ...r, ...stPatches.get(r.id) } : r)));
     }
     // O-layer 내부 전파는 하지 않는다(같은 layerid라도 서로 다른 값을 가질 수 있음).
     // O→J 교차 동기화 판정에 쓸 붙여넣기 후 상태만 로컬로 재구성한다.
     const nextOayerRows = oayerRows.map(r => {
       const change = changes.find(c => c.rowId === r.id);
       if (!change) return r;
-      const merged = { ...r, ...change.values };
-      if (nocSpecialPastedIds.has(r.id)) merged.st = 'X';
-      return merged;
+      return { ...r, ...change.values, ...(stPatches.get(r.id) ?? {}) };
     });
     // O→J 동기화: product_name은 참여 소스 행이 있으면 대상 참여행 전체에 무조건 전파(기존 방식 유지).
     const productNamePastedLayerids = new Map<string, string>();
@@ -2955,6 +2961,8 @@ export default function RequestPage(): React.ReactElement {
       if (!('product_name' in values)) return;
       const oRow = oayerRows.find(r => r.id === rowId);
       if (!oRow?.layerid?.trim() || isRowInactive(oRow.st) || isNocSpecial(oRow.new_or_copy)) return;
+      // claude 수정 (2026-11-06): 같이 붙여넣은 ST 로 X 가 된 행은 제품 이름이 비워지므로 전파하지 않는다(직접 선택에서는 X 행 제품 이름 칸이 비활성)
+      if ('st' in values && isRowInactive(values.st)) return;
       productNamePastedLayerids.set(oRow.layerid.trim(), values.product_name);
     });
     if (productNamePastedLayerids.size > 0) {
@@ -2991,16 +2999,23 @@ export default function RequestPage(): React.ReactElement {
       const oRow = oayerRows.find(r => r.id === rowId);
       if (oRow?.layerid?.trim()) touchedLayerids.add(oRow.layerid.trim());
     });
+    // claude 수정 (2026-11-06): ST 를 X 에서 되돌린 행도 직접 선택과 같이 전파한다 — 합의에 넣고, 그 layerid 는 반대편 ST X 행까지 대상으로 본다.
+    const reactivatedIds = stPasteReactivatedIds(oayerRows, changes);
+    const reactivatedLayerids = new Set(oayerRows.filter(r => reactivatedIds.includes(r.id)).map(r => r.layerid?.trim()));
     (['st', 'new_or_copy'] as const).forEach(field => {
       touchedLayerids.forEach(layerid => {
-        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid, field);
+        const reactivated = field === 'st' && reactivatedLayerids.has(layerid);
+        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid, field, reactivated ? reactivatedIds : []);
         if (consensusValue === undefined) return;
         if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
-        const target = soleParticipantByLayerid(jayerRows, layerid);
-        if (!target) return;
+        const target = reactivated ? soleStSyncRowByLayerid(jayerRows, layerid) : soleParticipantByLayerid(jayerRows, layerid);
+        // claude 수정 (2026-11-06): ST 공란인 행(요청 기준 칸 비활성)에는 요청 기준을 넣지 않고, 전파된 ST 는 직접 바꿀 때와 같이 요청 기준을 정리한다
+        if (!target || (field === 'new_or_copy' && !isNocEditable(target.st))) return;
         setJayerRows(rows => rows.map(r => (r.id === target.id
-          ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, true) }
+          ? { ...r, [field]: consensusValue, ...(field === 'st' ? stChangeExtra(r.st, consensusValue, r.new_or_copy, true) : {}) }
           : r)));
+        // claude 수정 (2026-11-06): 전파로 J 행 ST 가 X 가 되면 직접 선택(handleOayerChange)과 같이 bb 매핑을 푼다
+        if (field === 'st' && isRowInactive(consensusValue)) unmapIfMapped([target.id]);
       });
     });
   };
@@ -3008,24 +3023,44 @@ export default function RequestPage(): React.ReactElement {
   // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
   // 셀 단위 잠금: 비활성(st==='X')/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금.
   // st 컬럼은 "비활성에서 되돌리는 유일한 수단"이라 항상 직접 편집 가능하다. new_or_copy 는
-  // st==='X' 여부와 무관하게 항상 필수값이라 잠그지 않는다(사용자가 직접 X로 바꾼 행도 계속 입력 가능).
-  // layer삭제/미진행 행의 st 는 항상 'X' 로 고정이므로 붙여넣기로도 덮어쓸 수 없다.
+  // st==='X' 여부와 무관하게 항상 필수값이라 st 가 채워져 있으면 잠그지 않는다(사용자가 직접 X로 바꾼 행도 계속 입력 가능).
+  // claude 수정 (2026-11-06): ST 를 먼저 고르도록 — ST 공란 행의 요청 기준은 붙여넣기·Delete 대상에서 뺀다(ST·요청 기준을
+  // 함께 붙여넣으면 ST 만 들어간다). 기등록/layer삭제/미진행 행의 st 도 더 이상 'X' 로 잠그지 않는다.
   const isLayerCellLocked = (row: { st?: string; new_or_copy?: string; loaded?: boolean }, col: string): boolean => {
-    // new_or_copy 는 st==='X' 인 행에서도 필수값이라 잠그지 않는다.
-    if (col === 'new_or_copy') return false;
+    if (col === 'new_or_copy') return !isNocEditable(row.st);
     // claude 수정 (2026-10-20): 참조 요청서 '없음' 표가 켜져 있으면 st 는 표가 정하므로 붙여넣기·Delete 로도 바꿀 수 없다.
-    if (col === 'st') return refDocStLocked || isNocSpecial(row.new_or_copy);
+    if (col === 'st') return refDocStLocked;
     return isRowInactive(row.st) || row.new_or_copy === '기등록'
       || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
   };
-  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, isLayerCellLocked, handleJayerAfterPaste, unmapIfBbValueChanged);
-  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, isLayerCellLocked, handleOayerAfterPaste);
+  // claude 수정 (2026-11-06): Delete 로 ST 를 비운 행은 요청 기준도 비운다(ST 공란이면 요청 기준 칸이 비활성).
+  const clearNocOfStCleared = <Row extends { id: string; new_or_copy: string }>(
+    setRows: React.Dispatch<React.SetStateAction<Row[]>>,
+    changes: { rowId: string; values: Record<string, string> }[],
+  ) => {
+    const ids = new Set(changes.filter((c) => 'st' in c.values).map((c) => c.rowId));
+    if (ids.size > 0) setRows((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, new_or_copy: '' } : r)));
+  };
+  const handleJayerAfterClear = (changes: { rowId: string; values: Record<string, string> }[]) => {
+    unmapIfBbValueChanged(changes);
+    clearNocOfStCleared(setJayerRows, changes);
+  };
+  const handleOayerAfterClear = (changes: { rowId: string; values: Record<string, string> }[]) => clearNocOfStCleared(setOayerRows, changes);
+  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, isLayerCellLocked, handleJayerAfterPaste, handleJayerAfterClear);
+  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, isLayerCellLocked, handleOayerAfterPaste, handleOayerAfterClear);
 
-  // 일괄 버튼이 값을 적용할 대상 행인가. new_or_copy 필드는 기존과 동일하게 활성(참여)행만 대상으로 하지만,
-  // st 필드 자체를 바꾸는 버튼은 st==='X'(비활성) 행도 대상이어야 한다 — 그렇지 않으면 '모두 X' 적용 직후
-  // 모든 행이 비활성이 되어 '모두 O'/'초기화'가 걸러낼 행이 없어 조용히 무동작하는 버그가 난다.
+  // 일괄 버튼이 값을 적용할 대상 행인가. st 필드 자체를 바꾸는 버튼은 st==='X'(비활성) 행도 대상이어야 한다 — 그렇지 않으면
+  // '모두 X' 적용 직후 모든 행이 비활성이 되어 '모두 O'/'초기화'가 걸러낼 행이 없어 조용히 무동작하는 버그가 난다.
+  // claude 수정 (2026-11-06): ST 버튼은 기등록/layer삭제/미진행 행까지 모든 행이 대상이다(사용자 결정 — ST 가 요청 기준에 잠기지 않는다).
+  // 요청 기준 버튼은 ST 가 채워진, X 가 아닌 행만 대상이다 — ST 공란 행은 요청 기준 칸이 비활성이라 값을 넣지 않는다.
   const isBulkStOrNocTarget = (r: { st: string; new_or_copy: string }, field: 'st' | 'new_or_copy'): boolean =>
-    !isNocSpecial(r.new_or_copy) && (field !== 'new_or_copy' || !isRowInactive(r.st));
+    field === 'st' || (isNocEditable(r.st) && !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy));
+  /** claude 수정 (2026-11-06): 일괄 버튼 값을 한 행에 적용 — ST 는 직접 바꿀 때와 같이 요청 기준 등을 정리한다(stChangeExtra). */
+  const applyBulkValue = <Row extends { st: string; new_or_copy: string }>(
+    r: Row, field: 'st' | 'new_or_copy', value: string, hasItemId: boolean,
+  ): Row => (field === 'st'
+    ? { ...r, st: value, ...stChangeExtra(r.st, value, r.new_or_copy, hasItemId) }
+    : { ...r, new_or_copy: value });
 
   // claude 수정 (2026-10-27): ST 일괄 버튼('전체 O'·'전체 X'·'초기화')도 반대편 표로 전파 — '전체 X' 는 클릭 후 참여행이 0개라,
   // 반대편 행이 이미 X 면 '전체 O'·'초기화'는 대상에서 빠져 전파되지 않던 문제. ST 일괄 버튼은 이 표에서 값이 바뀐 행
@@ -3036,14 +3071,16 @@ export default function RequestPage(): React.ReactElement {
     updatedRows: { layerid: string; st: string; new_or_copy: string }[],
     otherRows: { id: string; layerid: string; st: string; new_or_copy: string }[],
   ): Set<string> => {
+    // claude 수정 (2026-11-06): ST 버튼 대상이 모든 행으로 넓어져도 전파 판정은 종전대로 기등록/layer삭제/미진행이 아닌 행 기준이다.
+    // 요청 기준 버튼은 반대편 대상의 ST 가 공란이면(요청 기준 칸 비활성) 전파하지 않는다.
     const sourceRows = field === 'st'
-      ? updatedRows.filter((r) => isBulkStOrNocTarget(r, 'st'))
+      ? updatedRows.filter((r) => !isNocSpecial(r.new_or_copy))
       : updatedRows.filter((r) => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy));
     const layerids = new Set(sourceRows.map((r) => r.layerid?.trim()).filter((l): l is string => !!l));
     const soleTarget = (layerid: string) => {
-      if (field !== 'st') return soleParticipantByLayerid(otherRows, layerid);
-      const candidates = otherRows.filter((r) => r.layerid?.trim() === layerid && isBulkStOrNocTarget(r, 'st'));
-      return candidates.length === 1 ? candidates[0] : undefined;
+      if (field === 'st') return soleStSyncRowByLayerid(otherRows, layerid);
+      const target = soleParticipantByLayerid(otherRows, layerid);
+      return target && isNocEditable(target.st) ? target : undefined;
     };
     return new Set(Array.from(layerids).map((l) => soleTarget(l)?.id).filter((id): id is string => !!id));
   };
@@ -3055,24 +3092,23 @@ export default function RequestPage(): React.ReactElement {
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP·ITEM_ID 를
     // 비우고 bb 매핑을 푼다(ST X 에는 신규/차용을 쓸 수 없으므로 X 용 요청 기준을 다시 고르게 한다).
     const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
-    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field)
-      ? { ...r, [field]: value, ...(clearedIds.includes(r.id) ? stClearExtra(field, value, true) : {}) }
-      : r);
+    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, value, true) : r));
     setJayerRows(updatedRows);
     unmapIfMapped(clearedIds);
     // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않는다.
     const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows);
     if (targetIds.size > 0) {
-      setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) } : r));
+      setOayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, value, false) : r)));
     }
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
-    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
+    // claude 수정 (2026-11-06): ST '초기화' 로 ST 가 비는 행은 요청 기준도 비운다(applyBulkValue)
+    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, '', true) : r));
     setJayerRows(updatedRows);
     const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
-    if (targetIds.size > 0) setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
+    if (targetIds.size > 0) setOayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, '', false) : r)));
   };
 
   // 필터 조건에 맞는(아직 활성인) 행의 st를 'X'로 실제 기록한다 — 일회성 적용(되돌리는 토글이 아님).
@@ -3099,7 +3135,9 @@ export default function RequestPage(): React.ReactElement {
     // J-layer로 전파를 검토한다(같은 O-layer 안에서는 더 이상 전파하지 않는다).
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !isRowInactive(changedRow.st) && !isNocSpecial(changedRow.new_or_copy);
-    const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && sourceParticipant
+    // claude 수정 (2026-11-06): ST 를 X 에서 되돌린 행도 J-layer 로 전파한다(변경 전이 X 라 참여행이 아니어서 전파되지 않던 문제).
+    const stReactivated = field === 'st' && !!changedRow && isRowInactive(changedRow.st) && !isRowInactive(value);
+    const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && (sourceParticipant || stReactivated)
       && !(field === 'new_or_copy' && isNocSpecial(value));
     // st를 'X'로 바꾸면(기존 활성 행) new_or_copy/product_name/step을 초기화한다(O-ayer는 item_id 없음).
     const nextOayerRows = oayerRows.map((r) => {
@@ -3107,16 +3145,12 @@ export default function RequestPage(): React.ReactElement {
       if (field === 'st' && value === ST_X) {
         return { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '' };
       }
+      // claude 수정 (2026-11-06): X→O·ST 공란처럼 새 ST 에서 고를 수 없는 요청 기준은 비운다(O↔O (D) 는 유지).
+      if (field === 'st') return { ...r, st: value, ...stChangeExtra(r.st, value, r.new_or_copy, false) };
       if (field === 'product_name') {
         const next = { ...r, product_name: value };
         // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
         if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
-        return next;
-      }
-      if (field === 'new_or_copy') {
-        const next = { ...r, new_or_copy: value };
-        // 기등록/layer삭제/미진행 선택 시 st를 자동으로 'X'로 설정
-        if (isNocSpecial(value)) next.st = 'X';
         return next;
       }
       return { ...r, [field]: value };
@@ -3148,12 +3182,14 @@ export default function RequestPage(): React.ReactElement {
           }
         });
       } else {
-        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid!, field as 'st' | 'new_or_copy');
+        // claude 수정 (2026-11-06): X 에서 되돌린 행은 합의에 넣고 반대편 ST X 행까지 대상으로 본다. 전파된 ST 도
+        // 직접 바꿀 때와 같이 요청 기준을 정리하고, ST 공란인 행(요청 기준 칸 비활성)에는 요청 기준을 넣지 않는다.
+        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid!, field as 'st' | 'new_or_copy', stReactivated ? [id] : []);
         if (consensusValue !== undefined) {
-          const target = soleParticipantByLayerid(jayerRows, layerid!);
-          if (target) {
+          const target = stReactivated ? soleStSyncRowByLayerid(jayerRows, layerid!) : soleParticipantByLayerid(jayerRows, layerid!);
+          if (target && (field === 'st' || isNocEditable(target.st))) {
             setJayerRows(rows => rows.map(r => (r.id === target.id
-              ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, true) }
+              ? { ...r, [field]: consensusValue, ...(field === 'st' ? stChangeExtra(r.st, consensusValue, r.new_or_copy, true) : {}) }
               : r)));
             // claude 수정 (2026-10-27): O→J 전파로 J 행 ST 가 X 가 되면 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다
             if (field === 'st' && consensusValue === ST_X) unmapIfMapped([target.id]);
@@ -3168,25 +3204,24 @@ export default function RequestPage(): React.ReactElement {
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP 를 비운다
-    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field)
-      ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, false)) }
-      : r);
+    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, value, false) : r));
     setOayerRows(updatedRows);
     // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않고,
     // 전파로 X 가 된 J 행은 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다.
     const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows);
     if (targetIds.size > 0) {
-      setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...(isRowInactive(r.st) ? {} : stClearExtra(field, value, true)) } : r));
+      setJayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, value, true) : r)));
       if (field === 'st' && value === ST_X) unmapIfMapped(Array.from(targetIds));
     }
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
-    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
+    // claude 수정 (2026-11-06): ST '초기화' 로 ST 가 비는 행은 요청 기준도 비운다(applyBulkValue)
+    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, '', false) : r));
     setOayerRows(updatedRows);
     const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
-    if (targetIds.size > 0) setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
+    if (targetIds.size > 0) setJayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, '', true) : r)));
   };
 
   // 필터 조건에 맞는(아직 활성인) 행의 st를 'X'로 실제 기록한다 — 일회성 적용(되돌리는 토글이 아님).

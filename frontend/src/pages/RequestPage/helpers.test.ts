@@ -11,7 +11,8 @@ import {
   matchLayerColor, buildFlowStepTitlePart, isInterAutoYesProcess, isNumericValue,
   mergeTableFromPp, resolveManualPairTable, syncManualPairTable, checkManualPairsAgainstLayers,
   deriveAutoOtherPurpose, sameOtherPurpose, computeRefDocStTargets, isRefDocStApplied, RefDocStRow,
-  nocOptionsForSt, findStNocMismatchViolations,
+  nocOptionsForSt, findStNocMismatchViolations, isNocEditable, stChangeExtra, soleStSyncRowByLayerid,
+  stPastePatches, stPasteReactivatedIds,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText, sortRowsBySp,
 } from './helpers';
 import {
@@ -1643,13 +1644,90 @@ describe('computeRefDocStTargets / isRefDocStApplied', () => {
 
 // claude 수정 (2026-10-20): ST ↔ 요청 기준 짝 규칙
 describe('nocOptionsForSt / findStNocMismatchViolations', () => {
-  it('ST 가 O 계열이면 신규·차용, X 면 기등록·layer삭제·미진행, 미선택이면 전체', () => {
+  // claude 수정 (2026-11-06): ST 를 먼저 골라야 요청 기준을 입력한다 — 미선택이면 선택지 없음(칸 비활성)
+  it('ST 가 O 계열이면 신규·차용, X 면 기등록·layer삭제·미진행, 미선택이면 없음', () => {
     expect(nocOptionsForSt('O')).toEqual(['신규', '차용']);
     expect(nocOptionsForSt('O (D)')).toEqual(['신규', '차용']);
     expect(nocOptionsForSt('X')).toEqual(['기등록', 'layer삭제', '미진행']);
     expect(nocOptionsForSt(' X ')).toEqual(['기등록', 'layer삭제', '미진행']);
-    expect(nocOptionsForSt('')).toEqual(['신규', '차용', '기등록', 'layer삭제', '미진행']);
-    expect(nocOptionsForSt(undefined)).toHaveLength(5);
+    expect(nocOptionsForSt('')).toEqual([]);
+    expect(nocOptionsForSt(undefined)).toEqual([]);
+    expect(isNocEditable('')).toBe(false);
+    expect(isNocEditable(' ')).toBe(false);
+    expect(isNocEditable('O')).toBe(true);
+    expect(isNocEditable('X')).toBe(true);
+  });
+
+  it('stChangeExtra: X→O·ST 공란은 요청 기준을 비우고, O↔O (D) 는 유지, O→X 는 요청 기준·제품 이름·STEP(·ID)을 비운다', () => {
+    expect(stChangeExtra('X', 'O', '기등록', true)).toEqual({ new_or_copy: '' });
+    expect(stChangeExtra('X', 'O (D)', '미진행', false)).toEqual({ new_or_copy: '' });
+    expect(stChangeExtra('O', '', '신규', false)).toEqual({ new_or_copy: '' });
+    expect(stChangeExtra('X', '', 'layer삭제', false)).toEqual({ new_or_copy: '' });
+    expect(stChangeExtra('O', 'O (D)', '차용', true)).toEqual({});
+    expect(stChangeExtra('', 'O', '신규', true)).toEqual({});
+    expect(stChangeExtra('X', 'O', '', true)).toEqual({});
+    expect(stChangeExtra('O', 'X', '신규', true)).toEqual({ new_or_copy: '', product_name: '', step: '', item_id: '' });
+    expect(stChangeExtra('O', 'X', '신규', false)).toEqual({ new_or_copy: '', product_name: '', step: '' });
+    expect(stChangeExtra('X', 'X', '기등록', true)).toEqual({});
+    expect(stChangeExtra('O', 'O', '기등록', true)).toEqual({});
+  });
+
+  it('soleStSyncRowByLayerid: ST X 행까지 포함해 기등록/layer삭제/미진행이 아닌 행이 정확히 1개일 때만 돌려준다', () => {
+    const rows = [
+      { id: 'a', layerid: 'L1', st: 'X', new_or_copy: '' },
+      { id: 'b', layerid: 'L2', st: 'X', new_or_copy: '기등록' },
+      { id: 'c', layerid: 'L3', st: 'O', new_or_copy: '신규' },
+      { id: 'd', layerid: 'L3', st: 'X', new_or_copy: '' },
+    ];
+    expect(soleStSyncRowByLayerid(rows, 'L1')?.id).toBe('a');
+    expect(soleStSyncRowByLayerid(rows, 'L2')).toBeUndefined();
+    expect(soleStSyncRowByLayerid(rows, 'L3')).toBeUndefined();
+  });
+
+  it('stPastePatches: 붙여넣은 ST 로 X 가 되면 직접 선택과 같이 비우되, 같이 붙여넣은 맞는 요청 기준은 남긴다', () => {
+    const rows = [
+      { id: 'o', layerid: 'L1', st: 'O', new_or_copy: '신규' },
+      { id: 'x', layerid: 'L2', st: 'X', new_or_copy: '기등록' },
+      { id: 'e', layerid: 'L3', st: '', new_or_copy: '' },
+    ];
+    const p = stPastePatches(rows, [
+      { rowId: 'o', values: { st: 'X' } },
+      { rowId: 'x', values: { st: 'O' } },
+      { rowId: 'e', values: { st: 'O' } },
+    ], true);
+    expect(p.get('o')).toEqual({ new_or_copy: '', product_name: '', step: '', item_id: '' });
+    expect(p.get('x')).toEqual({ new_or_copy: '' });
+    expect(p.has('e')).toBe(false);
+    const q = stPastePatches(rows, [
+      { rowId: 'o', values: { st: 'X', new_or_copy: '미진행' } },
+      { rowId: 'x', values: { st: 'O', new_or_copy: '신규' } },
+      { rowId: 'e', values: { product_name: 'P' } },
+    ], false);
+    expect(q.get('o')).toEqual({ product_name: '', step: '' });
+    expect(q.has('x')).toBe(false);
+    expect(q.has('e')).toBe(false);
+    expect(stPastePatches(rows, [{ rowId: 'o', values: { st: 'X', new_or_copy: '신규' } }], false).get('o'))
+      .toEqual({ new_or_copy: '', product_name: '', step: '' });
+  });
+
+  it('stPasteReactivatedIds: 붙여넣기 전 X 이고 붙여넣은 ST 가 X 가 아닌 행만', () => {
+    const rows = [
+      { id: 'x1', layerid: 'L1', st: 'X', new_or_copy: '' },
+      { id: 'x2', layerid: 'L2', st: 'X', new_or_copy: '' },
+      { id: 'o1', layerid: 'L3', st: 'O', new_or_copy: '신규' },
+    ];
+    expect(stPasteReactivatedIds(rows, [
+      { rowId: 'x1', values: { st: 'O' } },
+      { rowId: 'x2', values: { st: 'X' } },
+      { rowId: 'o1', values: { st: 'O (D)' } },
+    ])).toEqual(['x1']);
+  });
+
+  it('layeridFieldConsensus: includeIds 로 넣은 X 행도 합의에 들어간다', () => {
+    const pre = [{ id: 'a', layerid: 'L1', st: 'X', new_or_copy: '' }];
+    const post = [{ id: 'a', layerid: 'L1', st: 'O', new_or_copy: '' }];
+    expect(layeridFieldConsensus(pre, post, 'L1', 'st')).toBeUndefined();
+    expect(layeridFieldConsensus(pre, post, 'L1', 'st', ['a'])).toBe('O');
   });
 
   it('ST 와 맞지 않는 요청 기준 행만 찾고, 공란·목록 밖 값은 제외한다', () => {
