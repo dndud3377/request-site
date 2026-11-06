@@ -1236,12 +1236,20 @@ def m08(ctx):
     return f'doc={doc_id} pause_request={pr.get("state")}'
 
 
-@case('M-09', 'M', 'pause 문서 철회 시도 → 400')
+# claude 수정 (2026-11-06): 중단 문서도 철회 요청 가능 — 기대값을 400 에서 '요청 → 재개 동결 → 전원 확인 시 삭제'로 변경
+@case('M-09', 'M', 'pause 문서 철회 → 요청 생성, 재개 400, 대상 전원 확인 → 삭제')
 def m09(ctx):
     ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
     doc_id = m04(ctx).split('doc=')[1].split()[0]
-    F.withdraw(ctx.actor('PL', 0), doc_id, expect=400)
-    return f'doc={doc_id}'
+    author = ctx.actor('PL', 0)
+    res = F.withdraw(author, doc_id)
+    if (res.body or {}).get('deleted'):
+        raise CaseFailure('중단 문서가 확인 없이 즉시 삭제됐다.')
+    F.expect_doc_status(author, doc_id, 'pause', '(철회 요청 중에도 중단 상태가 유지돼야 한다)')
+    F.resume(author, doc_id, expect=400)
+    targets = _confirm_all_withdraw_targets(ctx, author, doc_id)
+    F.expect_gone(author, doc_id)
+    return f'doc={doc_id} targets={targets} 삭제됨'
 
 
 # claude 수정 (2026-11-04): 재개 시 O 합의 유지(Case U) 케이스 M-10·M-11 추가
@@ -1295,6 +1303,29 @@ def _team_actor(ctx, agent, doc):
 
 # ============================================================ W. 철회
 
+# claude 수정 (2026-11-06): 반려·중단 문서 철회 케이스용 — withdraw_request 의 확인 대상 단계를 전부 확인한다
+def _confirm_all_withdraw_targets(ctx, author, doc_id):
+    """철회 요청의 target_step_ids 단계마다 담당자(없으면 같은 팀 첫 계정)로 확인 → 확인한 agent 목록."""
+    doc = F.fetch(author, doc_id)
+    wr = doc.get('withdraw_request') or {}
+    if not wr:
+        raise CaseFailure('withdraw_request 가 없다.')
+    role_by_agent = {'R': 'TE_R', 'RV': 'TE_R', 'P': 'TE_P', 'PV': 'TE_P', 'J': 'TE_J',
+                     'O': 'TE_O', 'E': 'TE_E', 'EV': 'TE_E'}
+    agents = []
+    for step in doc['approval_steps']:
+        if step['id'] not in wr.get('target_step_ids', []):
+            continue
+        if step.get('assignee_loginid'):
+            actor = F._actor_for_loginid(ctx, step['assignee_loginid'])
+        elif ctx.master.users_by_role.get(role_by_agent.get(step['agent'], '')):
+            actor = ctx.actor(role_by_agent[step['agent']], 0)
+        else:
+            raise CaseSkip(f'{step["agent"]} 단계를 확인할 계정을 찾지 못했다.')
+        F.confirm_withdraw(actor, doc_id, step['agent'])
+        agents.append(step['agent'])
+    return sorted(agents)
+
 @case('W-01', 'W', 'draft 철회 → 즉시 삭제')
 def w01(ctx):
     ctx.need(PL=1)
@@ -1307,15 +1338,20 @@ def w01(ctx):
     return f'doc={doc["id"]} 삭제됨'
 
 
-# claude 수정 (2026-10-15): 2026-08 정책(APPROVAL.md 철회 표) 기준 — 반려 문서는 철회 불가(400), 수정 후 재상신해야 한다
-@case('W-02', 'W', 'rejected 철회 → 400(철회 불가), 문서 유지')
+# claude 수정 (2026-11-06): 반려 문서도 철회 요청 가능 — 1구역 반려는 PL·SA 가 확인 대상, 확인 대기 중 재상신 400
+@case('W-02', 'W', 'rejected(1구역) 철회 → 요청 생성, 재상신 400, PL 확인 → 삭제')
 def w02(ctx):
     ctx.need(PL=2)
     doc_id, author, pls = F.submitted_doc(ctx)
     F.peer_reject(ctx.actor('PL', 1), doc_id)
-    F.withdraw(author, doc_id, expect=400)
-    F.expect_doc_status(author, doc_id, 'rejected', '(철회 거절 후에도 반려 문서가 남아 있어야 한다)')
-    return f'doc={doc_id} 유지'
+    res = F.withdraw(author, doc_id)
+    if (res.body or {}).get('deleted'):
+        raise CaseFailure('반려 문서가 확인 없이 즉시 삭제됐다.')
+    F.expect_doc_status(author, doc_id, 'rejected', '(철회 요청 중에도 반려 상태가 유지돼야 한다)')
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls], expect=400)
+    targets = _confirm_all_withdraw_targets(ctx, author, doc_id)
+    F.expect_gone(author, doc_id)
+    return f'doc={doc_id} targets={targets} 삭제됨'
 
 
 @case('W-03', 'W', 'approved 철회는 MASTER 만')
@@ -1453,6 +1489,24 @@ def w15(ctx):
     F.reject_withdraw(ctx.actor('TE_J', 0), doc_id)
     F.claim_step(ctx.actor('TE_J', 0), doc_id, 'J')
     return f'doc={doc_id}'
+
+
+# claude 수정 (2026-11-06): 3구역 반려 문서 철회 — 대기중(미선점) 팀도 확인 대상에 포함
+@case('W-16', 'W', 'rejected(3구역) 철회 → 대기중 팀 포함 확인 대상, 전원 확인 → 삭제')
+def w16(ctx):
+    ctx.need(PL=2, TE_R=1, TE_O=1, TE_J=1)
+    doc_id, author, pls = F.to_parallel(ctx)
+    F.claim_step(ctx.actor('TE_O', 0), doc_id, 'O')
+    F.reject_step(ctx.actor('TE_O', 0), doc_id, 'O')
+    F.withdraw(author, doc_id)
+    doc = F.fetch(author, doc_id)
+    target_agents = {s['agent'] for s in doc['approval_steps']
+                     if s['id'] in (doc.get('withdraw_request') or {}).get('target_step_ids', [])}
+    if 'J' not in target_agents or 'R' in target_agents:
+        raise CaseFailure(f'확인 대상이 3구역 팀(대기중 J 포함, R 제외)이 아니다: {sorted(target_agents)}')
+    targets = _confirm_all_withdraw_targets(ctx, author, doc_id)
+    F.expect_gone(author, doc_id)
+    return f'doc={doc_id} targets={targets} 삭제됨'
 
 
 # ============================================================ A. 인가
