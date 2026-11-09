@@ -305,14 +305,10 @@ export default function ApprovalPage(): React.ReactElement {
   }, [markCategories, allDocs, docs, markCategoryFilter, addToast, t]);
   // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
   const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
+  // claude 수정 (2026-11-09): 탭 전환 시 필터 바(라인/목적/MAP 목적/요청일)는 유지하고 정렬만 초기화 — 탭마다 필터를 다시 거는 번거로움 제거
   useEffect(() => {
     setProdDateSort(null);
     setColSort(null);
-    setLineFilter(new Set());
-    setPurposeFilter(new Set());
-    setMapFilter(new Set());
-    setDateFrom('');
-    setDateTo('');
   }, [filter]);
   useEffect(() => {
     const handler = (e: MouseEvent) => {
