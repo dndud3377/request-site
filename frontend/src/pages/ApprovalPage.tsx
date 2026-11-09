@@ -1647,11 +1647,13 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  // 결재가 진행 중인 문서만 '현재 단계 전원 확인' 절차를 거친다.
-  // 임시저장은 확인할 상대가 없어 확인만으로 즉시 삭제된다(사유 없음). 반려는 철회 자체가 불가.
+  // claude 수정 (2026-11-09): 반려 문서도 철회 요청 대상 — 관여했던 팀 전원 확인 후 삭제(사유 필수)
+  // 결재가 진행 중인 문서는 '현재 단계 전원 확인', 반려 문서는 '관여했던 팀 전원 확인' 절차를 거친다.
+  // 임시저장은 확인할 상대가 없어 확인만으로 즉시 삭제된다(사유 없음).
   // MASTER 는 상태와 무관하게 항상 즉시 삭제이므로 확인 절차가 필요 없다(2026-08).
   const needsWithdrawConfirm = (doc: RequestDocument): boolean =>
-    currentUser.role !== 'MASTER' && (doc.status === 'under_review' || doc.status === 'submitted');
+    currentUser.role !== 'MASTER'
+    && (doc.status === 'under_review' || doc.status === 'submitted' || doc.status === 'rejected');
 
   const handleWithdrawClick = (doc: RequestDocument) => {
     setWithdrawDoc(doc);
@@ -1670,7 +1672,11 @@ export default function ApprovalPage(): React.ReactElement {
         setModalOpen(false);
         fetchDocs();
       } else {
-        addToast(t('approval.withdraw_requested_toast'), 'success');
+        // claude 수정 (2026-11-09): 반려 문서는 '현재 단계'가 아니라 '관여했던 팀'의 확인을 기다린다
+        addToast(
+          t(withdrawDoc.status === 'rejected' ? 'approval.withdraw_requested_rejected_toast' : 'approval.withdraw_requested_toast'),
+          'success',
+        );
         await refreshAndSelect(withdrawDoc.id);
       }
     } catch {
@@ -1706,7 +1712,11 @@ export default function ApprovalPage(): React.ReactElement {
     setProcessing(true);
     try {
       await documentsAPI.rejectWithdraw(selected.id);
-      addToast(t('approval.withdraw_rejected_toast'), 'success');
+      // claude 수정 (2026-11-09): 반려 문서의 철회 거부는 결재가 이어지지 않고 반려 상태로 남는다
+      addToast(
+        t(selected.status === 'rejected' ? 'approval.withdraw_rejected_keep_rejected_toast' : 'approval.withdraw_rejected_toast'),
+        'success',
+      );
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -1727,6 +1737,27 @@ export default function ApprovalPage(): React.ReactElement {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // claude 수정 (2026-11-09): 목록 행에서도 철회 요청을 취소할 수 있게 함(상세 모달 없이 목록만 새로고침)
+  const handleCancelWithdrawFromList = async (doc: RequestDocument) => {
+    setProcessing(true);
+    try {
+      await documentsAPI.cancelWithdraw(doc.id);
+      addToast(t('approval.withdraw_cancelled_toast'), 'success');
+      fetchDocs();
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // 철회 요청 취소 가능 여부 — 요청한 본인 또는 MASTER(서버 `can_cancel_withdraw` 와 동일 기준)
+  const canCancelWithdrawOf = (doc: RequestDocument): boolean => {
+    const req = doc.withdraw_request;
+    return !!req
+      && (currentUser.role === 'MASTER' || (!!req.requester_loginid && req.requester_loginid === currentUser.username));
   };
 
   const handleEditResubmit = (doc: RequestDocument) => {
@@ -2356,7 +2387,8 @@ export default function ApprovalPage(): React.ReactElement {
                     <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {doc.can_edit && (doc.status === 'rejected' || doc.status === 'draft') && (
+                        {/* claude 수정 (2026-11-09): 철회 요청 확인 대기 중에는 수정/재상신 숨김(서버도 400), 반려 문서 철회 버튼 노출 */}
+                        {doc.can_edit && !doc.withdraw_request && (doc.status === 'rejected' || doc.status === 'draft') && (
                           <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
                             {t('approval.edit_resubmit')}
                           </button>
@@ -2371,7 +2403,8 @@ export default function ApprovalPage(): React.ReactElement {
                             👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
                           </button>
                         )}
-                        {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'draft' || currentUser.role === 'MASTER') && (
+                        {/* claude 수정 (2026-11-09): 철회 요청중이면 [철회] 대신 요청자 본인/MASTER 에게 [철회 요청 취소] (상세 모달과 동일 기준) */}
+                        {doc.can_withdraw && !doc.withdraw_request && (doc.status === 'under_review' || doc.status === 'draft' || doc.status === 'rejected' || currentUser.role === 'MASTER') && (
                           <button
                             className="btn btn-secondary btn-sm"
                             data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
@@ -2379,6 +2412,15 @@ export default function ApprovalPage(): React.ReactElement {
                             disabled={processing}
                           >
                             {t('approval.withdraw')}
+                          </button>
+                        )}
+                        {canCancelWithdrawOf(doc) && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleCancelWithdrawFromList(doc)}
+                            disabled={processing}
+                          >
+                            {t('approval.withdraw_cancel')}
                           </button>
                         )}
                       </div>
@@ -2611,16 +2653,17 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.withdraw_reason_label')}
                   {needsWithdrawConfirm(withdrawDoc) && <span style={{ color: 'var(--danger)' }}> *</span>}
                 </p>
+                {/* claude 수정 (2026-11-09): 반려 문서 철회는 '관여했던 팀' 확인 기준으로 안내(placeholder·hint) */}
                 <textarea
                   className="form-control"
                   rows={4}
                   value={withdrawReasonInput}
                   onChange={(e) => setWithdrawReasonInput(e.target.value)}
-                  placeholder={t('approval.withdraw_reason_placeholder')}
+                  placeholder={t(withdrawDoc.status === 'rejected' ? 'approval.withdraw_reason_placeholder_rejected' : 'approval.withdraw_reason_placeholder')}
                   style={{ width: '100%', resize: 'vertical' }}
                 />
                 <p style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  {t('approval.withdraw_reason_hint')}
+                  {t(withdrawDoc.status === 'rejected' ? 'approval.withdraw_reason_hint_rejected' : 'approval.withdraw_reason_hint')}
                 </p>
               </>
             )}
@@ -3003,7 +3046,8 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.resume')}
                 </button>
               )}
-              {selected && selected.can_edit && (selected.status === 'rejected' || selected.status === 'draft') && (
+              {/* claude 수정 (2026-11-09): 철회 요청 확인 대기 중에는 수정/재상신 숨김(서버도 400), 반려 문서 철회 버튼 노출 */}
+              {selected && selected.can_edit && !wr && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
                 </button>
@@ -3043,7 +3087,7 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 요청 중에는 중복 요청을 막기 위해 철회 버튼을 감춘다 */}
-              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft' || isMaster) && (
+              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft' || selected.status === 'rejected' || isMaster) && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
@@ -3426,8 +3470,9 @@ export default function ApprovalPage(): React.ReactElement {
 
                     return (
                       <>
+                        {/* claude 수정 (2026-11-09): 반려 문서는 '관여했던 팀 전원 확인' 기준으로 안내 */}
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                          {t('approval.withdraw_confirm_status')}
+                          {t(selected.status === 'rejected' ? 'approval.withdraw_confirm_status_rejected' : 'approval.withdraw_confirm_status')}
                         </div>
                         {zoneIndexes.map((zi) => (
                           <div className="zone-group" key={zi}>

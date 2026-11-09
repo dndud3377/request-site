@@ -1307,15 +1307,45 @@ def w01(ctx):
     return f'doc={doc["id"]} 삭제됨'
 
 
-# claude 수정 (2026-10-15): 2026-08 정책(APPROVAL.md 철회 표) 기준 — 반려 문서는 철회 불가(400), 수정 후 재상신해야 한다
-@case('W-02', 'W', 'rejected 철회 → 400(철회 불가), 문서 유지')
+# claude 수정 (2026-11-09): 반려 문서도 철회 가능 — 관여했던 팀 전원 확인 후 삭제(2026-08 '반려 철회 불가' 폐지)
+@case('W-02', 'W', 'rejected 철회 → 요청 생성(관여 팀 확인), PL 확인 시 삭제')
 def w02(ctx):
     ctx.need(PL=2)
     doc_id, author, pls = F.submitted_doc(ctx)
     F.peer_reject(ctx.actor('PL', 1), doc_id)
-    F.withdraw(author, doc_id, expect=400)
-    F.expect_doc_status(author, doc_id, 'rejected', '(철회 거절 후에도 반려 문서가 남아 있어야 한다)')
-    return f'doc={doc_id} 유지'
+    F.withdraw(author, doc_id, reason='', expect=400)
+    res = F.withdraw(author, doc_id)
+    if (res.body or {}).get('deleted'):
+        raise CaseFailure('반려 문서가 확인 없이 즉시 삭제됐다.')
+    F.expect_doc_status(author, doc_id, 'rejected', '(확인 대기 중에도 반려 상태가 유지돼야 한다)')
+    F.confirm_withdraw(ctx.actor('PL', 1), doc_id, 'PL')
+    F.expect_gone(author, doc_id)
+    return f'doc={doc_id} 삭제됨'
+
+
+# claude 수정 (2026-11-09): R 반려 문서 철회 — PL·R 둘 다 확인 대상, 확인 대기 중 재상신 차단, 거부 시 반려 유지
+@case('W-16', 'W', 'R 반려 문서 철회 → PL·R 확인 대상, 대기 중 재상신 400, 거부 시 반려 유지')
+def w16(ctx):
+    ctx.need(PL=2, TE_R=1)
+    doc_id, author, pls = F.submitted_doc(ctx)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    te_r = ctx.actor('TE_R', 0)
+    F.assign_step(te_r, doc_id, 'R', ctx.user('TE_R', 0))
+    F.reject_step(te_r, doc_id, 'R')
+    F.expect_doc_status(author, doc_id, 'rejected')
+
+    F.withdraw(author, doc_id)
+    doc = F.fetch(author, doc_id)
+    wr = doc.get('withdraw_request') or {}
+    target_agents = sorted({s['agent'] for s in (doc.get('approval_steps') or [])
+                            if s['id'] in (wr.get('target_step_ids') or [])})
+    if target_agents != ['PL', 'R']:
+        raise CaseFailure(f'확인 대상이 PL·R 이 아니다: {target_agents}')
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls], expect=400)
+
+    F.reject_withdraw(te_r, doc_id)
+    F.expect_doc_status(author, doc_id, 'rejected', '(철회 거부 후에도 반려 상태로 남아야 한다)')
+    return f'doc={doc_id} 대상={target_agents}'
 
 
 @case('W-03', 'W', 'approved 철회는 MASTER 만')
