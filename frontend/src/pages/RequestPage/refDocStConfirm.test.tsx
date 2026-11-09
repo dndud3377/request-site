@@ -480,9 +480,9 @@ describe("참조 요청서 '없음' 확정 → J/O 표 st 결정", () => {
     expect(toastsOf('warning')).toContain(i18n.t('request.toast_ba_confirm_released'));
     const stepTabs = Array.from(container.querySelectorAll('.wizard-step')) as HTMLElement[];
     await click(stepTabs[stepTabs.length - 1]);
-    // 요청 기준으로 계산한 요청 목적이 픽스처와 달라 확인 모달이 뜨면 값을 그대로 두고 진행한다.
-    const keep = modalButton(i18n.t('common.cancel'));
-    if (keep) await click(keep);
+    // claude 수정 (2026-11-09): 요청 목적 확인 모달은 취소 없이 '확인'만 있다 — 확인을 눌러 계산된 목적으로 바꾸고 진행한다.
+    const ok = modalButton(i18n.t('common.confirm'));
+    if (ok) await click(ok);
     await click(buttonWith(container, '📤'));
     expect(toastsOf('error')).toContain(i18n.t('request.ba_gate_unconfirmed'));
     expect(onStep1()).toBe(true);

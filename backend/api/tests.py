@@ -10108,6 +10108,54 @@ class MapInfoLockAfterApprovalHistoryTest(TestCase):
                                 {'additional_notes': json.dumps(payload, ensure_ascii=False)}, format='json')
         self.assertEqual(res.status_code, 200, res.content)
 
+    # claude 수정 (2026-11-09): J·O 요청 기준 변경에 따른 신규/차용/신규+차용 사이 요청 목적 변경은 잠금 예외
+    def _patch_with_rows(self, doc, purpose, j_nocs, o_nocs):
+        def rows(prefix, nocs):
+            return [{'id': f'{prefix}_{i}', 'st': 'O', 'new_or_copy': n} for i, n in enumerate(nocs, start=1)]
+        payload = {'detail': {**self.BASE_DETAIL, 'request_purpose': purpose},
+                   'jayerRows': rows('J', j_nocs), 'oayerRows': rows('O', o_nocs), 'bbRows': []}
+        self.client.force_authenticate(user=self.author)
+        return self.client.patch(f'/api/documents/{doc.id}/',
+                                 {'additional_notes': json.dumps(payload, ensure_ascii=False)}, format='json')
+
+    def test_purpose_follows_rows_within_noc_group_allowed(self):
+        """사용자 보고 상황 — R 합의 후 반려된 '신규' 문서에서 요청 기준을 바꿔 목적이 차용·신규+차용이 되면 200."""
+        for purpose, j_nocs, o_nocs in (
+            ('차용', ['차용', '차용'], ['차용']),
+            ('신규+차용', ['신규', '차용'], ['신규']),
+        ):
+            doc = self._doc()
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            res = self._patch_with_rows(doc, purpose, j_nocs, o_nocs)
+            self.assertEqual(res.status_code, 200, f'purpose={purpose} {res.content}')
+
+    def test_purpose_not_matching_rows_rejected(self):
+        """표 요청 기준은 신규인데 목적만 차용으로 바꾸면(직접 API 호출) 400."""
+        doc = self._doc()
+        self._r_approved_in_round3_then_rejected_in_round5(doc)
+        res = self._patch_with_rows(doc, '차용', ['신규'], ['신규'])
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_purpose_outside_noc_group_rejected(self):
+        """신규/차용/신규+차용 밖으로의 변경은 표와 상관없이 400 — 기타(표 계산값과 일치해도)·Only MAP."""
+        for purpose, j_nocs in (('기타', ['미진행']), ('Only MAP', ['신규'])):
+            doc = self._doc()
+            self._r_approved_in_round3_then_rejected_in_round5(doc)
+            res = self._patch_with_rows(doc, purpose, j_nocs, [])
+            self.assertEqual(res.status_code, 400, f'purpose={purpose} {res.content}')
+
+    def test_expected_request_purpose_matches_frontend_rules(self):
+        """프론트 computeExpectedRequestPurpose 단위테스트와 같은 케이스."""
+        calc = RequestDocument.expected_request_purpose
+        row = lambda n: {'new_or_copy': n}  # noqa: E731
+        self.assertEqual(calc([row('신규')], []), '신규')
+        self.assertEqual(calc([], [row('차용')]), '차용')
+        self.assertEqual(calc([row('신규')], [row('차용')]), '신규+차용')
+        self.assertEqual(calc([row('기등록')], [row('layer삭제')]), '기타')
+        self.assertEqual(calc([row('미진행')], []), '기타')
+        self.assertEqual(calc([row('신규'), row('기등록')], []), '신규')
+        self.assertIsNone(calc([], []))
+
 
 class FormOptionsLineProcessProductProcessIdTest(TestCase):
     """의뢰서 작성 Step1 의 라인/조합법/제품이름/조리법 옵션 API.

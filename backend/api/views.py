@@ -3976,16 +3976,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # claude 수정 (2026-11-09): 철회 확인 대기 중에는 수정 저장 차단(반려 문서 철회 — 확인 중 내용이 바뀌지 않게)
         if self._active_withdraw_request(document):
             return Response({'error': self._WITHDRAW_PENDING_EDIT_ERROR}, status=status.HTTP_400_BAD_REQUEST)
-        # claude 수정 (2026-11-05): MASTER 는 MAP 정보 잠금 예외
+        # claude 수정 (2026-11-09): MASTER 예외(2026-11-05) 유지 + 요청 기준에 따른 신규/차용/신규+차용 변경 허용을 위해 표(new_notes)도 넘긴다
         if doc_permissions.map_info_locked(document, request.user):
             raw_notes = request.data.get('additional_notes')
             if raw_notes is not None:
                 import json
                 try:
-                    new_detail = json.loads(raw_notes).get('detail', {})
+                    new_notes = json.loads(raw_notes)
+                    new_detail = new_notes.get('detail', {})
                 except (TypeError, ValueError, AttributeError):
+                    new_notes = None
                     new_detail = None
-                if new_detail is not None and document.changed_map_info_fields(new_detail):
+                if new_detail is not None and document.changed_map_info_fields(new_detail, new_notes):
                     return Response(
                         {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보와 요청 목적·라인·조합법·제품 이름·조리법을 수정할 수 없습니다.'},
                         status=status.HTTP_400_BAD_REQUEST,
