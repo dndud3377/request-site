@@ -2438,7 +2438,8 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 ### 적용 지점
 | 지점 | 동작 |
 |---|---|
-| 프론트 `RequestPage` `openSubmitConfirm` | **신규·임시저장 문서**에서 '상신'을 누르면 상신 모달을 열기 전에 `duplicate-check` 호출. 중복이면 상신 모달 대신 안내 모달 |
+| 프론트 `RequestPage` `goToStep` STEP1 관문 (2026-11-09) | **신규·임시저장 문서**에서 STEP1 '다음'(또는 인디케이터 탭으로 앞 단계 이동)을 누르면 STEP1 검증 통과 직후 `duplicate-check` 호출. 중복이면 STEP1 에 머물고 안내 모달(완전 차단, '계속 진행' 없음). 상세는 `docs/REQUEST.md` "기능 변경 (2026-11-09 …)" 절 |
+| 프론트 `RequestPage` `openSubmitConfirm` | **신규·임시저장 문서**에서 '상신'을 누르면 상신 모달을 열기 전에 `duplicate-check` 호출. 중복이면 상신 모달 대신 안내 모달. STEP1 관문 이후 키·요청 목적이 바뀌었거나 그사이 다른 사람이 상신한 경우 대비로 유지(2026-11-09 사용자 결정) |
 | 백엔드 `submit` `_validate_not_duplicate` | 같은 규칙으로 400(API 직접 호출 우회 방지 안전망). 인가 직후, 다른 검증보다 먼저 |
 | `resubmit` · `requester-resubmit` · `resume` · `peer-submit` 등 | **검사하지 않는다** — 이미 결재 현황에 있는 문서(기존 중복 문서 포함)의 결재에 영향을 주지 않기 위해(2026-11-04 사용자 결정) |
 
