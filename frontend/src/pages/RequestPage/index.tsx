@@ -4902,6 +4902,48 @@ export default function RequestPage(): React.ReactElement {
   //  · 앞으로(target > step): 현재 단계부터 target 직전까지를 순서대로 검증하고, 처음 막힌 단계에
   //    멈춰 오류를 보여준다. **통과 여부를 캐시하지 않는다** — 되돌아가 필수값을 지웠다면 그 즉시
   //    다시 막혀야 하기 때문이다(한 번 통과했다는 기록을 남기면 이 요구사항이 깨진다).
+  // claude 수정 (2026-11-09): 중복 상신 차단을 STEP1 '다음'에서도 한다 — STEP2~5 를 다 쓴 뒤 상신 시점에야 막혀 작성 시간이 낭비되던 문제.
+  // 최초 상신(신규·임시저장)일 때만 확인한다. 반려 재상신·중단 재개·의뢰자 재상신·지정 PL 수정 상신은 이미 결재 현황에 있는 문서라 확인하지 않는다.
+  const isFirstSubmitDoc = !isPeerReviewMode && (editDocStatus === null || editDocStatus === 'draft');
+  // 이번 이동에서 중복 확인을 이미 통과했는가 — 확인 뒤 이어지는 관문(참조 요청서 확정·특별 관리 사항)이 다시 goToStep 을 불러도 재확인하지 않는다.
+  const duplicateClearedRef = useRef(false);
+  // 중복 확인 응답을 기다리는 중 — '다음' 연타로 확인이 겹치지 않게 막는다.
+  const duplicateCheckingRef = useRef(false);
+
+  /** 같은 라인·제품·process_id 의 반려/진행 중 요청서가 있으면 안내 모달을 열고 true. 없거나 확인 실패(경고 토스트)면 false. */
+  const showDuplicateIfAny = async (): Promise<boolean> => {
+    try {
+      const res = await documentsAPI.duplicateCheck({
+        line: detail.line,
+        partid_selection: detail.partid_selection,
+        process_id: detail.process_id,
+        request_purpose: detail.request_purpose,
+        exclude_id: savedId,
+      });
+      if (res.data.duplicate) {
+        setDuplicateDoc(res.data.duplicate);
+        return true;
+      }
+    } catch {
+      // 확인 실패로 진행 자체를 막지는 않는다 — 서버 submit 이 같은 규칙으로 다시 막는다(안전망).
+      addToast(t('request.duplicate_check_failed'), 'warning');
+    }
+    return false;
+  };
+
+  /** STEP1 을 벗어나기 전 중복 확인 — 중복이면 STEP1 에 머물고(완전 차단), 아니면 원래 목적지로 이어서 이동한다. */
+  const runStep1DuplicateGate = async (target: number) => {
+    if (duplicateCheckingRef.current) return;
+    duplicateCheckingRef.current = true;
+    try {
+      if (await showDuplicateIfAny()) return;
+    } finally {
+      duplicateCheckingRef.current = false;
+    }
+    duplicateClearedRef.current = true;
+    goToStep(target);
+  };
+
   const goToStep = (target: number) => {
     if (target === step || target < 1 || target > lastStep) return;
 
@@ -4926,6 +4968,11 @@ export default function RequestPage(): React.ReactElement {
       if (s === 4) sortOayerRowsBySp();
       // 검증은 통과했으나 사용자 확인이 필요한 관문. 확인 후 원래 목적지까지 이어서 가야 하므로
       // 목적지를 보관하고, 관문이 있는 단계로 먼저 이동해 둔다(취소하면 그 단계에 머문다).
+      // claude 수정 (2026-11-09): STEP1 검증 통과 직후, 다른 확인 모달보다 먼저 중복 확인 — 다른 모달에 답한 뒤 막히지 않게 한다.
+      if (s === 1 && isFirstSubmitDoc && !duplicateClearedRef.current) {
+        void runStep1DuplicateGate(target);
+        return;
+      }
       // claude 수정 (2026-10-20): 참조 요청서 '없음' 표를 확정하지 않았으면 확정 모달을 먼저 띄운다 — 확인하면 확정 후 이어서 이동한다.
       if (s === 1 && refDocStLocked && !detail.merge_confirmed) {
         if (s !== step) setStep(s);
@@ -4968,6 +5015,7 @@ export default function RequestPage(): React.ReactElement {
 
     setPendingStepTarget(null);
     ackedStepGatesRef.current = { specialCare: false, tbvtlv: false, purposeMismatch: false };
+    duplicateClearedRef.current = false;
     setStep(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -4975,8 +5023,10 @@ export default function RequestPage(): React.ReactElement {
   // 사용자가 새로 시작하는 이동('다음'/'이전' 버튼·탭 클릭)의 진입점.
   // 관문 확인 기록을 여기서만 비운다 — ConfirmModal 이 onConfirm 직후 항상 onClose 를 부르므로
   // onClose 에서 비우면 방금 이어서 뜬 다음 관문의 기록까지 지워진다.
+  // claude 수정 (2026-11-09): 새 이동마다 STEP1 중복 확인도 다시 하도록 통과 기록을 비운다.
   const startStepMove = (target: number) => {
     ackedStepGatesRef.current = { specialCare: false, tbvtlv: false, purposeMismatch: false };
+    duplicateClearedRef.current = false;
     goToStep(target);
   };
 
@@ -5054,27 +5104,8 @@ export default function RequestPage(): React.ReactElement {
 
   /** 상신 모달(지정 PL·통보처)을 연다 — 후보 목록을 불러온 뒤 입력 상태를 초기화한다. */
   const openSubmitConfirm = async () => {
-    // claude 수정 (2026-11-04): 중복 상신 차단 — 최초 상신(신규·임시저장)일 때만 같은 요청서가 있는지 먼저 확인한다.
-    // 반려 재상신·중단 재개·의뢰자 재상신·지정 PL 수정 상신은 이미 결재 현황에 있는 문서라 확인하지 않는다.
-    const isFirstSubmit = !isPeerReviewMode && (editDocStatus === null || editDocStatus === 'draft');
-    if (isFirstSubmit) {
-      try {
-        const res = await documentsAPI.duplicateCheck({
-          line: detail.line,
-          partid_selection: detail.partid_selection,
-          process_id: detail.process_id,
-          request_purpose: detail.request_purpose,
-          exclude_id: savedId,
-        });
-        if (res.data.duplicate) {
-          setDuplicateDoc(res.data.duplicate);
-          return;
-        }
-      } catch {
-        // 확인 실패로 상신 자체를 막지는 않는다 — 서버 submit 이 같은 규칙으로 다시 막는다(안전망).
-        addToast(t('request.duplicate_check_failed'), 'warning');
-      }
-    }
+    // claude 수정 (2026-11-09): 중복 확인 로직을 showDuplicateIfAny 로 옮겨 STEP1 '다음'과 같이 쓴다(상신 시점 확인은 유지).
+    if (isFirstSubmitDoc && await showDuplicateIfAny()) return;
     // peer review 모드가 아닐 때만 PL 목록 로드
     if (!isPeerReviewMode && plUserOptions.length === 0) {
       try {
