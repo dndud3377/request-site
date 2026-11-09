@@ -406,12 +406,50 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 | 상태 | 동작 | 사유 |
 |---|---|---|
 | `draft` | 확인 없이 **즉시 삭제** (결재선이 없다). 프론트는 사유 입력란 없이 단순 확인 모달만 띄운다(2026-08) | 선택 |
-| `rejected` | **철회 불가**(400) — 수정 후 재상신해야 한다(2026-08, 철회 버튼도 노출하지 않음) | - |
+| `rejected` | **철회 요청 생성** → 이 문서에 **관여했던 팀 전원** 확인 시 삭제(2026-11, 아래 "반려 문서 철회" 참고). 2026-08 의 '철회 불가'는 폐지 | **필수** |
 | `approved` | **MASTER 만** 즉시 삭제, 그 외 403 (결재 완료본 = 이력, `can_delete` 와 같은 기준) | 선택 |
 | `under_review` / `submitted` | **철회 요청 생성** → 현재 단계 전원 확인 시 삭제 | **필수** |
 | `pause` | 400 — 재개한 뒤 철회한다 | - |
 
 응답의 `deleted`(bool)로 "이미 삭제됨"과 "요청만 접수됨"을 구분한다.
+
+**반려 문서 철회 (2026-11-09 추가)**
+
+반려 문서가 정리되지 않고 계속 쌓이는 문제(사용자 리포트)로, 2026-08 에 막았던 반려 문서 철회를
+다시 허용한다. 단 **즉시 삭제가 아니라 관여했던 팀 전원의 확인**을 받는다 — 반려 문서에는
+진행 중(pending) 단계가 없으므로 '현재 단계'가 아니라 이 문서에 실제로 관여한 팀이 확인 대상이다
+(2026-09 "반려했던 담당자가 모르는 사이 문서가 사라지면 안 된다" 원칙 유지).
+
+- **요청 자격**: 기존 `can_withdraw` 그대로(MASTER / 의뢰자 / 지정 PL / 공유 그룹 멤버). MASTER 는
+  종전대로 확인 없이 즉시 삭제한다. 사유는 **필수**(빈 사유 400).
+- **확인 대상(`_rejected_withdraw_target_steps`, `views.py`)**
+  - **1구역(PL·SA)**: **최신 회차**의 PL·SA 단계 전부. 담당자가 지정돼 있으면 관여로 보므로, 다중 PL
+    중 아직 결정하지 않은 PL 도 포함한다(2026-11 결정). 담당자 없는 대기 단계만 뺀다.
+  - **2·3구역(R·P·J·O·E·RA)**: `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 가장 최근 회차 단계
+    1건을 대표로 삼고, 대기중(미선점·담당자 없음)이었던 팀은 뺀다. 반려 문서에는 '현재 구역'이 없으므로
+    1구역보다 깊은 구역 전부가 대상이다(`current_zone_idx=0` 으로 호출).
+  - 대상이 0건이면(비정상 데이터) 400 `철회를 확인할 결재 단계가 없습니다.` — 요청을 만들지 않는다.
+  - 예) 1회차 PL 합의 → R 반려 → 대상 = PL·R. 1회차 R 합의·J 반려(O 미선점) → 2회차 PL 반려(PL 2명) →
+    대상 = 2회차 PL 2명·R·J(O 제외).
+- **확인·거부·취소**: 서버 로직 변경 없음. 최신 회차의 대기 단계(검토중 등 담당자 있는 pending)는
+  `_can_confirm_pause`(담당자 본인), 그 외(합의·반려된 단계, 이전 회차 단계)는 `_can_confirm_extra_zone`
+  ("지금 그 팀" 누구나, PL·SA 는 그 단계 담당자 본인, RA 는 현재 후결자 전원)으로 판정한다.
+  전원 확인 → 삭제 + `withdraw_completed` 메일. 한 단계라도 거부 → 요청 무효, 문서는 **반려 상태 유지**
+  (응답 문구 `의뢰서는 반려 상태로 유지됩니다.`). 요청자 취소 → 반려 상태 유지.
+- **동결**: 반려 문서는 결재가 진행되지 않으므로, 대신 확인 대기 중에는 **수정 저장(`update`, PUT/PATCH)과
+  재상신(`resubmit`)이 400**(`_WITHDRAW_PENDING_EDIT_ERROR`)이다 — 확인 도중 회차가 바뀌면 대상 단계가
+  무의미해진다. 이 `update` 차단은 상태와 무관하게 활성 철회 요청이 있으면 적용된다(진행 중 문서도 동일).
+  프론트는 철회 요청중이면 [수정/재상신] 버튼을 숨긴다.
+- **프론트(`ApprovalPage.tsx`)**: 목록·상세의 철회 버튼을 반려 문서에도 노출, `needsWithdrawConfirm` 에
+  `rejected` 포함(사유 필수·'철회 요청' 버튼). 반려 문서 전용 문구 — i18n
+  `approval.withdraw_reason_placeholder_rejected` / `withdraw_reason_hint_rejected` /
+  `withdraw_requested_rejected_toast` / `withdraw_rejected_keep_rejected_toast` / `withdraw_confirm_status_rejected`.
+  목록 칩·상세 배너(구역별 확인 현황)는 기존 컴포넌트를 그대로 쓴다.
+- 테스트: `backend/api/tests.py::WithdrawFlowTest` `test_rejected_withdraw_*` 9건. 러너 W-02·W-16.
+- ⚠️ **알려진 한계(2026-11-09 기록, 미수정)**: 삭제 API(`POST /api/documents/{id}/delete/`, `can_delete`)는
+  반려·진행 중 문서를 의뢰자·지정 PL 이 **확인 절차 없이** 지울 수 있다(`doc_permissions.can_delete`:
+  approved 외 상태는 MASTER/의뢰자/지정 PL). 화면에는 결재 현황에 삭제 버튼이 없지만 API 직접 호출로
+  "관여 팀 전원 확인" 원칙을 우회할 수 있다. 사용자 결정으로 이번에는 기록만 남긴다.
 
 **요청 → 확인 → 삭제**
 
@@ -1450,10 +1488,10 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 결재 경로 변경 (2026-10) | 작성자(`requester_loginid`)/MASTER + under_review + 확인 대기 요청 없음 | `changeRoute` (`RouteChangeModal`) |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
-| 철회 | `can_withdraw` + 철회 요청중이 아닐 때 | 사유 입력 모달 → `withdraw`(진행 중이면 철회 요청, 그 외 즉시 삭제) |
+| 철회 | `can_withdraw` + 철회 요청중이 아닐 때 (draft / under_review / rejected(2026-11) / MASTER 는 전부) | 사유 입력 모달 → `withdraw`(진행 중·반려면 철회 요청, 그 외 즉시 삭제) |
 | 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함) | `confirmWithdraw` / `rejectWithdraw` |
 | 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중) | `cancelWithdraw` |
-| 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
+| 수정 후 재상신 | rejected/draft + 철회 요청중이 아닐 때(2026-11) | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
 | 중단 확인 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmPause` |
 | 중단 요청 취소 | 작성자 (요청중) | `cancelPause` |
@@ -2460,7 +2498,8 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 ### 알려진 한계
 - **이미 쌓인 중복 문서는 정리하지 않는다**(이번 범위 밖). 기존 반려 문서와 같은 키의 새 문서는 이제부터 상신이 막힌다.
 - MAP 정보가 잠긴 반려 문서: 'MAP 삭제' 요청서는 상신되지만, **그 뒤의 새 일반 요청서는 원래 반려 문서에 계속 막힌다**.
-  반려 문서는 철회가 안 되므로(Case J) 이때는 MASTER 가 원래 반려 문서를 삭제해야 한다.
+  (2026-11) 이제 반려 문서도 철회할 수 있으므로(Case J "반려 문서 철회"), 원래 반려 문서를 철회 요청 → 관여 팀
+  확인으로 삭제하거나 MASTER 가 삭제한다.
 - 다른 사람의 반려 문서와 겹치면 본인은 그 문서를 재상신할 권한이 없다(의뢰자·공유 그룹 멤버·MASTER 만). 모달의 의뢰자 이름으로 연락한다.
 - 반려 문서를 편집하면서 라인·제품·process_id 를 다른 진행 중 문서와 같게 바꿔 재상신하는 것은 막지 않는다(재상신은 검사하지 않음).
 
