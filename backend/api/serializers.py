@@ -1,13 +1,13 @@
 import re
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from django.db.models import Min
+from django.db.models import Max, Min
 from django.utils import timezone
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
     RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory, RoundSubmission,
-    MapSchedule,
+    MapSchedule, PersonalFilterPreset,
 )
 from . import doc_permissions
 from .pop3_mail import TARGET_STATUSES as MAP_BADGE_TARGET_STATUSES
@@ -868,6 +868,64 @@ class PersonalMarkCategorySerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+# claude 수정 (2026-11-09): 결재 현황 '나만의 필터' 시리얼라이저 — 이름 중복·10개 제한·3종 모두 빔을 서버에서 막는다
+class PersonalFilterPresetSerializer(serializers.ModelSerializer):
+    """나만의 필터. 소유자(user)·순서(order)는 서버가 정한다 — 순서는 reorder 액션으로만 바꾼다."""
+
+    VALUE_MAX_LENGTH = 50
+    LIST_FIELDS = ('lines', 'purposes', 'map_purposes')
+
+    name = serializers.CharField(max_length=PersonalFilterPreset.NAME_MAX_LENGTH)
+    lines = serializers.ListField(
+        child=serializers.CharField(max_length=VALUE_MAX_LENGTH), required=False, allow_empty=True)
+    purposes = serializers.ListField(
+        child=serializers.CharField(max_length=VALUE_MAX_LENGTH), required=False, allow_empty=True)
+    map_purposes = serializers.ListField(
+        child=serializers.CharField(max_length=VALUE_MAX_LENGTH), required=False, allow_empty=True)
+
+    class Meta:
+        model = PersonalFilterPreset
+        fields = ['id', 'name', 'lines', 'purposes', 'map_purposes', 'order']
+        read_only_fields = ['order']
+
+    def _owner(self):
+        return self.context['request'].user
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError('필터 이름을 입력하세요.')
+        dup = PersonalFilterPreset.objects.filter(user=self._owner(), name=name)
+        if self.instance is not None:
+            dup = dup.exclude(pk=self.instance.pk)
+        if dup.exists():
+            raise serializers.ValidationError('같은 이름의 필터가 이미 있습니다.')
+        return name
+
+    def validate(self, attrs):
+        for field in self.LIST_FIELDS:
+            if field in attrs:
+                attrs[field] = list(dict.fromkeys(attrs[field]))  # 순서 유지 중복 제거
+        merged = {
+            field: attrs.get(field, getattr(self.instance, field, []) if self.instance else [])
+            for field in self.LIST_FIELDS
+        }
+        if not any(merged.values()):
+            raise serializers.ValidationError('라인·목적·MAP 목적 중 하나 이상 선택해야 저장할 수 있습니다.')
+        if self.instance is None:
+            if PersonalFilterPreset.objects.filter(user=self._owner()).count() >= PersonalFilterPreset.MAX_PER_USER:
+                raise serializers.ValidationError(
+                    f'나만의 필터는 최대 {PersonalFilterPreset.MAX_PER_USER}개까지 저장할 수 있습니다.')
+        return attrs
+
+    def create(self, validated_data):
+        owner = self._owner()
+        last = PersonalFilterPreset.objects.filter(user=owner).aggregate(m=Max('order'))['m']
+        validated_data['user'] = owner
+        validated_data['order'] = 0 if last is None else last + 1
         return super().create(validated_data)
 
 
