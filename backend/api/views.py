@@ -33,7 +33,7 @@ from .models import (
     VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
-    PersonalMarkCategory, PersonalDocumentMark, RoundSubmission,
+    PersonalMarkCategory, PersonalDocumentMark, RoundSubmission, PersonalFilterPreset,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
 from .search_filters import AdiCdTargetSearchFilter
@@ -51,6 +51,7 @@ from .serializers import (
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
     RejectionSnapshotSerializer, LayerFilterSetSerializer, PersonalMarkCategorySerializer,
+    PersonalFilterPresetSerializer,
 )
 import os
 import uuid
@@ -4080,6 +4081,46 @@ class PersonalMarkCategoryViewSet(viewsets.ModelViewSet):
         if not getattr(self.request.user, 'is_authenticated', False):
             raise NotAuthenticated()
         serializer.save()
+
+
+# claude 수정 (2026-11-09): 결재 현황 '나만의 필터' CRUD + 순서 변경 — 분류(PersonalMarkCategoryViewSet)와 같은 본인 전용 방식
+class PersonalFilterPresetViewSet(viewsets.ModelViewSet):
+    """나만의 필터 CRUD. 항상 요청한 사용자 것만 조회·수정·삭제한다 — 다른 사용자와 공유되지 않는다."""
+    serializer_class = PersonalFilterPresetSerializer
+    permission_classes = [IsAuthenticatedInProd]
+    pagination_class = None
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        user = self.request.user
+        if not getattr(user, 'is_authenticated', False):
+            return PersonalFilterPreset.objects.none()
+        return PersonalFilterPreset.objects.filter(user=user)
+
+    def perform_create(self, serializer):
+        # 개발 모드는 IsAuthenticatedInProd 가 비인증 요청도 통과시키므로 여기서 막는다(분류와 동일).
+        if not getattr(self.request.user, 'is_authenticated', False):
+            raise NotAuthenticated()
+        serializer.save()
+
+    @action(detail=False, methods=['post'])
+    def reorder(self, request):
+        """순서 변경. body {ids: [...]} 는 내 필터 id 전체를 원하는 순서로 정확히 한 번씩 담아야 한다."""
+        if not getattr(request.user, 'is_authenticated', False):
+            raise NotAuthenticated()
+        ids = request.data.get('ids')
+        if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+            raise ValidationError({'ids': '필터 id 목록(정수 배열)이 필요합니다.'})
+        presets = {p.id: p for p in self.get_queryset()}
+        if len(ids) != len(set(ids)) or set(ids) != set(presets):
+            raise ValidationError({'ids': '내 필터 id 전체를 한 번씩 담아야 합니다.'})
+        with transaction.atomic():
+            for order, preset_id in enumerate(ids):
+                preset = presets[preset_id]
+                if preset.order != order:
+                    preset.order = order
+                    preset.save(update_fields=['order'])
+        return Response(self.get_serializer(self.get_queryset(), many=True).data)
 
 
 class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
