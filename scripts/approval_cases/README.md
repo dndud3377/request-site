@@ -1,6 +1,6 @@
 # 결재 경우의 수 케이스 러너 (개발환경 전용)
 
-`docs/APPROVAL_CASES_VALIDATION.md` 에 열거한 **133개 케이스를 개발환경에서 실제로 실행**한다.
+`docs/APPROVAL_CASES_VALIDATION.md` 에 열거한 **134개 케이스를 개발환경에서 실제로 실행**한다.
 
 - **개발용 사이트의 Django REST API 를 직접 호출**해 케이스마다 의뢰서를 **실제로 상신**하고
   결재를 끝까지 진행한다. 화면 조작이나 모의 객체 없이
@@ -112,7 +112,7 @@ GET /api/form-options/ovl-layer/         → O-layer 행
 | 파일 | 역할 |
 |---|---|
 | `run_cases.py` | CLI 진입점 · 결과 표/보고서 출력 |
-| `cases.py` | 케이스 133건 정의(문서의 ID 와 1:1) |
+| `cases.py` | 케이스 134건 정의(문서의 ID 와 1:1) |
 | `flows.py` | 상신·합의·반려·중단·철회 조작 + 검증 헬퍼 |
 | `payload.py` | 화면과 같은 모양의 의뢰서 payload 빌더 |
 | `masterdata.py` | 실제 DB 마스터 데이터·역할 계정 탐색 |

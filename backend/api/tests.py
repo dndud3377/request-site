@@ -3734,7 +3734,7 @@ class WithdrawFlowTest(TestCase):
     """철회 = '요청 → 현재 단계 전원 확인 → 완전 삭제' (2026-08 개편).
 
     - draft 는 확인 없이 즉시 삭제(사유 선택), approved 는 MASTER 만
-    - rejected 는 철회 불가(400) — 수정 후 재상신해야 한다
+    - rejected 는 사유 필수 + 철회 요청 생성 → 관여했던 팀 전원 확인 시 삭제(2026-11)
     - under_review/submitted 는 사유 필수 + 철회 요청 생성 → 전원 확인 시 삭제
     - 확인 대기 중에는 결재 동결, 요청자만 취소 가능, 대상 단계는 거부 가능
     """
@@ -3825,12 +3825,126 @@ class WithdrawFlowTest(TestCase):
         self.assertTrue(res.data['deleted'])
         self.assertFalse(self._exists(doc))
 
-    def test_rejected_cannot_be_withdrawn(self):
-        """반려 문서는 철회할 수 없다(2026-08) — 수정 후 재상신해야 한다."""
+    # claude 수정 (2026-11-09): 반려 문서 철회 — '철회 불가(400)' 테스트를 관여 팀 전원 확인 흐름 테스트로 교체
+    # ----- 반려 문서 철회: 관여했던 팀 전원 확인 후 삭제 -----
+    def _rejected_doc_at_r(self):
+        """1회차 PL 합의 → R 반려된 반려 문서."""
         doc = self._doc('rejected')
-        self._step(doc, 'R', action='rejected', assignee=self.rfg)
-        res = self._post(self.author, doc, 'withdraw', {'reason': '재작성'})
+        pl_step = self._step(doc, 'PL', action='approved', assignee=self.pl)
+        r_step = self._step(doc, 'R', action='rejected', assignee=self.rfg)
+        return doc, pl_step, r_step
+
+    def test_rejected_withdraw_requires_reason(self):
+        doc, _pl, _r = self._rejected_doc_at_r()
+        res = self._post(self.author, doc, 'withdraw', {'reason': '  '})
         self.assertEqual(res.status_code, 400)
+        self.assertFalse(WithdrawRequest.objects.filter(document=doc).exists())
+        self.assertTrue(self._exists(doc))
+
+    def test_rejected_withdraw_creates_request_for_involved_teams(self):
+        """반려 문서 철회는 즉시 삭제가 아니라 관여했던 팀(PL·R) 확인 요청을 만든다."""
+        doc, pl_step, r_step = self._rejected_doc_at_r()
+        res = self._post(self.author, doc, 'withdraw', {'reason': '불필요해짐'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        self.assertTrue(self._exists(doc))
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(wr.state, 'requested')
+        self.assertCountEqual(wr.target_step_ids, [pl_step.id, r_step.id])
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        noti = MailNotification.objects.get(event_type='withdraw_requested')
+        self.assertCountEqual(noti.recipients, ['wd_pl@c.com', 'wd_r@c.com'])
+
+    def test_rejected_withdraw_targets_latest_round_pls_and_deeper_zones(self):
+        """1구역은 최신 회차 PL 전원(미결정 PL 포함), 2·3구역은 팀별 최근 관여 단계(미선점 팀 제외)."""
+        pl2 = UserProfile.objects.create(loginid='wd_pl2', mail='wd_pl2@c.com', role='PL', username='지정PL2')
+        doc = self._doc('rejected')
+        self._step(doc, 'PL', action='approved', assignee=self.pl, round=1)
+        r1 = self._step(doc, 'R', action='approved', assignee=self.rfg, round=1)
+        j1 = self._step(doc, 'J', action='rejected', assignee=self.job, round=1)
+        self._step(doc, 'O', round=1)  # 미선점(대기) → 제외
+        pl_rejected = self._step(doc, 'PL', action='rejected', assignee=self.pl, round=2)
+        pl_undecided = self._step(doc, 'PL', assignee=pl2, round=2)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [pl_rejected.id, pl_undecided.id, r1.id, j1.id])
+
+    def test_rejected_withdraw_all_confirm_deletes_document(self):
+        doc, _pl, _r = self._rejected_doc_at_r()
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        # R 단계는 '지금 그 팀' 누구나 확인할 수 있다(반려했던 담당자 본인일 필요 없음)
+        res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+        self.assertIn('withdraw_completed', self._events())
+
+    def test_rejected_withdraw_confirm_by_other_team_is_forbidden(self):
+        doc, _pl, _r = self._rejected_doc_at_r()
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.job, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 403)
+        # PL 단계는 그 PL 본인만(다른 PL 역할 사용자는 불가)
+        res = self._post(self.author, doc, 'confirm-withdraw', {'agent': 'PL'})
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    def test_rejected_withdraw_reject_keeps_document_rejected(self):
+        doc, _pl, _r = self._rejected_doc_at_r()
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'reject-withdraw')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertIn('반려 상태로 유지', res.data['message'])
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'rejected')
+        self.assertIn('withdraw_rejected', self._events())
+
+    def test_rejected_withdraw_cancel_keeps_document_rejected(self):
+        doc, _pl, _r = self._rejected_doc_at_r()
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.author, doc, 'cancel-withdraw')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'cancelled')
+
+    def test_rejected_withdraw_pending_blocks_resubmit_and_edit(self):
+        """확인 대기 중에는 수정 저장·재상신이 막히고, 취소되면 다시 수정할 수 있다."""
+        doc, _pl, _r = self._rejected_doc_at_r()
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.author, doc, 'resubmit', {'designated_pl_loginids': ['wd_pl']})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('철회 요청 확인 대기', res.data['error'])
+
+        self.client.force_authenticate(user=self.author)
+        res = self.client.patch(f'/api/documents/{doc.id}/', {'title': '바꾼 제목'}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('철회 요청 확인 대기', res.data['error'])
+        doc.refresh_from_db()
+        self.assertEqual(doc.title, 'wd-rejected')
+
+        self._post(self.author, doc, 'cancel-withdraw')
+        self.client.force_authenticate(user=self.author)
+        res = self.client.patch(f'/api/documents/{doc.id}/', {'title': '바꾼 제목'}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_rejected_withdraw_without_involved_step_is_blocked(self):
+        """확인할 관여 단계가 하나도 없으면(비정상 데이터) 요청을 만들지 않는다."""
+        doc = self._doc('rejected')
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(WithdrawRequest.objects.filter(document=doc).exists())
         self.assertTrue(self._exists(doc))
 
     def test_approved_is_master_only(self):
@@ -4022,7 +4136,7 @@ class WithdrawFlowTest(TestCase):
 
     # ----- MASTER 는 제약 없이 즉시 삭제(2026-08) -----
     def test_master_can_withdraw_rejected_immediately(self):
-        """MASTER 는 반려 문서도(다른 사용자는 400) 사유 없이 즉시 삭제한다."""
+        """MASTER 는 반려 문서도(다른 사용자는 관여 팀 확인 요청) 사유 없이 즉시 삭제한다."""
         doc = self._doc('rejected')
         self._step(doc, 'R', action='rejected', assignee=self.rfg)
         res = self._post(self.master, doc, 'withdraw', {})
