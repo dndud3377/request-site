@@ -864,6 +864,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
         if not self._can_edit(request.user, document):
             return Response({'error': '재상신 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        # claude 수정 (2026-11-09): 반려 문서 철회 확인 대기 중 재상신 차단(확인 도중 회차가 바뀌지 않게)
+        if self._active_withdraw_request(document):
+            return Response({'error': self._WITHDRAW_PENDING_EDIT_ERROR}, status=status.HTTP_400_BAD_REQUEST)
 
         pl_users, err = self._resolve_designated_pls(request, document)
         if err:
@@ -1099,10 +1102,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     # 확인 절차 없이 즉시 삭제되는 문서 상태 — 결재선이 아직 없거나(draft) 이미 종료돼
     # (approved) '확인'을 받을 진행 중 단계가 존재하지 않는다.
-    # ⚠️ rejected 는 제외한다(2026-08) — 반려 문서는 철회(삭제)할 수 없고 수정 후 재상신만 가능하다.
     _WITHDRAW_IMMEDIATE_STATUSES = ('draft', 'approved')
     # 현재 단계 전원의 확인을 받아야 철회되는 상태
     _WITHDRAW_CONFIRM_STATUSES = ('under_review', 'submitted')
+    # claude 수정 (2026-11-09): 반려 문서도 철회 가능 — 관여했던 팀 전원 확인 후 삭제(2026-08 '반려 철회 불가' 폐지)
+    # 반려 문서는 진행 중 단계가 없으므로, 이 문서에 관여했던 팀 전원의 확인을 받아야 철회된다.
+    _WITHDRAW_REJECTED_STATUS = 'rejected'
+    _WITHDRAW_PENDING_EDIT_ERROR = '철회 요청 확인 대기 중인 의뢰서는 수정·재상신할 수 없습니다. 철회가 거부·취소된 뒤 진행해 주세요.'
 
     def _zone_index(self, document, agent):
         for i, zone in enumerate(document.pause_zones()):
@@ -1132,6 +1138,24 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step for step in latest_by_agent.values()
             if not (step.action == 'pending' and not step.assignee_id)
         ]
+
+    # claude 수정 (2026-11-09): 반려 문서 철회 확인 대상 = 1구역(최신 회차 PL·SA) + 2·3구역 관여 팀
+    def _rejected_withdraw_target_steps(self, document, max_round):
+        """반려 문서 철회 시 확인을 받아야 하는 단계 목록 — 이 문서에 관여했던 팀 전원.
+
+        - 1구역(PL·SA): 최신 회차의 단계 전부(담당자가 지정돼 있으면 관여로 본다 — 다중 PL 중
+          아직 결정하지 않은 PL 도 포함, 2026-11 결정). 담당자 없는 대기 단계만 뺀다.
+        - 2·3구역(R·P·J·O·E·RA): `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 가장 최근
+          회차의 단계 1건을 대표로, 대기중(미선점)이었던 팀은 제외. 반려 문서에는 '현재 구역'이
+          없으므로 1구역(인덱스 0)보다 깊은 구역 전부가 대상이다.
+        """
+        zone_1_steps = [
+            step for step in ApprovalStep.objects.filter(
+                document=document, round=max_round, agent__in=RequestDocument.PAUSE_ZONE_1_AGENTS,
+            )
+            if not (step.action == 'pending' and not step.assignee_id)
+        ]
+        return zone_1_steps + self._extra_zone_target_steps(document, 0)
 
     def _can_confirm_extra_zone(self, user, step):
         """'이전 회차 도달 구역' 철회 확인 인가 — 그 회차의 담당자 개인이 아니라 '지금 그 팀'.
@@ -1190,7 +1214,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
         - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
           이 경로만 **사유(reason) 필수**이고, 확인 대기 동안 결재가 동결된다.
-        - rejected         : 철회할 수 없다(400) — 수정 후 재상신해야 한다(2026-08).
+        - rejected         : 철회 요청 생성 → 이 문서에 관여했던 팀 전원 확인 시 삭제
+          (2026-11, `_rejected_withdraw_target_steps`). 사유 필수, 확인 대기 동안 수정·재상신 차단.
         - pause            : 재개한 뒤 철회해야 한다(400).
         """
         document = self.get_object()
@@ -1216,13 +1241,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             self._delete_withdrawn_document(request, document, reason)
             return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
 
-        if document.status == 'rejected':
-            return Response(
-                {'error': '반려된 의뢰서는 철회할 수 없습니다. 수정 후 재상신해 주세요.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if document.status not in self._WITHDRAW_CONFIRM_STATUSES:
+        # claude 수정 (2026-11-09): 반려 문서도 철회 요청 대상(관여 팀 전원 확인) — 400 차단 제거
+        is_rejected = document.status == self._WITHDRAW_REJECTED_STATUS
+        if not is_rejected and document.status not in self._WITHDRAW_CONFIRM_STATUSES:
             return Response(
                 {'error': '철회할 수 없는 상태입니다. 중단된 의뢰서는 재개한 뒤 철회해 주세요.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1237,25 +1258,36 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
 
         max_round = self._max_round(document)
-        pending = list(ApprovalStep.objects.filter(
-            document=document, action='pending', round=max_round
-        ))
-        if not pending:
-            return Response(
-                {'error': '진행 중인 결재 단계가 없습니다.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        if is_rejected:
+            target_steps = self._rejected_withdraw_target_steps(document, max_round)
+            if not target_steps:
+                return Response(
+                    {'error': '철회를 확인할 결재 단계가 없습니다.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            accepted_message = '철회 요청이 접수되었습니다. 관여했던 팀의 확인을 기다립니다.'
+        else:
+            pending = list(ApprovalStep.objects.filter(
+                document=document, action='pending', round=max_round
+            ))
+            if not pending:
+                return Response(
+                    {'error': '진행 중인 결재 단계가 없습니다.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        # 반려 후 재상신으로 회차가 바뀐 경우, 과거 회차에서 현재 구역보다 더 깊이
-        # 도달했던 구역의 팀들도 함께 확인 대상에 넣는다(2026-09, Case J 참고).
-        current_zone_idx = max(
-            (self._zone_index(document, s.agent) for s in pending if self._zone_index(document, s.agent) is not None),
-            default=None,
-        )
-        extra_steps = (
-            self._extra_zone_target_steps(document, current_zone_idx)
-            if current_zone_idx is not None else []
-        )
+            # 반려 후 재상신으로 회차가 바뀐 경우, 과거 회차에서 현재 구역보다 더 깊이
+            # 도달했던 구역의 팀들도 함께 확인 대상에 넣는다(2026-09, Case J 참고).
+            current_zone_idx = max(
+                (self._zone_index(document, s.agent) for s in pending if self._zone_index(document, s.agent) is not None),
+                default=None,
+            )
+            extra_steps = (
+                self._extra_zone_target_steps(document, current_zone_idx)
+                if current_zone_idx is not None else []
+            )
+            target_steps = pending + extra_steps
+            accepted_message = '철회 요청이 접수되었습니다. 현재 단계의 확인을 기다립니다.'
 
         wr = WithdrawRequest.objects.create(
             document=document,
@@ -1263,13 +1295,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
             reason=reason,
             round=max_round,
-            target_step_ids=[s.id for s in pending] + [s.id for s in extra_steps],
+            target_step_ids=[s.id for s in target_steps],
             confirmed_step_ids=[],
         )
         mailer.enqueue_withdraw_requested(document, wr)
 
         return Response({
-            'message': '철회 요청이 접수되었습니다. 현재 단계의 확인을 기다립니다.',
+            'message': accepted_message,
             'deleted': False,
             'document': RequestDocumentSerializer(document, context={'request': request}).data,
         })
@@ -1360,8 +1392,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         wr.save(update_fields=['state', 'resolved_at'])
         mailer.enqueue_withdraw_rejected(document, wr)
 
+        # claude 수정 (2026-11-09): 반려 문서의 철회 거부는 결재가 이어지는 게 아니라 반려 상태로 남는다
+        message = (
+            '철회 요청을 거부했습니다. 의뢰서는 반려 상태로 유지됩니다.'
+            if document.status == self._WITHDRAW_REJECTED_STATUS
+            else '철회 요청을 거부했습니다. 결재를 계속 진행할 수 있습니다.'
+        )
         return Response({
-            'message': '철회 요청을 거부했습니다. 결재를 계속 진행할 수 있습니다.',
+            'message': message,
             'document': RequestDocumentSerializer(document, context={'request': request}).data,
         })
 
@@ -3934,6 +3972,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = self.get_object()
         if not self._can_edit(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        # claude 수정 (2026-11-09): 철회 확인 대기 중에는 수정 저장 차단(반려 문서 철회 — 확인 중 내용이 바뀌지 않게)
+        if self._active_withdraw_request(document):
+            return Response({'error': self._WITHDRAW_PENDING_EDIT_ERROR}, status=status.HTTP_400_BAD_REQUEST)
         # claude 수정 (2026-11-05): MASTER 는 MAP 정보 잠금 예외
         if doc_permissions.map_info_locked(document, request.user):
             raw_notes = request.data.get('additional_notes')
