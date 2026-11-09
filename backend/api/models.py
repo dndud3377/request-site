@@ -551,20 +551,63 @@ class RequestDocument(models.Model):
     # 요청서가 되므로, R 이 합의한 MAP 정보를 지키려면 같이 잠가야 한다(2026-10).
     MAP_LOCK_STEP1_FIELDS = ('request_purpose',) + DETAIL_LINE_TO_PROCESS_ID_FIELDS
 
-    # claude 수정 (2026-10-19): 잠금 비교 대상에 MAP_LOCK_STEP1_FIELDS(요청 목적·라인~조리법) 추가
-    def changed_map_info_fields(self, new_detail):
+    # claude 수정 (2026-11-09): J·O 표 '요청 기준'(new_or_copy) 값과 그로 계산되는 요청 목적 — 잠금 예외 판정용
+    NOC_NEW = '신규'
+    NOC_BORROW = '차용'
+    NOC_SPECIAL_VALUES = ('기등록', 'layer삭제', '미진행')
+    PURPOSE_NEW_AND_BORROW = '신규+차용'
+    PURPOSE_OTHER = '기타'
+    # 잠긴 문서에서도 이 목적들 사이의 변경은 표의 요청 기준이 바뀐 결과로 보고 허용한다(2026-11-09 사용자 결정).
+    NOC_PURPOSE_GROUP = (NOC_NEW, NOC_BORROW, PURPOSE_NEW_AND_BORROW)
+
+    # claude 수정 (2026-11-09): 프론트 helpers.ts computeExpectedRequestPurpose 와 같은 판정을 서버에도 둔다
+    @classmethod
+    def expected_request_purpose(cls, jayer_rows, oayer_rows):
+        """J·O 표의 요청 기준(new_or_copy)으로 맞는 요청 목적을 계산한다.
+
+        프론트 `RequestPage/helpers.ts` `computeExpectedRequestPurpose` 와 같은 규칙이다(행을 거르지 않는다).
+        신규+차용 → '신규+차용' / 신규만 → '신규' / 차용만 → '차용' /
+        기등록·layer삭제·미진행만 → '기타' / 판정할 값이 없으면 None.
+        """
+        rows = [r for r in list(jayer_rows or []) + list(oayer_rows or []) if isinstance(r, dict)]
+        nocs = [r.get('new_or_copy') for r in rows]
+        has_new = cls.NOC_NEW in nocs
+        has_borrow = cls.NOC_BORROW in nocs
+        if has_new and has_borrow:
+            return cls.PURPOSE_NEW_AND_BORROW
+        if has_new:
+            return cls.NOC_NEW
+        if has_borrow:
+            return cls.NOC_BORROW
+        if any(n in cls.NOC_SPECIAL_VALUES for n in nocs):
+            return cls.PURPOSE_OTHER
+        return None
+
+    # claude 수정 (2026-11-09): 요청 기준 변경에 따른 신규/차용/신규+차용 사이 요청 목적 변경은 잠금 위반에서 뺀다(new_notes 인자 추가)
+    def changed_map_info_fields(self, new_detail, new_notes=None):
         """저장된 detail 과 비교해 값이 달라진 잠금 대상 필드 이름 목록을 반환한다.
 
         잠금 대상 = MAP 정보(`MAP_INFO_FIELDS`) + `MAP_LOCK_STEP1_FIELDS`.
         `map_info_locked()` 가 참인 상태에서 편집 요청(PATCH)을 검증할 때 쓴다
         (`views.py` `RequestDocumentViewSet.update`).
+
+        예외: 요청 목적이 바뀌었어도 변경 전·후가 모두 `NOC_PURPOSE_GROUP` 이고, 변경 후 값이
+        같은 요청(`new_notes`)의 J·O 표 요청 기준으로 계산한 값과 같으면 바뀐 것으로 보지 않는다.
         """
         old_detail = self.get_detail().get('detail', {}) or {}
         new_detail = new_detail or {}
-        return [
+        changed = [
             f for f in self.MAP_INFO_FIELDS + self.MAP_LOCK_STEP1_FIELDS
             if old_detail.get(f) != new_detail.get(f)
         ]
+        if 'request_purpose' in changed and isinstance(new_notes, dict):
+            old_purpose = old_detail.get('request_purpose')
+            new_purpose = new_detail.get('request_purpose')
+            expected = self.expected_request_purpose(new_notes.get('jayerRows'), new_notes.get('oayerRows'))
+            if (old_purpose in self.NOC_PURPOSE_GROUP and new_purpose in self.NOC_PURPOSE_GROUP
+                    and new_purpose == expected):
+                changed.remove('request_purpose')
+        return changed
 
     # claude 수정 (2026-11-04): 중복 상신 차단 — 반려 문서를 두고 새 요청서로 다시 상신하는 것을 막는 판정 신설.
     # 같은 요청서로 보는 기준 키. 제목·흐름도 굵은 행(flowComboKey)과 같은 3개 값이다(완전 일치, 공백 정리 없음).
