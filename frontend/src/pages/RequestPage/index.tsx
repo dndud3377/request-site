@@ -5036,26 +5036,11 @@ export default function RequestPage(): React.ReactElement {
     goToStep(pendingStepTarget ?? step + 1);
   };
 
-  // 요청 목적 확인 모달 — '적용'(onConfirm): 계산된 값으로 바꾸고 이어서 진행.
-  // '취소/닫기'(onClose): 값은 그대로 두고 이어서 진행. ConfirmModal 은 onConfirm 클릭 시
-  // onConfirm 직후 onClose 도 항상 부르는데, goToStep 이 성공적으로 끝나면 ackedStepGatesRef 를
-  // 전부 리셋해 버려 그 시점엔 이미 purposeMismatch 플래그가 false 로 돌아가 있다 — 그 플래그로
-  // '적용 직후의 onClose'를 걸러낼 수 없으므로, 이 상호작용 전용의 별도 ref 로 구분한다.
-  const purposeMismatchAppliedRef = useRef(false);
-
-  const handlePurposeMismatchApply = () => {
-    purposeMismatchAppliedRef.current = true;
+  // claude 수정 (2026-11-09): 요청 목적 확인 모달은 취소 없이 '확인'만 둔다 — 확인·닫기(✕) 모두 계산된 값으로 무조건 바꾸고 이어서 진행
+  const handlePurposeMismatchConfirm = () => {
     if (purposeMismatchConfirm) handleDetailSet('request_purpose', purposeMismatchConfirm);
-    resumePendingStep('purposeMismatch');
-  };
-
-  const handlePurposeMismatchClose = () => {
-    if (purposeMismatchAppliedRef.current) {
-      purposeMismatchAppliedRef.current = false; // '적용' 직후 ConfirmModal 이 이어서 부른 onClose — 무시
-    } else {
-      resumePendingStep('purposeMismatch'); // 사용자가 직접 취소/닫기 — 값은 그대로 두고 진행
-    }
     setPurposeMismatchConfirm(null);
+    resumePendingStep('purposeMismatch');
   };
 
   const handleNextStep = () => startStepMove(step + 1);
@@ -5746,14 +5731,24 @@ export default function RequestPage(): React.ReactElement {
         confirmLabel={t('request.tbvtlv_warn_proceed')}
       />
 
-      <ConfirmModal
+      {/* claude 수정 (2026-11-09): 취소 버튼 없는 '확인' 단일 모달 — 닫기(✕)도 확인과 같이 처리한다 */}
+      <Modal
         isOpen={!!purposeMismatchConfirm}
-        onClose={handlePurposeMismatchClose}
-        onConfirm={handlePurposeMismatchApply}
+        onClose={handlePurposeMismatchConfirm}
         title={t('request.purpose_mismatch_title')}
-        message={purposeMismatchConfirm ? t('request.purpose_mismatch_body', { purpose: purposeMismatchConfirm }) : ''}
-        confirmLabel={t('request.purpose_mismatch_apply')}
-      />
+        size="sm"
+        hideFullscreen
+        style={{ maxWidth: '420px' }}
+        footer={
+          <button className="btn btn-primary" onClick={handlePurposeMismatchConfirm}>
+            {t('common.confirm')}
+          </button>
+        }
+      >
+        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+          {purposeMismatchConfirm ? t('request.purpose_mismatch_body', { purpose: purposeMismatchConfirm }) : ''}
+        </p>
+      </Modal>
 
       <Modal
         isOpen={directHistoryOpen}
