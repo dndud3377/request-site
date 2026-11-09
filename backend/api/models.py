@@ -1958,3 +1958,34 @@ class PersonalDocumentMark(models.Model):
     def __str__(self):
         category_name = self.category.name if self.category_id else '표시 없음'
         return f"{self.user.loginid} → doc#{self.document_id} = {category_name}"
+
+
+# claude 수정 (2026-11-09): 결재 현황 '나만의 필터' — 라인·목적·MAP 목적 조합을 사용자별로 서버에 저장
+class PersonalFilterPreset(models.Model):
+    """결재 현황 필터 바의 '나만의 필터' 한 건.
+
+    라인·목적·MAP 목적 3종의 선택값 목록을 이름을 붙여 저장한다(요청일·분류·탭·검색어는 저장하지 않음).
+    user 외래키로 소유자가 갈리며 다른 사용자와 공유되지 않는다. 화면에서 적용하면 3종을 통째로 교체한다.
+    """
+
+    NAME_MAX_LENGTH = 30
+    MAX_PER_USER = 10
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='filter_presets', verbose_name='소유자')
+    name = models.CharField(max_length=NAME_MAX_LENGTH, verbose_name='필터 이름')
+    lines = models.JSONField(default=list, blank=True, verbose_name='라인 선택값 목록')
+    purposes = models.JSONField(default=list, blank=True, verbose_name='목적 선택값 목록')
+    map_purposes = models.JSONField(default=list, blank=True, verbose_name='MAP 목적 선택값 목록')
+    order = models.PositiveSmallIntegerField(default=0, verbose_name='표시 순서')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
+
+    class Meta:
+        verbose_name = '나만의 필터'
+        verbose_name_plural = '나만의 필터 목록'
+        ordering = ['order', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'name'], name='uniq_filter_preset_name_per_user'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.loginid} · {self.name}"
