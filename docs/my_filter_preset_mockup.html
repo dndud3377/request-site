@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>결재 현황 '나만의 필터' — 화면 목업 (검토용)</title>
+<title>결재 현황 '나만의 필터' — 화면 목업 (검토용, v2)</title>
 <style>
   /* ===== 실제 앱 CSS 변수(frontend/src/styles/global.css)에서 가져옴 — Bright Blue Theme ===== */
   :root {
@@ -98,41 +98,33 @@
   }
   .filter-tab.active { background: var(--accent); color: #fff; }
 
-  /* ===== [신규] 나만의 필터 줄 ===== */
-  .preset-bar {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    padding: 8px 14px; margin-bottom: 6px;
-    background: var(--bg-card); border: 1px dashed var(--accent); border-radius: var(--radius-md);
-    position: relative;
-  }
+  /* ===== [신규] 나만의 필터 드롭다운 — 필터 바 안 첫 버튼 ===== */
+  .preset-anchor { position: relative; }
   .new-badge {
-    position: absolute; top: -9px; right: 12px; background: var(--success); color: #fff;
-    font-size: 0.62rem; font-weight: 700; padding: 1px 7px; border-radius: 8px;
+    position: absolute; top: -9px; right: -6px; background: var(--success); color: #fff;
+    font-size: 0.58rem; font-weight: 700; padding: 0 6px; border-radius: 8px; pointer-events: none;
   }
-  .preset-bar-label {
-    font-size: 0.72rem; font-weight: 700; color: var(--text-muted);
-    letter-spacing: 0.05em; margin-right: 2px; white-space: nowrap;
+  .column-filter-popover.preset-popover { min-width: 300px; padding: 6px; }
+  .preset-item {
+    display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left;
+    font-family: inherit; background: none; border: none; border-radius: 6px;
+    padding: 6px 8px; cursor: pointer; color: var(--text-primary);
   }
-  .preset-chip-anchor { position: relative; }
-  .preset-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: inherit; font-size: 0.8rem; font-weight: 600;
-    color: var(--accent); background: var(--accent-light);
-    border: 1px solid transparent; padding: 5px 12px; border-radius: 20px; cursor: pointer;
-    transition: var(--transition);
+  .preset-item:hover { background: var(--bg-card-hover); }
+  .preset-item .check { width: 14px; flex-shrink: 0; color: var(--accent); font-weight: 700; font-size: 0.8rem; }
+  .preset-item .name { font-size: 0.82rem; font-weight: 600; display: block; }
+  .preset-item .sum { font-size: 0.7rem; color: var(--text-muted); display: block; line-height: 1.4; }
+  .preset-item.active { background: var(--accent-light); }
+  .preset-item.active .name { color: var(--accent); }
+  .preset-divider { height: 1px; background: var(--border-light); margin: 6px 2px; }
+  .preset-action {
+    display: block; width: 100%; text-align: left; font-family: inherit; font-size: 0.8rem; font-weight: 600;
+    background: none; border: none; border-radius: 6px; padding: 6px 8px; cursor: pointer; color: var(--text-secondary);
   }
-  .preset-chip:hover { border-color: var(--accent); }
-  .preset-chip.active { background: var(--accent); color: #fff; }
-  .preset-chip.active::before { content: "✓"; font-size: 0.72rem; }
-  .preset-empty { font-size: 0.78rem; color: var(--text-disabled); }
-  .preset-tip {
-    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
-    background: #0f172a; color: #fff; font-size: 0.74rem; line-height: 1.5;
-    padding: 8px 10px; border-radius: 8px; white-space: nowrap; box-shadow: var(--shadow-lg);
-  }
-  .preset-tip b { color: #93c5fd; font-weight: 600; margin-right: 4px; }
-  .preset-chip-anchor:hover .preset-tip { display: block; }
-  .preset-actions { margin-left: auto; display: flex; gap: 6px; }
+  .preset-action:hover:not(:disabled) { background: var(--bg-card-hover); color: var(--accent); }
+  .preset-action:disabled { color: var(--text-disabled); cursor: not-allowed; }
+  .preset-action .hint { display: block; font-size: 0.68rem; font-weight: 400; color: var(--text-disabled); }
+  .preset-empty { font-size: 0.78rem; color: var(--text-disabled); padding: 6px 8px; }
 
   /* ===== 필터 바 — 실제 .column-filter-* ===== */
   .column-filter-bar {
@@ -242,19 +234,19 @@
 <body>
 <div class="wrap">
   <h1>결재 현황 — '나만의 필터' 목업</h1>
-  <p class="sub">검토용 목업 · 2026-11-09 · 저장 항목: 라인 · 목적 · MAP 목적(3종) · 저장 위치: 서버(사용자별)</p>
+  <p class="sub">검토용 목업 v2 · 2026-11-09 · 저장 항목: 라인 · 목적 · MAP 목적(3종) · 저장 위치: 서버(사용자별)</p>
 
   <div class="notice">
-    <b>검토용 화면입니다.</b> 실제 코드가 아니며, 아래 목록 데이터는 가짜입니다. 칩·버튼·창은 실제로 눌러 볼 수 있습니다.
-    이 목업을 확인하신 뒤 고칠 점을 알려주시면, 그걸 반영해 실제 구현 계획을 따로 승인받겠습니다.
+    <b>검토용 화면입니다.</b> 실제 코드가 아니며, 아래 목록 데이터는 가짜입니다. 드롭다운·버튼·창은 실제로 눌러 볼 수 있습니다.
+    v2(2026-11-09): 결정 사항 반영 — 적용은 <b>교체</b>, 최대 10개·이름 30자, 위치는 <b>필터 바 안 드롭다운 하나</b>.
   </div>
 
   <!-- ===================== 1. 체험 ===================== -->
   <h2><span class="step-no">1</span>직접 눌러 보기</h2>
   <p class="desc">
-    ① '라인1·2 신규' 칩을 누르면 3종 필터가 그 값으로 바로 바뀝니다. ② 같은 칩을 다시 누르면 해제됩니다.
-    ③ 필터를 손으로 바꾸면 칩 강조가 꺼집니다. ④ 원하는 조합을 걸고 '+ 현재 필터 저장'을 누르면 새 칩이 생깁니다.
-    ⑤ '관리'에서 이름 변경·덮어쓰기·순서 변경·삭제를 해 보세요.
+    ① 필터 바 맨 앞 '⭐ 나만의 필터 ▾'를 열고 '라인1·2 신규'를 누르면 3종 필터가 그 값으로 바로 바뀌고, 버튼 이름이 '⭐ 라인1·2 신규'로 바뀝니다.
+    ② 같은 항목을 다시 누르면 해제됩니다. ③ 필터를 손으로 바꾸면 버튼이 다시 '⭐ 나만의 필터'로 돌아갑니다.
+    ④ 원하는 조합을 걸고 드롭다운 아래 '+ 현재 필터 저장'을 누르면 목록에 추가됩니다. ⑤ '⚙ 관리'에서 이름 변경·덮어쓰기·순서 변경·삭제를 해 보세요.
   </p>
 
   <div class="card">
@@ -263,25 +255,17 @@
       <div class="filter-tabs" id="tabs"></div>
     </div>
 
-    <!-- [신규] 나만의 필터 -->
-    <div class="preset-bar">
-      <span class="new-badge">NEW</span>
-      <span class="preset-bar-label">⭐ 나만의 필터</span>
-      <div id="presetChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
-      <div class="preset-actions">
-        <button class="btn btn-secondary btn-sm" id="saveBtn">+ 현재 필터 저장</button>
-        <button class="btn btn-secondary btn-sm" id="manageBtn">관리</button>
-      </div>
-    </div>
-
-    <!-- 기존 필터 바 -->
+    <!-- 필터 바 — [신규] 맨 앞에 '나만의 필터' 드롭다운 -->
     <div class="column-filter-bar" id="filterBar">
       <span class="column-filter-bar-label">필터</span>
+      <div class="column-filter-anchor preset-anchor" id="presetAnchor"></div>
       <div class="column-filter-anchor" data-key="line"></div>
       <div class="column-filter-anchor" data-key="purpose"></div>
       <div class="column-filter-anchor" data-key="map"></div>
       <div class="column-filter-anchor"><button class="column-filter-btn static" title="나만의 필터에 저장하지 않음">상신일 <span class="caret">▾</span></button></div>
       <div class="column-filter-anchor"><button class="column-filter-btn static" title="나만의 필터에 저장하지 않음">분류 <span class="caret">▾</span></button></div>
+      <button class="column-filter-btn static" title="기존 버튼(목업에서는 동작 안 함)">⚙ 분류 설정</button>
+      <button class="column-filter-btn static" title="기존 버튼(목업에서는 동작 안 함)">⬇ 목록 다운로드</button>
       <button class="column-filter-reset" id="resetBtn" style="display:none">초기화</button>
       <span class="column-filter-count" id="countText"></span>
     </div>
@@ -295,27 +279,29 @@
   </div>
 
   <!-- ===================== 2. 동작 규칙 ===================== -->
-  <h2><span class="step-no">2</span>동작 규칙 (제안)</h2>
+  <h2><span class="step-no">2</span>동작 규칙 (확정 반영)</h2>
   <table class="spec">
-    <tr><th>위치</th><td>필터 바 바로 위 한 줄. 저장한 필터를 칩으로 나열하고 오른쪽에 '+ 현재 필터 저장'·'관리'를 둔다. 하나도 없으면 "저장된 필터가 없습니다" 안내를 보인다.</td></tr>
-    <tr><th>칩 클릭 = 적용</th><td>라인·목적·MAP 목적 <b>3종을 통째로 교체</b>한다(지금 걸린 값에 더하지 않는다). 저장값이 빈 항목은 '전체'(해제)로 바뀐다.<br>
+    <tr><th>위치 ✅</th><td><b>필터 바 안 맨 앞 드롭다운 하나</b>('⭐ 나만의 필터 ▾'). 펼치면 위에 저장한 필터 목록(이름 + 값 요약), 구분선 아래에 '+ 현재 필터 저장'·'⚙ 관리'.
+      하나도 없으면 "저장된 필터가 없습니다" 안내를 보인다. 다른 필터 드롭다운과 같이, 하나를 열면 나머지는 닫히고 바깥을 누르면 닫힌다.</td></tr>
+    <tr><th>버튼 표시</th><td>적용 중인 필터가 있으면 버튼이 강조색으로 바뀌고 이름이 '⭐ {필터 이름}'으로 바뀐다. 없으면 '⭐ 나만의 필터'.</td></tr>
+    <tr><th>항목 클릭 = 적용 ✅</th><td>라인·목적·MAP 목적 <b>3종을 통째로 교체</b>한다(지금 걸린 값에 더하지 않는다). 저장값이 빈 항목은 '전체'(해제)로 바뀐다.<br>
       <b>상신일·분류·탭·검색어는 건드리지 않는다.</b> 1페이지로 이동한다.</td></tr>
-    <tr><th>적용 표시</th><td>현재 3종이 칩의 저장값과 <b>정확히 같을 때만</b> 칩을 강조(✓)한다. 적용 후 필터를 손으로 바꾸면 강조가 꺼진다. 다른 칩을 적용했거나 손으로 같은 조합을 맞춘 경우에도 같은 규칙으로 판단한다.</td></tr>
-    <tr><th>강조된 칩 다시 클릭</th><td>3종을 해제한다(필터 바 '초기화'와 같지만 상신일·분류는 남긴다).</td></tr>
-    <tr><th>칩에 마우스 올리기</th><td>저장된 값을 요약해 보여준다. 예: <code>라인 라인1, 라인2 · 목적 신규 · MAP 목적 전체</code></td></tr>
+    <tr><th>적용 표시</th><td>현재 3종이 저장값과 <b>정확히 같을 때만</b> 그 항목에 ✓, 버튼에 이름을 표시한다. 적용 후 필터를 손으로 바꾸면 표시가 꺼진다. 다른 항목을 적용했거나 손으로 같은 조합을 맞춘 경우에도 같은 규칙으로 판단한다.</td></tr>
+    <tr><th>✓ 항목 다시 클릭</th><td>3종을 해제한다(필터 바 '초기화'와 같지만 상신일·분류는 남긴다).</td></tr>
+    <tr><th>값 요약</th><td>목록의 각 이름 아래에 저장된 값을 작은 글씨로 보여준다(마우스 올릴 필요 없음). 예: <code>라인 라인1, 라인2 · 목적 신규 · MAP 목적 전체</code></td></tr>
     <tr><th>탭 전환</th><td>방금 반영한 '탭 전환 시 필터 유지'와 같다. 적용한 나만의 필터는 탭을 바꿔도 그대로 걸려 있다.</td></tr>
-    <tr><th>저장</th><td>'+ 현재 필터 저장' → 이름 입력 창(지금 걸린 3종 요약을 함께 보여줌). 3종이 모두 비어 있으면 버튼을 비활성화한다.<br>
+    <tr><th>저장 ✅</th><td>드롭다운의 '+ 현재 필터 저장' → 이름 입력 창(지금 걸린 3종 요약을 함께 보여줌). 3종이 모두 비어 있거나 10개가 차 있으면 비활성화하고 이유를 아래에 적는다.<br>
       이름: 필수, 최대 30자, 내 필터 안에서 중복 불가. 개수: 1인당 최대 10개.</td></tr>
     <tr><th>관리</th><td>이름 변경 · '현재 필터로 덮어쓰기' · 순서 변경(▲▼) · 삭제(확인 창). 변경은 즉시 서버에 저장한다.</td></tr>
     <tr><th>저장 위치</th><td>서버(사용자별). 다른 PC·브라우저에서도 같은 목록이 보인다. 다른 사용자와 공유하지 않는다.</td></tr>
-    <tr><th>선택지가 바뀐 경우</th><td>나중에 라인·목적 선택지에서 빠진 값이 저장돼 있으면 적용할 때 그 값만 무시한다(빈 결과로 혼란을 주지 않도록). 칩 요약에는 "(없는 값)"으로 표시한다.</td></tr>
+    <tr><th>선택지가 바뀐 경우</th><td>나중에 라인·목적 선택지에서 빠진 값이 저장돼 있으면 적용할 때 그 값만 무시한다(빈 결과로 혼란을 주지 않도록). 값 요약에는 "(없는 값)"으로 표시한다.</td></tr>
   </table>
 
-  <div class="q"><b>확인이 필요한 점</b> — 목업을 보시고 아래도 함께 답해 주세요.
+  <div class="q"><b>결정 사항 (2026-11-09)</b>
     <ul class="tight">
-      <li>칩을 눌렀을 때 3종을 <b>교체</b>(제안)할까요, 지금 걸린 값에 <b>더할</b>까요?</li>
-      <li>최대 10개 · 이름 30자 제한이 적당한가요?</li>
-      <li>'나만의 필터' 줄을 필터 바 <b>위 별도 줄</b>(제안)로 둘까요, 필터 바 <b>안</b> 드롭다운 하나로 접을까요?</li>
+      <li>적용 방식: 3종을 <b>교체</b>한다.</li>
+      <li>제한: 최대 <b>10개</b>, 이름 <b>30자</b>.</li>
+      <li>위치: 필터 바 <b>안 드롭다운 하나</b>로 접는다.</li>
     </ul>
   </div>
 
@@ -352,8 +338,8 @@
     <ul class="tight">
       <li><code>backend/api/models.py</code>, 신규 마이그레이션, <code>serializers.py</code>, <code>views.py</code>, <code>urls.py</code>, <code>tests.py</code></li>
       <li><code>frontend/src/types/</code>(<code>PersonalFilterPreset</code> 타입), <code>api/client.ts</code>(<code>filterPresetsAPI</code>)</li>
-      <li><code>frontend/src/pages/ApprovalPage.tsx</code>(칩 줄 · 적용/강조 판정), 신규 <code>components/FilterPresetModals.tsx</code>(저장·관리 창)</li>
-      <li><code>frontend/src/styles/global.css</code>(<code>.preset-bar</code>, <code>.preset-chip</code>)</li>
+      <li><code>frontend/src/pages/ApprovalPage.tsx</code>(필터 바 드롭다운 · 적용/표시 판정), 신규 <code>components/FilterPresetModals.tsx</code>(저장·관리 창)</li>
+      <li><code>frontend/src/styles/global.css</code>(<code>.preset-popover</code>, <code>.preset-item</code> 등)</li>
       <li><code>locales/ko.json</code> · <code>en.json</code> 동시 추가, <code>docs/APPROVAL.md</code> 갱신</li>
     </ul>
 
@@ -471,21 +457,32 @@
   }
 
   function renderPresets() {
-    const box = $('presetChips');
-    if (!state.presets.length) {
-      box.innerHTML = '<span class="preset-empty">저장된 필터가 없습니다 — 필터를 걸고 \'+ 현재 필터 저장\'을 눌러 보세요</span>';
-    } else {
-      box.innerHTML = state.presets.map((p) => `
-        <span class="preset-chip-anchor">
-          <button class="preset-chip ${isPresetActive(p) ? 'active' : ''}" data-preset="${p.id}">${esc(p.name)}</button>
-          <span class="preset-tip">${summaryPairs(p).map(([l, v]) => `<div><b>${l}</b>${esc(v)}</div>`).join('')}</span>
-        </span>`).join('');
+    const active = state.presets.find(isPresetActive);
+    const full = state.presets.length >= MAX_PRESETS;
+    const saveHint = !hasAny() ? '라인·목적·MAP 목적 중 하나 이상 걸어야 저장할 수 있습니다'
+      : full ? `최대 ${MAX_PRESETS}개까지 저장할 수 있습니다 — 관리에서 하나를 지우세요` : '';
+    let html = `<span class="new-badge">NEW</span>
+      <button class="column-filter-btn ${active ? 'active' : ''}" data-open="preset">⭐ ${active ? esc(active.name) : '나만의 필터'} <span class="caret">▾</span></button>`;
+    if (state.open === 'preset') {
+      const items = state.presets.length
+        ? state.presets.map((p) => `
+          <button class="preset-item ${isPresetActive(p) ? 'active' : ''}" data-preset="${p.id}">
+            <span class="check">${isPresetActive(p) ? '✓' : ''}</span>
+            <span><span class="name">${esc(p.name)}</span><span class="sum">${esc(summaryText(p).join(' · '))}</span></span>
+          </button>`).join('')
+        : '<div class="preset-empty">저장된 필터가 없습니다</div>';
+      html += `<div class="column-filter-popover preset-popover">
+        ${items}
+        <div class="preset-divider"></div>
+        <button class="preset-action" data-action="save" ${saveHint ? 'disabled' : ''}>+ 현재 필터 저장${saveHint ? `<span class="hint">${saveHint}</span>` : ''}</button>
+        <button class="preset-action" data-action="manage">⚙ 관리</button>
+      </div>`;
     }
-    $('saveBtn').disabled = !hasAny();
-    $('saveBtn').title = hasAny() ? '' : '라인·목적·MAP 목적 중 하나 이상 걸어야 저장할 수 있습니다';
+    $('presetAnchor').innerHTML = html;
   }
 
   function renderFilterBar() {
+    renderPresets();
     document.querySelectorAll('#filterBar .column-filter-anchor[data-key]').forEach((el) => {
       const key = el.dataset.key;
       const set = state[key];
@@ -514,7 +511,7 @@
     $('countText').innerHTML = `전체 ${byTab.length}건 중 <b>${rows.length}</b>건 표시`;
   }
 
-  function render() { renderTabs(); renderPresets(); renderFilterBar(); renderTable(); }
+  function render() { renderTabs(); renderFilterBar(); renderTable(); }
 
   // ===== 동작 =====
   function applyPreset(p) {
@@ -532,7 +529,10 @@
   document.addEventListener('click', (e) => {
     const t = e.target;
     if (t.dataset.tab !== undefined) { state.tab = t.dataset.tab; render(); return; }
-    if (t.dataset.preset) { applyPreset(state.presets.find((p) => p.id === +t.dataset.preset)); return; }
+    const presetBtn = t.closest('[data-preset]');
+    if (presetBtn) { applyPreset(state.presets.find((p) => p.id === +presetBtn.dataset.preset)); return; }
+    const actionBtn = t.closest('[data-action]');
+    if (actionBtn) { state.open = null; renderFilterBar(); (actionBtn.dataset.action === 'save' ? openSave : openManage)(); return; }
     const openBtn = t.closest('[data-open]');
     if (openBtn) { state.open = state.open === openBtn.dataset.open ? null : openBtn.dataset.open; renderFilterBar(); return; }
     if (t.dataset.close) { $(t.dataset.close).classList.remove('open'); return; }
@@ -545,7 +545,7 @@
     const next = new Set(state[key]);
     if (e.target.checked) next.add(e.target.value); else next.delete(e.target.value);
     state[key] = next;
-    renderPresets(); renderFilterBar(); renderTable();
+    renderFilterBar(); renderTable();
   });
 
   $('resetBtn').onclick = () => { state.line = new Set(); state.purpose = new Set(); state.map = new Set(); render(); };
@@ -556,13 +556,13 @@
     return (['line', 'purpose', 'map']).map((k) =>
       `<div><b>${LABELS[k]}</b>${vals[k].length ? esc(vals[k].map((x) => optLabel(k, x)).join(', ')) : '<span class="none">전체(저장 안 함)</span>'}</div>`).join('');
   }
-  $('saveBtn').onclick = () => {
+  function openSave() {
     $('saveName').value = ''; $('saveError').textContent = '';
     if (state.presets.length >= MAX_PRESETS) $('saveError').textContent = `최대 ${MAX_PRESETS}개까지 저장할 수 있습니다. 관리에서 하나를 지운 뒤 저장하세요.`;
     $('saveSummary').innerHTML = summaryHtml(currentValues());
     $('saveModal').classList.add('open');
     $('saveName').focus();
-  };
+  }
   function validateName(name, exceptId) {
     if (!name) return '이름을 입력하세요.';
     if (state.presets.some((p) => p.name === name && p.id !== exceptId)) return '같은 이름의 필터가 이미 있습니다.';
@@ -600,7 +600,7 @@
         </div>
       </div>`).join('') : '<div class="preset-empty">저장된 필터가 없습니다.</div>';
   }
-  $('manageBtn').onclick = () => { state.open = null; renderFilterBar(); renderManage(); $('manageModal').classList.add('open'); };
+  function openManage() { renderManage(); $('manageModal').classList.add('open'); }
 
   $('manageList').addEventListener('click', (e) => {
     const t = e.target;
@@ -608,12 +608,12 @@
       const i = state.presets.findIndex((p) => p.id === +t.dataset.move);
       const j = i + +t.dataset.dir;
       [state.presets[i], state.presets[j]] = [state.presets[j], state.presets[i]];
-      renderManage(); renderPresets();
+      renderManage(); renderFilterBar();
     } else if (t.dataset.overwrite) {
       const p = state.presets.find((x) => x.id === +t.dataset.overwrite);
       Object.assign(p, currentValues());
       toast(`'${p.name}'을(를) 현재 필터로 덮어썼습니다`);
-      renderManage(); renderPresets();
+      renderManage(); renderFilterBar();
     } else if (t.dataset.delete) {
       const p = state.presets.find((x) => x.id === +t.dataset.delete);
       state.deleteId = p.id;
@@ -632,14 +632,14 @@
     errBox.textContent = '';
     p.name = name;
     toast('이름을 바꿨습니다');
-    renderPresets();
+    renderFilterBar();
   });
   $('deleteConfirm').onclick = () => {
     const p = state.presets.find((x) => x.id === state.deleteId);
     state.presets = state.presets.filter((x) => x.id !== state.deleteId);
     $('deleteModal').classList.remove('open');
     toast(`'${p.name}' 삭제됨`);
-    renderManage(); renderPresets();
+    renderManage(); renderFilterBar();
   };
 
   render();
