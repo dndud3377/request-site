@@ -45,6 +45,8 @@ import {
   LayerFilterSet,
   MapInfo,
   PersonalMarkCategory,
+  PersonalFilterPreset,
+  PersonalFilterPresetInput,
   PhotoStepChangeListResponse,
   PhotoStepChangeTableType,
   LayerDriftResponse,
@@ -693,6 +695,18 @@ export const markCategoriesAPI = {
     input: Partial<Pick<PersonalMarkCategory, 'name' | 'color'>>
   ): Promise<PersonalMarkCategory> => patch<PersonalMarkCategory>(`/mark-categories/${id}/`, input),
   delete: (id: number): Promise<void> => request(`/mark-categories/${id}/`, { method: 'DELETE' }),
+};
+
+// claude 수정 (2026-11-09): 결재 현황 '나만의 필터' API — 개인 데이터, 다른 사용자와 공유되지 않는다
+export const filterPresetsAPI = {
+  list: (): Promise<PersonalFilterPreset[]> => get<PersonalFilterPreset[]>('/filter-presets/'),
+  create: (input: PersonalFilterPresetInput): Promise<PersonalFilterPreset> =>
+    post<PersonalFilterPreset>('/filter-presets/', input),
+  update: (id: number, input: PersonalFilterPresetInput): Promise<PersonalFilterPreset> =>
+    patch<PersonalFilterPreset>(`/filter-presets/${id}/`, input),
+  delete: (id: number): Promise<void> => request(`/filter-presets/${id}/`, { method: 'DELETE' }),
+  reorder: (ids: number[]): Promise<PersonalFilterPreset[]> =>
+    post<PersonalFilterPreset[]>('/filter-presets/reorder/', { ids }),
 };
 
 // ===== 디자인룰 수동 매핑 API (쓰기는 MASTER 전용) =====

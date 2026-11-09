@@ -24,7 +24,7 @@ from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
     UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
-    RoundSubmission,
+    RoundSubmission, PersonalFilterPreset,
 )
 
 
@@ -12073,3 +12073,106 @@ class DuplicateSubmitBlockTest(TestCase):
         draft = self._doc('draft')
         self.assertIsNone(self._check().json()['duplicate'])
         self.assertEqual(self._submit(draft).status_code, 200)
+
+
+# claude 수정 (2026-11-09): 결재 현황 '나만의 필터' API 테스트 — 본인 전용·이름 중복·10개 제한·3종 빔·순서 변경
+class PersonalFilterPresetApiTest(TestCase):
+    """/api/filter-presets/ — 사용자별 '나만의 필터' 저장·조회·수정·삭제·순서 변경."""
+
+    URL = '/api/filter-presets/'
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.me = UserProfile.objects.create(loginid='me', mail='me@c.com', role='NONE')
+        self.other = UserProfile.objects.create(loginid='other', mail='other@c.com', role='NONE')
+        self.client.force_authenticate(user=self.me)
+
+    def _create(self, name, **values):
+        body = {'name': name, 'lines': [], 'purposes': [], 'map_purposes': []}
+        body.update(values)
+        return self.client.post(self.URL, body, format='json')
+
+    def test_create_and_list_only_mine(self):
+        r = self._create(' 라인1 신규 ', lines=['라인1', '라인1'], purposes=['신규'])
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()['name'], '라인1 신규')            # 앞뒤 공백 제거
+        self.assertEqual(r.json()['lines'], ['라인1'])               # 중복 값 제거
+        PersonalFilterPreset.objects.create(user=self.other, name='남의 필터', lines=['라인2'])
+        names = [p['name'] for p in self.client.get(self.URL).json()]
+        self.assertEqual(names, ['라인1 신규'])
+
+    def test_order_increments_on_create(self):
+        self._create('A', lines=['라인1'])
+        self._create('B', lines=['라인2'])
+        self.assertEqual([p['order'] for p in self.client.get(self.URL).json()], [0, 1])
+
+    def test_cannot_touch_others_preset(self):
+        theirs = PersonalFilterPreset.objects.create(user=self.other, name='남의 필터', lines=['라인2'])
+        self.assertEqual(self.client.get(f'{self.URL}{theirs.id}/').status_code, 404)
+        self.assertEqual(self.client.patch(f'{self.URL}{theirs.id}/', {'name': 'x'}, format='json').status_code, 404)
+        self.assertEqual(self.client.delete(f'{self.URL}{theirs.id}/').status_code, 404)
+        self.assertTrue(PersonalFilterPreset.objects.filter(pk=theirs.pk, name='남의 필터').exists())
+
+    def test_duplicate_name_rejected_but_other_users_same_name_ok(self):
+        PersonalFilterPreset.objects.create(user=self.other, name='같은 이름', lines=['라인2'])
+        self.assertEqual(self._create('같은 이름', lines=['라인1']).status_code, 201)
+        r = self._create('같은 이름', lines=['라인3'])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('name', r.json())
+
+    def test_blank_name_rejected(self):
+        self.assertEqual(self._create('   ', lines=['라인1']).status_code, 400)
+
+    def test_all_empty_values_rejected(self):
+        r = self._create('빈 필터')
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(PersonalFilterPreset.objects.exists())
+
+    def test_limit_per_user(self):
+        for i in range(PersonalFilterPreset.MAX_PER_USER):
+            self.assertEqual(self._create(f'F{i}', lines=['라인1']).status_code, 201)
+        self.assertEqual(self._create('초과', lines=['라인1']).status_code, 400)
+        # 다른 사용자의 개수와는 무관하다
+        self.client.force_authenticate(user=self.other)
+        self.assertEqual(self._create('남의 첫 필터', lines=['라인1']).status_code, 201)
+
+    def test_patch_rename_and_overwrite(self):
+        pid = self._create('A', lines=['라인1']).json()['id']
+        r = self.client.patch(f'{self.URL}{pid}/', {'name': 'A2'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['lines'], ['라인1'])               # 이름만 바꾸면 값은 그대로
+        r = self.client.patch(
+            f'{self.URL}{pid}/', {'lines': [], 'purposes': ['차용'], 'map_purposes': ['CLONE']}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((r.json()['lines'], r.json()['purposes']), ([], ['차용']))
+        # 같은 이름으로 다시 저장(자기 자신)은 중복이 아니다
+        self.assertEqual(self.client.patch(f'{self.URL}{pid}/', {'name': 'A2'}, format='json').status_code, 200)
+
+    def test_patch_cannot_empty_all_values(self):
+        pid = self._create('A', lines=['라인1']).json()['id']
+        r = self.client.patch(f'{self.URL}{pid}/', {'lines': []}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete(self):
+        pid = self._create('A', lines=['라인1']).json()['id']
+        self.assertEqual(self.client.delete(f'{self.URL}{pid}/').status_code, 204)
+        self.assertFalse(PersonalFilterPreset.objects.exists())
+
+    def test_reorder(self):
+        a = self._create('A', lines=['라인1']).json()['id']
+        b = self._create('B', lines=['라인2']).json()['id']
+        c = self._create('C', lines=['라인3']).json()['id']
+        r = self.client.post(f'{self.URL}reorder/', {'ids': [c, a, b]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([p['name'] for p in r.json()], ['C', 'A', 'B'])
+        self.assertEqual([p['name'] for p in self.client.get(self.URL).json()], ['C', 'A', 'B'])
+
+    def test_reorder_rejects_partial_duplicate_or_foreign_ids(self):
+        a = self._create('A', lines=['라인1']).json()['id']
+        b = self._create('B', lines=['라인2']).json()['id']
+        theirs = PersonalFilterPreset.objects.create(user=self.other, name='X', lines=['라인1']).id
+        for ids in ([a], [a, a], [a, b, theirs], [a, 'b'], 'nope'):
+            r = self.client.post(f'{self.URL}reorder/', {'ids': ids}, format='json')
+            self.assertEqual(r.status_code, 400, ids)
+        self.assertEqual([p['name'] for p in self.client.get(self.URL).json()], ['A', 'B'])
