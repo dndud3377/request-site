@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI, markCategoriesAPI } from '../api/client';
+import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI, markCategoriesAPI, filterPresetsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
 import AdiCdTargetsCell from '../components/AdiCdTargetsCell';
@@ -15,8 +15,12 @@ import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
 import ApprovalListExportModal from '../components/ApprovalListExportModal';
+import {
+  SavePresetModal, ManagePresetsModal, FILTER_PRESET_MAX, PresetFilterOptions, PresetFilterState, PresetValues,
+  sanitizePresetValues, isPresetActive, hasAnyPresetFilter, buildPresetSummary,
+} from '../components/FilterPresetModals';
 import RouteChangeModal from '../components/RouteChangeModal';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, isPlRole, plRoleFor } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, PersonalFilterPreset, ColorFilterSet, LayerDriftResponse, isPlRole, plRoleFor } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -71,8 +75,19 @@ const AGENT_TO_ROLE: Record<string, string> = {
 // ADI CD 변경처럼 map_type 자체가 없는 문서를 가리키는 MAP_PURPOSE_NA.
 const MAP_PURPOSE_OPTIONS = ['NEW', MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ, MAP_PURPOSE_NA];
 
+// claude 수정 (2026-11-09): '나만의 필터'가 다루는 3종의 선택지 — 필터 바 드롭다운 선택지와 같다(여기 없는 저장값은 무시)
+const PRESET_FILTER_OPTIONS: PresetFilterOptions = {
+  lines: OPTION_LINE,
+  purposes: [...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION],
+  mapPurposes: MAP_PURPOSE_OPTIONS,
+};
+
+/** 나만의 필터 목록 불러오기 상태. */
+type FilterPresetStatus = 'loading' | 'error' | 'ready';
+
 type ColSortKey = 'line' | 'purpose' | 'mapType' | 'submitted';
-type FilterDropdownKey = 'line' | 'purpose' | 'map' | 'date' | 'category';
+// claude 수정 (2026-11-09): 필터 바 맨 앞 '나만의 필터' 드롭다운('preset') 추가
+type FilterDropdownKey = 'preset' | 'line' | 'purpose' | 'map' | 'date' | 'category';
 
 /** 범주 필터 값 — 문서의 my_mark_category(숫자) 또는 표시 없음('none'). */
 type MarkCategoryFilterValue = number | 'none';
@@ -235,6 +250,33 @@ export default function ApprovalPage(): React.ReactElement {
   useEffect(() => {
     markCategoriesAPI.list().then(setMarkCategories).catch(() => { /* 실패해도 마킹 없이 화면은 그대로 쓸 수 있다 */ });
   }, []);
+
+  // claude 수정 (2026-11-09): '나만의 필터' — 라인·목적·MAP 목적 조합을 서버에 사용자별로 저장해 두고 한 번에 적용한다.
+  // 둘러보기(embed=tour) 화면에서는 드롭다운을 숨기므로 불러오지 않는다.
+  const [filterPresets, setFilterPresets] = useState<PersonalFilterPreset[]>([]);
+  const [filterPresetStatus, setFilterPresetStatus] = useState<FilterPresetStatus>('loading');
+  const [presetSaveOpen, setPresetSaveOpen] = useState(false);
+  const [presetManageOpen, setPresetManageOpen] = useState(false);
+  const loadFilterPresets = useCallback(async () => {
+    setFilterPresetStatus('loading');
+    try {
+      setFilterPresets(await filterPresetsAPI.list());
+      setFilterPresetStatus('ready');
+    } catch {
+      setFilterPresetStatus('error');
+    }
+  }, []);
+  useEffect(() => {
+    if (!isTourMode) loadFilterPresets();
+  }, [isTourMode, loadFilterPresets]);
+  const presetFilterState: PresetFilterState = useMemo(
+    () => ({ lines: lineFilter, purposes: purposeFilter, mapPurposes: mapFilter }),
+    [lineFilter, purposeFilter, mapFilter],
+  );
+  const activeFilterPreset = useMemo(
+    () => filterPresets.find((p) => isPresetActive(p, PRESET_FILTER_OPTIONS, presetFilterState)) ?? null,
+    [filterPresets, presetFilterState],
+  );
 
   const handleMarkChange = useCallback((doc: RequestDocument, categoryId: number | null) => {
     const prev = doc.my_mark_category ?? null;
@@ -1716,6 +1758,152 @@ export default function ApprovalPage(): React.ReactElement {
     setMarkCategoryFilter(new Set());
   };
 
+  // claude 수정 (2026-11-09): '나만의 필터' 적용·저장·관리 — 적용은 3종 교체, ✓ 항목 다시 클릭은 3종 해제(상신일·분류는 유지)
+  const presetSummaryOf = (preset: PresetValues): string => buildPresetSummary(preset, PRESET_FILTER_OPTIONS, {
+    line: t('approval.col_line'),
+    purpose: t('approval.col_purpose'),
+    map: t('approval.col_map_purpose'),
+    all: t('approval.preset_value_all'),
+    missing: t('approval.preset_missing_value'),
+    mapValue: mapPurposeLabel,
+  });
+
+  const currentPresetValues = () => ({
+    lines: Array.from(lineFilter),
+    purposes: Array.from(purposeFilter),
+    map_purposes: Array.from(mapFilter),
+  });
+
+  const applyFilterPreset = (preset: PersonalFilterPreset) => {
+    if (activeFilterPreset?.id === preset.id) {
+      setLineFilter(new Set());
+      setPurposeFilter(new Set());
+      setMapFilter(new Set());
+    } else {
+      const valid = sanitizePresetValues(preset, PRESET_FILTER_OPTIONS);
+      setLineFilter(new Set(valid.lines));
+      setPurposeFilter(new Set(valid.purposes));
+      setMapFilter(new Set(valid.map_purposes));
+    }
+    setOpenFilterDropdown(null);
+  };
+
+  const handleSaveFilterPreset = async (name: string): Promise<boolean> => {
+    try {
+      const created = await filterPresetsAPI.create({ name, ...currentPresetValues() });
+      setFilterPresets((list) => [...list, created]);
+      addToast(t('approval.preset_saved', { name: created.name }), 'success');
+      return true;
+    } catch {
+      addToast(t('common.process_error'), 'error');
+      return false;
+    }
+  };
+
+  const handleRenameFilterPreset = async (id: number, name: string): Promise<boolean> => {
+    try {
+      const updated = await filterPresetsAPI.update(id, { name });
+      setFilterPresets((list) => list.map((p) => (p.id === id ? updated : p)));
+      return true;
+    } catch {
+      addToast(t('common.process_error'), 'error');
+      return false;
+    }
+  };
+
+  const handleOverwriteFilterPreset = async (id: number) => {
+    try {
+      const updated = await filterPresetsAPI.update(id, currentPresetValues());
+      setFilterPresets((list) => list.map((p) => (p.id === id ? updated : p)));
+      addToast(t('approval.preset_overwritten', { name: updated.name }), 'success');
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    }
+  };
+
+  const handleMoveFilterPreset = async (id: number, direction: -1 | 1) => {
+    const prev = filterPresets;
+    const idx = prev.findIndex((p) => p.id === id);
+    const target = idx + direction;
+    if (idx < 0 || target < 0 || target >= prev.length) return;
+    const next = [...prev];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setFilterPresets(next);
+    try {
+      setFilterPresets(await filterPresetsAPI.reorder(next.map((p) => p.id)));
+    } catch {
+      setFilterPresets(prev);
+      addToast(t('common.process_error'), 'error');
+    }
+  };
+
+  const handleDeleteFilterPreset = async (id: number) => {
+    const target = filterPresets.find((p) => p.id === id);
+    try {
+      await filterPresetsAPI.delete(id);
+      setFilterPresets((list) => list.filter((p) => p.id !== id));
+      if (target) addToast(t('approval.preset_deleted', { name: target.name }), 'success');
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    }
+  };
+
+  const renderFilterPresetPopover = (): React.ReactNode => {
+    const hasCurrent = hasAnyPresetFilter(presetFilterState);
+    const isFull = filterPresets.length >= FILTER_PRESET_MAX;
+    let saveHint = '';
+    if (!hasCurrent) saveHint = t('approval.preset_save_hint_empty');
+    else if (isFull) saveHint = t('approval.preset_limit', { max: FILTER_PRESET_MAX });
+    const ready = filterPresetStatus === 'ready';
+    return (
+      <div className="column-filter-popover preset-popover">
+        {filterPresetStatus === 'loading' && <div className="preset-status">{t('approval.preset_loading')}</div>}
+        {filterPresetStatus === 'error' && (
+          <div className="preset-status error">
+            {t('approval.preset_load_error')}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={loadFilterPresets}>{t('common.retry')}</button>
+          </div>
+        )}
+        {ready && filterPresets.length === 0 && <div className="preset-empty">{t('approval.preset_empty')}</div>}
+        {ready && filterPresets.map((preset) => {
+          const active = activeFilterPreset?.id === preset.id;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              className={`preset-item${active ? ' active' : ''}`}
+              onClick={() => applyFilterPreset(preset)}
+            >
+              <span className="preset-item-check">{active ? '✓' : ''}</span>
+              <span>
+                <span className="preset-item-name">{preset.name}</span>
+                <span className="preset-item-summary">{presetSummaryOf(preset)}</span>
+              </span>
+            </button>
+          );
+        })}
+        <div className="column-filter-popover-divider" />
+        <button
+          type="button"
+          className="preset-action"
+          disabled={!ready || !!saveHint}
+          onClick={() => { setOpenFilterDropdown(null); setPresetSaveOpen(true); }}
+        >
+          + {t('approval.preset_save')}
+          {ready && saveHint && <span className="preset-action-hint">{saveHint}</span>}
+        </button>
+        <button
+          type="button"
+          className="preset-action"
+          disabled={!ready}
+          onClick={() => { setOpenFilterDropdown(null); setPresetManageOpen(true); }}
+        >
+          ⚙ {t('approval.preset_manage')}
+        </button>
+      </div>
+    );
+  };
+
   const toggleMarkCategoryFilter = (value: MarkCategoryFilterValue) => {
     setMarkCategoryFilter((prev) => {
       const next = new Set(prev);
@@ -1816,6 +2004,20 @@ export default function ApprovalPage(): React.ReactElement {
 
       <div className="column-filter-bar" ref={filterBarRef}>
         <span className="column-filter-bar-label">{t('approval.filter_bar_label')}</span>
+
+        {/* claude 수정 (2026-11-09): '나만의 필터' 드롭다운 — 적용 중이면 강조색 + 필터 이름 표시 */}
+        {!isTourMode && (
+          <div className="column-filter-anchor">
+            <button
+              type="button"
+              className={`column-filter-btn${activeFilterPreset ? ' active' : ''}`}
+              onClick={() => setOpenFilterDropdown((k) => (k === 'preset' ? null : 'preset'))}
+            >
+              ⭐ {activeFilterPreset ? activeFilterPreset.name : t('approval.preset_btn')} <span className="caret">▾</span>
+            </button>
+            {openFilterDropdown === 'preset' && renderFilterPresetPopover()}
+          </div>
+        )}
 
         <div className="column-filter-anchor">
           <button
@@ -3447,6 +3649,25 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
+      {/* claude 수정 (2026-11-09): '나만의 필터' 저장·관리 창 */}
+      <SavePresetModal
+        isOpen={presetSaveOpen}
+        onClose={() => setPresetSaveOpen(false)}
+        presets={filterPresets}
+        summary={presetSummaryOf(currentPresetValues())}
+        onSave={handleSaveFilterPreset}
+      />
+      <ManagePresetsModal
+        isOpen={presetManageOpen}
+        onClose={() => setPresetManageOpen(false)}
+        presets={filterPresets}
+        summaryOf={presetSummaryOf}
+        canOverwrite={hasAnyPresetFilter(presetFilterState)}
+        onRename={handleRenameFilterPreset}
+        onOverwrite={handleOverwriteFilterPreset}
+        onMove={handleMoveFilterPreset}
+        onDelete={handleDeleteFilterPreset}
+      />
       <MarkCategorySettingsModal
         isOpen={markSettingsOpen}
         onClose={() => setMarkSettingsOpen(false)}
