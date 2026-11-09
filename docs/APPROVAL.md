@@ -1488,9 +1488,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 결재 경로 변경 (2026-10) | 작성자(`requester_loginid`)/MASTER + under_review + 확인 대기 요청 없음 | `changeRoute` (`RouteChangeModal`) |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
-| 철회 | `can_withdraw` + 철회 요청중이 아닐 때 (draft / under_review / rejected(2026-11) / MASTER 는 전부) | 사유 입력 모달 → `withdraw`(진행 중·반려면 철회 요청, 그 외 즉시 삭제) |
+| 철회 | `can_withdraw` + 철회 요청중이 아닐 때(목록·상세 공통, 2026-11-09 목록도 적용) (draft / under_review / rejected(2026-11) / MASTER 는 전부) | 사유 입력 모달 → `withdraw`(진행 중·반려면 철회 요청, 그 외 즉시 삭제) |
 | 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함) | `confirmWithdraw` / `rejectWithdraw` |
-| 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중) | `cancelWithdraw` |
+| 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중). **(2026-11-09) 목록 행에도 노출** — 요청중이면 목록의 [철회] 대신 [철회 요청 취소]가 보인다(MASTER 포함, 상세 모달과 동일 기준). 예전엔 목록에 [철회]가 남아 눌러도 400(이미 진행 중인 철회 요청)이었다 | `cancelWithdraw` (목록: `handleCancelWithdrawFromList`, 상세: `handleCancelWithdraw`) |
 | 수정 후 재상신 | rejected/draft + 철회 요청중이 아닐 때(2026-11) | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
 | 중단 확인 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmPause` |
