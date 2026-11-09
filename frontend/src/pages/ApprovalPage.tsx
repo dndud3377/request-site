@@ -1701,6 +1701,27 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  // claude 수정 (2026-11-09): 목록 행에서도 철회 요청을 취소할 수 있게 함(상세 모달 없이 목록만 새로고침)
+  const handleCancelWithdrawFromList = async (doc: RequestDocument) => {
+    setProcessing(true);
+    try {
+      await documentsAPI.cancelWithdraw(doc.id);
+      addToast(t('approval.withdraw_cancelled_toast'), 'success');
+      fetchDocs();
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // 철회 요청 취소 가능 여부 — 요청한 본인 또는 MASTER(서버 `can_cancel_withdraw` 와 동일 기준)
+  const canCancelWithdrawOf = (doc: RequestDocument): boolean => {
+    const req = doc.withdraw_request;
+    return !!req
+      && (currentUser.role === 'MASTER' || (!!req.requester_loginid && req.requester_loginid === currentUser.username));
+  };
+
   const handleEditResubmit = (doc: RequestDocument) => {
     setModalOpen(false);
     navigate('/request', { state: { editDocId: doc.id } });
@@ -2184,7 +2205,8 @@ export default function ApprovalPage(): React.ReactElement {
                             👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
                           </button>
                         )}
-                        {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'draft' || doc.status === 'rejected' || currentUser.role === 'MASTER') && (
+                        {/* claude 수정 (2026-11-09): 철회 요청중이면 [철회] 대신 요청자 본인/MASTER 에게 [철회 요청 취소] (상세 모달과 동일 기준) */}
+                        {doc.can_withdraw && !doc.withdraw_request && (doc.status === 'under_review' || doc.status === 'draft' || doc.status === 'rejected' || currentUser.role === 'MASTER') && (
                           <button
                             className="btn btn-secondary btn-sm"
                             data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
@@ -2192,6 +2214,15 @@ export default function ApprovalPage(): React.ReactElement {
                             disabled={processing}
                           >
                             {t('approval.withdraw')}
+                          </button>
+                        )}
+                        {canCancelWithdrawOf(doc) && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleCancelWithdrawFromList(doc)}
+                            disabled={processing}
+                          >
+                            {t('approval.withdraw_cancel')}
                           </button>
                         )}
                       </div>
