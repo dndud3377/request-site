@@ -200,14 +200,17 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - 신규/차용에 기등록·layer삭제·미진행이 섞여 있어도 무시하고 신규/차용 기준으로만 판정한다.
 - 계산된 값과 현재 값이 같으면 모달 없이 그대로 STEP5 로 진행.
 - 다르면 `purposeMismatchConfirm`(계산된 목표 값을 담는 state, `null`=닫힘)에 값을 채워 모달을 띄운다.
-  - **'적용'(`handlePurposeMismatchApply`)**: `detail.request_purpose` 를 계산된 값으로 바꾸고 STEP5로 진행.
-  - **'취소'/닫기(`handlePurposeMismatchClose`)**: 값은 바꾸지 않고 **그대로 STEP5로 진행한다** — 다른
-    두 관문과 달리 취소해도 이동이 막히지 않는다(단순 확인용 안내이지 필수 정정이 아님).
-  - ⚠️ `ackedStepGatesRef.current.purposeMismatch` 로는 '적용' 직후 `ConfirmModal` 이 자동으로 부르는
-    `onClose` 호출을 걸러낼 수 없다 — `goToStep` 이 이동을 성공적으로 마치면 그 순간 이 플래그를
-    포함해 관문 기록 전체를 리셋하므로, `onClose` 가 실행되는 시점엔 이미 `false` 로 돌아가 있다.
-    그래서 이 상호작용 전용의 별도 ref(`purposeMismatchAppliedRef`)로 '방금 적용 처리됨'을 표시해
-    `handlePurposeMismatchClose` 의 중복 호출을 걸러낸다.
+  - **(2026-11-09 변경) 취소 없음 — '확인' 하나만 있고 무조건 변경된다.** '확인'과 우측 상단 닫기(✕) 모두
+    `handlePurposeMismatchConfirm` 으로 `detail.request_purpose` 를 계산된 값으로 바꾸고 STEP5로 진행한다.
+    모든 문서(신규 작성·반려 재상신·중단 재개, MAP 정보 잠금 여부 무관)에 같다.
+  - 공용 `ConfirmModal` 은 취소 버튼이 고정이라 쓰지 않고 `Modal` + `footer`('확인', `common.confirm`)로 직접 그린다.
+  - 문구: `request.purpose_mismatch_body` — "Jayer/Oayer 표의 요청 기준에 따라 이 요청서의 요청 목적을 '{{purpose}}'(으)로
+    변경합니다." (`purpose_mismatch_apply` 키는 삭제)
+  - 종전(2026-08~11-08)엔 '적용'/'취소'가 있었고 취소하면 값을 그대로 두고 진행했다. 그 구분용 ref
+    (`purposeMismatchAppliedRef`)와 `handlePurposeMismatchApply`/`Close` 는 제거됐다.
+- **MAP 정보 잠금 문서와의 관계(2026-11-09)**: R/고정 후결자 합의 이력으로 잠긴 문서(`map_info_locked`)는 STEP1 요청 목적
+  버튼이 여전히 disabled 다(직접 선택 불가). 이 관문으로 **신규·차용·신규+차용 사이**에서 바뀌는 것만 서버가 허용한다 —
+  아래 "기능 변경 (2026-11-09 — 잠긴 문서도 요청 기준에 따른 요청 목적 변경 허용)" 참조.
 
 #### 인디케이터(`WizardIndicator`)
 
@@ -6873,6 +6876,41 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
 - **주의(발견 보고, 미수정)**: 스냅샷 캡처(`layer_drift.EXTRA_MODEL_MAP`)는 `'line1'` 형식 키를 쓰는데, 의뢰서의 `detail.line` 은
   화면 표기(`'라인1'`, `OPTION_LINE`)다. 재현 결과 `detail.line='라인1'` 이면 스냅샷이 **0건**, `'line1'` 이면 정상 캡처된다.
   이 경우 XXXXXX 페이지는 항상 `데이터 없음` 이다(J/O 자동 채움 조회 `job-file-layer`/`ovl-layer` 도 같은 맵을 쓴다). 사용자 결정 대기.
+
+### 기능 변경 (2026-11-09 — 잠긴 문서도 요청 기준에 따른 요청 목적 변경 허용 + 요청 목적 확인 모달 '확인' 단일화)
+
+- **배경(사용자 보고)**: R 합의 후 반려된 '신규' 문서에서 J·O 표 요청 기준을 차용으로 바꾸고 STEP4→5 에서 요청 목적 확인
+  '적용'을 누르면 요청 목적이 '차용'으로 바뀌는데, 요청 목적이 MAP 정보 잠금 대상(`MAP_LOCK_STEP1_FIELDS`)이라
+  재상신 저장(PATCH)이 400(`MAP 정보 검토(RFG)가 완료된 뒤에는 …`)으로 막혔다. 로컬 sqlite + 실제 프론트/백엔드로
+  화면 재현해 확인했다(확인 모달이 잠금 여부를 보지 않음 → 잠긴 STEP1 에 '차용'이 선택된 채 상신 400).
+- **의도(사용자)**: 신규·차용·신규+차용 은 J·O 요청 기준이 바뀌면 따라 바뀌어도 된다. 요청 목적 버튼으로 직접 고르는 것은
+  지금처럼 막고, 요청 기준 변경으로 인한 변경만 허용한다. 요청 목적 확인 모달은 취소를 없애고 '확인'으로 무조건 변경한다.
+- **동작**:
+  - 서버 `RequestDocument.changed_map_info_fields(new_detail, new_notes)` — 요청 목적이 바뀌었어도 ① 변경 전·후가 모두
+    `NOC_PURPOSE_GROUP`(신규/차용/신규+차용)이고 ② 변경 후 값이 같은 요청(`new_notes`)의 J·O 표로 계산한 값
+    (`RequestDocument.expected_request_purpose`, 프론트 `computeExpectedRequestPurpose` 와 같은 규칙)과 같으면 잠금 위반으로
+    보지 않는다. 그 외(표와 다른 값으로 직접 API 호출, 기타·Only MAP 등 그룹 밖)는 기존대로 400. 라인~조리법·MAP 정보 잠금은 그대로.
+  - `views.py` `RequestDocumentViewSet.update` 가 파싱한 `additional_notes` 전체를 `new_notes` 로 넘긴다.
+  - 프론트: STEP1 요청 목적 버튼 잠금(`Step1` disabled + `request.step1_locked_notice`)은 그대로. 요청 목적 확인 모달은
+    '확인'만 있고 확인·닫기 모두 계산값으로 바꾼다(위 `step 4→5` 요청 목적 확인 관문 절).
+- **알려진 한계(사용자 결정: 고려하지 않음)**: 잠긴 문서에서 요청 기준을 전부 기등록·layer삭제·미진행으로 바꾸면 계산값이 '기타'라
+  모달이 '기타'로 강제 변경하고 서버는 400 으로 막는다. '기타'로 상신된 문서는 J·O 표에 행 추가 버튼이 없어
+  기타 → 신규/차용 방향은 생기지 않는다(사용자 설명).
+- **영향 파일**: `backend/api/models.py`, `views.py`, `tests.py`, `frontend/src/pages/RequestPage/index.tsx`,
+  `refDocStConfirm.test.tsx`(취소 → 확인 클릭으로 수정), `locales/ko.json`·`en.json`. 마이그레이션 없음.
+- **검증**: 백엔드 `manage.py test api` 885건 OK(신규 4건 — `MapInfoLockAfterApprovalHistoryTest` 의
+  `test_purpose_follows_rows_within_noc_group_allowed`·`test_purpose_not_matching_rows_rejected`·
+  `test_purpose_outside_noc_group_rejected`·`test_expected_request_purpose_matches_frontend_rules`).
+  프론트 `npm test` 54 suites·700건 통과, `tsc --noEmit` 에러 0. 로컬 sqlite + 빌드한 프론트로 같은 시나리오를 Playwright 로
+  다시 돌려 확인 모달에 '확인'만 있고, 재상신 PATCH 200 후 상신되는 것을 캡처했다.
+  결재 케이스 러너는 로컬에 JOB FILE 마스터 데이터가 없어 실행하지 못했다(결재 액션·결재선 생성 로직은 바꾸지 않음).
+- **수동 검증 시나리오**:
+  1. 결재 현황 → R 합의 이력이 있는 반려 문서(요청 목적 '신규') → '수정·재상신' → STEP1 요청 목적 버튼이 비활성인지 확인.
+  2. STEP3 J-ayer '요청 기준: 전체 차용', STEP4 O-ayer '전체 차용' → '다음' → '요청 목적 확인' 창에 **'확인' 버튼 하나만**
+     있고 문구가 "'차용'(으)로 변경합니다" 이면 정상(취소 버튼이 보이면 실패).
+  3. '확인' → STEP5 → '상신하기' → 동료 PL 지정 → '상신하기' → 성공 토스트 + 결재 현황에서 상태가 진행 중으로 바뀌면 정상.
+     "MAP 정보 검토(RFG)가 완료된 뒤에는 …" 400 토스트가 뜨면 실패.
+  4. STEP1 로 돌아가면 요청 목적이 '차용'으로 표시되지만 버튼은 여전히 비활성이어야 한다(직접 선택 불가).
 
 ## 5. 검증 방법
 ```bash
