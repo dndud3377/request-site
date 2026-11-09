@@ -353,6 +353,23 @@ export interface PersonalMarkCategory {
   order: number;
 }
 
+// claude 수정 (2026-11-09): 결재 현황 '나만의 필터' API 응답 타입(/api/filter-presets/)
+/**
+ * 결재 현황 필터 바의 '나만의 필터' 한 건 — 라인·목적·MAP 목적 선택값 목록을 이름 붙여 저장한 것.
+ * 사용자별 개인 데이터라 다른 사용자와 공유되지 않는다. order 는 서버가 정하며 reorder API 로만 바뀐다.
+ */
+export interface PersonalFilterPreset {
+  id: number;
+  name: string;
+  lines: string[];
+  purposes: string[];
+  map_purposes: string[];
+  order: number;
+}
+
+/** 나만의 필터 저장·덮어쓰기 요청 본문(일부만 보내면 그 항목만 바뀐다). */
+export type PersonalFilterPresetInput = Partial<Pick<PersonalFilterPreset, 'name' | 'lines' | 'purposes' | 'map_purposes'>>;
+
 /**
  * 반려 이력 1건 — 반려가 확정된 순간의 의뢰서를 통째로 얼려 둔 것.
  * 이력 조회 '반려' 탭의 행 하나에 대응한다. 재상신·승인으로 원본 문서가 바뀌어도,
