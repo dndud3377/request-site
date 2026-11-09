@@ -1029,7 +1029,7 @@ select.form-control option {
   padding: 4px 8px;
 }
 
-/* claude 수정 (2026-11-09): 결재 현황 '나만의 필터' 드롭다운·저장/관리 창 (docs/my_filter_preset_mockup.html v2) */
+/* claude 수정 (2026-11-09): 결재 현황 '나만의 필터' 드롭다운·저장/관리 창 */
 .column-filter-popover.preset-popover { min-width: 300px; max-width: 380px; padding: 6px; }
 
 .preset-item {
