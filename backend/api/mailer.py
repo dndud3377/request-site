@@ -27,7 +27,9 @@
   않는다(2026-09 개편). 이미 합의를 마친 팀은 발송 대상이 아니다.
   · PL 단계에서 반려된 경우, 아직 합의/반려하지 않은 나머지 지정 PL(pending)은 개인
     수신자 메일에 포함
-- 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
+- 승인 완료: 현재 회차 결재 경로에 참여했던 전원 + 작성자 + 문서 공유 그룹 멤버(2026-11, 중복 제거)
+- 상신 통보/결재 완료 통보(notify_submitted/notify_approved): 통보처(+상신 받기 구독자) + 작성자
+  + 문서 공유 그룹 멤버(2026-11). 같은 메일 1통에 합류하며 겹치는 주소는 1번만 받는다
 - P 단계 완료 통보(notify_p_completed): TE_O·TE_J 각각 별도 메일(참고용, 결재 권한과 무관,
   2026-09부터 팀별 분리 발송)
 - 철회 완료(withdraw_completed): "개인 수신자" 메일 1통(지정 PL 전원 + 통보처 전원 +
@@ -688,9 +690,39 @@ def resolve_reject_recipients(document):
     return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
 
 
+# claude 수정 (2026-11-10): 상신 통보·결재 완료 통보·승인 완료 메일을 작성자·공유 그룹 멤버도 받도록 수신자 산출 함수 신설
+def _requester_and_shared_group_emails(document):
+    """작성자 + 문서 공유 그룹(shared_group) 멤버의 이메일(중복 제거, 순서 보존).
+
+    반려 메일(`resolve_reject_recipients`)과 같은 기준이다 — 공유 그룹 멤버는 작성자 대신
+    수정·재상신할 수 있으므로 작성자와 함께 상신·완료 사실을 받는다(2026-11).
+    """
+    emails = []
+    if document.requester_email:
+        emails.append(document.requester_email)
+    if document.shared_group_id:
+        for mail in document.shared_group.members.exclude(mail='').values_list('mail', flat=True):
+            if mail not in emails:
+                emails.append(mail)
+    return emails
+
+
+def _merge_unique(recipients, extra):
+    """recipients 뒤에 extra 중 아직 없는 주소만 덧붙인다(순서 보존)."""
+    merged = list(recipients)
+    for mail in extra:
+        if mail not in merged:
+            merged.append(mail)
+    return merged
+
+
+# claude 수정 (2026-11-10): 승인 완료 메일에 작성자·공유 그룹 멤버 추가(결재 참여자와 겹치면 1번만)
 def resolve_approved_recipients(document):
-    """승인 완료 시 수신자: 현재 회차 결재 경로에 참여했던 전원(중복 제거)."""
-    return _apply_redirect(_current_round_step_emails(document), document)
+    """승인 완료 시 수신자: 현재 회차 결재 경로에 참여했던 전원 + 작성자 + 공유 그룹 멤버(중복 제거)."""
+    emails = _merge_unique(
+        _current_round_step_emails(document), _requester_and_shared_group_emails(document),
+    )
+    return _apply_redirect(emails, document)
 
 
 def resolve_notifier_recipients(document):
@@ -1368,23 +1400,32 @@ def enqueue_approved(document):
     return _enqueue(document, 'approved', recipients)
 
 
+# claude 수정 (2026-11-10): 상신 통보에 작성자·공유 그룹 멤버 추가(통보처·구독자와 겹치면 1번만)
 def enqueue_notify_submitted(document):
     """상신 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상).
 
     + '상신 받기'를 켠 TE_P 사용자(resolve_submit_subscriber_recipients, 2026-08 신설)도
-    같은 메일을 받는다. 통보처가 하나도 없어도 상신 받기 구독자만으로 발송된다.
+    같은 메일을 받는다. + 작성자·문서 공유 그룹 멤버(2026-11)도 같은 메일 1통에 합류한다.
+    통보처가 하나도 없어도 구독자·작성자만으로 발송된다.
     """
     recipients = resolve_notifier_recipients(document)
-    subscriber_recipients = resolve_submit_subscriber_recipients(document)
-    for mail in subscriber_recipients:
-        if mail not in recipients:
-            recipients.append(mail)
+    recipients = _merge_unique(recipients, resolve_submit_subscriber_recipients(document))
+    recipients = _merge_unique(
+        recipients, _apply_redirect(_requester_and_shared_group_emails(document), document),
+    )
     return _enqueue(document, 'notify_submitted', recipients)
 
 
+# claude 수정 (2026-11-10): 결재 완료 통보에 작성자·공유 그룹 멤버 추가(통보처와 겹치면 1번만)
 def enqueue_notify_approved(document):
-    """결재 완료 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상)."""
-    recipients = resolve_notifier_recipients(document)
+    """결재 완료 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상).
+
+    + 작성자·문서 공유 그룹 멤버(2026-11)도 같은 메일 1통에 합류한다(통보처와 겹치면 1번만).
+    """
+    recipients = _merge_unique(
+        resolve_notifier_recipients(document),
+        _apply_redirect(_requester_and_shared_group_emails(document), document),
+    )
     return _enqueue(document, 'notify_approved', recipients)
 
 
