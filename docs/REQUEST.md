@@ -307,6 +307,36 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-11-10 후속 — '숫자 확인 필수'를 [해당 없음/해당 있음 + 숫자] 로 바꾸고, 숫자 ≥ 기준값(.env)일 때만 사진 첨부)
+
+> 아래 "STEP2 MAP 정보: '숫자 확인 필수' 사진 증빙 항목 추가" 항목의 **후속 변경**이다. 바뀐 부분만 적는다(판정 조건·사진 붙여넣기 방식은 그대로).
+
+- **배경(사용자 결정)**: PPPP 조건이면 숫자 확인을 '해당 있음'으로 자동 표시해 숫자를 받고, 그 숫자가 기준값 이상일 때만 사진 증빙을 받는다.
+- **화면** (`StepMap.tsx`, X표시 아래 — 예외 구역과 같은 배치):
+  - `숫자 확인 필수` 드롭다운(`해당 없음`/`해당 있음`) — **항상 잠김**. PPPP 판정(`isNumCheckRequired`, NEW 전용)이 참이면 `해당 있음`, 거짓이면 `해당 없음`으로 고정된다.
+  - `숫자 확인 값` 입력칸 — `해당 있음`일 때만 열리고 필수. 숫자와 소수점 하나만 입력된다(`sanitizeUnsignedDecimal`, 음수 부호·문자 불가).
+  - 숫자 ≥ 기준값(같으면 포함, `isNumCheckImageRequired`)이면 그 아래에 `사진 첨부 *` 영역이 열린다(사진 추가·개별 삭제·교체는 그대로, 최소 1장 필수).
+  - 사진 칸 최대 폭은 M-shot 붙여넣기 칸과 같은 **50%**(1·2칸), 3칸 이상이면 flex 로 자동으로 나눠진다.
+- **기준값(.env)**: backend `.env` 의 `NUM_CHECK_IMAGE_THRESHOLD`(기본 10, 비거나 숫자가 아니면 10) → `settings.NUM_CHECK_IMAGE_THRESHOLD`
+  → `GET /api/form-options/num-check-config/` → `{ "image_threshold": 10 }`(정수면 정수로). 프론트는 조회 전·실패 시 `NUM_CHECK_IMAGE_THRESHOLD_DEFAULT`(10).
+  값을 바꾼 뒤 **backend 재시작**만 하면 된다(프론트 재빌드 불필요). `.env.example`·`.env.dev.example` 에 예시 줄 추가.
+- **저장 필드**: `num_check`('해당 없음'/'해당 있음') · `num_check_value`(문자열) · `num_check_images`(경로 배열). 세 필드 모두 `mapInfoDefaults` 와
+  백엔드 `MAP_INFO_FIELDS` 에 있다(MAP 정보 잠금·O 재합의 생략 비교). 필드가 없는 문서는 편집 로드 시 `해당 없음`·빈 값으로 백필.
+- **검증** `validate(2)`: `해당 있음`인데 숫자 없음 → `request.required`, 숫자가 아님 → `request.invalid_number`, 숫자 ≥ 기준값인데 사진 0장 → `request.num_check_required`.
+- **초기화**: 판정이 거짓이 되면 `해당 없음` + 숫자·사진 비움 / 숫자가 기준값 미만이 되면 사진 비움 / MAP 목적 변경·ADI CD 진입은 `mapInfoDefaults`.
+  두 effect 모두 전환에서만 돌아 저장 문서를 불러올 때는 저장값을 지우지 않는다.
+- **i18n(ko/en 동시)**: 추가 `request.num_check_none`·`num_check_applies`·`num_check_value`·`num_check_image_area`·`num_check_image_hint`,
+  문구 변경 `num_check_active_hint`·`num_check_locked_hint`.
+- **테스트**: `numCheckImages.test.tsx` 16건(판정·기준값 경계·입력 필터·API 기준값·칸 폭·추가/삭제/교체·기준값 미만 초기화·잠금·저장 문서 유지·MAP 목적/Only MAP 초기화),
+  `PagedDetailView.numCheck.test.tsx` 3건, 백엔드 `NumCheckConfigApiTest` 3건 + `MapInfoLockedFieldCoverageTest` `num_check_value` 1건.
+- **수동 검증**:
+  1. [STEP1 에서 J/O pp 에 `PPPP` 가 들어간 제품 → STEP2 MAP 목적 `NEW`] → [기대: `숫자 확인 필수` = `해당 있음`(회색 잠김), `숫자 확인 값 *` 입력 가능, 사진 영역 없음.]
+  2. [`-1a2` 입력] → [기대: `12` 만 남는다.] [값 `8`] → [사진 영역 없음.] [값 `15`] → [기대: `사진 첨부 *` 영역, 칸 폭은 M-shot 칸과 같은 절반.]
+  3. [사진 없이 '다음'] → [기대: 사진 오류로 막힘.] [Ctrl+V 3장(사진 추가 2번)] → [기대: 3칸이 한 줄에 나눠짐.] [값을 `5` 로] → [기대: 사진 영역과 사진이 사라짐.]
+  4. [PPPP 없는 제품] → [기대: `해당 없음` 고정, 숫자칸 잠김, 필수 오류 없음.]
+  5. [backend `.env` 에 `NUM_CHECK_IMAGE_THRESHOLD=20` → backend 재시작 → 값 `15`] → [기대: 사진 영역 없음, `20` 이면 열림.]
+  6. [상신 후 결재 현황 → 문서 → 'MAP 정보' 탭] → [기대: X표시 아래 카드에 `해당 있음` · 숫자 · 사진.]
+
 ### 기능 변경 (2026-11-10 — STEP2 MAP 정보: '숫자 확인 필수' 사진 증빙 항목 추가)
 
 - **배경(사용자 결정)**: J-ayer·O-ayer 의 pp 에 `PPPP` 가 있는 NEW MAP 의뢰는 숫자 확인을 사진으로 반드시 증빙받는다.
