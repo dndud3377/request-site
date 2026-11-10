@@ -1,5 +1,6 @@
-// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 영역 — M-shot 붙여넣기 칸(MshotImageUpload)과 같은 방식을 여러 칸으로 확장.
+// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 칸 — M-shot 붙여넣기 칸(MshotImageUpload)과 같은 방식을 여러 칸으로 확장.
 //   숫자 확인 값이 기준값 이상일 때만 StepMap 이 렌더한다. 칸 폭은 M-shot 칸과 같은 50% 가 최대이고, 3칸 이상이면 자동으로 나눈다.
+//   (같은 날 후속) '사진 첨부' 라벨·안내 문구를 없애고 '사진 추가' 버튼은 StepMap 의 숫자 확인 값 오른쪽으로 옮겼다 — 이 컴포넌트는 칸만 그린다.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,13 +12,10 @@ interface NumCheckImageUploadProps {
   images: string[];
   /** 사진 뒤에 보여줄 빈 붙여넣기 칸 수 */
   emptySlots: number;
-  /** 사진 첨부 기준값(안내 문구 표시용) */
-  threshold: number;
   /** MAP 정보 잠금 등 외부 잠금 — 참이면 붙여넣기·추가·삭제 불가 */
   locked: boolean;
   error?: string;
   onPaste: (e: React.ClipboardEvent<HTMLDivElement>, target: NumCheckPasteTarget) => void;
-  onAddSlot: () => void;
   onRemoveImage: (index: number) => void;
   onRemoveEmptySlot: () => void;
 }
@@ -28,7 +26,7 @@ const SLOT_MIN_WIDTH = '280px';
 const SLOT_MAX_WIDTH = `calc(50% - ${SLOT_GAP_PX / 2}px)`;
 
 const NumCheckImageUpload: React.FC<NumCheckImageUploadProps> = ({
-  images, emptySlots, threshold, locked, error, onPaste, onAddSlot, onRemoveImage, onRemoveEmptySlot,
+  images, emptySlots, locked, error, onPaste, onRemoveImage, onRemoveEmptySlot,
 }) => {
   const { t } = useTranslation();
   // 빈 칸이 하나뿐이고 사진이 없으면 그 칸은 지울 수 없다(입력할 자리가 사라지지 않도록).
@@ -84,18 +82,7 @@ const NumCheckImageUpload: React.FC<NumCheckImageUploadProps> = ({
   );
 
   return (
-    <div className="form-group full-width" style={{ marginTop: '8px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-        <label className="form-label" style={{ marginBottom: 0 }}>
-          {t('request.num_check_image_area')} <span className="required">*</span>
-        </label>
-        <button type="button" className="btn btn-secondary btn-sm" disabled={locked} onClick={onAddSlot}>
-          {t('request.num_check_add_image')}
-        </button>
-      </div>
-      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 8px' }}>
-        {t('request.num_check_image_hint', { threshold })}
-      </p>
+    <div className="form-group full-width" data-num-check-images="" style={{ marginTop: '8px' }}>
       <div style={{ display: 'flex', gap: `${SLOT_GAP_PX}px`, flexWrap: 'wrap' }}>
         {images.map((path, idx) => renderSlot(`img-${idx}`, idx + 1, idx, path, () => onRemoveImage(idx)))}
         {Array.from({ length: emptySlots }, (_, i) =>

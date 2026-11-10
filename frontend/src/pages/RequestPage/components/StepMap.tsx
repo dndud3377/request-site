@@ -702,6 +702,19 @@ const StepMap: React.FC<StepMapProps> = ({
               />
               {errors.num_check_value && <span className="form-error">{errors.num_check_value}</span>}
             </div>
+            {/* claude 수정 (2026-11-10): '사진 추가' 버튼을 숫자 확인 값 오른쪽에 항상 두고, 값이 기준값 이상일 때만 활성화 */}
+            <div className="form-group" style={{ flexShrink: 0 }}>
+              {/* 빈 라벨 — 버튼 높이를 옆 입력칸과 맞추기 위한 자리(보이는 글자 없음) */}
+              <label className="form-label" aria-hidden="true">{'\u00a0'}</label>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={!numCheckImageRequired || mapInfoLocked}
+                onClick={handleNumCheckAddSlot}
+              >
+                {t('request.num_check_add_image')}
+              </button>
+            </div>
             <div style={{ flex: 3.5 }} />
           </div>
           <span style={{ display: 'block', marginTop: 4, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
@@ -713,11 +726,9 @@ const StepMap: React.FC<StepMapProps> = ({
             <NumCheckImageUpload
               images={detail.num_check_images ?? []}
               emptySlots={numCheckEmptySlots}
-              threshold={numCheckThreshold}
               locked={mapInfoLocked}
               error={errors.num_check_images}
               onPaste={handleNumCheckPaste}
-              onAddSlot={handleNumCheckAddSlot}
               onRemoveImage={handleNumCheckRemoveImage}
               onRemoveEmptySlot={handleNumCheckRemoveEmptySlot}
             />

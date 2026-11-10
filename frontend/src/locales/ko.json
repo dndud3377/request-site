@@ -472,8 +472,6 @@
     "num_check_none": "해당 없음",
     "num_check_applies": "해당 있음",
     "num_check_value": "숫자 확인 값",
-    "num_check_image_area": "사진 첨부",
-    "num_check_image_hint": "값이 {{threshold}} 이상이라 사진을 1장 이상 첨부해야 합니다. Ctrl+V 로 붙여넣으세요.",
     "num_check_add_image": "사진 추가",
     "num_check_image_no": "사진 {{no}}",
     "num_check_active_hint": "J-ayer/O-ayer 의 pp 에 '{{keyword}}' 가 있어 '해당 있음'으로 고정됩니다. 값이 {{threshold}} 이상이면 사진을 첨부해야 합니다.",
