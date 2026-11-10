@@ -302,7 +302,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
-### 기능 변경 (2026-11-10 — 임시저장·상신 실패 토스트에 서버 거부 사유 표시)
+### 기능 변경 (2026-11-10 — 임시저장·상신·직접 이력 등록 실패 토스트에 서버 거부 사유 표시)
 
 - **배경**: 임시저장(`handleSaveDraft`)이 서버에서 거부돼도 토스트는 사유와 무관하게 `common.error`("오류가 발생했습니다.")만 보였다.
   MAP 정보 잠금 400 처럼 사용자가 원인을 알아야 하는 경우에도 이유를 알 수 없었다(바로 아래 버그 수정 항목의 재현에서 확인).
@@ -311,8 +311,8 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   `addToast(err instanceof Error ? err.message : t('common.error'), 'error')`.
   `err.message` 는 `api/client.ts` 가 만든 `HTTP <상태>: <서버 error>` 형식이라 토스트에 `HTTP 400: MAP 정보 검토(RFG)가 …` 처럼 보인다.
   새 i18n 키는 없다(기본 문구는 기존 `common.error`).
-- **범위 밖**: 유휴 자동저장(`handleIdleAutoSave`) 실패는 종전대로 조용히 무시한다. 직접 이력 등록(`handleDirectHistoryRegister`)의
-  같은 하드코딩 접두 문구는 이번에 바꾸지 않았다.
+- **직접 이력 등록(같은 날 후속)**: `handleDirectHistoryRegister` 실패 토스트의 같은 하드코딩 접두 문구도 같은 관례로 맞췄다.
+- **범위 밖**: 유휴 자동저장(`handleIdleAutoSave`) 실패는 종전대로 조용히 무시한다.
 - **테스트**: `frontend/src/pages/RequestPage/draftSaveErrorToast.test.tsx`(2건 — Error 거부 시 사유 표시 / 그 외 값은 `common.error`).
   상신·재상신 실패 토스트는 자동 테스트가 없다(전 단계 검증 통과가 필요해 이번에 추가하지 않음).
 - **수동 검증**: 잠긴 문서에서 거부되는 저장을 만들면(예: MASTER 가 아닌 작성자로 API 직접 호출, 또는 이 수정 전 백엔드) 임시저장 토스트에
