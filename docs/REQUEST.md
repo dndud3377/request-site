@@ -289,6 +289,10 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   데이터(0건이면 빈 표)가 된다. 재현 테스트(A 응답을 보류 → B 선택 → A 해제)로 J 2행 → 0행을 확인했다(2026-10-28).
   조회가 로컬 MySQL 테이블이라 평소에는 드물다(추정). 빈 표가 되는 경우는 2026-10-28 의 0행 상신 확인 모달(§4.1)이 상신 전에 잡는다.
   고치려면: 조회 시점의 조리법을 기억해 두고 응답이 왔을 때 현재 조리법과 다르면 버린다.
+- ⚠️ **(2026-11-10 기록 — 조치 보류, 사용자 결정) 저장 문서를 불러온 뒤 요청 목적을 바꿔도 로드 가드(`isLoadingEditRef`)가 풀리지 않는다.**
+  `handleRequestPurposeSelect`·`applyMapOnlyScope` 는 이 값을 `false` 로 바꾸지 않는다. '숫자 확인 필수' 작업 중 이 가드로 사진 초기화를
+  막아 보니, 불러온 문서에서 요청 목적을 Only MAP 으로 바꿔도 사진이 남는 것을 테스트로 확인했다(그래서 그 기능은 이 가드를 쓰지 않는다).
+  같은 가드로 막힌 다른 연쇄 초기화도 이 경로에서 건너뛸 수 있으나, 실제로 문제가 되는 곳이 있는지는 **확인하지 못했다**.
 - 하드코딩 한글 문자열 다수 잔존 — CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동했다. 추후 `request.*` 키로 일괄 이관 필요. 현존 확인된 예:
 
   | 파일 | 문자열 |
@@ -333,6 +337,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **테스트**: `RequestPage/numCheckImages.test.tsx`(10건 — 판정 2 · 활성/필수 · O 단독 · 붙여넣기/추가/삭제/교체 · 비활성 잠금 · CLONE 잠금 ·
   저장 문서 유지 · MAP 목적 변경 초기화 · Only MAP 전환 초기화), `components/PagedDetailView.numCheck.test.tsx`(2건),
   `backend/api/tests.py` `MapInfoLockedFieldCoverageTest`(2건 추가).
+- **같은 날 후속(사용자 결정 — 발견 보고 1번)**: 기존 M-shot 붙여넣기 `handleImagePaste` 의 하드코딩 토스트
+  (`이미지 업로드 완료: <파일명>` / `이미지 업로드 실패`)를 `request.num_check_upload_done`/`num_check_upload_failed` 재사용으로 바꾸고
+  `console.error` 를 지웠다. 성공 토스트에 파일명은 더 이상 붙지 않는다. 업로드·저장 동작은 그대로다.
 - **수동 검증**:
   1. [의뢰서 작성 → STEP1 에서 J-ayer 또는 O-ayer 에 pp 가 `PPPP` 를 포함하는 행이 조회되는 라인·제품 입력 → '다음' → MAP 목적 `NEW`]
      → [기대: X표시 변경 여부 아래 '숫자 확인 필수 *', 빈 붙여넣기 칸 1개, '사진 추가' 버튼 활성.]
