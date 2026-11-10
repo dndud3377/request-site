@@ -665,6 +665,8 @@ export interface DetailFormState {
   mshot_image_copy: string;       // C가문 No일 때 단일 이미지
   mshot_image_copy_top: string;   // C가문 Yes일 때 북쪽 이미지
   mshot_image_copy_bottom: string; // C가문 Yes일 때 남쪽 이미지
+  // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 증빙 — 업로드된 이미지 경로 목록(여러 장, 빈 칸은 저장하지 않는다)
+  num_check_images: string[];
 
   photo_backside: string;
   eds_backside: string;
