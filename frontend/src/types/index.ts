@@ -665,6 +665,10 @@ export interface DetailFormState {
   mshot_image_copy: string;       // C가문 No일 때 단일 이미지
   mshot_image_copy_top: string;   // C가문 Yes일 때 북쪽 이미지
   mshot_image_copy_bottom: string; // C가문 Yes일 때 남쪽 이미지
+  // claude 수정 (2026-11-10): '숫자 확인 필수' — 해당 여부(해당 없음/해당 있음, PPPP 판정으로 자동 고정)·숫자 값·사진 경로 목록
+  num_check: string;
+  num_check_value: string;
+  num_check_images: string[];   // 숫자 값이 기준값(.env) 이상일 때만 첨부(여러 장, 빈 칸은 저장하지 않는다)
 
   photo_backside: string;
   eds_backside: string;
@@ -1008,6 +1012,12 @@ export interface StepInfo {
 /** 원본 위치(source_line) + 원본 제품(source_partid) 참고 정보 (MAP 목적 CLONE/EXISTING 전용, 작성 화면 참고용) */
 /** CLONE/EXISTING 원본 위치·원본 제품 기준 api_maptable CC 상태 — '' 는 해당없음(원본 위치/제품 미입력). */
 export type MapTableCcStatus = '' | 'exists' | 'not_exists';
+
+// claude 수정 (2026-11-10): '숫자 확인 필수' 화면 설정 응답(GET /api/form-options/num-check-config/)
+export interface NumCheckConfig {
+  /** 숫자 확인 값이 이 값 이상이면 사진 첨부 필수(.env NUM_CHECK_IMAGE_THRESHOLD, 기본 10) */
+  image_threshold: number;
+}
 
 export interface MapInfo {
   AAA1: string | null;

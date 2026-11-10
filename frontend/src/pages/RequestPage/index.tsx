@@ -116,6 +116,9 @@ import {
   MAP_TYPE_NEW,
   INTER_YES,
   INTER_NO,
+  NUM_CHECK_NONE,
+  NUM_CHECK_APPLIES,
+  NUM_CHECK_IMAGE_THRESHOLD_DEFAULT,
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
@@ -129,7 +132,7 @@ import {
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
   layeridFieldConsensus, soleParticipantByLayerid, soleStSyncRowByLayerid, stClearExtra, stChangeExtra, isNocEditable,
   stPastePatches, stPasteReactivatedIds,
-  isInterAutoYesProcess, isNumericValue, sortRowsBySp,
+  isInterAutoYesProcess, isNumericValue, sortRowsBySp, isNumCheckRequired, isNumCheckImageRequired,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -137,6 +140,7 @@ import AdiCdColumnMapModal from './components/AdiCdColumnMapModal';
 import Step1 from './components/Step1';
 import { BaField, BaSide } from './components/BeforeAfterPanel';
 import StepMap from './components/StepMap';
+import { NumCheckPasteTarget } from './components/NumCheckImageUpload';
 import Step2 from './components/Step2';
 import Step3 from './components/Step3';
 import Step4 from './components/Step4';
@@ -498,6 +502,22 @@ export default function RequestPage(): React.ReactElement {
   // 사용자가 조합법 또는 MAP 목적을 직접 바꿨는가 — 저장 문서를 다시 열었을 때는 저장값을 그대로
   // 두고, 사용자가 이 둘 중 하나를 바꾼 뒤부터 자동 YES 를 적용한다.
   const interAutoArmedRef = useRef(false);
+  // claude 수정 (2026-11-10): '숫자 확인 필수' — 첨부 사진 뒤에 사용자가 '사진 추가'로 늘린 빈 붙여넣기 칸 수(저장하지 않는 화면 상태)
+  const [numCheckExtraSlots, setNumCheckExtraSlots] = useState(0);
+  // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 — .env NUM_CHECK_IMAGE_THRESHOLD 를 API 로 읽는다(조회 전·실패 시 기본값 10)
+  const [numCheckThreshold, setNumCheckThreshold] = useState<number>(NUM_CHECK_IMAGE_THRESHOLD_DEFAULT);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await formOptionsAPI.getNumCheckConfig();
+        if (!cancelled && Number.isFinite(cfg.image_threshold)) setNumCheckThreshold(cfg.image_threshold);
+      } catch {
+        // 조회 실패 시 기본값(10)을 그대로 쓴다 — 백엔드 기본값과 같다
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   // 직전 판정 결과 — 기준에 해당하다가 해당하지 않게 된 순간에만 NO 로 되돌리기 위해 쓴다.
   const interAutoMatchedRef = useRef(false);
   // 자동 MAP 매칭이 source_line 을 세팅한 직후 1틱 — "원본 위치 변경 → 원본 제품 초기화" 효과가
@@ -1312,6 +1332,10 @@ export default function RequestPage(): React.ReactElement {
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
             // MAP 삭제 도입 전 문서는 값이 없다 → 빈 문자열 백필(undefined 면 RichTextEditor 가 깨진다).
             map_change_reason: parsed.detail.map_change_reason ?? '',
+            // claude 수정 (2026-11-10): '숫자 확인 필수' 도입 전 문서는 값이 없다 → 해당 없음·빈 값 백필
+            num_check: parsed.detail.num_check || NUM_CHECK_NONE,
+            num_check_value: parsed.detail.num_check_value ?? '',
+            num_check_images: Array.isArray(parsed.detail.num_check_images) ? parsed.detail.num_check_images : [],
           });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
@@ -1983,6 +2007,40 @@ export default function RequestPage(): React.ReactElement {
   const anyRegionMapChange = regionHasMapChange('top') || regionHasMapChange('bottom');
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
+  // claude 수정 (2026-11-10): '숫자 확인 필수' — PPPP 판정으로 해당 여부 자동 고정 · 숫자 ≥ 기준값이면 사진 필수 · 조건 해제 시 초기화
+  // 판정 = MAP 목적 NEW + J/O 의 모든 행(활성·비활성 무관) 중 pp 에 판정 단어 포함(대소문자 무관).
+  const numCheckActive = isNumCheckRequired(detail.map_type, jayerRows, oayerRows);
+  const numCheckImages = detail.num_check_images ?? [];
+  const numCheckImageRequired = detail.num_check === NUM_CHECK_APPLIES
+    && isNumCheckImageRequired(detail.num_check_value, numCheckThreshold);
+  // 사진이 하나도 없으면 붙여넣을 빈 칸을 최소 1개 보여준다.
+  const numCheckEmptySlots = Math.max(numCheckExtraSlots, numCheckImages.length === 0 ? 1 : 0);
+  // 판정이 바뀌면 해당 여부를 맞춘다: 참 → '해당 있음', 거짓 → '해당 없음' + 숫자·사진 비움
+  // (조건부 항목 해제 시 숨은 값까지 비우는 R-2~R-5 규칙). deps 가 numCheckActive 라 전환에서만 실행된다.
+  // 첫 화면은 항상 거짓(map_type 미선택·J/O 없음)이라 저장 문서를 불러와도 저장값을 지우지 않는다.
+  // isLoadingEditRef 로 막지 않는 이유: 그 값은 사용자의 일부 조작에서만 풀려, 불러온 문서에서 요청 목적을
+  // Only MAP 으로 바꿔 J/O 가 비는 경우에도 값이 남는다(테스트로 확인).
+  useEffect(() => {
+    if (numCheckActive) {
+      setDetail((prev) => (prev.num_check === NUM_CHECK_APPLIES ? prev : { ...prev, num_check: NUM_CHECK_APPLIES }));
+      return;
+    }
+    setNumCheckExtraSlots(0);
+    setDetail((prev) => (
+      prev.num_check === NUM_CHECK_NONE && !prev.num_check_value && (prev.num_check_images ?? []).length === 0
+        ? prev
+        : { ...prev, num_check: NUM_CHECK_NONE, num_check_value: '', num_check_images: [] }
+    ));
+    setErrors((prev) => (prev.num_check_value || prev.num_check_images
+      ? { ...prev, num_check_value: '', num_check_images: '' } : prev));
+  }, [numCheckActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 숫자가 기준값 미만이 되면(또는 비면) 사진 영역이 사라지므로 사진·빈 칸도 비운다. 전환에서만 실행 — 위와 같은 이유로 로드 값은 보존된다.
+  useEffect(() => {
+    if (numCheckImageRequired) return;
+    setNumCheckExtraSlots(0);
+    setDetail((prev) => ((prev.num_check_images ?? []).length > 0 ? { ...prev, num_check_images: [] } : prev));
+    setErrors((prev) => (prev.num_check_images ? { ...prev, num_check_images: '' } : prev));
+  }, [numCheckImageRequired]); // eslint-disable-line react-hooks/exhaustive-deps
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -1994,6 +2052,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 이미지 붙여넣기 핸들러 - 백엔드로 업로드
+  // claude 수정 (2026-11-10): 하드코딩 한글 토스트를 i18n 키(request.num_check_upload_done/failed 재사용)로 바꾸고 console.error 제거
   const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -2009,16 +2068,58 @@ export default function RequestPage(): React.ReactElement {
               ...prev,
               [fieldName]: result.path
             }));
-            addToast(`이미지 업로드 완료: ${file.name}`, 'info');
-          } catch (err) {
-            console.error('이미지 업로드 실패:', err);
-            addToast('이미지 업로드 실패', 'error');
+            addToast(t('request.num_check_upload_done'), 'info');
+          } catch {
+            addToast(t('request.num_check_upload_failed'), 'error');
           }
           e.preventDefault();
           break;
         }
       }
     }
+  };
+
+  // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 붙여넣기·추가·삭제 핸들러 신설
+  /** 붙여넣은 이미지를 업로드해 target 순번의 사진을 교체하거나(target=순번) 빈 칸에 새로 추가한다(target=null). */
+  const handleNumCheckPaste = async (e: React.ClipboardEvent<HTMLDivElement>, target: NumCheckPasteTarget) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const file = Array.from(items).find((item) => item.type.startsWith('image'))?.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    isLoadingEditRef.current = false;
+    try {
+      const result = await uploadImageAPI.upload(file);
+      setDetail((prev) => {
+        const current = prev.num_check_images ?? [];
+        const next = target === null
+          ? [...current, result.path]
+          : current.map((path, idx) => (idx === target ? result.path : path));
+        return { ...prev, num_check_images: next };
+      });
+      if (target === null) setNumCheckExtraSlots((prev) => Math.max(0, prev - 1));
+      if (errors['num_check_images']) setErrors((prev) => ({ ...prev, num_check_images: '' }));
+      addToast(t('request.num_check_upload_done'), 'info');
+    } catch {
+      addToast(t('request.num_check_upload_failed'), 'error');
+    }
+  };
+
+  /** '사진 추가' — 빈 붙여넣기 칸을 하나 늘린다. */
+  const handleNumCheckAddSlot = () => {
+    // 사진이 없을 때 보이는 기본 빈 칸 1개를 포함해 하나 더 늘린다.
+    setNumCheckExtraSlots((prev) => Math.max(prev, numCheckImages.length === 0 ? 1 : 0) + 1);
+  };
+
+  /** 첨부된 사진 하나를 지운다. */
+  const handleNumCheckRemoveImage = (index: number) => {
+    isLoadingEditRef.current = false;
+    setDetail((prev) => ({ ...prev, num_check_images: (prev.num_check_images ?? []).filter((_, idx) => idx !== index) }));
+  };
+
+  /** 빈 붙여넣기 칸 하나를 지운다(사진이 없을 때 남는 마지막 1칸은 화면에서 삭제 버튼을 숨긴다). */
+  const handleNumCheckRemoveEmptySlot = () => {
+    setNumCheckExtraSlots((prev) => Math.max(0, Math.max(prev, numCheckImages.length === 0 ? 1 : 0) - 1));
   };
 
   const handleDetailSet = (name: string, value: string | string[]) => {
@@ -4618,6 +4719,20 @@ export default function RequestPage(): React.ReactElement {
         }
       }
       } // end !isMapRegistered
+      // claude 수정 (2026-11-10): '숫자 확인 필수' — '해당 있음'이면 숫자 필수, 숫자 ≥ 기준값이면 사진 최소 1장 필수
+      if (detail.num_check === NUM_CHECK_APPLIES) {
+        if (!detail.num_check_value?.trim()) {
+          newErrors['num_check_value'] = t('request.required');
+          errorMessages.push(`${t('request.num_check_value')}: ${t('request.required')}`);
+        } else if (!isNumericValue(detail.num_check_value)) {
+          newErrors['num_check_value'] = t('request.invalid_number');
+          errorMessages.push(`${t('request.num_check_value')}: ${t('request.invalid_number')}`);
+        }
+      }
+      if (numCheckImageRequired && numCheckImages.length === 0) {
+        newErrors['num_check_images'] = t('request.num_check_required');
+        errorMessages.push(`${t('request.num_check_title')}: ${t('request.num_check_required')}`);
+      }
     }
 
     // claude 수정 (2026-10-27): 실제 검증(addStNocError 가 모든 행의 ST·요청 기준을 필수로 검사)과 맞지 않던 주석을 정정
@@ -5461,6 +5576,14 @@ export default function RequestPage(): React.ReactElement {
           isMapReasonMode={isMapReasonMode}
           mapInfoLocked={mapInfoLocked}
           interAutoLocked={interAutoLocked}
+          numCheckActive={numCheckActive}
+          numCheckImageRequired={numCheckImageRequired}
+          numCheckThreshold={numCheckThreshold}
+          numCheckEmptySlots={numCheckEmptySlots}
+          handleNumCheckPaste={handleNumCheckPaste}
+          handleNumCheckAddSlot={handleNumCheckAddSlot}
+          handleNumCheckRemoveImage={handleNumCheckRemoveImage}
+          handleNumCheckRemoveEmptySlot={handleNumCheckRemoveEmptySlot}
           lineOptions={lineOptions}
           sourcePartIdOptions={sourcePartIdOptions}
           mapInfo={mapInfo}

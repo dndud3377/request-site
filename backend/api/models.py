@@ -530,6 +530,7 @@ class RequestDocument(models.Model):
 
     # StepMap(2단계)이 소유한 모든 DetailFormState 필드 — 프론트 `RequestPage/constants.ts` 의
     # mapInfoDefaults() 와 반드시 같은 키 목록이어야 한다(2026-09, MAP 정보 잠금 판정에 재사용).
+    # claude 수정 (2026-11-10): '숫자 확인 필수'(num_check·num_check_value·num_check_images) 추가 — MAP 정보 잠금·O 재합의 생략 비교에 포함
     MAP_INFO_FIELDS = (
         'source_line', 'source_partid', 'map_type', 'map_change',
         'map_value_x', 'map_value_y', 'map_reason', 'map_change_reason',
@@ -540,6 +541,7 @@ class RequestDocument(models.Model):
         'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
         'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
         'mshot_change', 'mshot_change_cc', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
+        'num_check', 'num_check_value', 'num_check_images',
         'photo_backside', 'eds_backside',
         'inter', 'inter_xs', 'inter_ys', 'in_apply', 'inter_select',
         'tsv', 'rf', 'fullchip', 'split', 'st', 'ecc',

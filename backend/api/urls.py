@@ -9,7 +9,7 @@ from .views import (
     health_check, upload_image, upload_video,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_extra_layer, form_options_bb_external,
-    form_options_layer_ids, form_options_barcode, form_options_mapname, form_options_map_info,
+    form_options_layer_ids, form_options_barcode, form_options_mapname, form_options_map_info, form_options_num_check_config,
     photostep_changes,
 )
 from .auth_views import me_view, refresh_token_view, oidc_login_init, oidc_callback, oidc_logout
@@ -61,5 +61,6 @@ urlpatterns = [
     path('form-options/barcode/', form_options_barcode),
     path('form-options/map-names/', form_options_mapname),
     path('form-options/map-info/', form_options_map_info),
+    path('form-options/num-check-config/', form_options_num_check_config),
     path('photostep-changes/', photostep_changes),
 ]

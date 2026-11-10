@@ -9969,6 +9969,29 @@ class MapInfoLockedFieldCoverageTest(TestCase):
         res = self._patch_detail(doc, base, {'mshot_change_cc': 'exists'})
         self.assertEqual(res.status_code, 400, res.content)
 
+    # claude 수정 (2026-11-10): '숫자 확인 필수' 사진(num_check_images) 잠금·O 재합의 비교 회귀 테스트
+    def test_num_check_images_is_rejected_when_locked(self):
+        """이 테스트가 실패한다면 MAP_INFO_FIELDS 에서 'num_check_images' 가 빠진 것이다."""
+        base = {'mshot_change': '없음', 'num_check_images': ['mshot_images/a.png']}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'num_check_images': ['mshot_images/a.png', 'mshot_images/b.png']})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_num_check_value_is_rejected_when_locked(self):
+        """이 테스트가 실패한다면 MAP_INFO_FIELDS 에서 'num_check_value' 가 빠진 것이다."""
+        base = {'mshot_change': '없음', 'num_check': '해당 있음', 'num_check_value': '5'}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'num_check_value': '50'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_num_check_images_change_breaks_o_review_same(self):
+        """'숫자 확인 필수' 사진이 바뀌면 O 재합의 생략 비교에서 '다르다'로 판정돼야 한다."""
+        prev = {'detail': {'num_check_images': ['mshot_images/a.png']}, 'jayerRows': [], 'oayerRows': []}
+        same = {'detail': {'num_check_images': ['mshot_images/a.png']}, 'jayerRows': [], 'oayerRows': []}
+        changed = {'detail': {'num_check_images': ['mshot_images/b.png']}, 'jayerRows': [], 'oayerRows': []}
+        self.assertTrue(RequestDocument.o_review_content_same(prev, same))
+        self.assertFalse(RequestDocument.o_review_content_same(prev, changed))
+
     def test_unrelated_field_change_is_allowed_when_locked(self):
         """대조군 — MAP_INFO_FIELDS 밖의 필드는 잠금과 무관하게 통과해야 한다(잠금이 전체
         수정을 막는 게 아니라 changed_map_info_fields() 로만 판단함을 확인)."""
@@ -12425,3 +12448,33 @@ class PersonalFilterPresetApiTest(TestCase):
             r = self.client.post(f'{self.URL}reorder/', {'ids': ids}, format='json')
             self.assertEqual(r.status_code, 400, ids)
         self.assertEqual([p['name'] for p in self.client.get(self.URL).json()], ['A', 'B'])
+
+
+# claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 조회 API 테스트
+class NumCheckConfigApiTest(TestCase):
+    """GET /api/form-options/num-check-config/ 는 settings.NUM_CHECK_IMAGE_THRESHOLD(.env)를 그대로 돌려준다."""
+
+    URL = '/api/form-options/num-check-config/'
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        user = UserProfile.objects.create(loginid='ncc_a', mail='ncc_a@company.com', role='PL')
+        self.client.force_authenticate(user=user)
+
+    def test_default_threshold_is_10(self):
+        """.env 에 값이 없으면 기본값 10(정수)이다."""
+        from django.conf import settings as dj_settings
+        self.assertEqual(dj_settings.NUM_CHECK_IMAGE_THRESHOLD_DEFAULT, 10.0)
+        with override_settings(NUM_CHECK_IMAGE_THRESHOLD=dj_settings.NUM_CHECK_IMAGE_THRESHOLD_DEFAULT):
+            res = self.client.get(self.URL)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json(), {'image_threshold': 10})
+
+    @override_settings(NUM_CHECK_IMAGE_THRESHOLD=25.0)
+    def test_integer_threshold_is_returned_as_int(self):
+        self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 25})
+
+    @override_settings(NUM_CHECK_IMAGE_THRESHOLD=12.5)
+    def test_decimal_threshold_is_kept(self):
+        self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 12.5})

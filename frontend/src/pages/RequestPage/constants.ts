@@ -224,6 +224,15 @@ export { ST_CELL_COLOR } from '../../utils/stCellColor';
 // ===== Validation System 대상 판정 =====
 /** 판정 키워드 — J-layer 행의 pp 값에 포함되면 그 행은 대상 근거가 된다(대소문자 무관) */
 export const VALIDATION_KEYWORD = 'plel';
+
+// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 증빙 판정 단어 신설
+/** J/O-ayer 행의 pp 값에 이 단어가 포함되면(대소문자 무관, 활성·비활성 무관) NEW MAP 의뢰에서 '숫자 확인 필수' 사진이 필수다 */
+export const NUM_CHECK_PP_KEYWORD = 'pppp';
+/** detail.num_check 저장값 — PPPP 판정으로 자동 고정된다(사용자가 직접 바꾸지 않는다) */
+export const NUM_CHECK_NONE = '해당 없음';
+export const NUM_CHECK_APPLIES = '해당 있음';
+/** 사진 첨부 기준값 기본값 — .env NUM_CHECK_IMAGE_THRESHOLD 조회 전·조회 실패 시 사용(백엔드 기본값과 같다) */
+export const NUM_CHECK_IMAGE_THRESHOLD_DEFAULT = 10;
 /**
  * detail.validation_system 에 저장되는 값.
  * 판정 키워드가 아예 없는 문서는 판정 자체가 성립하지 않으므로 VS_NA('해당없음')이며,
@@ -451,6 +460,9 @@ export const INITIAL_DETAIL: DetailFormState = {
   mshot_image_copy: '',
   mshot_image_copy_top: '',
   mshot_image_copy_bottom: '',
+  num_check: NUM_CHECK_NONE,
+  num_check_value: '',
+  num_check_images: [],
   photo_backside: '미적용',
   eds_backside: '미적용',
   inter: 'NO',
@@ -528,6 +540,10 @@ export const mapInfoDefaults = (): Partial<DetailFormState> => ({
   mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
   mshot_image_copy_top: INITIAL_DETAIL.mshot_image_copy_top,
   mshot_image_copy_bottom: INITIAL_DETAIL.mshot_image_copy_bottom,
+  // claude 수정 (2026-11-10): '숫자 확인 필수'(해당 여부·숫자·사진)도 MAP 정보(StepMap 소유) 필드 — 백엔드 MAP_INFO_FIELDS 와 같이 둔다
+  num_check: INITIAL_DETAIL.num_check,
+  num_check_value: INITIAL_DETAIL.num_check_value,
+  num_check_images: [],
   photo_backside: INITIAL_DETAIL.photo_backside,
   eds_backside: INITIAL_DETAIL.eds_backside,
   inter: INITIAL_DETAIL.inter,

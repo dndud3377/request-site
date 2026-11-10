@@ -7,10 +7,12 @@ import { DetailFormState, GuideFeatureKey, MapInfo } from '../../../types';
 import {
   CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, MAP_TYPE_EXISTING, isMapRegisteredType,
   EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue, INITIAL_DETAIL, isMapOptionLockedWhenRegistered,
+  NUM_CHECK_NONE, NUM_CHECK_APPLIES, NUM_CHECK_PP_KEYWORD,
 } from '../constants';
-import { sanitizeSignedDecimal, sourceCodeFromPartid } from '../helpers';
+import { sanitizeSignedDecimal, sanitizeUnsignedDecimal, sourceCodeFromPartid } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
+import NumCheckImageUpload, { NumCheckPasteTarget } from './NumCheckImageUpload';
 
 const SELECT_W = '300px';
 
@@ -96,6 +98,19 @@ interface StepMapProps {
   mapInfoLocked: boolean;
   /** 조합법이 기준 단어로 시작해 3번(inter)이 YES 로 고정됐는가 — true 면 3번 드롭다운을 잠근다(2026-10) */
   interAutoLocked: boolean;
+  // claude 수정 (2026-11-10): '숫자 확인 필수'(해당 여부 드롭다운 + 숫자 + 사진) props
+  /** PPPP 판정(NEW + J/O pp 에 판정 단어) — 참이면 '해당 있음', 거짓이면 '해당 없음'으로 고정(드롭다운은 항상 잠김) */
+  numCheckActive: boolean;
+  /** 숫자 확인 값이 기준값 이상인가 — 참이면 사진 첨부 영역을 보여준다 */
+  numCheckImageRequired: boolean;
+  /** 사진 첨부 기준값(.env NUM_CHECK_IMAGE_THRESHOLD, 기본 10) */
+  numCheckThreshold: number;
+  /** '숫자 확인 필수' 사진 뒤에 보여줄 빈 붙여넣기 칸 수 */
+  numCheckEmptySlots: number;
+  handleNumCheckPaste: (e: React.ClipboardEvent<HTMLDivElement>, target: NumCheckPasteTarget) => void;
+  handleNumCheckAddSlot: () => void;
+  handleNumCheckRemoveImage: (index: number) => void;
+  handleNumCheckRemoveEmptySlot: () => void;
 }
 
 const StepMap: React.FC<StepMapProps> = ({
@@ -143,6 +158,14 @@ const StepMap: React.FC<StepMapProps> = ({
   GuideBadge,
   mapInfoLocked,
   interAutoLocked,
+  numCheckActive,
+  numCheckImageRequired,
+  numCheckThreshold,
+  numCheckEmptySlots,
+  handleNumCheckPaste,
+  handleNumCheckAddSlot,
+  handleNumCheckRemoveImage,
+  handleNumCheckRemoveEmptySlot,
 }) => {
   const { t } = useTranslation();
 
@@ -650,6 +673,54 @@ const StepMap: React.FC<StepMapProps> = ({
                 ))}
               </div>
             </div>
+          )}
+        </div>
+
+        {/* claude 수정 (2026-11-10): '숫자 확인 필수' — X표시 변경 여부 아래, 예외 구역과 같은 [드롭다운 + 값] 배치.
+            드롭다운은 PPPP 판정이 정하므로 항상 잠긴다. 값은 '해당 있음'일 때만 입력·필수이고,
+            값이 기준값 이상이면 그 아래에 사진 첨부 영역이 열린다. */}
+        <div className="full-width">
+          <div className="flex-row">
+            <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+              <label className="form-label">{t('request.num_check_title')}</label>
+              <select className="form-control" name="num_check" value={detail.num_check} disabled>
+                <option value={NUM_CHECK_NONE}>{t('request.num_check_none')}</option>
+                <option value={NUM_CHECK_APPLIES}>{t('request.num_check_applies')}</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ flex: 1.5 }}>
+              <label className="form-label">
+                {t('request.num_check_value')} {detail.num_check === NUM_CHECK_APPLIES && <span className="required">*</span>}
+              </label>
+              <input
+                className={`form-control${errors.num_check_value ? ' error' : ''}`}
+                name="num_check_value"
+                value={detail.num_check_value ?? ''}
+                onChange={(e) => handleDetailSet('num_check_value', sanitizeUnsignedDecimal(e.target.value))}
+                inputMode="decimal"
+                disabled={detail.num_check !== NUM_CHECK_APPLIES}
+              />
+              {errors.num_check_value && <span className="form-error">{errors.num_check_value}</span>}
+            </div>
+            <div style={{ flex: 3.5 }} />
+          </div>
+          <span style={{ display: 'block', marginTop: 4, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {numCheckActive
+              ? t('request.num_check_active_hint', { keyword: NUM_CHECK_PP_KEYWORD.toUpperCase(), threshold: numCheckThreshold })
+              : t('request.num_check_locked_hint', { keyword: NUM_CHECK_PP_KEYWORD.toUpperCase() })}
+          </span>
+          {numCheckImageRequired && (
+            <NumCheckImageUpload
+              images={detail.num_check_images ?? []}
+              emptySlots={numCheckEmptySlots}
+              threshold={numCheckThreshold}
+              locked={mapInfoLocked}
+              error={errors.num_check_images}
+              onPaste={handleNumCheckPaste}
+              onAddSlot={handleNumCheckAddSlot}
+              onRemoveImage={handleNumCheckRemoveImage}
+              onRemoveEmptySlot={handleNumCheckRemoveEmptySlot}
+            />
           )}
         </div>
 
