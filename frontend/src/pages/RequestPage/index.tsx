@@ -2016,6 +2016,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 이미지 붙여넣기 핸들러 - 백엔드로 업로드
+  // claude 수정 (2026-11-10): 하드코딩 한글 토스트를 i18n 키(request.num_check_upload_done/failed 재사용)로 바꾸고 console.error 제거
   const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -2031,10 +2032,9 @@ export default function RequestPage(): React.ReactElement {
               ...prev,
               [fieldName]: result.path
             }));
-            addToast(`이미지 업로드 완료: ${file.name}`, 'info');
-          } catch (err) {
-            console.error('이미지 업로드 실패:', err);
-            addToast('이미지 업로드 실패', 'error');
+            addToast(t('request.num_check_upload_done'), 'info');
+          } catch {
+            addToast(t('request.num_check_upload_failed'), 'error');
           }
           e.preventDefault();
           break;
