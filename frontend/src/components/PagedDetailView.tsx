@@ -800,9 +800,10 @@ const REVIEW_START_BY_ACTION_AGENTS: string[] = ['R', 'P', 'J', 'O', 'E'];
  * 블록 빌더 3종 — 한 회차(detail) 하나만 받아 항목 목록을 만든다.
  * 변경 전/후 표(진행 중)와 회차별 표(이력 조회)가 같은 함수를 공유해야 값 비교가 성립한다.
  */
-// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 칸 고정 크기 — 사진 크기가 달라도 같은 칸에 비율을 유지한 채 맞춘다(object-fit: contain)
-const NUM_CHECK_IMG_W = '360px';
-const NUM_CHECK_IMG_H = '260px';
+// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 칸 — 한 줄에 2장(카드 폭 반씩), 칸 높이 고정. 사진 크기가 달라도 같은 칸에
+//   비율을 유지한 채 맞춘다(object-fit: contain)
+const NUM_CHECK_IMG_COLUMNS = 2;
+const NUM_CHECK_IMG_H = '320px';
 
 const MSHOT_IMAGE_ITEMS: [string, string][] = [
   ['mshot_image_copy', 'request.mshot_attached_image'],
@@ -2932,17 +2933,17 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                     <div style={fieldValue}>{detail.num_check_value || '-'}</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${NUM_CHECK_IMG_COLUMNS}, minmax(0, 1fr))`, gap: '16px' }}>
                   {((detail.num_check_images ?? []) as string[]).map((path, idx) => {
                     const src = `/media/${path}`;
                     return (
                       <div key={`${path}-${idx}`}>
                         <div style={fieldLabel}>{t('request.num_check_image_no', { no: idx + 1 })}</div>
-                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                        <div style={{ position: 'relative' }}>
                           <img
                             src={src}
                             alt={`num-check-${idx + 1}`}
-                            style={{ width: NUM_CHECK_IMG_W, height: NUM_CHECK_IMG_H, objectFit: 'contain', background: '#fff', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' }}
+                            style={{ display: 'block', width: '100%', height: NUM_CHECK_IMG_H, objectFit: 'contain', background: '#fff', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' }}
                             onClick={() => setZoomedImage(src)}
                           />
                           <button
