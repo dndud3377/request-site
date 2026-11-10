@@ -585,7 +585,10 @@ class RequestDocument(models.Model):
             return cls.PURPOSE_OTHER
         return None
 
-    # claude 수정 (2026-11-10): 프론트 편집 로드 백필과 같은 규칙으로 옛 문서 저장본을 보정하는 함수 신설(잠금 오판 방지)
+    # claude 수정 (2026-11-10): 프론트 편집 로드 백필과 같은 규칙으로 옛 문서 저장본을 보정하는 함수 신설(잠금 오판 방지) — main 병합 후 num_check 3개 추가
+    # '숫자 확인 필수' 기본값 — 프론트 `RequestPage/constants.ts` NUM_CHECK_NONE 과 같아야 한다.
+    NUM_CHECK_NONE = '해당 없음'
+
     @staticmethod
     def _infer_prodc_scope(detail):
         """prodc_scope 가 없는 옛 문서의 값을 리전 입력값으로 역추론한다.
@@ -613,11 +616,19 @@ class RequestDocument(models.Model):
         "MAP 정보 변경"으로 판정돼 수정·재상신이 막힌다. DB 에 저장된 값은 바꾸지 않는다(비교용 사본).
         - prodc_scope (2026-08-03 도입): 저장값 || 리전 값 역추론
         - map_change_reason (2026-08-06 도입): 저장값 ?? ''
+        - num_check (2026-11-10 도입): 저장값 || '해당 없음'
+        - num_check_value (2026-11-10 도입): 저장값 ?? ''
+        - num_check_images (2026-11-10 도입): 저장값이 배열이면 그대로, 아니면 []
         """
         filled = dict(detail)
         filled['prodc_scope'] = detail.get('prodc_scope') or cls._infer_prodc_scope(detail)
         if detail.get('map_change_reason') is None:
             filled['map_change_reason'] = ''
+        filled['num_check'] = detail.get('num_check') or cls.NUM_CHECK_NONE
+        if detail.get('num_check_value') is None:
+            filled['num_check_value'] = ''
+        if not isinstance(detail.get('num_check_images'), list):
+            filled['num_check_images'] = []
         return filled
 
     # claude 수정 (2026-11-10): 저장본·요청본을 편집 로드 백필과 같게 보정한 뒤 비교 — 옛 문서의 키 없음 오판 제거
