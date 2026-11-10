@@ -295,10 +295,69 @@ class RecipientResolutionTest(TestCase):
         ApprovalStep.objects.create(document=self.doc, agent='PL', round=2, action='approved', assignee=pl)
         ApprovalStep.objects.create(document=self.doc, agent='R', round=2, action='approved', assignee=r)
         ApprovalStep.objects.create(document=self.doc, agent='J', round=2, action='approved', assignee=j)
+        # claude 수정 (2026-11-10): 승인 완료 메일은 작성자(req@company.com)도 받는다
         self.assertEqual(
             sorted(mailer.resolve_approved_recipients(self.doc)),
-            ['j4@company.com', 'pl4@company.com', 'r4@company.com'],
+            ['j4@company.com', 'pl4@company.com', 'r4@company.com', 'req@company.com'],
         )
+
+    # claude 수정 (2026-11-10): 상신 통보·결재 완료 통보·승인 완료 메일의 작성자·공유 그룹 수신과 중복 제거를 고정
+    def _set_notifiers_and_group(self, notifier_loginids, group_members):
+        import json
+        self.doc.additional_notes = json.dumps({'detail': {
+            'notifiers': [{'loginid': lid, 'name': lid} for lid in notifier_loginids],
+        }})
+        if group_members is not None:
+            group = UserGroup.objects.create(name='share', creator=self.requester)
+            group.members.add(*group_members)
+            self.doc.shared_group = group
+        self.doc.save()
+
+    def _enqueued(self, event_type):
+        noti = MailNotification.objects.filter(document=self.doc, event_type=event_type).get()
+        return noti.recipients
+
+    @patch.object(mailer, '_send_now_async', lambda *_: None)
+    def test_notify_mails_include_requester_and_shared_group_once(self):
+        """통보처와 공유 그룹 멤버가 겹치면 1번만, 작성자·공유 그룹은 같은 메일 1통에 합류한다."""
+        g1 = UserProfile.objects.create(loginid='g1', mail='g1@company.com', role='PL')
+        g2 = UserProfile.objects.create(loginid='g2', mail='g2@company.com', role='PL')
+        self._set_notifiers_and_group(['g1', 'n9'], [self.requester, g1, g2])
+        pl = UserProfile.objects.create(loginid='pl7', mail='pl7@company.com', role='PL')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='approved', assignee=pl)
+
+        mailer.enqueue_notify_submitted(self.doc)
+        mailer.enqueue_notify_approved(self.doc)
+        mailer.enqueue_approved(self.doc)
+
+        expected_notify = ['g1@company.com', 'g2@company.com', 'n9@company.com', 'req@company.com']
+        for event_type in ('notify_submitted', 'notify_approved'):
+            recipients = self._enqueued(event_type)
+            self.assertEqual(sorted(recipients), expected_notify, event_type)
+            self.assertEqual(len(recipients), len(set(recipients)), event_type)
+        self.assertEqual(
+            sorted(self._enqueued('approved')),
+            ['g1@company.com', 'g2@company.com', 'pl7@company.com', 'req@company.com'],
+        )
+
+    @patch.object(mailer, '_send_now_async', lambda *_: None)
+    def test_notify_mails_sent_to_requester_without_notifiers(self):
+        """통보처·공유 그룹이 없어도 상신 통보·결재 완료 통보는 작성자에게 발송된다."""
+        self._set_notifiers_and_group([], None)
+        mailer.enqueue_notify_submitted(self.doc)
+        mailer.enqueue_notify_approved(self.doc)
+        self.assertEqual(self._enqueued('notify_submitted'), ['req@company.com'])
+        self.assertEqual(self._enqueued('notify_approved'), ['req@company.com'])
+
+    @override_settings(MAIL_REDIRECT_TO='dev@company.com')
+    @patch.object(mailer, '_send_now_async', lambda *_: None)
+    def test_notify_mails_with_requester_redirect_once(self):
+        """개발환경 리다이렉트 시에도 작성자 합류로 주소가 중복되지 않는다."""
+        self._set_notifiers_and_group(['n1'], None)
+        mailer.enqueue_notify_submitted(self.doc)
+        mailer.enqueue_notify_approved(self.doc)
+        self.assertEqual(self._enqueued('notify_submitted'), ['dev@company.com'])
+        self.assertEqual(self._enqueued('notify_approved'), ['dev@company.com'])
 
     @override_settings(MAIL_REDIRECT_TO='dev@company.com')
     def test_redirect_overrides_all_recipients(self):
