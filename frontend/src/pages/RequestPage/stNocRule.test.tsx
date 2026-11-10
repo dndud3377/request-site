@@ -11,6 +11,9 @@
  *   골라도 ST 는 바뀌지 않고 ST 는 항상 고칠 수 있다 / 새 ST 에서 쓸 수 없는 요청 기준(X→O, ST 공란)은 비운다 /
  *   ST 버튼은 기등록 등 행도 대상, 요청 기준 버튼·전파는 ST 공란 행을 건너뛴다 / 한 행 X→O 도 반대편 표로 전파한다 /
  *   붙여넣기로 ST 를 바꿔도 직접 선택과 같다(O→X 값 비움·bb 매핑 해제, X→O 반대편 전파).
+ * claude 수정 (2026-11-10): 요청 기준 '모두 미진행·기등록·layer삭제' 버튼 추가 — 일괄 버튼은 그 값을 고를 수 있는 ST 의 행 전부
+ *   (신규·차용 → ST O 계열, 기등록·layer삭제·미진행 → ST X)에 덮어쓰고, 요청 기준 '초기화'는 요청 기준이 적힌 모든 행을 비운다.
+ *   '모두 기등록·layer삭제·미진행' 은 반대편 표로 전파하지 않는다.
  */
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
@@ -618,5 +621,85 @@ describe("J↔O ST 'X' 전파와 bb 매핑", () => {
     ['j1', 'j2'].forEach((id) => {
       expect(saved.jayerRows.find((r) => r.id === id)).toMatchObject({ st: '' });
     });
+  });
+});
+
+// claude 수정 (2026-11-10): 요청 기준 일괄 버튼 대상(ST 에 맞는 행 전부)·'모두 미진행/기등록/layer삭제'·초기화 범위 테스트
+describe('요청 기준 일괄 버튼 — 모두 미진행·기등록·layer삭제 / 초기화', () => {
+  beforeEach(() => {
+    mockState.doc = fixtureDoc;
+    mockState.optionsFor = optionsFor;
+    document.body.innerHTML = '';
+  });
+
+  /** 툴바의 두 번째 그룹(요청 기준) 버튼을 누른다 — ST·요청 기준 그룹 모두 '초기화' 가 있다 */
+  const clickNocBulk = async (c: HTMLElement, tableSelector: string, label: string) => {
+    const toolbar = c.querySelector(tableSelector)!.previousElementSibling as HTMLElement;
+    const nocGroup = toolbar.querySelectorAll('.wizard-table-toolbar-group')[1] as HTMLElement;
+    await act(async () => { buttonWith(nocGroup, label)!.click(); });
+    await flush(3);
+  };
+  const xRow = <T extends object>(r: T, noc: string) => ({ ...r, st: 'X', new_or_copy: noc, product_name: '', step: '', item_id: '' });
+
+  it.each([
+    ['request.btn_all_not_proceeding', '미진행'],
+    ['request.btn_all_registered', '기등록'],
+    ['request.btn_all_layer_delete', 'layer삭제'],
+  ])("J '%s' 는 ST X 행에만(기존 값은 덮어써) 들어가고 O 표로 전파되지 않는다", async (key, value) => {
+    const oRows = fixtureOayerRows.map((r) => (r.id === 'o2' ? { ...r, st: 'X', new_or_copy: '', product_name: '', step: '' } : r));
+    mockState.doc = docWithRows([LOADED_J, xRow(MANUAL_J_FILLED, '차용'), MANUAL_J_EMPTY], oRows);
+    const { container } = await renderAtStep(J_TABLE);
+    await clickNocBulk(container, J_TABLE, i18n.t(key as never) as string);
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'X', new_or_copy: value });
+    expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'O', new_or_copy: '신규' });
+    expect(saved.jayerRows.find((r) => r.id === 'j3')).toMatchObject({ st: '', new_or_copy: '' });
+    expect(saved.oayerRows.find((r) => r.id === 'o2')).toMatchObject({ st: 'X', new_or_copy: '' });
+  });
+
+  it("O '모두 기등록' 은 O 표 ST X 행에만 들어가고 J 표로 전파되지 않는다", async () => {
+    const oRows = fixtureOayerRows.map((r) => (r.id === 'o2' ? { ...r, st: 'X', new_or_copy: '', product_name: '', step: '' } : r));
+    mockState.doc = docWithRows(J_ROWS_FILLED, oRows);
+    const { container } = await renderAtStep(O_TABLE);
+    await clickNocBulk(container, O_TABLE, i18n.t('request.btn_all_registered'));
+    const saved = await saveDraftAndCapture();
+    expect(saved.oayerRows.find((r) => r.id === 'o2')).toMatchObject({ st: 'X', new_or_copy: '기등록' });
+    expect(saved.oayerRows.find((r) => r.id === 'o1')).toMatchObject({ st: 'O', new_or_copy: '신규' });
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O', new_or_copy: '신규' });
+  });
+
+  it("'전체 차용' 은 ST O 계열 행 전부(예전 ST O + 미진행 행 포함)에 들어가고 ST X 행은 건너뛴다", async () => {
+    const legacyO = { ...MANUAL_J_FILLED, st: 'O (D)', new_or_copy: '미진행' };
+    const xManual = { ...xRow(MANUAL_J_EMPTY, '기등록'), id: 'j4', sortOrder: 4 };
+    mockState.doc = docWithRows([LOADED_J, legacyO, MANUAL_J_EMPTY, xManual]);
+    const { container } = await renderAtStep(J_TABLE);
+    await clickNocBulk(container, J_TABLE, i18n.t('request.btn_all_copy'));
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.find((r) => r.id === 'j1')).toMatchObject({ st: 'O', new_or_copy: '차용' });
+    expect(saved.jayerRows.find((r) => r.id === 'j2')).toMatchObject({ st: 'O (D)', new_or_copy: '차용' });
+    expect(saved.jayerRows.find((r) => r.id === 'j3')).toMatchObject({ st: '', new_or_copy: '' });
+    expect(saved.jayerRows.find((r) => r.id === 'j4')).toMatchObject({ st: 'X', new_or_copy: '기등록' });
+  });
+
+  it("요청 기준 '초기화' 는 ST X·기등록 등 행과 ST 공란 행에 남은 값까지 요청 기준을 모두 비운다", async () => {
+    const legacyBlank = { ...MANUAL_J_EMPTY, new_or_copy: '차용' };
+    const xManual = { ...xRow(MANUAL_J_EMPTY, 'layer삭제'), id: 'j4', sortOrder: 4 };
+    mockState.doc = docWithRows([LOADED_J, xRow(MANUAL_J_FILLED, '미진행'), legacyBlank, xManual]);
+    const { container } = await renderAtStep(J_TABLE);
+    await clickNocBulk(container, J_TABLE, i18n.t('request.btn_reset'));
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.map((r) => [r.id, r.st, r.new_or_copy])).toEqual([
+      ['j1', 'O', ''], ['j2', 'X', ''], ['j3', '', ''], ['j4', 'X', ''],
+    ]);
+  });
+
+  it("O 요청 기준 '초기화' 도 ST X 행의 기등록 등을 비운다", async () => {
+    const oRows = fixtureOayerRows.map((r) => (r.id === 'o2' ? { ...r, st: 'X', new_or_copy: '미진행', product_name: '', step: '' } : r));
+    mockState.doc = docWithRows(J_ROWS_FILLED, oRows);
+    const { container } = await renderAtStep(O_TABLE);
+    await clickNocBulk(container, O_TABLE, i18n.t('request.btn_reset'));
+    const saved = await saveDraftAndCapture();
+    expect(saved.oayerRows.find((r) => r.id === 'o1')).toMatchObject({ st: 'O', new_or_copy: '' });
+    expect(saved.oayerRows.find((r) => r.id === 'o2')).toMatchObject({ st: 'X', new_or_copy: '' });
   });
 });
