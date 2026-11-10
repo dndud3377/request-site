@@ -131,7 +131,7 @@ import {
   computeRefDocStTargets, isRefDocStApplied, findRefDocNocConflictPairIds,
   sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   resolveFlowStepSeq, findFlowStepOrderErrors, FlowStepOrderError,
-  layeridFieldConsensus, soleParticipantByLayerid, soleStSyncRowByLayerid, stClearExtra, stChangeExtra, isNocEditable,
+  layeridFieldConsensus, soleParticipantByLayerid, soleStSyncRowByLayerid, stClearExtra, stChangeExtra, isNocEditable, nocOptionsForSt,
   stPastePatches, stPasteReactivatedIds,
   isInterAutoYesProcess, isNumericValue, sortRowsBySp, isNumCheckRequired, isNumCheckImageRequired,
 } from './helpers';
@@ -3160,9 +3160,14 @@ export default function RequestPage(): React.ReactElement {
   // 일괄 버튼이 값을 적용할 대상 행인가. st 필드 자체를 바꾸는 버튼은 st==='X'(비활성) 행도 대상이어야 한다 — 그렇지 않으면
   // '모두 X' 적용 직후 모든 행이 비활성이 되어 '모두 O'/'초기화'가 걸러낼 행이 없어 조용히 무동작하는 버그가 난다.
   // claude 수정 (2026-11-06): ST 버튼은 기등록/layer삭제/미진행 행까지 모든 행이 대상이다(사용자 결정 — ST 가 요청 기준에 잠기지 않는다).
-  // 요청 기준 버튼은 ST 가 채워진, X 가 아닌 행만 대상이다 — ST 공란 행은 요청 기준 칸이 비활성이라 값을 넣지 않는다.
-  const isBulkStOrNocTarget = (r: { st: string; new_or_copy: string }, field: 'st' | 'new_or_copy'): boolean =>
-    field === 'st' || (isNocEditable(r.st) && !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy));
+  // claude 수정 (2026-11-10): 요청 기준 버튼은 그 값을 고를 수 있는 ST 의 행 전부가 대상이다(신규·차용 → ST O 계열, 기등록·layer삭제·미진행 → ST X,
+  //   이미 다른 요청 기준이 있어도 덮어쓴다). 요청 기준 '초기화'(value '')는 요청 기준이 적힌 모든 행을 비운다(사용자 결정).
+  //   ST 공란 행은 고를 수 있는 요청 기준이 없어(nocOptionsForSt → []) 값을 넣지 않는다.
+  const isBulkStOrNocTarget = (r: { st: string; new_or_copy: string }, field: 'st' | 'new_or_copy', value: string): boolean => {
+    if (field === 'st') return true;
+    if (value === '') return (r.new_or_copy ?? '').trim() !== '';
+    return nocOptionsForSt(r.st).includes(value);
+  };
   /** claude 수정 (2026-11-06): 일괄 버튼 값을 한 행에 적용 — ST 는 직접 바꿀 때와 같이 요청 기준 등을 정리한다(stChangeExtra). */
   const applyBulkValue = <Row extends { st: string; new_or_copy: string }>(
     r: Row, field: 'st' | 'new_or_copy', value: string, hasItemId: boolean,
@@ -3199,12 +3204,13 @@ export default function RequestPage(): React.ReactElement {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP·ITEM_ID 를
     // 비우고 bb 매핑을 푼다(ST X 에는 신규/차용을 쓸 수 없으므로 X 용 요청 기준을 다시 고르게 한다).
-    const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
-    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, value, true) : r));
+    const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field, value) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
+    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field, value) ? applyBulkValue(r, field, value, true) : r));
     setJayerRows(updatedRows);
     unmapIfMapped(clearedIds);
     // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않는다.
-    const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows);
+    // claude 수정 (2026-11-10): '모두 기등록·layer삭제·미진행' 은 반대편 표로 전파하지 않는다(사용자 결정 — 단건 선택과 같이 동기화 제외 값).
+    const targetIds = isNocSpecial(value) ? new Set<string>() : bulkCrossTargetIds(field, updatedRows, oayerRows);
     if (targetIds.size > 0) {
       setOayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, value, false) : r)));
     }
@@ -3213,7 +3219,7 @@ export default function RequestPage(): React.ReactElement {
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-11-06): ST '초기화' 로 ST 가 비는 행은 요청 기준도 비운다(applyBulkValue)
-    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, '', true) : r));
+    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field, '') ? applyBulkValue(r, field, '', true) : r));
     setJayerRows(updatedRows);
     const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setOayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, '', false) : r)));
@@ -3312,11 +3318,12 @@ export default function RequestPage(): React.ReactElement {
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP 를 비운다
-    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, value, false) : r));
+    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field, value) ? applyBulkValue(r, field, value, false) : r));
     setOayerRows(updatedRows);
     // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않고,
     // 전파로 X 가 된 J 행은 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다.
-    const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows);
+    // claude 수정 (2026-11-10): '모두 기등록·layer삭제·미진행' 은 반대편 표로 전파하지 않는다(사용자 결정 — 단건 선택과 같이 동기화 제외 값).
+    const targetIds = isNocSpecial(value) ? new Set<string>() : bulkCrossTargetIds(field, updatedRows, jayerRows);
     if (targetIds.size > 0) {
       setJayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, value, true) : r)));
       if (field === 'st' && value === ST_X) unmapIfMapped(Array.from(targetIds));
@@ -3326,7 +3333,7 @@ export default function RequestPage(): React.ReactElement {
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-11-06): ST '초기화' 로 ST 가 비는 행은 요청 기준도 비운다(applyBulkValue)
-    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field) ? applyBulkValue(r, field, '', false) : r));
+    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field, '') ? applyBulkValue(r, field, '', false) : r));
     setOayerRows(updatedRows);
     const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setJayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, '', true) : r)));
