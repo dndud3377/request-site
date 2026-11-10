@@ -231,6 +231,13 @@ export const sanitizeSignedDecimal = (raw: string): string => {
   return (neg ? '-' : '') + v;
 };
 
+// claude 수정 (2026-11-10): '숫자 확인 필수' 값 입력 필터 신설 — 음수 부호·문자를 막고 숫자와 소수점 하나만 남긴다
+export const sanitizeUnsignedDecimal = (raw: string): string => {
+  const v = raw.replace(/[^0-9.]/g, '');
+  const firstDot = v.indexOf('.');
+  return firstDot === -1 ? v : v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '');
+};
+
 // claude 수정 (2026-10-15): STEP2 X/Y·예외 구역 값에 '.'/'-' 처럼 숫자로 읽히지 않는 값이 통과하던 문제 — 숫자 판정 함수 추가
 /**
  * 입력값이 숫자로 읽히는가 — 앞뒤 공백 제거 후 Number() 결과가 유한하면 참.
@@ -1196,6 +1203,11 @@ export const isNumCheckRequired = (
 ): boolean =>
   mapType === MAP_TYPE_NEW
   && [...jayerRows, ...oayerRows].some((r) => !!r.pp && r.pp.toLowerCase().includes(NUM_CHECK_PP_KEYWORD));
+
+// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 판정 신설
+/** 숫자 확인 값이 기준값 이상인가(같으면 참) — 참이면 사진 첨부 영역이 열리고 1장 이상 필수다. 숫자가 아니면 거짓. */
+export const isNumCheckImageRequired = (value: string | undefined, threshold: number): boolean =>
+  isNumericValue(value) && Number((value ?? '').trim()) >= threshold;
 
 /**
  * 문서 단위: 활성 J-layer 행 중 하나라도 판정 키워드를 포함하면 Validation System 대상.
