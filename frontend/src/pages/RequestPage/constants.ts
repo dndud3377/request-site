@@ -231,6 +231,9 @@ export const NUM_CHECK_PP_KEYWORD = 'pppp';
 /** detail.num_check 저장값 — PPPP 판정으로 자동 고정된다(사용자가 직접 바꾸지 않는다) */
 export const NUM_CHECK_NONE = '해당 없음';
 export const NUM_CHECK_APPLIES = '해당 있음';
+// claude 수정 (2026-11-10): 기존 문서(이 키들 없이 저장된 문서)는 판정·검증하지 않고 저장 시에도 이 키들을 보내지 않는다
+/** '숫자 확인 필수' 저장 키 — 저장본에 num_check 가 없으면 이 기능 도입 전 문서로 본다 */
+export const NUM_CHECK_DETAIL_KEYS: readonly string[] = ['num_check', 'num_check_value', 'num_check_images'];
 /** 사진 첨부 기준값 기본값 — .env NUM_CHECK_IMAGE_THRESHOLD 조회 전·조회 실패 시 사용(백엔드 기본값과 같다) */
 export const NUM_CHECK_IMAGE_THRESHOLD_DEFAULT = 10;
 /**
