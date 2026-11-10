@@ -1595,11 +1595,11 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
 | `approve_step`(R) | stage_arrival(P·**J**·O·E) | 미배정 시 **P·J·O·E 모두 팀 전원**. **(2026-08)** J 도착 메일이 P 완료 시점에서 이 시점으로 앞당겨졌고, 수신자도 고정 주소 1곳 → TE_J 팀 전원으로 바뀌었다 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
-| `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | **현재(최종) 회차 결재 경로에 참여했던 전원**(중복 제거). 2026-07부터 '작성자 그룹 멤버' 방식에서 변경 — `mailer.resolve_approved_recipients` |
+| `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | **현재(최종) 회차 결재 경로에 참여했던 전원 + 작성자 + 문서 공유 그룹 멤버**(중복 제거, 작성자·공유 그룹은 2026-11-10 추가). 2026-07부터 '작성자 그룹 멤버' 방식에서 변경 — `mailer.resolve_approved_recipients` |
 | `reject_step` (R·RV·P·PV·O·E·EV·J·RA 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편 — `docs/MAIL.md` §3.1) |
 | `peer_reject`(PL 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + 같은 회차 미합의(pending) 나머지 지정 PL(2026-07 추가) |
-| `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
-| `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
+| `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) + '상신 받기' TE_P + **작성자 + 문서 공유 그룹 멤버**(2026-11-10, 겹치면 1번만 — `docs/MAIL.md`) |
+| `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) + **작성자 + 문서 공유 그룹 멤버**(2026-11-10, 겹치면 1번만) |
 
 > **통보처(Notifier)**: 결재 권한 없이 **상신·결재완료** 시점에만 메일을 받는 인원. 최초 상신 모달에서 다중 지정하며 `detail.notifiers=[{loginid,name}]`에 저장(이메일은 발송 시점 조회). 결재 경로에는 포함되지 않으며, 상세 '결재 경로' 탭에서 **의뢰자 바로 다음**에 '통보처' 행으로 표시된다(2026-07 위치 이동). 표시 시 이름 옆에 이메일도 보이며, 통보처 이메일은 `RequestDocumentSerializer.notifier_mails`(loginid→mail)로 내려온다.
 
