@@ -11,6 +11,7 @@ import {
 import { sanitizeSignedDecimal, sourceCodeFromPartid } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
+import NumCheckImageUpload, { NumCheckPasteTarget } from './NumCheckImageUpload';
 
 const SELECT_W = '300px';
 
@@ -96,6 +97,15 @@ interface StepMapProps {
   mapInfoLocked: boolean;
   /** 조합법이 기준 단어로 시작해 3번(inter)이 YES 로 고정됐는가 — true 면 3번 드롭다운을 잠근다(2026-10) */
   interAutoLocked: boolean;
+  // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 증빙 props 신설
+  /** '숫자 확인 필수' 활성 여부(NEW + J/O pp 에 판정 단어) — false 면 회색 잠금 */
+  numCheckActive: boolean;
+  /** '숫자 확인 필수' 사진 뒤에 보여줄 빈 붙여넣기 칸 수 */
+  numCheckEmptySlots: number;
+  handleNumCheckPaste: (e: React.ClipboardEvent<HTMLDivElement>, target: NumCheckPasteTarget) => void;
+  handleNumCheckAddSlot: () => void;
+  handleNumCheckRemoveImage: (index: number) => void;
+  handleNumCheckRemoveEmptySlot: () => void;
 }
 
 const StepMap: React.FC<StepMapProps> = ({
@@ -143,6 +153,12 @@ const StepMap: React.FC<StepMapProps> = ({
   GuideBadge,
   mapInfoLocked,
   interAutoLocked,
+  numCheckActive,
+  numCheckEmptySlots,
+  handleNumCheckPaste,
+  handleNumCheckAddSlot,
+  handleNumCheckRemoveImage,
+  handleNumCheckRemoveEmptySlot,
 }) => {
   const { t } = useTranslation();
 
@@ -652,6 +668,19 @@ const StepMap: React.FC<StepMapProps> = ({
             </div>
           )}
         </div>
+
+        {/* claude 수정 (2026-11-10): '숫자 확인 필수' 사진 증빙 — X표시 변경 여부 아래. 비활성이면 회색 잠금 */}
+        <NumCheckImageUpload
+          images={detail.num_check_images ?? []}
+          emptySlots={numCheckEmptySlots}
+          active={numCheckActive}
+          locked={mapInfoLocked}
+          error={errors.num_check_images}
+          onPaste={handleNumCheckPaste}
+          onAddSlot={handleNumCheckAddSlot}
+          onRemoveImage={handleNumCheckRemoveImage}
+          onRemoveEmptySlot={handleNumCheckRemoveEmptySlot}
+        />
 
         {/* Inter (Map Option 위 별도 항목) — prodc_status 와 동일하게 제목 + YES/NO 드롭다운.
             YES 선택 시 아래로 IN 적용 O/X(in_apply) + Xs/Ys/XYs/없음(inter_select) 필수 선택 그룹 노출.

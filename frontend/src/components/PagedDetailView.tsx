@@ -2909,6 +2909,46 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             );
           })()}
 
+          {/* claude 수정 (2026-11-10): '숫자 확인 필수' 사진 증빙 — 첨부된 사진이 있으면 X표시 카드 아래에 모든 결재 경로에서 보여준다 */}
+          {!isMapDeleteEditType(detail.map_type) && Array.isArray(detail.num_check_images) && detail.num_check_images.length > 0 && (
+            <div style={rowStyle}>
+              <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
+                <div style={fieldLabel}>{t('request.num_check_title')}</div>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  {(detail.num_check_images as string[]).map((path, idx) => {
+                    const src = `/media/${path}`;
+                    return (
+                      <div key={`${path}-${idx}`}>
+                        <div style={fieldLabel}>{t('request.num_check_image_no', { no: idx + 1 })}</div>
+                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                          <img
+                            src={src}
+                            alt={`num-check-${idx + 1}`}
+                            style={{ maxWidth: '600px', maxHeight: '420px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' }}
+                            onClick={() => setZoomedImage(src)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setZoomedImage(src)}
+                            aria-label={t('request.mshot_image_zoom_btn')}
+                            title={t('request.mshot_image_zoom_btn')}
+                            style={{
+                              position: 'absolute', right: 6, bottom: 14, width: 28, height: 28,
+                              borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff',
+                              cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            🔍
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','py_apply','prodc_scope','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
             return (

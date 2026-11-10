@@ -1,6 +1,6 @@
 import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ExtraLayerSnapshotRow, ExtraLayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
-  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, NUM_CHECK_PP_KEYWORD, MAP_TYPE_NEW, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
   MERGE_ENABLED_PURPOSES, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, STEPSEQ_LEAD_DIGITS,
@@ -1182,6 +1182,20 @@ export const sameOtherPurpose = (a: string[], b: string[]): boolean =>
 /** 행 단위: 이 행의 pp 가 판정 키워드를 포함하는가 (셀 하이라이트·문서 판정 공용) */
 export const isValidationKeywordRow = (pp: string | undefined): boolean =>
   !!pp && pp.toLowerCase().includes(VALIDATION_KEYWORD);
+
+// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 증빙 활성 판정 신설
+/**
+ * '숫자 확인 필수' 항목이 활성(사진 최소 1장 필수)인가.
+ * MAP 목적이 NEW 이고, J-ayer·O-ayer 의 모든 행(활성·비활성 무관) 중 pp 에 NUM_CHECK_PP_KEYWORD 가
+ * 포함된(대소문자 무관) 행이 하나라도 있으면 참이다.
+ */
+export const isNumCheckRequired = (
+  mapType: string | undefined,
+  jayerRows: { pp?: string }[],
+  oayerRows: { pp?: string }[],
+): boolean =>
+  mapType === MAP_TYPE_NEW
+  && [...jayerRows, ...oayerRows].some((r) => !!r.pp && r.pp.toLowerCase().includes(NUM_CHECK_PP_KEYWORD));
 
 /**
  * 문서 단위: 활성 J-layer 행 중 하나라도 판정 키워드를 포함하면 Validation System 대상.
