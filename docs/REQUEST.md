@@ -338,10 +338,18 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   (`RequestDocument._with_edit_load_backfill`, `_infer_prodc_scope` — 프론트 `constants.ts` `inferProdcScope` 와 같은 규칙).
   요청본도 채우는 이유: 키를 보내지 않는 요청(API 직접 호출 등)이 반대로 오판되지 않게 하기 위해서다.
   DB 저장값은 바꾸지 않는다. 백필과 다른 실제 변경(예: 추론값 `'only_top'` 인데 `'only_bottom'` 전송, 사유 실제 입력)은 계속 400.
+- **main 병합 후속(같은 날)**: main 의 '숫자 확인 필수'가 `MAP_INFO_FIELDS` 에 `num_check`·`num_check_value`·`num_check_images` 를 넣고
+  편집 로드에서 `num_check || '해당 없음'`, `num_check_value ?? ''`, `num_check_images` 배열 아니면 `[]` 로 채운다. 이 기능 이전에 저장된
+  잠긴 문서 전부가 같은 오판(400)에 걸려(시험 병합 상태 재현: `changed=['num_check','num_check_value','num_check_images']`),
+  `_with_edit_load_backfill` 에 같은 규칙 3개를 추가했다(`RequestDocument.NUM_CHECK_NONE` = 프론트 `NUM_CHECK_NONE`).
+- **알려진 한계(미조치, 2026-11-10)**: NEW + J/O pp 에 PPPP 가 있는 옛 잠긴 문서는 편집 화면이 열리자마자 `num_check` 를 '해당 있음'으로
+  자동 전환한다(`index.tsx` `numCheckActive` effect — 로드 중에도 막지 않음). 저장본은 '해당 없음'으로 보정되므로 서버는 실제 변경으로 보고 400 을 낸다.
+  로컬 앱에서 재현 확인(임시저장 `PATCH 400`, 보낸 값 `num_check="해당 있음"`). 잠금 중 MAP 정보는 입력이 막혀 숫자도 넣을 수 없다. 처리 방향은 사용자 결정 대기.
 - **주의**: 프론트 로드 백필(`index.tsx` 편집 로드의 `prodc_scope`·`map_change_reason`)이나 `inferProdcScope` 를 바꾸면
   서버 `_with_edit_load_backfill`·`_infer_prodc_scope` 도 함께 바꿔야 한다(어긋나면 같은 오판이 다시 생긴다).
 - **범위 밖**: R/O 재합의 생략 판정(`_should_skip_r_stage`, `o_review_content_same`)도 같은 엄격 비교를 쓰지만 이번에 바꾸지 않았다.
-- **테스트**: `backend/api/tests.py::MapInfoLockLegacyBackfillTest`(8건) — 키 없음 백필 통과 3건, 실제 변경 거부 3건, 추론 규칙, DB 미변경.
+- **테스트**: `backend/api/tests.py::MapInfoLockLegacyBackfillTest`(10건) — 키 없음 백필 통과 3건, 실제 변경 거부 3건, 추론 규칙, DB 미변경,
+  num_check 3개 키 없음 백필 통과 1건 · 실제 값 거부 1건(3필드).
 ### 기능 변경 (2026-11-10 후속 — '숫자 확인 필수'를 [해당 없음/해당 있음 + 숫자] 로 바꾸고, 숫자 ≥ 기준값(.env)일 때만 사진 첨부)
 
 > 아래 "STEP2 MAP 정보: '숫자 확인 필수' 사진 증빙 항목 추가" 항목의 **후속 변경**이다. 바뀐 부분만 적는다(판정 조건·사진 붙여넣기 방식은 그대로).
