@@ -49,9 +49,12 @@ describe('MAP 정보 탭 — 숫자 확인 필수 사진', () => {
     expect(screen.getByText(i18n.t('request.num_check_image_no', { no: 2 }))).toBeDefined();
     expect(screen.getByAltText('num-check-1').getAttribute('src')).toBe('/media/mshot_images/a.png');
     expect(screen.getByAltText('num-check-2').getAttribute('src')).toBe('/media/mshot_images/b.png');
-    // 사진 크기가 달라도 같은 크기 칸(360×260)에 비율을 유지한 채 맞춘다
+    // 한 줄에 2장(2열 그리드), 사진 크기가 달라도 같은 크기 칸(폭 100% × 높이 320px)에 비율을 유지한 채 맞춘다
     const img = screen.getByAltText('num-check-1') as HTMLImageElement;
-    expect([img.style.width, img.style.height, img.style.objectFit]).toEqual(['360px', '260px', 'contain']);
+    expect([img.style.width, img.style.height, img.style.objectFit]).toEqual(['100%', '320px', 'contain']);
+    const grid = img.parentElement?.parentElement?.parentElement as HTMLElement;
+    expect(grid.style.display).toBe('grid');
+    expect(grid.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))');
   });
 
   it('해당 있음이고 숫자가 기준값 미만이라 사진이 없어도 카드에 해당 여부·숫자가 보인다', () => {
