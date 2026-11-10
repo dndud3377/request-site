@@ -5184,8 +5184,9 @@ export default function RequestPage(): React.ReactElement {
       setDirectHistoryOpen(false);
       addToast(t('request.direct_history_success'), 'success');
       setTimeout(() => navigate('/history'), 1500);
+      // claude 수정 (2026-11-10): 하드코딩된 '오류 발생:'/'알 수 없는 오류' 제거 — 상신 토스트와 같은 관례(서버 사유, 없으면 common.error)
     } catch (err) {
-      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
+      addToast(err instanceof Error ? err.message : t('common.error'), 'error');
     } finally {
       setSubmitting(false);
       isPersistingRef.current = false;
