@@ -10157,6 +10157,93 @@ class MapInfoLockAfterApprovalHistoryTest(TestCase):
         self.assertIsNone(calc([], []))
 
 
+# claude 수정 (2026-11-10): 옛 문서(prodc_scope·map_change_reason 키 없음)의 편집 로드 백필이 잠금 위반으로 오판되던 회귀 테스트
+class MapInfoLockLegacyBackfillTest(TestCase):
+    """필드 도입 전(prodc_scope 2026-08-03, map_change_reason 2026-08-06)에 저장된 잠긴 문서는 편집 화면이
+    로드 시 값을 채워(prodc_scope = 저장값 || 리전 역추론, map_change_reason = 저장값 ?? '') 그대로 보낸다.
+    잠금 밖 필드만 고쳤는데 서버가 이를 "MAP 정보 변경"으로 보고 400 을 내던 문제 —
+    백필과 같은 값은 통과, 백필과 다른 실제 변경은 계속 400 이어야 한다.
+    """
+
+    BASE = {'request_purpose': '신규', 'map_type': 'NEW', 'only_prodc': 'No', 'customer_requirement': 'A'}
+    TOP_REGION = {'only_prodc': 'Yes', 'prodc_top_line': 'L1', 'prodc_top_process': 'P1', 'prodc_top_product': 'X'}
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='mllb_a', mail='mllb_a@company.com', role='NONE')
+
+    def _locked_doc(self, saved_detail):
+        payload = {'detail': saved_detail, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        doc = RequestDocument.objects.create(
+            title='옛 문서 잠금 테스트', requester=self.author, requester_name='작성자',
+            requester_email='mllb_a@company.com', requester_department='개발팀',
+            product_name='PROD-1', status='rejected',
+            additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=1)
+        return doc
+
+    def _patch(self, doc, sent_detail):
+        payload = {'detail': sent_detail, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        self.client.force_authenticate(user=self.author)
+        return self.client.patch(
+            f'/api/documents/{doc.id}/',
+            {'additional_notes': json.dumps(payload, ensure_ascii=False)},
+            format='json',
+        )
+
+    def test_both_keys_missing_backfilled_empty_is_allowed(self):
+        doc = self._locked_doc(dict(self.BASE))
+        res = self._patch(doc, {**self.BASE, 'prodc_scope': '', 'map_change_reason': '', 'customer_requirement': 'B'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_only_map_change_reason_missing_is_allowed(self):
+        doc = self._locked_doc({**self.BASE, 'prodc_scope': ''})
+        res = self._patch(doc, {**self.BASE, 'prodc_scope': '', 'map_change_reason': '', 'customer_requirement': 'B'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_legacy_prodc_doc_inferred_scope_is_allowed(self):
+        """옛 C가문 문서 — 프론트가 북 리전 값으로 'only_top' 을 추론해 보낸다(None ≠ '' 문제가 아닌 경우)."""
+        saved = {**self.BASE, **self.TOP_REGION, 'map_change_reason': ''}
+        doc = self._locked_doc(saved)
+        res = self._patch(doc, {**saved, 'prodc_scope': 'only_top', 'customer_requirement': 'B'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_legacy_prodc_doc_scope_different_from_inferred_is_rejected(self):
+        saved = {**self.BASE, **self.TOP_REGION, 'map_change_reason': ''}
+        doc = self._locked_doc(saved)
+        res = self._patch(doc, {**saved, 'prodc_scope': 'only_bottom'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_missing_map_change_reason_real_input_is_rejected(self):
+        doc = self._locked_doc({**self.BASE, 'prodc_scope': ''})
+        res = self._patch(doc, {**self.BASE, 'prodc_scope': '', 'map_change_reason': '<p>사유</p>'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_current_doc_real_change_still_rejected(self):
+        saved = {**self.BASE, 'prodc_scope': '', 'map_change_reason': ''}
+        doc = self._locked_doc(saved)
+        res = self._patch(doc, {**saved, 'map_type': 'EXISTING'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_infer_prodc_scope_matches_frontend_rules(self):
+        """프론트 constants.ts inferProdcScope 와 같은 판정."""
+        infer = RequestDocument._infer_prodc_scope
+        self.assertEqual(infer({'prodc_top_line': 'L', 'prodc_bottom_product': 'P'}), 'top')
+        self.assertEqual(infer({'prodc_top_process': 'P'}), 'only_top')
+        self.assertEqual(infer({'prodc_bottom_line': 'L'}), 'only_bottom')
+        self.assertEqual(infer({}), '')
+
+    def test_saved_document_is_not_modified(self):
+        """보정은 비교용 사본에만 한다 — DB 저장본에 키가 생기지 않아야 한다."""
+        doc = self._locked_doc(dict(self.BASE))
+        doc.changed_map_info_fields({**self.BASE, 'prodc_scope': '', 'map_change_reason': ''})
+        saved = RequestDocument.objects.get(pk=doc.pk).get_detail()['detail']
+        self.assertNotIn('prodc_scope', saved)
+        self.assertNotIn('map_change_reason', saved)
+
+
 class FormOptionsLineProcessProductProcessIdTest(TestCase):
     """의뢰서 작성 Step1 의 라인/조합법/제품이름/조리법 옵션 API.
 
