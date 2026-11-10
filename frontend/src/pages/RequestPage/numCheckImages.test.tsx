@@ -302,6 +302,12 @@ describe('STEP2 숫자 확인 필수', () => {
     expect(pasteAreas(container)).toHaveLength(3);
     await pasteImage(pasteAreas(container)[1]);
 
+    // 사진 크기가 달라도 같은 높이의 상자에 비율을 유지한 채 맞춘다
+    const img = requireImageBlock(container).querySelector('img') as HTMLImageElement;
+    expect(img.style.height).toBe('220px');
+    expect(img.style.width).toBe('100%');
+    expect(img.style.objectFit).toBe('contain');
+
     let detail = await saveDraftAndCaptureDetail();
     expect(detail.num_check).toBe(APPLIES);
     expect(detail.num_check_value).toBe('12');

@@ -422,6 +422,8 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - 숫자 ≥ 기준값이면 그 줄 아래에 사진 칸이 열린다(개별 삭제·교체는 그대로, 최소 1장 필수). 사진 칸 위에 별도 라벨·안내 문구는 없다
     (같은 날 후속 — 사용자 결정으로 `사진 첨부` 라벨과 그 아래 안내 문구를 지웠다. 드롭다운 아래 안내 문구는 유지).
   - 사진 칸 최대 폭은 M-shot 붙여넣기 칸과 같은 **50%**(1·2칸), 3칸 이상이면 flex 로 자동으로 나눠진다.
+  - (같은 날 후속 — 사용자 결정 (a)) 사진 크기가 서로 달라도 칸 모양이 같도록, 첨부된 사진은 **폭 100% × 높이 220px 고정 상자**에
+    비율을 유지한 채 맞춘다(`object-fit: contain`, 남는 부분은 흰 여백). 작은 사진은 상자에 맞게 커지고, 가로·세로로 긴 사진은 여백이 생긴다.
 - **기준값(.env)**: backend `.env` 의 `NUM_CHECK_IMAGE_THRESHOLD`(기본 10, 비거나 숫자가 아니면 10) → `settings.NUM_CHECK_IMAGE_THRESHOLD`
   → `GET /api/form-options/num-check-config/` → `{ "image_threshold": 10 }`(정수면 정수로). 프론트는 조회 전·실패 시 `NUM_CHECK_IMAGE_THRESHOLD_DEFAULT`(10).
   값을 바꾼 뒤 **backend 재시작**만 하면 된다(프론트 재빌드 불필요). `.env.example`·`.env.dev.example` 에 예시 줄 추가.

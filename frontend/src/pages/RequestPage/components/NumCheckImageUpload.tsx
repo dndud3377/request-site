@@ -24,6 +24,9 @@ const SLOT_GAP_PX = 16;
 const SLOT_MIN_WIDTH = '280px';
 /** 칸 최대 폭 — M-shot 붙여넣기 칸(폭 50%)과 같다. 1·2칸은 50%, 3칸 이상은 flex 로 나눠 줄어든다. */
 const SLOT_MAX_WIDTH = `calc(50% - ${SLOT_GAP_PX / 2}px)`;
+// claude 수정 (2026-11-10): 사진 크기가 달라도 칸 모양이 같도록 사진 상자 높이를 고정하고 사진은 비율을 유지한 채 상자 안에 맞춘다(object-fit: contain)
+/** 첨부된 사진을 보여주는 상자 높이 — 폭은 칸 폭(100%) */
+const IMAGE_BOX_HEIGHT = '220px';
 
 const NumCheckImageUpload: React.FC<NumCheckImageUploadProps> = ({
   images, emptySlots, locked, error, onPaste, onRemoveImage, onRemoveEmptySlot,
@@ -65,7 +68,7 @@ const NumCheckImageUpload: React.FC<NumCheckImageUploadProps> = ({
             <img
               src={`/media/${path}`}
               alt={`num-check-${no}`}
-              style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', border: '1px solid #ddd' }}
+              style={{ width: '100%', height: IMAGE_BOX_HEIGHT, objectFit: 'contain', background: '#fff', borderRadius: '4px', border: '1px solid #ddd' }}
             />
             <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '13px' }}>
               {t('request.mshot_image_attached_hint')}
