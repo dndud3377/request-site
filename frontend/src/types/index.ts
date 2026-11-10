@@ -1038,7 +1038,8 @@ export type GuideFeatureKey =
   | 'step1_ref_doc_merge' | 'step1_adi_cd_change'
   | 'step2_map_type' | 'step2_source_location' | 'step2_map_deviation'
   | 'step2_exception_zone' | 'step2_cfamily' | 'step2_rev'
-  | 'step2_xmark' | 'step2_inter' | 'step2_map_options'
+  // claude 수정 (2026-11-10): '숫자 확인 필수' 항목에 가이드를 작성할 수 있도록 기능 키 추가
+  | 'step2_xmark' | 'step2_num_check' | 'step2_inter' | 'step2_map_options'
   | 'step3_jayer_table' | 'step3_jayer_filter'
   | 'step4_oayer_table' | 'step4_partial_shot' | 'step4_tbvtlv'
   | 'step5_bb_autofill' | 'step5_bb_mapping' | 'step5_bb_table'
@@ -1083,6 +1084,8 @@ export const GUIDE_STEP_FEATURES: Record<number, { key: GuideFeatureKey; labelKe
     { key: 'step2_cfamily',         labelKey: 'guide.feat.step2_cfamily' },
     { key: 'step2_rev',             labelKey: 'guide.feat.step2_rev' },
     { key: 'step2_xmark',           labelKey: 'guide.feat.step2_xmark' },
+    // claude 수정 (2026-11-10): '숫자 확인 필수' 기능 가이드 — 화면 배치 순서대로 X mark 변경 다음에 둔다
+    { key: 'step2_num_check',       labelKey: 'guide.feat.step2_num_check' },
     { key: 'step2_inter',           labelKey: 'guide.feat.step2_inter' },
     { key: 'step2_map_options',     labelKey: 'guide.feat.step2_map_options' },
   ],
