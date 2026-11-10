@@ -1502,6 +1502,7 @@
       "step2_cfamily": "Only C가문 설정",
       "step2_rev": "Final 관리",
       "step2_xmark": "X mark 변경",
+      "step2_num_check": "숫자 확인 필수",
       "step2_inter": "Inter 설정",
       "step2_map_options": "MAP 옵션",
       "step3_jayer_table": "J-ayer 테이블",
