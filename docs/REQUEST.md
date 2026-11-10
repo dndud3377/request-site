@@ -224,6 +224,21 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - `scrollToFirstError(atStep = step)`: 탭 점프 시 `setStep` 직후 호출되면 클로저의 `step` 이 아직
   갱신 전이라 신뢰할 수 없어 대상 단계를 인자로 받는다. 기본값이 `step` 이라 기존 호출부는 불변.
 
+### 2.5 가이드 기능 키(`feature_key`) 원칙 (2026-11-10 신설)
+
+- **원칙**: `/guide` 가이드 페이지에서는 **모든 기능**의 가이드를 작성할 수 있어야 한다.
+  기능 가이드는 `feature_key` 단위로 작성되고, 그 목록은 프론트에 고정돼 있다 —
+  `frontend/src/types/index.ts` 의 `GuideFeatureKey` 타입 + `GUIDE_STEP_FEATURES`(Step 별 목록).
+  목록에 없는 항목은 `/guide` 에서 고를 수 없으므로 가이드를 쓸 방법이 없다.
+- **새 항목(입력 필드·섹션·기능)을 추가할 때**: 가이드 기능 키를 무조건 추가하지 않는다.
+  **추가할지 여부를 반드시 사용자에게 먼저 묻는다**(CLAUDE.md 규칙 L).
+- **추가하기로 했을 때 손댈 곳** (백엔드 `Guide.feature_key` 는 자유 문자열이라 변경 없음):
+  1. `types/index.ts` — `GuideFeatureKey` 에 키 추가, `GUIDE_STEP_FEATURES[n]` 에 **화면 배치 순서대로** 삽입.
+  2. `locales/ko.json`·`en.json` — `guide.feat.<key>` 동시 추가(`/guide` 기능 선택 목록·슬라이드 패널 제목).
+  3. 해당 Step 컴포넌트 라벨 옆에 `<GuideBadge fk="<key>" tk={t('guide.feat.<key>' as never)} />`.
+     배지는 그 키로 작성된 글 가이드가 있을 때만(`featureGuideKeys`) 보인다.
+- 키 이름 규칙: `step<N>_<항목>` — `N` 은 `GUIDE_STEP_FEATURES` 의 Step 번호(MAP 정보 영역은 `step2_*`).
+
 ---
 
 ## 3. 리팩토링 진행 현황 & 향후 방향
@@ -306,6 +321,25 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 추가 (2026-11-10 — '숫자 확인 필수' 항목 기능 가이드 키 `step2_num_check` 추가)
+
+- **배경**: `/guide` 에서는 모든 기능의 가이드를 작성할 수 있어야 한다(§2.5 원칙). 새로 추가된 STEP2 MAP 정보
+  '숫자 확인 필수'(`num_check`) 항목에는 기능 키가 없어 `/guide` 에서 고를 수 없었고, 요청서 화면에도 가이드 배지가 없었다.
+- **변경**:
+  - `types/index.ts`: `GuideFeatureKey` 에 `'step2_num_check'` 추가. `GUIDE_STEP_FEATURES[2]` 에서
+    `step2_xmark`(X mark 변경) 다음, `step2_inter`(Inter 설정) 앞에 삽입 — 화면 배치 순서와 같다.
+  - `locales/ko.json`·`en.json`: `guide.feat.step2_num_check` 동시 추가 — ko "숫자 확인 필수" / en "Number Check Required"
+    (화면 라벨 `request.num_check_title` 과 같은 이름).
+  - `pages/RequestPage/components/StepMap.tsx`: '숫자 확인 필수' 라벨 옆에 `<GuideBadge fk="step2_num_check" …/>`.
+    다른 항목과 같이 글 가이드가 작성됐을 때만 보인다.
+- **범위 밖**: 백엔드(변경 없음), 결재 상세보기(`PagedDetailView`)·가이드 투어·빌트인 영상 데모.
+- **문서화**: §2.5 '가이드 기능 키 원칙' 신설 + CLAUDE.md 규칙 L(새 항목 추가 시 가이드 기능 키 추가 여부를 사용자에게 묻는다).
+- **수동 검증 시나리오**:
+  1. `/guide`(가이드 관리) → '+ 가이드 작성' → 가이드 종류 '기능 가이드' → 스텝 'Step 2 · MAP 정보' → 기능 목록에 'X mark 변경' 다음 **'숫자 확인 필수'** 가 보이는지 확인 → 선택 후 제목·내용 입력 → 저장.
+  2. 요청서 작성 → STEP2(MAP 정보) → '숫자 확인 필수' 라벨 옆에 **'가이드'** 배지가 보이는지 → 클릭 시 오른쪽 슬라이드 패널에 1번에서 쓴 가이드가 열리는지 확인.
+  3. 가이드를 삭제(또는 작성 전)한 상태에서는 '숫자 확인 필수' 라벨 옆에 배지가 **보이지 않아야** 정상.
+  4. 언어를 English 로 바꾸면 `/guide` 기능 목록·패널 제목이 'Number Check Required' 로 보이는지 확인.
 
 ### 기능 변경 (2026-11-10 — MAP 정보 잠금: 키보드(Tab) 입력도 차단)
 
