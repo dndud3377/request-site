@@ -472,8 +472,6 @@
     "num_check_none": "Not Applicable",
     "num_check_applies": "Applicable",
     "num_check_value": "Number Check Value",
-    "num_check_image_area": "Attach Photos",
-    "num_check_image_hint": "The value is {{threshold}} or more, so at least one photo is required. Paste with Ctrl+V.",
     "num_check_add_image": "Add Photo",
     "num_check_image_no": "Photo {{no}}",
     "num_check_active_hint": "A J-ayer/O-ayer pp contains '{{keyword}}', so this is fixed to 'Applicable'. Photos are required when the value is {{threshold}} or more.",
