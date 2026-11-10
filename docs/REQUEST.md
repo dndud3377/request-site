@@ -307,6 +307,49 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-11-10 — 임시저장·상신·직접 이력 등록 실패 토스트에 서버 거부 사유 표시)
+
+- **배경**: 임시저장(`handleSaveDraft`)이 서버에서 거부돼도 토스트는 사유와 무관하게 `common.error`("오류가 발생했습니다.")만 보였다.
+  MAP 정보 잠금 400 처럼 사용자가 원인을 알아야 하는 경우에도 이유를 알 수 없었다(바로 아래 버그 수정 항목의 재현에서 확인).
+  상신·재상신(`handleSubmit`) 실패 토스트는 서버 사유는 보였지만 접두 문구 `오류 발생:`·`알 수 없는 오류` 가 i18n 없이 하드코딩돼 있었다.
+- **변경**: 두 곳 모두 프로젝트 기존 관례(`ApprovalPage`·`PermissionPage` 와 같음)로 맞췄다 —
+  `addToast(err instanceof Error ? err.message : t('common.error'), 'error')`.
+  `err.message` 는 `api/client.ts` 가 만든 `HTTP <상태>: <서버 error>` 형식이라 토스트에 `HTTP 400: MAP 정보 검토(RFG)가 …` 처럼 보인다.
+  새 i18n 키는 없다(기본 문구는 기존 `common.error`).
+- **직접 이력 등록(같은 날 후속)**: `handleDirectHistoryRegister` 실패 토스트의 같은 하드코딩 접두 문구도 같은 관례로 맞췄다.
+- **범위 밖**: 유휴 자동저장(`handleIdleAutoSave`) 실패는 종전대로 조용히 무시한다.
+- **테스트**: `frontend/src/pages/RequestPage/draftSaveErrorToast.test.tsx`(2건 — Error 거부 시 사유 표시 / 그 외 값은 `common.error`).
+  상신·재상신 실패 토스트는 자동 테스트가 없다(전 단계 검증 통과가 필요해 이번에 추가하지 않음).
+- **수동 검증**: 잠긴 문서에서 거부되는 저장을 만들면(예: MASTER 가 아닌 작성자로 API 직접 호출, 또는 이 수정 전 백엔드) 임시저장 토스트에
+  서버 사유가 보이면 정상. 2026-11-10 로컬 앱(수정 전 백엔드 + 옛 잠금 문서)에서 `HTTP 400: MAP 정보 검토(RFG)가 …` 토스트를 스크린샷으로 확인했다.
+
+### 버그 수정 (2026-11-10 — MAP 정보 잠금: 옛 문서의 편집 로드 백필이 'MAP 정보 변경'으로 오판돼 수정·재상신이 막히던 문제)
+
+- **증상**: R(+RV) 또는 고정 후결자 합의 이력으로 잠긴 문서(`map_info_locked`) 중 필드 도입 전에 저장된 옛 문서는
+  잠금 밖 필드만 고쳐도 저장(임시저장 포함)·재상신이 400 `MAP 정보 검토(RFG)가 완료된 뒤에는 …` 으로 막혔다.
+  재상신은 `documentsAPI.update` 를 먼저 부르므로 같이 막힌다. MAP 정보는 read-only 라 사용자가 피할 방법이 없었다.
+- **원인**: 편집 화면이 문서를 불러올 때(`index.tsx` `setDetail({ ...parsed.detail, ... })`) 잠금 대상 필드 두 개를 채운다.
+  - `prodc_scope`(2026-08-03 도입): `저장값 || inferProdcScope(저장본)` → 리전 값이 없으면 `''`, 옛 C가문 문서는 `'top'`/`'only_top'`/`'only_bottom'`
+  - `map_change_reason`(2026-08-06 도입): `저장값 ?? ''`
+
+  서버 `RequestDocument.changed_map_info_fields` 는 저장본에 키가 없으면 `None` 으로 보고 `''`·추론값과 다르다고 판정했다.
+  두 필드를 기존 문서에 채운 마이그레이션은 없다. 현행 문서는 두 키를 항상 저장하므로 해당되지 않는다.
+- **수정**: `changed_map_info_fields` 가 저장본과 요청본 **모두**를 프론트 로드 백필과 같은 규칙으로 채운 사본으로 비교한다
+  (`RequestDocument._with_edit_load_backfill`, `_infer_prodc_scope` — 프론트 `constants.ts` `inferProdcScope` 와 같은 규칙).
+  요청본도 채우는 이유: 키를 보내지 않는 요청(API 직접 호출 등)이 반대로 오판되지 않게 하기 위해서다.
+  DB 저장값은 바꾸지 않는다. 백필과 다른 실제 변경(예: 추론값 `'only_top'` 인데 `'only_bottom'` 전송, 사유 실제 입력)은 계속 400.
+- **main 병합 후속(같은 날)**: main 의 '숫자 확인 필수'가 `MAP_INFO_FIELDS` 에 `num_check`·`num_check_value`·`num_check_images` 를 넣고
+  편집 로드에서 `num_check || '해당 없음'`, `num_check_value ?? ''`, `num_check_images` 배열 아니면 `[]` 로 채운다. 이 기능 이전에 저장된
+  잠긴 문서 전부가 같은 오판(400)에 걸려(시험 병합 상태 재현: `changed=['num_check','num_check_value','num_check_images']`),
+  `_with_edit_load_backfill` 에 같은 규칙 3개를 추가했다(`RequestDocument.NUM_CHECK_NONE` = 프론트 `NUM_CHECK_NONE`).
+- **알려진 한계(미조치, 2026-11-10)**: NEW + J/O pp 에 PPPP 가 있는 옛 잠긴 문서는 편집 화면이 열리자마자 `num_check` 를 '해당 있음'으로
+  자동 전환한다(`index.tsx` `numCheckActive` effect — 로드 중에도 막지 않음). 저장본은 '해당 없음'으로 보정되므로 서버는 실제 변경으로 보고 400 을 낸다.
+  로컬 앱에서 재현 확인(임시저장 `PATCH 400`, 보낸 값 `num_check="해당 있음"`). 잠금 중 MAP 정보는 입력이 막혀 숫자도 넣을 수 없다. 처리 방향은 사용자 결정 대기.
+- **주의**: 프론트 로드 백필(`index.tsx` 편집 로드의 `prodc_scope`·`map_change_reason`)이나 `inferProdcScope` 를 바꾸면
+  서버 `_with_edit_load_backfill`·`_infer_prodc_scope` 도 함께 바꿔야 한다(어긋나면 같은 오판이 다시 생긴다).
+- **범위 밖**: R/O 재합의 생략 판정(`_should_skip_r_stage`, `o_review_content_same`)도 같은 엄격 비교를 쓰지만 이번에 바꾸지 않았다.
+- **테스트**: `backend/api/tests.py::MapInfoLockLegacyBackfillTest`(10건) — 키 없음 백필 통과 3건, 실제 변경 거부 3건, 추론 규칙, DB 미변경,
+  num_check 3개 키 없음 백필 통과 1건 · 실제 값 거부 1건(3필드).
 ### 기능 변경 (2026-11-10 후속 — '숫자 확인 필수'를 [해당 없음/해당 있음 + 숫자] 로 바꾸고, 숫자 ≥ 기준값(.env)일 때만 사진 첨부)
 
 > 아래 "STEP2 MAP 정보: '숫자 확인 필수' 사진 증빙 항목 추가" 항목의 **후속 변경**이다. 바뀐 부분만 적는다(판정 조건·사진 붙여넣기 방식은 그대로).

@@ -4943,8 +4943,9 @@ export default function RequestPage(): React.ReactElement {
         setSavedId(res.data.id);
       }
       addToast(t('request.save_success'), 'success');
-    } catch {
-      addToast(t('common.error'), 'error');
+      // claude 수정 (2026-11-10): 임시저장 실패 시 서버 거부 사유(예: MAP 정보 잠금 400)를 토스트에 표시 — 일반 문구만 보여 원인을 알 수 없었다
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : t('common.error'), 'error');
     } finally {
       setSaving(false);
       isPersistingRef.current = false;
@@ -5298,8 +5299,9 @@ export default function RequestPage(): React.ReactElement {
       setDirectHistoryOpen(false);
       addToast(t('request.direct_history_success'), 'success');
       setTimeout(() => navigate('/history'), 1500);
+      // claude 수정 (2026-11-10): 하드코딩된 '오류 발생:'/'알 수 없는 오류' 제거 — 상신 토스트와 같은 관례(서버 사유, 없으면 common.error)
     } catch (err) {
-      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
+      addToast(err instanceof Error ? err.message : t('common.error'), 'error');
     } finally {
       setSubmitting(false);
       isPersistingRef.current = false;
@@ -5379,8 +5381,9 @@ export default function RequestPage(): React.ReactElement {
         }
       }
       setTimeout(() => navigate('/approval'), 1500);
+      // claude 수정 (2026-11-10): 하드코딩된 '오류 발생:'/'알 수 없는 오류' 제거 — 임시저장과 같은 관례(서버 사유, 없으면 common.error)
     } catch (err) {
-      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
+      addToast(err instanceof Error ? err.message : t('common.error'), 'error');
     } finally {
       setSubmitting(false);
       isPersistingRef.current = false;
