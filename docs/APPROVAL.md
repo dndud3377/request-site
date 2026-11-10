@@ -1892,6 +1892,15 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
       NEW 문서의 X표시는 잠금 항목이 아니므로 종전대로 저장값 글씨다. 잠금 항목 6개(지도 편차·예외 구역·X표시·C가문 세부·3번·Map Option)의
       기본값 표시는 이제 모두 같은 회색 "없음" span 이다.
     - 테스트: `components/PagedDetailView.lockedDefault.test.tsx` (상세 보기 9건 + export 3건 — TSV 예외 포함).
+- **(2026-11-10 추가) MAP 정보 탭 — '숫자 확인 필수' 사진 카드**: 작성 화면 STEP2 의 '숫자 확인 필수' 사진(`detail.num_check_images`,
+  이미지 경로 배열 — `docs/REQUEST.md` 같은 날짜 항목 참조)을 **X표시 카드 바로 아래**에 카드로 보여준다.
+  - 표시 조건: 사진이 1장 이상(`num_check_images.length > 0`)이고 MAP 삭제 문서가 아닐 때. 필드가 없는 옛 문서·사진 0장이면 카드가 없다.
+  - 사진마다 `사진 N` 제목 + 이미지(클릭/🔍 → 기존 확대 보기 `zoomedImage`). X표시 이미지와 같은 크기·확대 방식이다.
+  - 역할 판정(`isR/isO/isP` …)이 모두 `true` 라 **모든 결재 경로·역할**에서 같은 카드가 보인다.
+  - **이번 범위 밖(그대로)**: 회차별 변경 강조(빨간 테두리)·'이력 확인' 창, MAP 정보 export(엑셀)·메일 본문에는 이 사진이 들어가지 않는다.
+  - 결재 판정 영향: 백엔드 `RequestDocument.MAP_INFO_FIELDS` 에 `num_check_images` 를 추가했다 → R/고정 후결자 합의 뒤 MAP 정보 잠금(PATCH 400)과
+    O 재합의 생략(Case U) 비교 구간에 포함된다. 사진이 바뀌면 O 재합의가 생략되지 않는다. 결재선 생성 규칙은 바뀌지 않았다.
+  - 테스트: `components/PagedDetailView.numCheck.test.tsx`(2건), `backend/api/tests.py` `MapInfoLockedFieldCoverageTest`(잠금·O 비교 2건 추가).
 
 ---
 
