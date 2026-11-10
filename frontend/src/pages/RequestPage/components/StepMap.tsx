@@ -682,11 +682,12 @@ const StepMap: React.FC<StepMapProps> = ({
 
         {/* claude 수정 (2026-11-10): '숫자 확인 필수' — X표시 변경 여부 아래, 예외 구역과 같은 [드롭다운 + 값] 배치.
             드롭다운은 PPPP 판정이 정하므로 항상 잠긴다. 값은 '해당 있음'일 때만 입력·필수이고,
-            값이 기준값 이상이면 그 아래에 사진 첨부 영역이 열린다. */}
+            값이 기준값 이상이면 그 아래에 사진 첨부 영역이 열린다.
+            라벨 옆 GuideBadge(step2_num_check) — /guide 에서 이 항목의 기능 가이드를 작성할 수 있도록 추가. */}
         <div className="full-width">
           <div className="flex-row">
             <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-              <label className="form-label">{t('request.num_check_title')}</label>
+              <label className="form-label">{t('request.num_check_title')}<GuideBadge fk="step2_num_check" tk={t('guide.feat.step2_num_check' as never)} /></label>
               <select className="form-control" name="num_check" value={detail.num_check} disabled>
                 <option value={NUM_CHECK_NONE}>{t('request.num_check_none')}</option>
                 <option value={NUM_CHECK_APPLIES}>{t('request.num_check_applies')}</option>
