@@ -302,6 +302,26 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-11-10 — MAP 정보 잠금: 옛 문서의 편집 로드 백필이 'MAP 정보 변경'으로 오판돼 수정·재상신이 막히던 문제)
+
+- **증상**: R(+RV) 또는 고정 후결자 합의 이력으로 잠긴 문서(`map_info_locked`) 중 필드 도입 전에 저장된 옛 문서는
+  잠금 밖 필드만 고쳐도 저장(임시저장 포함)·재상신이 400 `MAP 정보 검토(RFG)가 완료된 뒤에는 …` 으로 막혔다.
+  재상신은 `documentsAPI.update` 를 먼저 부르므로 같이 막힌다. MAP 정보는 read-only 라 사용자가 피할 방법이 없었다.
+- **원인**: 편집 화면이 문서를 불러올 때(`index.tsx` `setDetail({ ...parsed.detail, ... })`) 잠금 대상 필드 두 개를 채운다.
+  - `prodc_scope`(2026-08-03 도입): `저장값 || inferProdcScope(저장본)` → 리전 값이 없으면 `''`, 옛 C가문 문서는 `'top'`/`'only_top'`/`'only_bottom'`
+  - `map_change_reason`(2026-08-06 도입): `저장값 ?? ''`
+
+  서버 `RequestDocument.changed_map_info_fields` 는 저장본에 키가 없으면 `None` 으로 보고 `''`·추론값과 다르다고 판정했다.
+  두 필드를 기존 문서에 채운 마이그레이션은 없다. 현행 문서는 두 키를 항상 저장하므로 해당되지 않는다.
+- **수정**: `changed_map_info_fields` 가 저장본과 요청본 **모두**를 프론트 로드 백필과 같은 규칙으로 채운 사본으로 비교한다
+  (`RequestDocument._with_edit_load_backfill`, `_infer_prodc_scope` — 프론트 `constants.ts` `inferProdcScope` 와 같은 규칙).
+  요청본도 채우는 이유: 키를 보내지 않는 요청(API 직접 호출 등)이 반대로 오판되지 않게 하기 위해서다.
+  DB 저장값은 바꾸지 않는다. 백필과 다른 실제 변경(예: 추론값 `'only_top'` 인데 `'only_bottom'` 전송, 사유 실제 입력)은 계속 400.
+- **주의**: 프론트 로드 백필(`index.tsx` 편집 로드의 `prodc_scope`·`map_change_reason`)이나 `inferProdcScope` 를 바꾸면
+  서버 `_with_edit_load_backfill`·`_infer_prodc_scope` 도 함께 바꿔야 한다(어긋나면 같은 오판이 다시 생긴다).
+- **범위 밖**: R/O 재합의 생략 판정(`_should_skip_r_stage`, `o_review_content_same`)도 같은 엄격 비교를 쓰지만 이번에 바꾸지 않았다.
+- **테스트**: `backend/api/tests.py::MapInfoLockLegacyBackfillTest`(8건) — 키 없음 백필 통과 3건, 실제 변경 거부 3건, 추론 규칙, DB 미변경.
+
 ### 기능 변경 (2026-11-06 — J/O-ayer 표: ST 를 먼저 골라야 요청 기준 입력 + 기등록/layer삭제/미진행으로 ST 를 'X' 에 잠그지 않음)
 
 - **의도(사용자)**: ST(`col_st`)를 채워야 요청 기준(`col_new_or_copy`) 칸이 열리도록 **입력 순서를 강제**한다. 순서가 정해졌으므로
