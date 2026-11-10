@@ -12,6 +12,7 @@ import AdiCdTargetsCell from './AdiCdTargetsCell';
 import {
   VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, isOverlayOnlyPurpose, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
   isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
+  NUM_CHECK_APPLIES,
 } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText, toExtraLayerRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
@@ -2909,13 +2910,26 @@ type Page = { label: string; content: React.ReactNode; key?: string };
             );
           })()}
 
-          {/* claude 수정 (2026-11-10): '숫자 확인 필수' 사진 증빙 — 첨부된 사진이 있으면 X표시 카드 아래에 모든 결재 경로에서 보여준다 */}
-          {!isMapDeleteEditType(detail.map_type) && Array.isArray(detail.num_check_images) && detail.num_check_images.length > 0 && (
+          {/* claude 수정 (2026-11-10): '숫자 확인 필수' — '해당 있음'(또는 사진이 있는 문서)이면 X표시 카드 아래에 모든 결재 경로에서
+              [해당 여부 · 숫자 확인 값 · 첨부 사진]을 보여준다 */}
+          {!isMapDeleteEditType(detail.map_type)
+            && (detail.num_check === NUM_CHECK_APPLIES || (Array.isArray(detail.num_check_images) && detail.num_check_images.length > 0)) && (
             <div style={rowStyle}>
               <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
-                <div style={fieldLabel}>{t('request.num_check_title')}</div>
+                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                  <div>
+                    <div style={fieldLabel}>{t('request.num_check_title')}</div>
+                    <div style={fieldValue}>
+                      {detail.num_check === NUM_CHECK_APPLIES ? t('request.num_check_applies') : t('request.num_check_none')}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>{t('request.num_check_value')}</div>
+                    <div style={fieldValue}>{detail.num_check_value || '-'}</div>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  {(detail.num_check_images as string[]).map((path, idx) => {
+                  {((detail.num_check_images ?? []) as string[]).map((path, idx) => {
                     const src = `/media/${path}`;
                     return (
                       <div key={`${path}-${idx}`}>
