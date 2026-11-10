@@ -10250,6 +10250,24 @@ class MapInfoLockLegacyBackfillTest(TestCase):
         res = self._patch(doc, {**saved, 'map_type': 'EXISTING'})
         self.assertEqual(res.status_code, 400, res.content)
 
+    # claude 수정 (2026-11-10): main 병합 — '숫자 확인 필수'(num_check 3개) 도입 전 문서도 로드 백필이 오판되지 않아야 한다
+    NUM_CHECK_BACKFILL = {'num_check': '해당 없음', 'num_check_value': '', 'num_check_images': []}
+
+    def test_num_check_keys_missing_backfilled_is_allowed(self):
+        saved = {**self.BASE, 'prodc_scope': '', 'map_change_reason': ''}
+        doc = self._locked_doc(saved)
+        res = self._patch(doc, {**saved, **self.NUM_CHECK_BACKFILL, 'customer_requirement': 'B'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_num_check_keys_missing_real_values_are_rejected(self):
+        saved = {**self.BASE, 'prodc_scope': '', 'map_change_reason': ''}
+        for field, value in (
+            ('num_check', '해당 있음'), ('num_check_value', '12'), ('num_check_images', ['/media/a.png']),
+        ):
+            doc = self._locked_doc(saved)
+            res = self._patch(doc, {**saved, **self.NUM_CHECK_BACKFILL, field: value})
+            self.assertEqual(res.status_code, 400, f'{field}={value} {res.content}')
+
     def test_infer_prodc_scope_matches_frontend_rules(self):
         """프론트 constants.ts inferProdcScope 와 같은 판정."""
         infer = RequestDocument._infer_prodc_scope
