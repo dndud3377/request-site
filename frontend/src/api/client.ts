@@ -44,6 +44,7 @@ import {
   PartialShotValue,
   LayerFilterSet,
   MapInfo,
+  NumCheckConfig,
   PersonalMarkCategory,
   PersonalFilterPreset,
   PersonalFilterPresetInput,
@@ -1158,6 +1159,10 @@ export const formOptionsAPI = {
 
   getMapInfo: (line: string, partid: string): Promise<MapInfo> =>
     get<MapInfo>(`/form-options/map-info/?line=${encodeURIComponent(line)}&partid=${encodeURIComponent(partid)}`),
+
+  // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 조회 신설
+  getNumCheckConfig: (): Promise<NumCheckConfig> =>
+    get<NumCheckConfig>('/form-options/num-check-config/'),
 
   getBarcodeOptions: (product_name: string): Promise<{ label: string; spec: string }[]> =>
     get<{ options: { label: string; spec: string }[] }>(

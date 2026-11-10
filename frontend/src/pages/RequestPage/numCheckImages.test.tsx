@@ -1,11 +1,13 @@
 /**
- * claude 수정 (2026-11-10): STEP2 MAP 정보 '숫자 확인 필수' 사진 증빙 테스트 신설
+ * claude 수정 (2026-11-10): STEP2 MAP 정보 '숫자 확인 필수' 테스트 — 드롭다운(해당 없음/해당 있음) + 숫자 + 사진 구조
  *
  * 규칙:
- * - MAP 목적이 NEW 이고, J-ayer·O-ayer 의 모든 행(활성·비활성 무관) 중 pp 에 'PPPP' 가 포함(대소문자 무시)되면 활성.
- * - 활성이면 사진 최소 1장 필수, 비활성이면 회색 잠금(붙여넣기·사진 추가·삭제 불가).
- * - '사진 추가'로 붙여넣기 칸을 늘리고, 칸마다 삭제 버튼이 있다. 빈 칸은 저장하지 않는다.
- * - MAP 목적 변경 등으로 비활성이 되면 사진을 비운다. 저장 문서를 다시 열 때는 저장된 사진을 그대로 둔다.
+ * - MAP 목적이 NEW 이고, J-ayer·O-ayer 의 모든 행(활성·비활성 무관) 중 pp 에 'PPPP' 가 포함(대소문자 무시)되면
+ *   드롭다운이 '해당 있음'으로 고정, 아니면 '해당 없음'으로 고정(드롭다운은 항상 잠김).
+ * - '해당 있음'이면 숫자 입력칸이 열리고 필수다. 숫자·소수점 하나만 입력된다(음수 부호·문자 불가).
+ * - 숫자가 기준값(.env NUM_CHECK_IMAGE_THRESHOLD, 기본 10) 이상이면 사진 첨부 영역이 열리고 사진 최소 1장 필수.
+ * - 사진 칸은 M-shot 칸과 같은 50% 가 최대 폭이다.
+ * - 판정이 풀리면 '해당 없음' + 숫자·사진 비움, 숫자가 기준값 미만이 되면 사진 비움. 저장 문서를 다시 열 때는 저장값을 그대로 둔다.
  */
 import React from 'react';
 import { render, act, fireEvent, screen, waitFor } from '@testing-library/react';
@@ -14,13 +16,15 @@ import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
 import { INITIAL_DETAIL, makeJayerRow, makeOayerRow } from './constants';
-import { isNumCheckRequired } from './helpers';
+import { isNumCheckRequired, isNumCheckImageRequired, sanitizeUnsignedDecimal } from './helpers';
 
 beforeAll(async () => { await i18n.changeLanguage('ko'); });
 
-const TITLE = '숫자 확인 필수';
+const IMAGE_AREA = '사진 첨부';
 const REQUIRED_MSG = '사진을 1장 이상 첨부해야 합니다.';
 const ADD_BTN = '사진 추가';
+const APPLIES = '해당 있음';
+const NONE = '해당 없음';
 
 jest.mock('../../components/RichTextEditor', () => ({
   __esModule: true,
@@ -33,7 +37,9 @@ jest.mock('../../contexts/AuthContext', () => ({
   }),
 }));
 
-const mockState: { captured: unknown | null; doc: unknown | null; uploadSeq: number } = { captured: null, doc: null, uploadSeq: 0 };
+const mockState: { captured: unknown | null; doc: unknown | null; uploadSeq: number; threshold: number } = {
+  captured: null, doc: null, uploadSeq: 0, threshold: 10,
+};
 
 jest.mock('../../api/client', () => ({
   documentsAPI: {
@@ -54,6 +60,7 @@ jest.mock('../../api/client', () => ({
     getOvlLayer: () => Promise.resolve([]),
     getBbExternalData: () => Promise.resolve([]),
     getBarcodeCandidates: () => Promise.resolve([]),
+    getNumCheckConfig: () => Promise.resolve({ image_threshold: mockState.threshold }),
   },
   uploadImageAPI: {
     upload: () => {
@@ -80,21 +87,29 @@ function buttonWith(container: HTMLElement, text: string): HTMLButtonElement {
   return btn as HTMLButtonElement;
 }
 
-/** '숫자 확인 필수' 블록(라벨이 들어 있는 form-group) */
-function numCheckBlock(container: HTMLElement): HTMLElement {
+const numCheckSelect = (c: HTMLElement) => c.querySelector('select[name="num_check"]') as HTMLSelectElement;
+const numCheckInput = (c: HTMLElement) => c.querySelector('input[name="num_check_value"]') as HTMLInputElement;
+
+/** 사진 첨부 영역(라벨 '사진 첨부'가 들어 있는 form-group) — 없으면 null */
+function imageBlock(container: HTMLElement): HTMLElement | null {
   const label = Array.from(container.querySelectorAll('label.form-label'))
-    .find((l) => l.textContent?.trim().startsWith(TITLE));
-  if (!label) throw new Error('숫자 확인 필수 라벨을 찾지 못했다');
-  return label.closest('.form-group') as HTMLElement;
+    .find((l) => l.textContent?.trim().startsWith(IMAGE_AREA));
+  return label ? (label.closest('.form-group') as HTMLElement) : null;
 }
 
-function pasteAreas(container: HTMLElement): HTMLElement[] {
-  return Array.from(numCheckBlock(container).querySelectorAll('.image-upload-area')) as HTMLElement[];
+function requireImageBlock(container: HTMLElement): HTMLElement {
+  const block = imageBlock(container);
+  if (!block) throw new Error('사진 첨부 영역이 없다');
+  return block;
 }
 
-function deleteButtons(container: HTMLElement): HTMLButtonElement[] {
-  return Array.from(numCheckBlock(container).querySelectorAll('button'))
-    .filter((b) => b.textContent === '삭제') as HTMLButtonElement[];
+const pasteAreas = (c: HTMLElement) => Array.from(requireImageBlock(c).querySelectorAll('.image-upload-area')) as HTMLElement[];
+const deleteButtons = (c: HTMLElement) => Array.from(requireImageBlock(c).querySelectorAll('button'))
+  .filter((b) => b.textContent === '삭제') as HTMLButtonElement[];
+
+async function typeValue(container: HTMLElement, value: string) {
+  await act(async () => { fireEvent.change(numCheckInput(container), { target: { value } }); });
+  await flushEffects();
 }
 
 async function pasteImage(area: HTMLElement) {
@@ -172,147 +187,209 @@ async function saveDraftAndCaptureDetail(): Promise<Record<string, unknown>> {
   return JSON.parse(payload.additional_notes).detail;
 }
 
-describe('isNumCheckRequired — 활성 판정', () => {
-  it('NEW + J 또는 O 의 pp 에 PPPP 포함(대소문자 무시, 비활성 행 포함)이면 참', () => {
+async function clickConfirm() {
+  const confirmBtn = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === '확인').pop();
+  if (confirmBtn) {
+    await act(async () => { (confirmBtn as HTMLButtonElement).click(); });
+    await flushEffects();
+  }
+}
+
+describe('숫자 확인 필수 — 판정 함수', () => {
+  it('isNumCheckRequired: NEW + J 또는 O 의 pp 에 PPPP 포함(대소문자 무시)이면 참', () => {
     expect(isNumCheckRequired('NEW', [{ pp: 'AB_PPPP_01' }], [])).toBe(true);
     expect(isNumCheckRequired('NEW', [], [{ pp: 'x-pppp' }])).toBe(true);
     expect(isNumCheckRequired('NEW', [{ pp: 'PpPp' }], [])).toBe(true);
     expect(isNumCheckRequired('NEW', [{ pp: 'PPP_P' }], [{ pp: '' }])).toBe(false);
-    expect(isNumCheckRequired('NEW', [], [])).toBe(false);
-  });
-
-  it('NEW 가 아니면 PPPP 가 있어도 거짓', () => {
     ['CLONE', 'EXISTING', '삭제', ''].forEach((mt) => {
       expect(isNumCheckRequired(mt, [{ pp: 'PPPP' }], [{ pp: 'PPPP' }])).toBe(false);
     });
   });
+
+  it('isNumCheckImageRequired: 기준값 이상(같으면 참), 숫자가 아니면 거짓', () => {
+    expect(isNumCheckImageRequired('9.99', 10)).toBe(false);
+    expect(isNumCheckImageRequired('10', 10)).toBe(true);
+    expect(isNumCheckImageRequired('10.5', 10)).toBe(true);
+    expect(isNumCheckImageRequired('', 10)).toBe(false);
+    expect(isNumCheckImageRequired('.', 10)).toBe(false);
+  });
+
+  it('sanitizeUnsignedDecimal: 음수 부호·문자를 지우고 숫자와 소수점 하나만 남긴다', () => {
+    expect(sanitizeUnsignedDecimal('-12a.3.4')).toBe('12.34');
+    expect(sanitizeUnsignedDecimal('abc')).toBe('');
+    expect(sanitizeUnsignedDecimal('007')).toBe('007');
+  });
 });
 
-describe('STEP2 숫자 확인 필수 사진 증빙', () => {
+describe('STEP2 숫자 확인 필수', () => {
   beforeEach(() => {
     mockState.captured = null;
     mockState.doc = null;
     mockState.uploadSeq = 0;
+    mockState.threshold = 10;
     localStorage.clear();
   });
 
-  it('NEW + 비활성(ST=X) J 행의 pp 에 pppp → 활성(필수 표시) · 사진 없이 다음 누르면 필수 오류', async () => {
+  it('PPPP(비활성 J 행) → 해당 있음 고정·숫자칸 필수, 사진 영역은 아직 없음, 숫자 없이 다음 누르면 필수 오류', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'ab_pppp_1', st: 'X' }], []);
-    const block = numCheckBlock(container);
-    expect(block.querySelector('.required')).not.toBeNull();
-    expect(buttonWith(block, ADD_BTN).disabled).toBe(false);
-    expect(pasteAreas(container)).toHaveLength(1);
-    // 사진이 없을 때 남는 마지막 빈 칸은 지울 수 없다.
-    expect(deleteButtons(container)).toHaveLength(0);
+    expect(numCheckSelect(container).value).toBe(APPLIES);
+    expect(numCheckSelect(container).disabled).toBe(true);
+    expect(numCheckInput(container).disabled).toBe(false);
+    expect(imageBlock(container)).toBeNull();
 
     await act(async () => { buttonWith(container, '다음').click(); });
     await flushEffects();
-    expect(numCheckBlock(container).textContent).toContain(REQUIRED_MSG);
+    const valueGroup = numCheckInput(container).closest('.form-group') as HTMLElement;
+    expect(valueGroup.querySelector('.form-error')?.textContent).toBe('필수 입력 항목입니다.');
   });
 
-  it('O 행의 pp 에만 PPPP 가 있어도 활성', async () => {
+  it('O 행의 pp 에만 PPPP 가 있어도 해당 있음', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PP01' }], [{ pp: 'PPPP' }]);
-    expect(numCheckBlock(container).querySelector('.required')).not.toBeNull();
+    expect(numCheckSelect(container).value).toBe(APPLIES);
   });
 
-  it('붙여넣기·사진 추가·개별 삭제 → 저장값은 첨부된 사진만(빈 칸 제외)', async () => {
+  it('숫자칸은 음수 부호·문자를 받지 않는다', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
+    await typeValue(container, '-1a2.3.4');
+    expect(numCheckInput(container).value).toBe('12.34');
+  });
+
+  it('기본 기준값 10: 9.9 는 사진 영역 없음, 10 이면 사진 영역이 열리고 사진 없이 다음 누르면 필수 오류', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
+    await typeValue(container, '9.9');
+    expect(imageBlock(container)).toBeNull();
+
+    await typeValue(container, '10');
+    expect(imageBlock(container)).not.toBeNull();
+    expect(pasteAreas(container)).toHaveLength(1);
+    expect(deleteButtons(container)).toHaveLength(0);
+    await act(async () => { buttonWith(container, '다음').click(); });
+    await flushEffects();
+    expect(requireImageBlock(container).textContent).toContain(REQUIRED_MSG);
+  });
+
+  it('기준값은 .env(API) 값을 따른다 — 20 이면 15 는 사진 영역 없음, 20 은 열림', async () => {
+    mockState.threshold = 20;
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
+    await typeValue(container, '15');
+    expect(imageBlock(container)).toBeNull();
+    await typeValue(container, '20');
+    expect(imageBlock(container)).not.toBeNull();
+    expect(requireImageBlock(container).textContent).toContain('값이 20 이상이라');
+  });
+
+  it('사진 칸 폭은 M-shot 칸과 같은 50% 가 최대다', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
+    await typeValue(container, '30');
+    const slot = pasteAreas(container)[0].parentElement as HTMLElement;
+    expect(slot.style.maxWidth).toBe('calc(50% - 8px)');
+  });
+
+  it('붙여넣기·사진 추가·개별 삭제·교체 → 저장값은 해당 여부·숫자·첨부된 사진만', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
+    await typeValue(container, '12');
 
     await pasteImage(pasteAreas(container)[0]);
-    expect(pasteAreas(container)).toHaveLength(1);
-    expect(numCheckBlock(container).querySelectorAll('img')).toHaveLength(1);
-
-    // 사진 추가 → 빈 칸 2개 늘리고 하나에만 붙여넣는다.
-    await act(async () => { buttonWith(container, ADD_BTN).click(); });
-    await act(async () => { buttonWith(container, ADD_BTN).click(); });
+    await act(async () => { buttonWith(requireImageBlock(container), ADD_BTN).click(); });
+    await act(async () => { buttonWith(requireImageBlock(container), ADD_BTN).click(); });
     await flushEffects();
     expect(pasteAreas(container)).toHaveLength(3);
     await pasteImage(pasteAreas(container)[1]);
-    expect(numCheckBlock(container).querySelectorAll('img')).toHaveLength(2);
-    expect(pasteAreas(container)).toHaveLength(3);
 
     let detail = await saveDraftAndCaptureDetail();
+    expect(detail.num_check).toBe(APPLIES);
+    expect(detail.num_check_value).toBe('12');
     expect(detail.num_check_images).toEqual(['mshot_images/n1.png', 'mshot_images/n2.png']);
 
-    // 첫 사진 삭제 → 두 번째 사진만 남는다. 빈 칸 삭제 → 칸 수 감소.
     await act(async () => { deleteButtons(container)[0].click(); });
     await flushEffects();
     await act(async () => { deleteButtons(container)[1].click(); });
     await flushEffects();
     expect(pasteAreas(container)).toHaveLength(1);
-    detail = await saveDraftAndCaptureDetail();
-    expect(detail.num_check_images).toEqual(['mshot_images/n2.png']);
-
-    // 첨부된 사진 칸에 다시 붙여넣으면 그 사진을 교체한다.
     await pasteImage(pasteAreas(container)[0]);
     detail = await saveDraftAndCaptureDetail();
     expect(detail.num_check_images).toEqual(['mshot_images/n3.png']);
 
-    // 사진이 있으면 필수 오류가 나지 않는다.
     await act(async () => { buttonWith(container, '다음').click(); });
     await flushEffects();
     expect(container.textContent).not.toContain(REQUIRED_MSG);
   });
 
-  it('PPPP 가 없으면 회색 잠금 — 사진 추가 비활성, 붙여넣어도 반영되지 않고 필수 오류 없음', async () => {
-    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PP01' }], [{ pp: 'PP02' }]);
-    const block = numCheckBlock(container);
-    expect(block.querySelector('.required')).toBeNull();
-    expect(buttonWith(block, ADD_BTN).disabled).toBe(true);
-
+  it('숫자를 기준값 미만으로 내리면 사진 영역이 사라지고 사진도 비워진다', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
+    await typeValue(container, '12');
     await pasteImage(pasteAreas(container)[0]);
-    expect(numCheckBlock(container).querySelectorAll('img')).toHaveLength(0);
-
-    await act(async () => { buttonWith(container, '다음').click(); });
-    await flushEffects();
-    expect(container.textContent).not.toContain(REQUIRED_MSG);
+    await typeValue(container, '5');
+    expect(imageBlock(container)).toBeNull();
     const detail = await saveDraftAndCaptureDetail();
+    expect(detail.num_check_value).toBe('5');
     expect(detail.num_check_images).toEqual([]);
   });
 
-  it('CLONE 은 PPPP 가 있어도 회색 잠금', async () => {
-    const { container } = await openDocAtMapStep('CLONE', [{ pp: 'PPPP' }], []);
-    expect(numCheckBlock(container).querySelector('.required')).toBeNull();
-    expect(buttonWith(numCheckBlock(container), ADD_BTN).disabled).toBe(true);
+  it('PPPP 가 없으면 해당 없음 고정 — 숫자칸 잠김, 필수 오류 없음', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PP01' }], [{ pp: 'PP02' }]);
+    expect(numCheckSelect(container).value).toBe(NONE);
+    expect(numCheckSelect(container).disabled).toBe(true);
+    expect(numCheckInput(container).disabled).toBe(true);
+    expect(imageBlock(container)).toBeNull();
+    // 숫자 확인 항목 때문에 막히지 않고 다음 단계(J-ayer)로 넘어간다.
+    await act(async () => { buttonWith(container, '다음').click(); });
+    await flushEffects();
+    expect(numCheckInput(container)).toBeNull();
+    const detail = await saveDraftAndCaptureDetail();
+    expect(detail.num_check).toBe(NONE);
+    expect(detail.num_check_value).toBe('');
   });
 
-  it('저장 문서를 다시 열면 저장된 사진을 그대로 보여주고 다시 저장해도 유지된다', async () => {
+  it('CLONE 은 PPPP 가 있어도 해당 없음', async () => {
+    const { container } = await openDocAtMapStep('CLONE', [{ pp: 'PPPP' }], []);
+    expect(numCheckSelect(container).value).toBe(NONE);
+    expect(numCheckInput(container).disabled).toBe(true);
+  });
+
+  it('저장 문서를 다시 열면 해당 여부·숫자·사진을 그대로 보여주고 다시 저장해도 유지된다', async () => {
     const saved = ['mshot_images/a.png', 'mshot_images/b.png'];
-    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], { num_check_images: saved });
-    expect(numCheckBlock(container).querySelectorAll('img')).toHaveLength(2);
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], {
+      num_check: APPLIES, num_check_value: '12', num_check_images: saved,
+    });
+    expect(numCheckInput(container).value).toBe('12');
+    expect(requireImageBlock(container).querySelectorAll('img')).toHaveLength(2);
     const detail = await saveDraftAndCaptureDetail();
+    expect(detail.num_check).toBe(APPLIES);
+    expect(detail.num_check_value).toBe('12');
     expect(detail.num_check_images).toEqual(saved);
   });
 
-  it('MAP 목적을 NEW → CLONE 으로 바꾸면(확인) 사진이 비워진다', async () => {
-    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], { num_check_images: ['mshot_images/a.png'] });
+  it('MAP 목적을 NEW → CLONE 으로 바꾸면(확인) 해당 없음 + 숫자·사진이 비워진다', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], {
+      num_check: APPLIES, num_check_value: '12', num_check_images: ['mshot_images/a.png'],
+    });
     await act(async () => { buttonWith(container, 'CLONE').click(); });
     await flushEffects();
-    const confirmBtn = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === '확인').pop();
-    if (!confirmBtn) throw new Error('확인 버튼을 찾지 못했다');
-    await act(async () => { (confirmBtn as HTMLButtonElement).click(); });
-    await flushEffects();
+    await clickConfirm();
 
-    expect(numCheckBlock(container).querySelectorAll('img')).toHaveLength(0);
+    expect(imageBlock(container)).toBeNull();
     const detail = await saveDraftAndCaptureDetail();
     expect(detail.map_type).toBe('CLONE');
+    expect(detail.num_check).toBe(NONE);
+    expect(detail.num_check_value).toBe('');
     expect(detail.num_check_images).toEqual([]);
   });
 
-  it('요청 목적을 Only MAP 으로 바꿔 J/O 가 비면(MAP 목적 NEW 유지) 조건이 풀려 사진이 비워진다', async () => {
-    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], { num_check_images: ['mshot_images/a.png'] });
+  it('요청 목적을 Only MAP 으로 바꿔 J/O 가 비면(MAP 목적 NEW 유지) 해당 없음 + 숫자·사진이 비워진다', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], {
+      num_check: APPLIES, num_check_value: '12', num_check_images: ['mshot_images/a.png'],
+    });
     await act(async () => { buttonWith(container, '이전').click(); });
     await flushEffects();
     await act(async () => { buttonWith(container, 'Only MAP').click(); });
     await flushEffects();
-    const confirmBtn = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === '확인').pop();
-    if (confirmBtn) {
-      await act(async () => { (confirmBtn as HTMLButtonElement).click(); });
-      await flushEffects();
-    }
+    await clickConfirm();
     const detail = await saveDraftAndCaptureDetail();
     expect(detail.request_purpose).toBe('Only MAP');
     expect(detail.map_type).toBe('NEW');
+    expect(detail.num_check).toBe(NONE);
+    expect(detail.num_check_value).toBe('');
     expect(detail.num_check_images).toEqual([]);
   });
 });
