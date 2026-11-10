@@ -118,6 +118,7 @@ import {
   INTER_NO,
   NUM_CHECK_NONE,
   NUM_CHECK_APPLIES,
+  NUM_CHECK_DETAIL_KEYS,
   NUM_CHECK_IMAGE_THRESHOLD_DEFAULT,
 } from './constants';
 import {
@@ -506,6 +507,9 @@ export default function RequestPage(): React.ReactElement {
   const [numCheckExtraSlots, setNumCheckExtraSlots] = useState(0);
   // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 — .env NUM_CHECK_IMAGE_THRESHOLD 를 API 로 읽는다(조회 전·실패 시 기본값 10)
   const [numCheckThreshold, setNumCheckThreshold] = useState<number>(NUM_CHECK_IMAGE_THRESHOLD_DEFAULT);
+  // claude 수정 (2026-11-10): 불러온 문서가 '숫자 확인 필수' 도입 전 문서(저장본에 num_check 키 없음)인가 —
+  // 참이면 PPPP 판정·자동 전환·필수 검증을 하지 않고, 저장 시 num_check 키들을 보내지 않아 계속 기존 문서로 남긴다.
+  const [numCheckLegacy, setNumCheckLegacy] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1337,6 +1341,8 @@ export default function RequestPage(): React.ReactElement {
             num_check_value: parsed.detail.num_check_value ?? '',
             num_check_images: Array.isArray(parsed.detail.num_check_images) ? parsed.detail.num_check_images : [],
           });
+          // claude 수정 (2026-11-10): 저장본에 num_check 키가 없으면 '숫자 확인 필수' 도입 전 문서 — setDetail 과 같은 렌더에 반영된다
+          setNumCheckLegacy(!('num_check' in parsed.detail));
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
@@ -2009,7 +2015,8 @@ export default function RequestPage(): React.ReactElement {
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
   // claude 수정 (2026-11-10): '숫자 확인 필수' — PPPP 판정으로 해당 여부 자동 고정 · 숫자 ≥ 기준값이면 사진 필수 · 조건 해제 시 초기화
   // 판정 = MAP 목적 NEW + J/O 의 모든 행(활성·비활성 무관) 중 pp 에 판정 단어 포함(대소문자 무관).
-  const numCheckActive = isNumCheckRequired(detail.map_type, jayerRows, oayerRows);
+  // claude 수정 (2026-11-10): 도입 전 문서(numCheckLegacy)는 판정하지 않는다 — 자동 전환·안내·필수 검증이 모두 꺼진다
+  const numCheckActive = !numCheckLegacy && isNumCheckRequired(detail.map_type, jayerRows, oayerRows);
   const numCheckImages = detail.num_check_images ?? [];
   const numCheckImageRequired = detail.num_check === NUM_CHECK_APPLIES
     && isNumCheckImageRequired(detail.num_check_value, numCheckThreshold);
@@ -4902,8 +4909,11 @@ export default function RequestPage(): React.ReactElement {
       reference_materials: note ?? '',
       additional_notes: JSON.stringify({
         // C가문(only_prodc=YES) 추가 후결자를 detail 에 함께 저장(고정 후결자는 서버에서 추가)
+        // claude 수정 (2026-11-10): '숫자 확인 필수' 도입 전 문서는 num_check 키들을 빼고 저장한다(다음에 열어도 도입 전 문서로 판별되도록)
         detail: {
-          ...detail,
+          ...(numCheckLegacy
+            ? Object.fromEntries(Object.entries(detail).filter(([key]) => !NUM_CHECK_DETAIL_KEYS.includes(key)))
+            : detail),
           post_approvers: requiresPostApprover ? postApprovers : [],
           // 합의자는 필수 조건과 무관하게 지정한 그대로 저장한다(선택 지정도 실제 결재 단계가 된다).
           sales_agreers: salesAgreers,

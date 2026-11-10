@@ -307,6 +307,17 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-11-10 — MAP 정보 잠금: 키보드(Tab) 입력도 차단)
+
+- **배경**: 잠금 시 STEP2 MAP 정보 영역은 `pointerEvents: 'none'`·`opacity: 0.6` 만 적용돼 마우스만 막혔다. 로컬 앱에서 Shift+Tab 으로
+  '숫자 확인 값' 칸에 포커스해 값을 입력할 수 있었다(서버가 400 으로 거부하므로 데이터는 바뀌지 않지만, 사용자는 입력 뒤 저장 때 거부당한다).
+- **변경** (`StepMap.tsx`): 잠금 시 영역 전체를 `<fieldset disabled={mapInfoLocked}>`(STEP2 게이트와 같은 `display: contents` 스타일 — 레이아웃 변화 없음)로
+  감싸 안의 input·select·button 이 모두 `:disabled` 가 된다. `contenteditable` 인 MAP 삭제 이유 `RichTextEditor` 는 fieldset 으로 막히지 않아
+  `readOnly={mapInfoLocked}` 를 준다. 기존 pointerEvents·opacity 는 유지. 사진 붙여넣기 칸은 tabIndex 가 없는 div 라 원래 키보드로 닿지 않는다.
+- **테스트**: `frontend/src/pages/RequestPage/mapInfoLockKeyboard.test.tsx`(3건 — 잠금 시 모든 입력 요소 :disabled / 비잠금 대조군 / MAP 삭제 에디터 readOnly).
+- **수동 검증**: R 합의 후 반려된 문서를 작성자로 `/request` 편집 → STEP2 → 화면 아래 '다음' 버튼에 포커스 후 Shift+Tab 을 반복 →
+  포커스가 MAP 정보 칸으로 들어가지 않고 '임시저장'·'이전'·단계 표시로 넘어가면 정상(2026-11-10 로컬 앱에서 확인).
+
 ### 기능 변경 (2026-11-10 — 임시저장·상신·직접 이력 등록 실패 토스트에 서버 거부 사유 표시)
 
 - **배경**: 임시저장(`handleSaveDraft`)이 서버에서 거부돼도 토스트는 사유와 무관하게 `common.error`("오류가 발생했습니다.")만 보였다.
@@ -342,9 +353,15 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   편집 로드에서 `num_check || '해당 없음'`, `num_check_value ?? ''`, `num_check_images` 배열 아니면 `[]` 로 채운다. 이 기능 이전에 저장된
   잠긴 문서 전부가 같은 오판(400)에 걸려(시험 병합 상태 재현: `changed=['num_check','num_check_value','num_check_images']`),
   `_with_edit_load_backfill` 에 같은 규칙 3개를 추가했다(`RequestDocument.NUM_CHECK_NONE` = 프론트 `NUM_CHECK_NONE`).
-- **알려진 한계(미조치, 2026-11-10)**: NEW + J/O pp 에 PPPP 가 있는 옛 잠긴 문서는 편집 화면이 열리자마자 `num_check` 를 '해당 있음'으로
-  자동 전환한다(`index.tsx` `numCheckActive` effect — 로드 중에도 막지 않음). 저장본은 '해당 없음'으로 보정되므로 서버는 실제 변경으로 보고 400 을 낸다.
-  로컬 앱에서 재현 확인(임시저장 `PATCH 400`, 보낸 값 `num_check="해당 있음"`). 잠금 중 MAP 정보는 입력이 막혀 숫자도 넣을 수 없다. 처리 방향은 사용자 결정 대기.
+- **NEW+PPPP 옛 문서 자동 전환(같은 날 해결 — 사용자 결정 방안 A)**: NEW + J/O pp 에 PPPP 가 있는 옛 잠긴 문서는 편집 화면이 열리자마자
+  `num_check` 를 '해당 있음'으로 자동 전환해 저장이 400, STEP2 '다음'은 숫자 확인 값 필수 오류로 막혔다(로컬 앱 재현·스크린샷 확인).
+  → **'숫자 확인 필수' 도입 전 문서는 판정·검증하지 않는다.** 판별 = 저장된 detail 에 `num_check` 키가 없음(새 문서는 `INITIAL_DETAIL` 로 항상 저장).
+  도입 전 문서는 `numCheckActive` 를 거짓으로 둬 자동 전환·안내 문구·숫자/사진 필수 검증이 모두 꺼지고, 저장 시
+  `NUM_CHECK_DETAIL_KEYS`(num_check·num_check_value·num_check_images)를 빼고 보내 다시 열어도 도입 전 문서로 남는다.
+  서버는 바꾸지 않았다(위 보정이 키 없음을 같은 값으로 봐 400 없음). 잠기지 않은 도입 전 문서(임시저장 등)도 같은 규칙이다.
+  한계: 도입 전 문서는 이후 PPPP 레이어를 추가해도 숫자 확인을 요구하지 않는다. 또 **새 문서**(키 있음)가 잠긴 뒤 재상신 편집에서
+  J/O 표에 PPPP 행을 추가하면 자동 전환 → 400 이 날 수 있다(코드상 추정, 실행 확인 안 함 — 미조치).
+  테스트: `frontend/src/pages/RequestPage/numCheckLegacyDoc.test.tsx`(4건).
 - **주의**: 프론트 로드 백필(`index.tsx` 편집 로드의 `prodc_scope`·`map_change_reason`)이나 `inferProdcScope` 를 바꾸면
   서버 `_with_edit_load_backfill`·`_infer_prodc_scope` 도 함께 바꿔야 한다(어긋나면 같은 오판이 다시 생긴다).
 - **범위 밖**: R/O 재합의 생략 판정(`_should_skip_r_stage`, `o_review_content_same`)도 같은 엄격 비교를 쓰지만 이번에 바꾸지 않았다.

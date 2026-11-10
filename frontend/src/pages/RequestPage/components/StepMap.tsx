@@ -191,6 +191,8 @@ const StepMap: React.FC<StepMapProps> = ({
           🔒 {t('request.map_info_locked_notice')}
         </p>
       )}
+      {/* claude 수정 (2026-11-10): 잠금 시 fieldset disabled 로 키보드(Tab) 입력까지 막는다 — pointerEvents 는 마우스만 막았다 */}
+      <fieldset disabled={mapInfoLocked} style={GATE_FIELDSET_STYLE}>
       <div className="form-grid" style={mapInfoLocked ? { pointerEvents: 'none', opacity: 0.6 } : undefined}>
 
         {/* 요청 목적 (신규/차용/기등록) */}
@@ -242,10 +244,12 @@ const StepMap: React.FC<StepMapProps> = ({
             </p>
             {/* 고정 높이 래퍼 — 에디터 본문이 내부에서만 스크롤되도록 한다(페이지가 늘어나지 않음). */}
             <div style={{ height: REASON_EDITOR_HEIGHT, display: 'flex', flexDirection: 'column' }}>
+              {/* claude 수정 (2026-11-10): contenteditable 은 fieldset disabled 로 막히지 않아 잠금 시 readOnly 로 막는다 */}
               <RichTextEditor
                 value={detail.map_change_reason || ''}
                 onChange={(html) => handleDetailSet('map_change_reason', html)}
                 placeholder={t('request.map_change_reason_placeholder')}
+                readOnly={mapInfoLocked}
               />
             </div>
             {errors.map_change_reason && <span className="form-error">{errors.map_change_reason}</span>}
@@ -856,6 +860,7 @@ const StepMap: React.FC<StepMapProps> = ({
         </fieldset>)}
 
       </div>
+      </fieldset>
     </div>
   );
 };
