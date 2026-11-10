@@ -583,7 +583,42 @@ class RequestDocument(models.Model):
             return cls.PURPOSE_OTHER
         return None
 
-    # claude 수정 (2026-11-09): 요청 기준 변경에 따른 신규/차용/신규+차용 사이 요청 목적 변경은 잠금 위반에서 뺀다(new_notes 인자 추가)
+    # claude 수정 (2026-11-10): 프론트 편집 로드 백필과 같은 규칙으로 옛 문서 저장본을 보정하는 함수 신설(잠금 오판 방지)
+    @staticmethod
+    def _infer_prodc_scope(detail):
+        """prodc_scope 가 없는 옛 문서의 값을 리전 입력값으로 역추론한다.
+
+        프론트 `RequestPage/constants.ts` `inferProdcScope` 와 반드시 같은 규칙이어야 한다.
+        """
+        has_top = bool(detail.get('prodc_top_line') or detail.get('prodc_top_process') or detail.get('prodc_top_product'))
+        has_bottom = bool(
+            detail.get('prodc_bottom_line') or detail.get('prodc_bottom_process') or detail.get('prodc_bottom_product')
+        )
+        if has_top and has_bottom:
+            return 'top'
+        if has_top:
+            return 'only_top'
+        if has_bottom:
+            return 'only_bottom'
+        return ''
+
+    @classmethod
+    def _with_edit_load_backfill(cls, detail):
+        """편집 화면이 문서를 불러올 때 채워 넣는 잠금 대상 필드를 같은 규칙으로 채운 사본을 돌려준다.
+
+        프론트 `RequestPage/index.tsx` 편집 로드(`setDetail({ ...parsed.detail, ... })`)와 반드시 같아야 한다.
+        필드 도입 전에 저장된 옛 문서는 이 키가 없어, 그대로 비교하면 사용자가 바꾸지 않았는데도
+        "MAP 정보 변경"으로 판정돼 수정·재상신이 막힌다. DB 에 저장된 값은 바꾸지 않는다(비교용 사본).
+        - prodc_scope (2026-08-03 도입): 저장값 || 리전 값 역추론
+        - map_change_reason (2026-08-06 도입): 저장값 ?? ''
+        """
+        filled = dict(detail)
+        filled['prodc_scope'] = detail.get('prodc_scope') or cls._infer_prodc_scope(detail)
+        if detail.get('map_change_reason') is None:
+            filled['map_change_reason'] = ''
+        return filled
+
+    # claude 수정 (2026-11-10): 저장본·요청본을 편집 로드 백필과 같게 보정한 뒤 비교 — 옛 문서의 키 없음 오판 제거
     def changed_map_info_fields(self, new_detail, new_notes=None):
         """저장된 detail 과 비교해 값이 달라진 잠금 대상 필드 이름 목록을 반환한다.
 
@@ -591,11 +626,14 @@ class RequestDocument(models.Model):
         `map_info_locked()` 가 참인 상태에서 편집 요청(PATCH)을 검증할 때 쓴다
         (`views.py` `RequestDocumentViewSet.update`).
 
+        저장본·요청본 모두 편집 화면 로드 백필과 같은 규칙으로 보정한 뒤 비교한다(`_with_edit_load_backfill`)
+        — 한쪽만 보정하면 키를 보내지 않는 요청(API 직접 호출 등)이 반대로 오판된다.
+
         예외: 요청 목적이 바뀌었어도 변경 전·후가 모두 `NOC_PURPOSE_GROUP` 이고, 변경 후 값이
         같은 요청(`new_notes`)의 J·O 표 요청 기준으로 계산한 값과 같으면 바뀐 것으로 보지 않는다.
         """
-        old_detail = self.get_detail().get('detail', {}) or {}
-        new_detail = new_detail or {}
+        old_detail = self._with_edit_load_backfill(self.get_detail().get('detail', {}) or {})
+        new_detail = self._with_edit_load_backfill(new_detail or {})
         changed = [
             f for f in self.MAP_INFO_FIELDS + self.MAP_LOCK_STEP1_FIELDS
             if old_detail.get(f) != new_detail.get(f)
