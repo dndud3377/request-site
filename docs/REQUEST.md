@@ -23,6 +23,7 @@ pages/RequestPage/
 └── components/
     ├── ProdcRow.tsx                #    90줄  PRODC 북/중/남 공통 행 (REGION_LABEL_KEY 동봉)
     ├── MshotImageUpload.tsx        #    51줄  M-shot 이미지 붙여넣기 영역 (자기완결)
+    ├── NumCheckImageUpload.tsx     #   '숫자 확인 필수' 사진 붙여넣기 칸 여러 개 + 사진 추가/삭제 (2026-11-10 신설, StepMap 에서 사용)
     ├── WizardIndicator.tsx         #    33줄  상단 단계 인디케이터 (자기완결)
     ├── FilterManageModal.tsx       #   185줄  J/O 필터 관리 모달 (공유 — jayer↔oayer props 매개변수화)
     ├── BeforeAfterPanel.tsx        #   참조 요청서 BEFORE/AFTER 매핑 + 변경전/변경후 직접 입력 패널 (step 1 인라인)
@@ -301,6 +302,45 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 변경 (2026-11-10 — STEP2 MAP 정보: '숫자 확인 필수' 사진 증빙 항목 추가)
+
+- **배경(사용자 결정)**: J-ayer·O-ayer 의 pp 에 `PPPP` 가 있는 NEW MAP 의뢰는 숫자 확인을 사진으로 반드시 증빙받는다.
+- **활성 조건** (`helpers.ts` `isNumCheckRequired`):
+  - MAP 목적(`map_type`)이 `NEW` 이고,
+  - J-ayer·O-ayer 의 **모든 행(활성·비활성/ST 무관)** 중 하나라도 pp 에 `NUM_CHECK_PP_KEYWORD`(`constants.ts`, `'pppp'`)가 **포함**되면 활성(대소문자 무시).
+  - CLONE/EXISTING/삭제/미선택, Only MAP·MAP 삭제(J/O 가 비므로)·ADI CD 변경(StepMap 없음)은 항상 비활성이다.
+- **화면** (`components/NumCheckImageUpload.tsx` 신설, `StepMap.tsx` 의 X표시 변경 여부 바로 아래):
+  - 입력은 M-shot 과 같은 **Ctrl+V 붙여넣기 칸**(업로드는 기존 `uploadImageAPI` 그대로, 경로 `mshot_images/…`).
+  - `사진 추가` 버튼 → 빈 붙여넣기 칸이 1개씩 늘어난다. 칸마다 `삭제` 버튼이 있고 장수 제한은 없다.
+    사진이 없을 때 남는 마지막 빈 칸 1개는 지울 수 없다(삭제 버튼 숨김).
+  - 이미 사진이 있는 칸에 다시 붙여넣으면 그 사진을 교체한다(M-shot 과 동일).
+  - 활성이면 라벨에 `*` 와 안내 문구(`request.num_check_active_hint`), 비활성이면 **회색 잠금**(붙여넣기·사진 추가·삭제 불가)과
+    조건 안내 문구(`request.num_check_locked_hint`). MAP 목적 미선택 게이트(fieldset)·MAP 정보 잠금(`mapInfoLocked`)에도 함께 잠긴다.
+- **저장 형식**: `detail.num_check_images: string[]` — 첨부된 사진 경로만 저장한다(빈 칸 수는 화면 상태 `numCheckExtraSlots`, 저장하지 않음).
+  `additional_notes` JSON 안이라 DB 마이그레이션은 없다. 필드가 없는 옛 문서는 편집 로드 시 `[]` 로 백필한다.
+- **검증** `validate(2)`: 활성인데 사진 0장이면 `num_check_images` 오류(`request.num_check_required`) — 서버 쪽 필수 검사는 없다(M-shot 이미지와 같음).
+- **초기화(기존 규칙 그대로)**:
+  - MAP 목적 변경 확인·ADI CD 변경 진입 → `mapInfoDefaults()` 에 포함돼 함께 비워진다.
+  - 활성 → 비활성 전환(MAP 목적 변경, 요청 목적 Only MAP/MAP 삭제로 J/O 가 빔, Step1 변경으로 J/O 재조회 후 PPPP 없음 등) →
+    사진과 빈 칸을 비운다(조건부 항목 해제 시 숨은 값까지 비우는 R-2~R-5 규칙과 같음).
+  - 이 effect 는 `numCheckActive` 전환에서만 돈다. 첫 화면은 항상 비활성이라 저장 문서를 불러와도 저장된 사진을 지우지 않는다.
+    `isLoadingEditRef` 로 막지 않은 이유: 불러온 문서에서 요청 목적을 바꿔도 그 값이 풀리지 않아 사진이 남는 것을 테스트로 확인했다.
+- **백엔드**: `RequestDocument.MAP_INFO_FIELDS` 에 `num_check_images` 추가(프론트 `mapInfoDefaults` 와 키 목록 동기화) →
+  MAP 정보 잠금·O 재합의 생략 비교에 포함. 결재 상세 MAP 정보 탭 표시는 `docs/APPROVAL.md` §7 같은 날짜 항목 참조.
+- **i18n(ko/en 동시 8개)**: `request.num_check_title`, `num_check_add_image`, `num_check_image_no`, `num_check_active_hint`,
+  `num_check_locked_hint`, `num_check_required`, `num_check_upload_done`, `num_check_upload_failed`.
+- **테스트**: `RequestPage/numCheckImages.test.tsx`(10건 — 판정 2 · 활성/필수 · O 단독 · 붙여넣기/추가/삭제/교체 · 비활성 잠금 · CLONE 잠금 ·
+  저장 문서 유지 · MAP 목적 변경 초기화 · Only MAP 전환 초기화), `components/PagedDetailView.numCheck.test.tsx`(2건),
+  `backend/api/tests.py` `MapInfoLockedFieldCoverageTest`(2건 추가).
+- **수동 검증**:
+  1. [의뢰서 작성 → STEP1 에서 J-ayer 또는 O-ayer 에 pp 가 `PPPP` 를 포함하는 행이 조회되는 라인·제품 입력 → '다음' → MAP 목적 `NEW`]
+     → [기대: X표시 변경 여부 아래 '숫자 확인 필수 *', 빈 붙여넣기 칸 1개, '사진 추가' 버튼 활성.]
+  2. [사진 없이 '다음'] → [기대: 칸 아래 빨간 "사진을 1장 이상 첨부해야 합니다." 로 막힌다.]
+  3. [칸 클릭 → Ctrl+V → '사진 추가' → 새 칸에 Ctrl+V → 첫 사진 '삭제'] → [기대: 남은 사진 1장. 임시저장 후 다시 열어도 그대로.]
+  4. [MAP 목적 `CLONE` 으로 변경(확인)] → [기대: 사진이 사라지고 항목이 회색 잠금.]
+  5. [PPPP 가 없는 제품으로 작성] → [기대: 항목이 회색 잠금, '사진 추가' 비활성, 필수 오류 없음.]
+  6. [상신 후 결재 현황 → 그 문서 → 'MAP 정보' 탭] → [기대: X표시 카드 아래 '숫자 확인 필수' 카드에 사진 1·2… 가 보이고 클릭하면 확대.]
 
 ### 기능 변경 (2026-11-06 — J/O-ayer 표: ST 를 먼저 골라야 요청 기준 입력 + 기등록/layer삭제/미진행으로 ST 를 'X' 에 잠그지 않음)
 
