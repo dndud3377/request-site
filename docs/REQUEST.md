@@ -367,6 +367,15 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **범위 밖**: R/O 재합의 생략 판정(`_should_skip_r_stage`, `o_review_content_same`)도 같은 엄격 비교를 쓰지만 이번에 바꾸지 않았다.
 - **테스트**: `backend/api/tests.py::MapInfoLockLegacyBackfillTest`(10건) — 키 없음 백필 통과 3건, 실제 변경 거부 3건, 추론 규칙, DB 미변경,
   num_check 3개 키 없음 백필 통과 1건 · 실제 값 거부 1건(3필드).
+### UI 변경 (2026-11-10 후속 — '숫자 확인 필수' 활성 안내 문구 강조)
+
+- **배경(사용자 결정)**: 활성 안내(`request.num_check_active_hint`)는 반드시 지켜야 하는 조건이라 경고처럼 눈에 띄어야 한다.
+- **화면** (`StepMap.tsx`): 드롭다운 아래 안내 문구가 활성(`numCheckActive`)이면 **빨간(`var(--danger)`) 굵은 글씨, 0.85rem**,
+  비활성 안내(`request.num_check_locked_hint`)는 기존 그대로 회색(`var(--text-muted)`) 0.78rem. 스타일은 파일 상단 상수
+  `NUM_CHECK_ACTIVE_HINT_STYLE`·`NUM_CHECK_LOCKED_HINT_STYLE`. 문구(i18n)·동작·저장 형식 변경 없음.
+- **수동 검증**: [STEP1 에서 J/O pp 에 `PPPP` 가 든 제품 → STEP2 MAP 목적 `NEW`] → [기대: 드롭다운 아래 안내가 빨간 굵은 글씨.]
+  [PPPP 없는 제품 또는 MAP 목적 `CLONE`] → [기대: 조건 안내가 기존처럼 회색 작은 글씨.]
+
 ### 기능 변경 (2026-11-10 후속 — '숫자 확인 필수'를 [해당 없음/해당 있음 + 숫자] 로 바꾸고, 숫자 ≥ 기준값(.env)일 때만 사진 첨부)
 
 > 아래 "STEP2 MAP 정보: '숫자 확인 필수' 사진 증빙 항목 추가" 항목의 **후속 변경**이다. 바뀐 부분만 적는다(판정 조건·사진 붙여넣기 방식은 그대로).

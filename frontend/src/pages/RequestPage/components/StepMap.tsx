@@ -19,6 +19,15 @@ const SELECT_W = '300px';
 // claude 수정 (2026-10-22): MAP 목적 게이트용 fieldset — 잠금(disabled)만 하위로 전달하고 form-grid 배치·모양은 바꾸지 않는다
 const GATE_FIELDSET_STYLE: React.CSSProperties = { display: 'contents', border: 0, margin: 0, padding: 0, minWidth: 0 };
 
+// claude 수정 (2026-11-10): 숫자 확인 안내 문구 스타일 — 활성 안내는 꼭 지켜야 할 조건이라 빨간 굵은 글씨로 강조, 비활성 안내는 기존 회색 유지
+const NUM_CHECK_HINT_BASE_STYLE: React.CSSProperties = { display: 'block', marginTop: 4 };
+const NUM_CHECK_ACTIVE_HINT_STYLE: React.CSSProperties = {
+  ...NUM_CHECK_HINT_BASE_STYLE, fontSize: '0.85rem', fontWeight: 700, color: 'var(--danger)',
+};
+const NUM_CHECK_LOCKED_HINT_STYLE: React.CSSProperties = {
+  ...NUM_CHECK_HINT_BASE_STYLE, fontSize: '0.78rem', color: 'var(--text-muted)',
+};
+
 /** 이유 입력칸 고정 높이 — 내용이 길어지면 이 안에서만 스크롤한다 */
 const REASON_EDITOR_HEIGHT = 640;
 
@@ -721,7 +730,8 @@ const StepMap: React.FC<StepMapProps> = ({
             </div>
             <div style={{ flex: 3.5 }} />
           </div>
-          <span style={{ display: 'block', marginTop: 4, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          {/* claude 수정 (2026-11-10): 활성 안내만 빨간 굵은 글씨로 강조(비활성 안내는 회색 그대로) */}
+          <span style={numCheckActive ? NUM_CHECK_ACTIVE_HINT_STYLE : NUM_CHECK_LOCKED_HINT_STYLE}>
             {numCheckActive
               ? t('request.num_check_active_hint', { keyword: NUM_CHECK_PP_KEYWORD.toUpperCase(), threshold: numCheckThreshold })
               : t('request.num_check_locked_hint', { keyword: NUM_CHECK_PP_KEYWORD.toUpperCase() })}
