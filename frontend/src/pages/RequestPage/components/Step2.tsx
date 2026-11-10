@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, NOC_NEW, NOC_BORROW, NOC_NOT_PROCEEDING, NOC_REGISTERED, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow, stripDateBracket, formatMultiItemId, nocOptionsForSt, isNocEditable } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
@@ -94,10 +94,14 @@ const Step2: React.FC<Step2Props> = ({
           <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleJayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
           <button type="button" className="th-header-btn" disabled={stLocked} style={stLockStyle} onClick={() => handleJayerResetField('st')}>{t('request.btn_reset')}</button>
         </div>
+        {/* claude 수정 (2026-11-10): 요청 기준 '모두 미진행·기등록·layer삭제' 버튼 추가(ST X 행 대상), 값은 상수로 */}
         <div className="wizard-table-toolbar-group">
           <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>{t('request.btn_all_new')}</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '차용')}>{t('request.btn_all_copy')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', NOC_NEW)}>{t('request.btn_all_new')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', NOC_BORROW)}>{t('request.btn_all_copy')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', NOC_NOT_PROCEEDING)}>{t('request.btn_all_not_proceeding')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', NOC_REGISTERED)}>{t('request.btn_all_registered')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', NOC_LAYER_DELETE)}>{t('request.btn_all_layer_delete')}</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
         </div>
         <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
