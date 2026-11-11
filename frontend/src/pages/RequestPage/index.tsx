@@ -38,6 +38,7 @@ import {
   MergeTable,
   AdiCdStep,
   MapInfo,
+  NumCheckConfig,
   DuplicateDocument,
   plRoleFor,
 } from '../../types';
@@ -120,6 +121,8 @@ import {
   NUM_CHECK_APPLIES,
   NUM_CHECK_DETAIL_KEYS,
   NUM_CHECK_IMAGE_THRESHOLD_DEFAULT,
+  NUM_CHECK_LOWER_THRESHOLD_DEFAULT,
+  NUM_CHECK_MIN_IMAGES,
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
@@ -505,8 +508,11 @@ export default function RequestPage(): React.ReactElement {
   const interAutoArmedRef = useRef(false);
   // claude 수정 (2026-11-10): '숫자 확인 필수' — 첨부 사진 뒤에 사용자가 '사진 추가'로 늘린 빈 붙여넣기 칸 수(저장하지 않는 화면 상태)
   const [numCheckExtraSlots, setNumCheckExtraSlots] = useState(0);
-  // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 — .env NUM_CHECK_IMAGE_THRESHOLD 를 API 로 읽는다(조회 전·실패 시 기본값 10)
-  const [numCheckThreshold, setNumCheckThreshold] = useState<number>(NUM_CHECK_IMAGE_THRESHOLD_DEFAULT);
+  // claude 수정 (2026-11-11): '숫자 확인 필수' 드롭다운 기준값 2개(이상/이하) — .env 를 API 로 읽는다(조회 전·실패 시 기본값 13/9)
+  const [numCheckConfig, setNumCheckConfig] = useState<NumCheckConfig>({
+    image_threshold: NUM_CHECK_IMAGE_THRESHOLD_DEFAULT,
+    lower_threshold: NUM_CHECK_LOWER_THRESHOLD_DEFAULT,
+  });
   // claude 수정 (2026-11-10): 불러온 문서가 '숫자 확인 필수' 도입 전 문서(저장본에 num_check 키 없음)인가 —
   // 참이면 PPPP 판정·자동 전환·필수 검증을 하지 않고, 저장 시 num_check 키들을 보내지 않아 계속 기존 문서로 남긴다.
   const [numCheckLegacy, setNumCheckLegacy] = useState(false);
@@ -515,9 +521,13 @@ export default function RequestPage(): React.ReactElement {
     (async () => {
       try {
         const cfg = await formOptionsAPI.getNumCheckConfig();
-        if (!cancelled && Number.isFinite(cfg.image_threshold)) setNumCheckThreshold(cfg.image_threshold);
+        if (cancelled) return;
+        setNumCheckConfig((prev) => ({
+          image_threshold: Number.isFinite(cfg.image_threshold) ? cfg.image_threshold : prev.image_threshold,
+          lower_threshold: Number.isFinite(cfg.lower_threshold) ? cfg.lower_threshold : prev.lower_threshold,
+        }));
       } catch {
-        // 조회 실패 시 기본값(10)을 그대로 쓴다 — 백엔드 기본값과 같다
+        // 조회 실패 시 기본값(13/9)을 그대로 쓴다 — 백엔드 기본값과 같다
       }
     })();
     return () => { cancelled = true; };
@@ -2018,10 +2028,12 @@ export default function RequestPage(): React.ReactElement {
   // claude 수정 (2026-11-10): 도입 전 문서(numCheckLegacy)는 판정하지 않는다 — 자동 전환·안내·필수 검증이 모두 꺼진다
   const numCheckActive = !numCheckLegacy && isNumCheckRequired(detail.map_type, jayerRows, oayerRows);
   const numCheckImages = detail.num_check_images ?? [];
+  // claude 수정 (2026-11-11): 사진 필수 판정을 '숫자 ≥ 기준값' → '이상 보기 선택'으로, 기본 빈 칸을 최소 사진 수(2)만큼으로 변경
   const numCheckImageRequired = detail.num_check === NUM_CHECK_APPLIES
-    && isNumCheckImageRequired(detail.num_check_value, numCheckThreshold);
-  // 사진이 하나도 없으면 붙여넣을 빈 칸을 최소 1개 보여준다.
-  const numCheckEmptySlots = Math.max(numCheckExtraSlots, numCheckImages.length === 0 ? 1 : 0);
+    && isNumCheckImageRequired(detail.num_check_value);
+  // 사진 + 빈 칸이 최소 사진 수(NUM_CHECK_MIN_IMAGES)보다 적지 않도록 빈 칸을 보여준다.
+  const numCheckBaseEmptySlots = Math.max(0, NUM_CHECK_MIN_IMAGES - numCheckImages.length);
+  const numCheckEmptySlots = Math.max(numCheckExtraSlots, numCheckBaseEmptySlots);
   // 판정이 바뀌면 해당 여부를 맞춘다: 참 → '해당 있음', 거짓 → '해당 없음' + 숫자·사진 비움
   // (조건부 항목 해제 시 숨은 값까지 비우는 R-2~R-5 규칙). deps 가 numCheckActive 라 전환에서만 실행된다.
   // 첫 화면은 항상 거짓(map_type 미선택·J/O 없음)이라 저장 문서를 불러와도 저장값을 지우지 않는다.
@@ -2041,7 +2053,7 @@ export default function RequestPage(): React.ReactElement {
     setErrors((prev) => (prev.num_check_value || prev.num_check_images
       ? { ...prev, num_check_value: '', num_check_images: '' } : prev));
   }, [numCheckActive]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 숫자가 기준값 미만이 되면(또는 비면) 사진 영역이 사라지므로 사진·빈 칸도 비운다. 전환에서만 실행 — 위와 같은 이유로 로드 값은 보존된다.
+  // '이하'를 고르거나 선택을 비우면 사진 영역이 사라지므로 사진·빈 칸도 비운다. 전환에서만 실행 — 위와 같은 이유로 로드 값은 보존된다.
   useEffect(() => {
     if (numCheckImageRequired) return;
     setNumCheckExtraSlots(0);
@@ -2113,9 +2125,10 @@ export default function RequestPage(): React.ReactElement {
   };
 
   /** '사진 추가' — 빈 붙여넣기 칸을 하나 늘린다. */
+  // claude 수정 (2026-11-11): 기본 빈 칸 수를 최소 사진 수(2) 기준으로 계산
   const handleNumCheckAddSlot = () => {
-    // 사진이 없을 때 보이는 기본 빈 칸 1개를 포함해 하나 더 늘린다.
-    setNumCheckExtraSlots((prev) => Math.max(prev, numCheckImages.length === 0 ? 1 : 0) + 1);
+    // 최소 사진 수를 채우려고 보이는 기본 빈 칸을 포함해 하나 더 늘린다.
+    setNumCheckExtraSlots((prev) => Math.max(prev, numCheckBaseEmptySlots) + 1);
   };
 
   /** 첨부된 사진 하나를 지운다. */
@@ -2124,9 +2137,10 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({ ...prev, num_check_images: (prev.num_check_images ?? []).filter((_, idx) => idx !== index) }));
   };
 
-  /** 빈 붙여넣기 칸 하나를 지운다(사진이 없을 때 남는 마지막 1칸은 화면에서 삭제 버튼을 숨긴다). */
+  /** 빈 붙여넣기 칸 하나를 지운다(사진 + 빈 칸이 최소 사진 수 이하이면 화면에서 삭제 버튼을 숨긴다). */
+  // claude 수정 (2026-11-11): 기본 빈 칸 수를 최소 사진 수(2) 기준으로 계산
   const handleNumCheckRemoveEmptySlot = () => {
-    setNumCheckExtraSlots((prev) => Math.max(0, Math.max(prev, numCheckImages.length === 0 ? 1 : 0) - 1));
+    setNumCheckExtraSlots((prev) => Math.max(0, Math.max(prev, numCheckBaseEmptySlots) - 1));
   };
 
   const handleDetailSet = (name: string, value: string | string[]) => {
@@ -4733,19 +4747,15 @@ export default function RequestPage(): React.ReactElement {
         }
       }
       } // end !isMapRegistered
-      // claude 수정 (2026-11-10): '숫자 확인 필수' — '해당 있음'이면 숫자 필수, 숫자 ≥ 기준값이면 사진 최소 1장 필수
-      if (detail.num_check === NUM_CHECK_APPLIES) {
-        if (!detail.num_check_value?.trim()) {
-          newErrors['num_check_value'] = t('request.required');
-          errorMessages.push(`${t('request.num_check_value')}: ${t('request.required')}`);
-        } else if (!isNumericValue(detail.num_check_value)) {
-          newErrors['num_check_value'] = t('request.invalid_number');
-          errorMessages.push(`${t('request.num_check_value')}: ${t('request.invalid_number')}`);
-        }
+      // claude 수정 (2026-11-11): '숫자 확인 필수' — '해당 있음'이면 이상/이하 선택 필수, '이상'이면 사진 최소 NUM_CHECK_MIN_IMAGES 장 필수
+      if (detail.num_check === NUM_CHECK_APPLIES && !detail.num_check_value?.trim()) {
+        newErrors['num_check_value'] = t('request.required');
+        errorMessages.push(`${t('request.num_check_value')}: ${t('request.required')}`);
       }
-      if (numCheckImageRequired && numCheckImages.length === 0) {
-        newErrors['num_check_images'] = t('request.num_check_required');
-        errorMessages.push(`${t('request.num_check_title')}: ${t('request.num_check_required')}`);
+      if (numCheckImageRequired && numCheckImages.length < NUM_CHECK_MIN_IMAGES) {
+        const msg = t('request.num_check_required', { min: NUM_CHECK_MIN_IMAGES });
+        newErrors['num_check_images'] = msg;
+        errorMessages.push(`${t('request.num_check_title')}: ${msg}`);
       }
     }
 
@@ -5595,7 +5605,7 @@ export default function RequestPage(): React.ReactElement {
           interAutoLocked={interAutoLocked}
           numCheckActive={numCheckActive}
           numCheckImageRequired={numCheckImageRequired}
-          numCheckThreshold={numCheckThreshold}
+          numCheckConfig={numCheckConfig}
           numCheckEmptySlots={numCheckEmptySlots}
           handleNumCheckPaste={handleNumCheckPaste}
           handleNumCheckAddSlot={handleNumCheckAddSlot}
