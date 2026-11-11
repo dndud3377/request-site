@@ -155,6 +155,20 @@ const canConfirmExtraZoneStep = (
 // 어느 구역에도 속하지 않는 단계(zone_index 가 null)를 묶는 그룹 키 — 구역 이름을 붙이지 않는다.
 const NO_ZONE_INDEX = -1;
 
+// claude 수정 (2026-11-11): MASTER 가 철회·중단 확인을 대신할 팀을 고르는 창용 — 팀 이름 키와 검토자의 소속 팀
+type MasterConfirmKind = 'withdraw' | 'pause';
+interface MasterConfirmPick {
+  stepId: number;
+  teamLabel: string;
+}
+const AGENT_LABEL_KEY: Record<AgentType, `approval.agent_${AgentType}`> = {
+  PL: 'approval.agent_PL', SA: 'approval.agent_SA', R: 'approval.agent_R', RV: 'approval.agent_RV',
+  P: 'approval.agent_P', PV: 'approval.agent_PV', J: 'approval.agent_J', O: 'approval.agent_O',
+  E: 'approval.agent_E', EV: 'approval.agent_EV', RA: 'approval.agent_RA',
+};
+// 검토자(RV/PV/EV)는 라벨이 모두 '검토자'라 어느 팀 검토자인지 소속 팀 이름을 붙인다.
+const REVIEWER_PARENT_AGENT: Partial<Record<AgentType, AgentType>> = { RV: 'R', PV: 'P', EV: 'E' };
+
 interface WithdrawNeedItem {
   step: ApprovalStepFrontend;
   isCurrentZone: boolean;
@@ -1362,7 +1376,8 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleConfirmPause = async (agent: AgentType) => {
+  // claude 수정 (2026-11-11): pick(단계 id·팀 이름)을 주면 그 단계를 확인하고 '어느 팀 대신 확인했는지' 알린다(MASTER 팀 선택)
+  const handleConfirmPause = async (agent: AgentType, pick?: MasterConfirmPick) => {
     if (!selected) return;
     if (isTourMode) {
       // 투어: 실제 API 대신 로컬 상태로 해당 단계만 확인 처리(병렬 대상 전원이 확인해야 최종 'pause' 전이됨을 그대로 반영)
@@ -1387,13 +1402,17 @@ export default function ApprovalPage(): React.ReactElement {
     }
     setProcessing(true);
     try {
-      const r = await documentsAPI.confirmPause(selected.id, agent);
+      const r = await documentsAPI.confirmPause(selected.id, agent, pick?.stepId);
+      setMasterConfirmKind(null);
       if (r.data.status === 'pause') {
         addToast(t('approval.pause_confirmed_toast'), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
-        addToast(t('approval.pause_confirm_progress_toast'), 'success');
+        addToast(
+          pick ? t('approval.master_confirm_done_toast', { team: pick.teamLabel }) : t('approval.pause_confirm_progress_toast'),
+          'success',
+        );
         await refreshAndSelect(selected.id);
       }
     } catch {
@@ -1527,6 +1546,10 @@ export default function ApprovalPage(): React.ReactElement {
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
   const [withdrawReasonInput, setWithdrawReasonInput] = useState('');
+
+  // claude 수정 (2026-11-11): MASTER 가 철회·중단 확인을 대신할 팀(단계)을 고르는 창 상태
+  const [masterConfirmKind, setMasterConfirmKind] = useState<MasterConfirmKind | null>(null);
+  const [masterConfirmStepId, setMasterConfirmStepId] = useState<number | null>(null);
 
   // '변경 감지' 배지 클릭 시 diff 모달 — layer-drift API 는 캐시된 값을 반환하므로 클릭할 때마다 조회한다.
   const [layerDriftDoc, setLayerDriftDoc] = useState<RequestDocument | null>(null);
@@ -1687,23 +1710,73 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleConfirmWithdraw = async (agent: AgentType) => {
+  // claude 수정 (2026-11-11): pick(단계 id·팀 이름)을 주면 그 단계를 확인하고 '어느 팀 대신 확인했는지' 알린다(MASTER 팀 선택)
+  const handleConfirmWithdraw = async (agent: AgentType, pick?: MasterConfirmPick) => {
     if (!selected) return;
     setProcessing(true);
     try {
-      const r = await documentsAPI.confirmWithdraw(selected.id, agent);
+      const r = await documentsAPI.confirmWithdraw(selected.id, agent, pick?.stepId);
+      setMasterConfirmKind(null);
       if (r.data.deleted) {
         addToast(t('approval.withdraw_confirmed_toast'), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
-        addToast(t('approval.withdraw_confirm_progress_toast'), 'success');
+        addToast(
+          pick ? t('approval.master_confirm_done_toast', { team: pick.teamLabel }) : t('approval.withdraw_confirm_progress_toast'),
+          'success',
+        );
         await refreshAndSelect(selected.id);
       }
     } catch {
       addToast(t('common.process_error'), 'error');
     } finally {
       setProcessing(false);
+    }
+  };
+
+  // claude 수정 (2026-11-11): MASTER 가 철회·중단 확인을 대신할 팀(단계)을 직접 고르는 창 — 같은 agent 가 여럿
+  // (다중 PL·PV·EV·RA)이어도 어느 팀 대신 확인하는지 보이고, 고른 단계를 step_id 로 정확히 확인한다.
+  const stepTeamLabel = (step: ApprovalStepFrontend): string => {
+    const parent = REVIEWER_PARENT_AGENT[step.agent];
+    return parent
+      ? t('approval.master_confirm_reviewer_of', { team: t(AGENT_LABEL_KEY[parent]) })
+      : t(AGENT_LABEL_KEY[step.agent]);
+  };
+
+  const getMasterConfirmCandidates = (kind: MasterConfirmKind, doc: RequestDocument): ApprovalStepFrontend[] => {
+    if (kind === 'withdraw') {
+      return getWithdrawNeedItems(doc, currentUser).filter((item) => item.mine).map((item) => item.step);
+    }
+    const pr = doc.pause_request;
+    if (!pr || pr.state !== 'requested') return [];
+    return (doc.approval_steps ?? []).filter(
+      (s) => s.action === 'pending'
+        && pr.target_step_ids.includes(s.id)
+        && !pr.confirmed_step_ids.includes(s.id)
+        && canConfirmPauseStep(currentUser, s)
+    );
+  };
+
+  const openMasterConfirm = (kind: MasterConfirmKind) => {
+    if (!selected) return;
+    const candidates = getMasterConfirmCandidates(kind, selected);
+    setMasterConfirmStepId(candidates[0]?.id ?? null);
+    setMasterConfirmKind(kind);
+  };
+
+  const submitMasterConfirm = async () => {
+    if (!selected || !masterConfirmKind) return;
+    const step = getMasterConfirmCandidates(masterConfirmKind, selected).find((s) => s.id === masterConfirmStepId);
+    if (!step) return;
+    const pick: MasterConfirmPick = {
+      stepId: step.id,
+      teamLabel: step.assignee_name ? `${stepTeamLabel(step)} (${step.assignee_name})` : stepTeamLabel(step),
+    };
+    if (masterConfirmKind === 'withdraw') {
+      await handleConfirmWithdraw(step.agent, pick);
+    } else {
+      await handleConfirmPause(step.agent, pick);
     }
   };
 
@@ -2671,6 +2744,78 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
+      {/* claude 수정 (2026-11-11): MASTER 전용 — 철회·중단 확인을 대신할 팀(단계)을 한 개 고르는 창 */}
+      {masterConfirmKind && selected && (() => {
+        const candidates = getMasterConfirmCandidates(masterConfirmKind, selected);
+        const closePicker = () => setMasterConfirmKind(null);
+        return (
+          <Modal
+            isOpen
+            onClose={closePicker}
+            title={t('approval.master_confirm_title')}
+            size="md"
+            topLevel
+            hideFullscreen
+            footer={
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  className={masterConfirmKind === 'withdraw' ? 'btn btn-danger' : 'btn btn-pause'}
+                  onClick={submitMasterConfirm}
+                  disabled={processing || !candidates.some((s) => s.id === masterConfirmStepId)}
+                >
+                  {t('approval.master_confirm_submit')}
+                </button>
+                <button className="btn btn-secondary" onClick={closePicker} disabled={processing}>
+                  {t('common.cancel')}
+                </button>
+              </div>
+            }
+          >
+            <p style={{ margin: '0 0 12px', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+              {t(masterConfirmKind === 'withdraw' ? 'approval.master_confirm_desc_withdraw' : 'approval.master_confirm_desc_pause')}
+            </p>
+            {candidates.length === 0 ? (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('approval.master_confirm_empty')}</p>
+            ) : (
+              <div role="radiogroup" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {candidates.map((s) => {
+                  const checked = s.id === masterConfirmStepId;
+                  return (
+                    <label
+                      key={s.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer',
+                        borderRadius: 'var(--radius-md)',
+                        border: `1px solid ${checked ? 'var(--accent)' : 'var(--border)'}`,
+                        background: checked ? 'var(--accent-light)' : 'transparent',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="master-confirm-step"
+                        checked={checked}
+                        onChange={() => setMasterConfirmStepId(s.id)}
+                        disabled={processing}
+                      />
+                      <span style={{ fontWeight: 700, minWidth: 110 }}>{stepTeamLabel(s)}</span>
+                      <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        {s.assignee_name
+                          ? t('approval.master_confirm_assignee', { name: s.assignee_name })
+                          : t('approval.master_confirm_unassigned')}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {s.zone_index != null && `${t('approval.zone_label', { zone: s.zone_index + 1 })} · `}
+                        {t('approval.master_confirm_round', { round: s.round })}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
+
       {layerDriftDoc && (
         <LayerDriftModal
           data={layerDriftData}
@@ -3017,12 +3162,14 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.pause_request')}
                 </button>
               )}
-              {/* 중단 확인 (현재 단계 담당자/팀) */}
+              {/* 중단 확인 (현재 단계 담당자/팀) — claude 수정 (2026-11-11): MASTER 는 대신 확인할 팀을 고르는 창을 연다 */}
               {pauseConfirmAgent && (
                 <button
                   className="btn btn-pause"
                   data-tour={isTourMode ? 'pause-confirm-btn' : undefined}
-                  onClick={() => handleConfirmPause(pauseConfirmAgent as AgentType)}
+                  onClick={() => (isMaster && !isTourMode
+                    ? openMasterConfirm('pause')
+                    : handleConfirmPause(pauseConfirmAgent as AgentType))}
                   disabled={processing}
                 >
                   {t('approval.pause_confirm')}
@@ -3069,8 +3216,15 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 확인 (현재 단계 담당자/팀) — 전원 확인 시 의뢰서가 삭제된다 */}
+              {/* claude 수정 (2026-11-11): MASTER 는 대신 확인할 팀을 고르는 창을 연다 */}
               {withdrawConfirmAgent && (
-                <button className="btn btn-danger" onClick={() => handleConfirmWithdraw(withdrawConfirmAgent as AgentType)} disabled={processing}>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => (isMaster && !isTourMode
+                    ? openMasterConfirm('withdraw')
+                    : handleConfirmWithdraw(withdrawConfirmAgent as AgentType))}
+                  disabled={processing}
+                >
                   {t('approval.withdraw_confirm')}
                 </button>
               )}
