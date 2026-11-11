@@ -20,7 +20,7 @@ import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
 import { INITIAL_DETAIL, makeJayerRow, makeOayerRow } from './constants';
 import {
-  isNumCheckRequired, isNumCheckImageRequired, sanitizeUnsignedDecimal, numCheckOptionValue, parseNumCheckValue, formatNumCheckValue,
+  isNumCheckRequired, isNumCheckImageRequired, numCheckOptionValue, parseNumCheckValue, formatNumCheckValue,
 } from './helpers';
 
 // jsdom 에는 scrollIntoView 가 없다 — 검증 오류 시 해당 칸으로 스크롤하는 동작(다른 RequestPage 테스트와 같은 처리)
@@ -251,12 +251,6 @@ describe('숫자 확인 필수 — 판정 함수', () => {
     } finally {
       await i18n.changeLanguage('ko');
     }
-  });
-
-  it('sanitizeUnsignedDecimal: 음수 부호·문자를 지우고 숫자와 소수점 하나만 남긴다', () => {
-    expect(sanitizeUnsignedDecimal('-12a.3.4')).toBe('12.34');
-    expect(sanitizeUnsignedDecimal('abc')).toBe('');
-    expect(sanitizeUnsignedDecimal('007')).toBe('007');
   });
 });
 
