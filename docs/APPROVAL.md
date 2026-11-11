@@ -962,7 +962,7 @@ RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 
 #### API
 | 엔드포인트 | 동작 |
 |---|---|
-| `POST /documents/{id}/sales-agree/` | 본인 SA step `approved` → 단계 완료 시 다음 단계 생성 |
+| `POST /documents/{id}/sales-agree/` | 본인 SA step `approved` → 단계 완료 시 다음 단계 생성. **(2026-11-11)** `step_id`(선택)로 처리할 SA 단계 지정(MASTER 대신 합의, sales-reject 도 동일) |
 | `POST /documents/{id}/sales-reject/` | 본인 SA step `rejected` → **문서 즉시 반려**(PL 반려와 동일) |
 
 - 권한: MASTER 또는 해당 step 의 assignee 본인(`_get_caller_sales_agreer_step`).
@@ -1528,6 +1528,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 액션 | 버튼 노출 조건(프론트) | 호출 API |
 |------|----------------------|----------|
 | 합의 / 반려 (R·RV·P·PV·J·O·E·EV·RA) | `canUserAgree`가 참 | `approveStep` / `rejectStep` |
+| **MASTER 대신 합의 / 반려 (2026-11-11)** | MASTER(투어 제외)가 [합의]/[반려] 클릭 → **'대신 합의할 팀 선택' / '대신 반려할 팀 선택' 창**. 후보 = 현재 회차 대기 단계 전부(PL·SA 포함, RV/PV/EV 는 담당자 합의 후 — `getMasterActCandidates`). 한 팀 선택(팀 이름·담당자·구역·회차) + 같은 창의 코멘트(합의 이유/반려 사유, 선택). P·E 를 고르면 창 안에서 검토자 지정(E 는 기존 검토자 없으면 필수 — 하단 검토자 UI 는 MASTER 에게 숨김). 고른 단계의 API(PL→peer, SA→sales, 그 외→step)를 `step_id` 와 함께 호출, 토스트 `{팀} ({담당자}) 대신 합의/반려했습니다`. **예전엔 첫 대기 단계 하나에 고정**돼 다른 팀을 대신하려면 앞 단계부터 처리해야 했고, 서버도 다중 PL·SA·PV·EV·RA 에서 첫 단계를 골랐다. 서버의 `step_id` 는 기존 조회 조건(현재 회차·대기·agent, 일반 사용자는 본인 담당)에 id 조건만 더하므로 권한 규칙은 그대로다. i18n `approval.master_act_*`, 테스트 `MasterActOnBehalfStepIdTest` 8건 | `openMasterAct` → `handleConfirmAction`(`masterPick`) |
 | PL 합의 / 반려 / **수정 후 상신** | PL 검토 단계 + 본인 | `peerApprove` / `peerReject` / `/request`로 이동(peerSubmit) |
 | 담당자 지정 (R) | `canUserAssign`가 참 | `assignStep` |
 | 검토중 (J·O·E·P, 2026-07 P 포함) | `canUserClaim`가 참 | `claimStep` |
@@ -1568,8 +1569,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 철회 확인 | `confirm-withdraw/` | `agent`, `step_id`(선택, 2026-11-11 — 주면 그 단계를 확인) |
 | 철회 거부 | `reject-withdraw/` | - |
 | 철회 요청 취소 | `cancel-withdraw/` | - |
-| 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) |
-| 반려 | `reject-step/` | `agent`, `comment` |
+| 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
+| 반려 | `reject-step/` | `agent`, `comment` · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
 | 담당자 지정 (R) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
 | 검토중 선점 (J·O·E·P) | `claim-step/` | `agent` |
 | 검토중 취소 (J·O·E·P, 2026-08) | `unclaim-step/` | `agent` |
@@ -1578,7 +1579,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 중단 거부 (2026-08) | `reject-pause/` | - |
 | 재개 | `resume/` | - (pause → under_review) |
 | 중단 요청 취소 | `cancel-pause/` | - |
-| PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
+| PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` (peer-approve·peer-reject 는 · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용)) |
 | 결재 경로 변경 (2026-10) | `change-route/` | `designated_pl_loginids`·`sales_agreer_loginids`·`sales_agreer_none_reason`·`post_approver_loginids`·`notifiers` (실린 항목만, 의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
