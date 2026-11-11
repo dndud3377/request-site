@@ -444,6 +444,26 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     _CONFIRM_FORBIDDEN_ERROR = '확인 권한이 없습니다.'
 
     _STEP_ID_INVALID_ERROR = '처리할 단계(step_id)가 올바르지 않습니다.'
+    # MASTER 대신 처리 표시 — 처리한 MASTER 이름이 결재 경로·이력·메일의 코멘트에 함께 남는다.
+    _MASTER_ON_BEHALF_MARK = '[MASTER {name} 대신 처리]'
+
+    # claude 수정 (2026-11-11): MASTER 가 다른 담당자 단계를 대신 합의·반려할 때 코멘트 앞에 처리자 표시를 붙인다
+    def _master_on_behalf_comment(self, user, step, comment):
+        """MASTER 가 '다른 담당자가 지정된 단계'를 처리하면 코멘트 앞에 `[MASTER {이름} 대신 처리]` 를 붙인다.
+
+        PL·SA·R·RV·PV·EV·RA 처럼 담당자가 정해진 단계는 MASTER 가 처리해도 화면·이력에 원래 담당자
+        이름만 남아, 대신 처리했다는 흔적이 없었다(J·O·E·P 는 `_reassign_claim_actor` 가 처리자를
+        MASTER 로 바꾸지만, 원래 선점자를 대신했다는 사실은 남지 않는다). 코멘트가 비어 있어도 표시만 남긴다.
+        MASTER 가 아니거나, 담당자가 없거나, MASTER 본인이 담당자면 그대로 돌려준다.
+        """
+        if getattr(user, 'role', '') != 'MASTER':
+            return comment
+        if not step.assignee_id or step.assignee_id == getattr(user, 'id', None):
+            return comment
+        name = getattr(user, 'username', '') or getattr(user, 'loginid', '')
+        mark = self._MASTER_ON_BEHALF_MARK.format(name=name)
+        return f'{mark} {comment}' if comment else mark
+
 
     # claude 수정 (2026-11-11): 합의·반려에서 MASTER 가 대신할 단계를 지정하는 step_id 파라미터 파싱
     def _step_id_param(self, request):
@@ -1557,6 +1577,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step = qs.first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-11): MASTER 가 다른 담당자 단계를 대신 처리하면 코멘트 앞에 처리자(MASTER) 표시
+        comment = self._master_on_behalf_comment(request.user, step, comment)
 
         if not self._can_act_on_step(request.user, step):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
@@ -1801,6 +1823,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step = qs.first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-11): MASTER 가 다른 담당자 단계를 대신 처리하면 코멘트 앞에 처리자(MASTER) 표시
+        comment = self._master_on_behalf_comment(request.user, step, comment)
 
         if not self._can_act_on_step(request.user, step):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
@@ -3089,6 +3113,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
+        # claude 수정 (2026-11-11): MASTER 가 다른 담당자 단계를 대신 처리하면 코멘트 앞에 처리자(MASTER) 표시
+        comment = self._master_on_behalf_comment(request.user, step, comment)
         all_done = self._advance_after_pl(document, step, comment)
         msg = ('전원 합의되어 R 단계로 진행합니다.' if all_done
                else '합의되었습니다. 다른 지정 PL의 합의를 기다립니다.')
@@ -3110,6 +3136,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
+        # claude 수정 (2026-11-11): MASTER 가 다른 담당자 단계를 대신 처리하면 코멘트 앞에 처리자(MASTER) 표시
+        comment = self._master_on_behalf_comment(request.user, step, comment)
         with transaction.atomic():
             step.action = 'rejected'
             step.acted_at = timezone.now()
@@ -3140,6 +3168,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '대기 중인 본인 합의 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
+        # claude 수정 (2026-11-11): MASTER 가 다른 담당자 단계를 대신 처리하면 코멘트 앞에 처리자(MASTER) 표시
+        comment = self._master_on_behalf_comment(request.user, step, comment)
         all_done = self._advance_after_pl(document, step, comment)
         msg = ('전원 합의되어 다음 단계로 진행합니다.' if all_done
                else '합의되었습니다. 남은 지정 PL·합의자의 합의를 기다립니다.')
@@ -3161,6 +3191,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '대기 중인 본인 합의 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
+        # claude 수정 (2026-11-11): MASTER 가 다른 담당자 단계를 대신 처리하면 코멘트 앞에 처리자(MASTER) 표시
+        comment = self._master_on_behalf_comment(request.user, step, comment)
         with transaction.atomic():
             step.action = 'rejected'
             step.acted_at = timezone.now()
