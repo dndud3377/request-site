@@ -443,6 +443,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     _CONFIRM_STEP_ALREADY_ERROR = '이미 확인된 단계입니다.'
     _CONFIRM_FORBIDDEN_ERROR = '확인 권한이 없습니다.'
 
+    _STEP_ID_INVALID_ERROR = '처리할 단계(step_id)가 올바르지 않습니다.'
+
+    # claude 수정 (2026-11-11): 합의·반려에서 MASTER 가 대신할 단계를 지정하는 step_id 파라미터 파싱
+    def _step_id_param(self, request):
+        """요청의 선택 파라미터 `step_id` 를 정수로 읽는다. (step_id 또는 None, 오류 Response 또는 None).
+
+        합의·반려(approve/reject-step, peer-*, sales-*)에서 쓰며, 주지 않으면 (None, None) — 기존 동작 그대로.
+        """
+        raw = request.data.get('step_id')
+        if raw in (None, ''):
+            return None, None
+        try:
+            return int(raw), None
+        except (TypeError, ValueError):
+            return None, Response({'error': self._STEP_ID_INVALID_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+
     # claude 수정 (2026-11-11): 철회·중단 확인 단계 선택 공통화 — step_id 직접 지정 + agent 경로의 확인 완료 단계 제외
     def _pick_confirm_step(self, request, target_ids, confirmed_ids, base_qs, can_confirm):
         """철회·중단 확인에서 이번에 확인할 단계를 고른다. (step, None) 또는 (None, 오류 Response).
@@ -1527,22 +1543,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
         # RA(후결자)/PV/EV(검토자) 다중 담당자: 호출자의 assignee 단계만 조회.
         # J/O/E/P(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 합의(인가는 _can_act_on_step).
-        if agent in ('RA', 'PV', 'EV'):
-            role = getattr(request.user, 'role', '')
-            caller_loginid = getattr(request.user, 'loginid', '')
-            if role == 'MASTER':
-                step = ApprovalStep.objects.select_for_update().filter(
-                    document=document, agent=agent, action='pending', round=max_round
-                ).first()
-            else:
-                step = ApprovalStep.objects.select_for_update().filter(
-                    document=document, agent=agent, action='pending', round=max_round,
-                    assignee__loginid=caller_loginid
-                ).first()
-        else:
-            step = ApprovalStep.objects.select_for_update().filter(
-                document=document, agent=agent, action='pending', round=max_round
-            ).first()
+        # claude 수정 (2026-11-11): step_id 로 처리할 단계를 지정(MASTER 가 대신할 팀 선택). 없으면 기존과 동일
+        step_id, err = self._step_id_param(request)
+        if err:
+            return err
+        qs = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending', round=max_round
+        )
+        if agent in ('RA', 'PV', 'EV') and getattr(request.user, 'role', '') != 'MASTER':
+            qs = qs.filter(assignee__loginid=getattr(request.user, 'loginid', ''))
+        if step_id is not None:
+            qs = qs.filter(id=step_id)
+        step = qs.first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1775,22 +1787,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         # RA(후결자)/PV/EV(검토자) 다중 담당자: 호출자의 assignee 단계만 조회.
         # J/O/E/P(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 반려(인가는 _can_act_on_step).
-        if agent in ('RA', 'PV', 'EV'):
-            role = getattr(request.user, 'role', '')
-            caller_loginid = getattr(request.user, 'loginid', '')
-            if role == 'MASTER':
-                step = ApprovalStep.objects.select_for_update().filter(
-                    document=document, agent=agent, action='pending', round=max_round
-                ).first()
-            else:
-                step = ApprovalStep.objects.select_for_update().filter(
-                    document=document, agent=agent, action='pending', round=max_round,
-                    assignee__loginid=caller_loginid
-                ).first()
-        else:
-            step = ApprovalStep.objects.select_for_update().filter(
-                document=document, agent=agent, action='pending', round=max_round
-            ).first()
+        # claude 수정 (2026-11-11): step_id 로 처리할 단계를 지정(MASTER 가 대신할 팀 선택). 없으면 기존과 동일
+        step_id, err = self._step_id_param(request)
+        if err:
+            return err
+        qs = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending', round=max_round
+        )
+        if agent in ('RA', 'PV', 'EV') and getattr(request.user, 'role', '') != 'MASTER':
+            qs = qs.filter(assignee__loginid=getattr(request.user, 'loginid', ''))
+        if step_id is not None:
+            qs = qs.filter(id=step_id)
+        step = qs.first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2676,16 +2684,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document=document, agent='PL', action='pending', round=max_round
         ).first()
 
-    def _get_caller_pl_step(self, document, user):
+    # claude 수정 (2026-11-11): step_id 를 주면 그 단계로 한정(MASTER 가 대신할 PL 선택)
+    def _get_caller_pl_step(self, document, user, step_id=None):
         """호출자가 처리할 현재 회차 pending PL 단계.
 
         다중 PL 검토를 지원한다(전원 합의). MASTER 는 첫 pending PL 단계,
         그 외에는 본인이 담당(assignee)인 pending PL 단계를 반환한다. 없으면 None.
+        `step_id` 를 주면 같은 조건에 그 단계 id 를 더해 찾는다(일반 사용자는 본인 단계만 찾힌다).
         """
         max_round = self._max_round(document)
         qs = ApprovalStep.objects.filter(
             document=document, agent='PL', action='pending', round=max_round
         )
+        if step_id is not None:
+            qs = qs.filter(id=step_id)
         role = getattr(user, 'role', '')
         if role == 'MASTER':
             return qs.first()
@@ -2694,15 +2706,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return None
         return qs.filter(assignee__loginid=caller_loginid).first()
 
-    def _get_caller_sales_agreer_step(self, document, user):
+    # claude 수정 (2026-11-11): step_id 를 주면 그 단계로 한정(MASTER 가 대신할 SA 선택)
+    def _get_caller_sales_agreer_step(self, document, user, step_id=None):
         """호출자가 처리할 현재 회차 pending SA(영업/기술지원 합의자) 단계.
 
         PL 단계와 동일한 규칙 — MASTER 는 첫 pending 단계, 그 외에는 본인이 담당인 단계.
+        `step_id` 를 주면 같은 조건에 그 단계 id 를 더해 찾는다.
         """
         max_round = self._max_round(document)
         qs = ApprovalStep.objects.filter(
             document=document, agent='SA', action='pending', round=max_round
         )
+        if step_id is not None:
+            qs = qs.filter(id=step_id)
         if getattr(user, 'role', '') == 'MASTER':
             return qs.first()
         caller_loginid = getattr(user, 'loginid', '')
@@ -3064,7 +3080,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         blocked = self._blocked_progress_response(document)
         if blocked:
             return blocked
-        step = self._get_caller_pl_step(document, request.user)
+        # claude 수정 (2026-11-11): step_id 로 대신 처리할 단계 지정(MASTER 팀 선택)
+        step_id, err = self._step_id_param(request)
+        if err:
+            return err
+        step = self._get_caller_pl_step(document, request.user, step_id)
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3081,7 +3101,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         blocked = self._blocked_progress_response(document)
         if blocked:
             return blocked
-        step = self._get_caller_pl_step(document, request.user)
+        # claude 수정 (2026-11-11): step_id 로 대신 처리할 단계 지정(MASTER 팀 선택)
+        step_id, err = self._step_id_param(request)
+        if err:
+            return err
+        step = self._get_caller_pl_step(document, request.user, step_id)
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3107,7 +3131,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         blocked = self._blocked_progress_response(document)
         if blocked:
             return blocked
-        step = self._get_caller_sales_agreer_step(document, request.user)
+        # claude 수정 (2026-11-11): step_id 로 대신 처리할 단계 지정(MASTER 팀 선택)
+        step_id, err = self._step_id_param(request)
+        if err:
+            return err
+        step = self._get_caller_sales_agreer_step(document, request.user, step_id)
         if not step:
             return Response({'error': '대기 중인 본인 합의 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3124,7 +3152,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         blocked = self._blocked_progress_response(document)
         if blocked:
             return blocked
-        step = self._get_caller_sales_agreer_step(document, request.user)
+        # claude 수정 (2026-11-11): step_id 로 대신 처리할 단계 지정(MASTER 팀 선택)
+        step_id, err = self._step_id_param(request)
+        if err:
+            return err
+        step = self._get_caller_sales_agreer_step(document, request.user, step_id)
         if not step:
             return Response({'error': '대기 중인 본인 합의 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
