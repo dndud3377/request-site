@@ -232,13 +232,6 @@ export const sanitizeSignedDecimal = (raw: string): string => {
   return (neg ? '-' : '') + v;
 };
 
-// claude 수정 (2026-11-10): '숫자 확인 필수' 값 입력 필터 신설 — 음수 부호·문자를 막고 숫자와 소수점 하나만 남긴다
-export const sanitizeUnsignedDecimal = (raw: string): string => {
-  const v = raw.replace(/[^0-9.]/g, '');
-  const firstDot = v.indexOf('.');
-  return firstDot === -1 ? v : v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '');
-};
-
 // claude 수정 (2026-10-15): STEP2 X/Y·예외 구역 값에 '.'/'-' 처럼 숫자로 읽히지 않는 값이 통과하던 문제 — 숫자 판정 함수 추가
 /**
  * 입력값이 숫자로 읽히는가 — 앞뒤 공백 제거 후 Number() 결과가 유한하면 참.
