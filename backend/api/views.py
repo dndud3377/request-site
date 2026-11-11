@@ -438,6 +438,43 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document=document, state='requested'
         ).order_by('-created_at').first()
 
+    _CONFIRM_STEP_INVALID_ERROR = '확인할 단계(step_id)가 올바르지 않습니다.'
+    _CONFIRM_STEP_NOT_TARGET_ERROR = '확인 대상 단계가 아닙니다.'
+    _CONFIRM_STEP_ALREADY_ERROR = '이미 확인된 단계입니다.'
+    _CONFIRM_FORBIDDEN_ERROR = '확인 권한이 없습니다.'
+
+    # claude 수정 (2026-11-11): 철회·중단 확인 단계 선택 공통화 — step_id 직접 지정 + agent 경로의 확인 완료 단계 제외
+    def _pick_confirm_step(self, request, target_ids, confirmed_ids, base_qs, can_confirm):
+        """철회·중단 확인에서 이번에 확인할 단계를 고른다. (step, None) 또는 (None, 오류 Response).
+
+        - `step_id` 가 오면 그 단계를 확인한다(MASTER 가 '어느 팀 대신 확인할지' 고르는 경로).
+          확인 대상이 아니거나 이미 확인됐으면 400, 확인 권한이 없으면 403.
+        - `step_id` 없이 `agent` 만 오면 그 agent 의 미확인 대상 단계 중 확인할 수 있는 첫 단계.
+          이미 확인한 단계를 빼지 않으면 같은 agent 단계가 여럿(다중 PL·PV·EV·RA)일 때 같은
+          단계만 반복 확인돼 확정되지 않는다(2026-11 버그).
+        """
+        confirmed = set(confirmed_ids or [])
+        raw_step_id = request.data.get('step_id')
+        if raw_step_id not in (None, ''):
+            try:
+                step_id = int(raw_step_id)
+            except (TypeError, ValueError):
+                return None, Response({'error': self._CONFIRM_STEP_INVALID_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+            if step_id not in set(target_ids or []):
+                return None, Response({'error': self._CONFIRM_STEP_NOT_TARGET_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+            if step_id in confirmed:
+                return None, Response({'error': self._CONFIRM_STEP_ALREADY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+            step = base_qs.filter(id=step_id).first()
+            if not step or not can_confirm(step):
+                return None, Response({'error': self._CONFIRM_FORBIDDEN_ERROR}, status=status.HTTP_403_FORBIDDEN)
+            return step, None
+
+        candidates = base_qs.filter(agent=request.data.get('agent')).exclude(id__in=confirmed)
+        step = next((s for s in candidates if can_confirm(s)), None)
+        if not step:
+            return None, Response({'error': self._CONFIRM_FORBIDDEN_ERROR}, status=status.HTTP_403_FORBIDDEN)
+        return step, None
+
     # 의뢰자/철회/수정 권한은 serializers 와 공유하기 위해 doc_permissions 모듈에 둔다.
     def _can_withdraw(self, user, document):
         return doc_permissions.can_withdraw(user, document)
@@ -1325,22 +1362,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not wr:
             return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        agent = request.data.get('agent')
         max_round = self._max_round(document)
 
-        candidates = ApprovalStep.objects.select_for_update().filter(
-            document=document, agent=agent, id__in=wr.target_step_ids,
+        # claude 수정 (2026-11-11): step_id 로 확인할 단계를 직접 지정(MASTER 팀 선택), agent 경로는 이미 확인한 단계 제외
+        base_qs = ApprovalStep.objects.select_for_update().filter(
+            document=document, id__in=wr.target_step_ids,
         )
-        step = next(
-            (s for s in candidates if (
+        step, err = self._pick_confirm_step(
+            request, wr.target_step_ids, wr.confirmed_step_ids, base_qs,
+            lambda s: (
                 self._can_confirm_pause(request.user, s)
                 if (s.round == max_round and s.action == 'pending')
                 else self._can_confirm_extra_zone(request.user, s)
-            )),
-            None,
+            ),
         )
-        if not step:
-            return Response({'error': '확인 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if err:
+            return err
 
         confirmed = list(wr.confirmed_step_ids or [])
         if step.id not in confirmed:
@@ -2152,17 +2189,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not pr or pr.state != 'requested':
             return Response({'error': '진행 중인 중단 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        agent = request.data.get('agent')
         max_round = self._max_round(document)
 
+        # claude 수정 (2026-11-11): step_id 로 확인할 단계를 직접 지정(MASTER 팀 선택), agent 경로는 이미 확인한 단계 제외
         # 호출자가 확인할 수 있는, target 에 포함된 현재 회차 pending 단계를 찾는다.
-        candidates = ApprovalStep.objects.select_for_update().filter(
-            document=document, agent=agent, action='pending',
+        base_qs = ApprovalStep.objects.select_for_update().filter(
+            document=document, action='pending',
             round=max_round, id__in=pr.target_step_ids,
         )
-        step = next((s for s in candidates if self._can_confirm_pause(request.user, s)), None)
-        if not step:
-            return Response({'error': '확인 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        step, err = self._pick_confirm_step(
+            request, pr.target_step_ids, pr.confirmed_step_ids, base_qs,
+            lambda s: self._can_confirm_pause(request.user, s),
+        )
+        if err:
+            return err
 
         confirmed = list(pr.confirmed_step_ids or [])
         if step.id not in confirmed:
