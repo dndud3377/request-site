@@ -4280,6 +4280,72 @@ class WithdrawFlowTest(TestCase):
         wr.refresh_from_db()
         self.assertIn(ra_step.id, wr.confirmed_step_ids)
 
+    # ----- 같은 agent 다중 단계 확인 / step_id 지정 (2026-11-11) -----
+    def _multi_zone3_withdraw(self):
+        """3구역 진행 중 + PV 2명·RA 2명(같은 agent 다중 단계)인 문서에 철회 요청을 건다."""
+        pv1 = UserProfile.objects.create(loginid='wd_pv1', mail='wd_pv1@c.com', role='TE_P', username='PV1')
+        pv2 = UserProfile.objects.create(loginid='wd_pv2', mail='wd_pv2@c.com', role='TE_P', username='PV2')
+        ra1 = UserProfile.objects.create(loginid='wd_ra1', mail='wd_ra1@c.com', role='PL', username='RA1')
+        ra2 = UserProfile.objects.create(loginid='wd_ra2', mail='wd_ra2@c.com', role='PL', username='RA2')
+        doc = self._doc()
+        self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'R', action='approved', assignee=self.rfg)
+        steps = [
+            self._step(doc, 'PV', assignee=pv1), self._step(doc, 'PV', assignee=pv2),
+            self._step(doc, 'RA', assignee=ra1), self._step(doc, 'RA', assignee=ra2),
+        ]
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        return doc, steps
+
+    def test_master_agent_confirm_skips_already_confirmed_step(self):
+        """agent 만 보내도 이미 확인한 단계는 건너뛴다 — 예전엔 같은 PV 단계만 반복 확인돼 확정되지 않았다."""
+        doc, steps = self._multi_zone3_withdraw()
+        for agent in ('PV', 'PV', 'RA'):
+            res = self._post(self.master, doc, 'confirm-withdraw', {'agent': agent})
+            self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(set(wr.confirmed_step_ids), {steps[0].id, steps[1].id, steps[2].id})
+
+        res = self._post(self.master, doc, 'confirm-withdraw', {'agent': 'RA'})
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_master_confirms_chosen_step_by_step_id(self):
+        """MASTER 가 step_id 로 고른 단계(두 번째 PV)가 정확히 확인된다."""
+        doc, steps = self._multi_zone3_withdraw()
+        res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': steps[1].id})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).confirmed_step_ids, [steps[1].id])
+
+        for s in (steps[3], steps[0], steps[2]):
+            res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': s.id})
+            self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+
+    def test_step_id_already_confirmed_is_400(self):
+        doc, steps = self._multi_zone3_withdraw()
+        self._post(self.master, doc, 'confirm-withdraw', {'step_id': steps[0].id})
+        res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': steps[0].id})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_step_id_not_in_target_is_400(self):
+        doc, _ = self._multi_zone3_withdraw()
+        approved_r = ApprovalStep.objects.get(document=doc, agent='R')
+        for bad in (approved_r.id, 'abc'):
+            res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': bad})
+            self.assertEqual(res.status_code, 400, res.content)
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).confirmed_step_ids, [])
+
+    def test_step_id_of_other_assignee_is_403_for_non_master(self):
+        """일반 사용자는 step_id 로도 남의 단계를 확인할 수 없다(권한 규칙은 그대로)."""
+        doc, steps = self._multi_zone3_withdraw()
+        pv1 = steps[0].assignee
+        res = self._post(pv1, doc, 'confirm-withdraw', {'step_id': steps[1].id})
+        self.assertEqual(res.status_code, 403, res.content)
+        res = self._post(pv1, doc, 'confirm-withdraw', {'step_id': steps[0].id})
+        self.assertEqual(res.status_code, 200, res.content)
+
 
 class PauseFlowTest(TestCase):
     """중단(PAUSE) = '요청 → 현재 단계 전원 확인 → pause 전이' (2026-08: 거부·동결 강화).
@@ -4442,6 +4508,55 @@ class PauseFlowTest(TestCase):
         res = self._post(self.author, doc, 'request-pause', {'reason': '2'})
         self.assertEqual(res.status_code, 200, res.content)
         self.assertEqual(PauseRequest.objects.filter(document=doc, state='requested').count(), 1)
+
+    # ----- 같은 agent 다중 단계 확인 / step_id 지정 (2026-11-11) -----
+    def _multi_ra_pause(self):
+        """3구역 RA 2명(같은 agent 다중 단계) + J 인 문서에 중단 요청을 건다."""
+        self.master = UserProfile.objects.create(loginid='ps_master', mail='ps_m@c.com', role='MASTER')
+        ra1 = UserProfile.objects.create(loginid='ps_ra1', mail='ps_ra1@c.com', role='PL', username='RA1')
+        ra2 = UserProfile.objects.create(loginid='ps_ra2', mail='ps_ra2@c.com', role='PL', username='RA2')
+        doc = self._doc()
+        steps = [
+            self._step(doc, 'RA', assignee=ra1), self._step(doc, 'RA', assignee=ra2),
+            self._step(doc, 'J', assignee=self.job),
+        ]
+        res = self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        return doc, steps
+
+    def test_master_agent_confirm_pause_skips_already_confirmed_step(self):
+        """agent 만 보내도 이미 확인한 RA 단계는 건너뛴다 — 예전엔 첫 RA 만 반복 확인됐다."""
+        doc, steps = self._multi_ra_pause()
+        for agent in ('RA', 'RA'):
+            res = self._post(self.master, doc, 'confirm-pause', {'agent': agent})
+            self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(
+            set(PauseRequest.objects.get(document=doc).confirmed_step_ids), {steps[0].id, steps[1].id}
+        )
+        self._post(self.master, doc, 'confirm-pause', {'agent': 'J'})
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'pause')
+
+    def test_master_confirms_pause_chosen_step_by_step_id(self):
+        doc, steps = self._multi_ra_pause()
+        res = self._post(self.master, doc, 'confirm-pause', {'step_id': steps[1].id})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(PauseRequest.objects.get(document=doc).confirmed_step_ids, [steps[1].id])
+
+        res = self._post(self.master, doc, 'confirm-pause', {'step_id': steps[1].id})
+        self.assertEqual(res.status_code, 400, res.content)
+
+        for s in (steps[0], steps[2]):
+            res = self._post(self.master, doc, 'confirm-pause', {'step_id': s.id})
+            self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'pause')
+
+    def test_pause_step_id_of_other_assignee_is_403_for_non_master(self):
+        doc, steps = self._multi_ra_pause()
+        res = self._post(steps[0].assignee, doc, 'confirm-pause', {'step_id': steps[1].id})
+        self.assertEqual(res.status_code, 403, res.content)
+        self.assertEqual(PauseRequest.objects.get(document=doc).confirmed_step_ids, [])
 
 
 class PauseAndOtherActionMailTest(TestCase):
