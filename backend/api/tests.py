@@ -4619,7 +4619,7 @@ class MasterActOnBehalfStepIdTest(TestCase):
         res = self._post(self.master, doc, 'peer-approve', {'step_id': pl2.id, 'comment': '대신 합의'})
         self.assertEqual(res.status_code, 200, res.content)
         self.assertEqual((self._action(pl1), self._action(pl2)), ('pending', 'approved'))
-        self.assertEqual(pl2.comment, '대신 합의')
+        self.assertEqual(pl2.comment, '[MASTER mb_master 대신 처리] 대신 합의')
 
     def test_master_peer_reject_second_pl_by_step_id(self):
         doc, (pl1, pl2, _, _) = self._zone1()
@@ -4643,7 +4643,7 @@ class MasterActOnBehalfStepIdTest(TestCase):
         res = self._post(self.master, doc, 'approve-step', {'agent': 'PV', 'step_id': pv2.id, 'comment': '대신'})
         self.assertEqual(res.status_code, 200, res.content)
         self.assertEqual((self._action(pv1), self._action(pv2)), ('pending', 'approved'))
-        self.assertEqual(pv2.comment, '대신')
+        self.assertEqual(pv2.comment, '[MASTER mb_master 대신 처리] 대신')
 
     def test_master_reject_step_second_ra_by_step_id(self):
         doc, (_, _, _, ra1, ra2) = self._zone3()
@@ -4669,6 +4669,42 @@ class MasterActOnBehalfStepIdTest(TestCase):
         res = self._post(self.pl1, doc1, 'peer-approve', {'step_id': pl2.id})
         self.assertEqual(res.status_code, 400, res.content)
         self.assertEqual(self._action(pl2), 'pending')
+
+    # ----- MASTER 대신 처리 표시 (2026-11-11) -----
+    def test_master_mark_is_added_even_without_comment(self):
+        """코멘트를 비워도 처리한 MASTER 이름이 남는다(반려·SA 경로 포함)."""
+        doc, (_, _, _, _, ra2) = self._zone3()
+        self._post(self.master, doc, 'reject-step', {'agent': 'RA', 'step_id': ra2.id})
+        ra2.refresh_from_db()
+        self.assertEqual(ra2.comment, '[MASTER mb_master 대신 처리]')
+        self.assertEqual(ra2.assignee, self.ra2)  # 담당자 이름은 그대로, 처리자는 코멘트로 남는다
+
+        doc1, (_, _, _, sa2) = self._zone1()
+        self._post(self.master, doc1, 'sales-agree', {'step_id': sa2.id, 'comment': '사유'})
+        sa2.refresh_from_db()
+        self.assertEqual(sa2.comment, '[MASTER mb_master 대신 처리] 사유')
+
+    def test_no_mark_when_assignee_acts_themselves(self):
+        doc, (pv1, _, _, _, _) = self._zone3()
+        self._post(self.pv1, doc, 'approve-step', {'agent': 'PV', 'comment': '본인 합의'})
+        pv1.refresh_from_db()
+        self.assertEqual(pv1.comment, '본인 합의')
+
+    def test_master_mark_on_claimed_step_keeps_master_as_actor(self):
+        """검토중(선점) J 를 MASTER 가 처리하면 처리자가 MASTER 로 바뀌고, 대신 처리 표시도 남는다."""
+        doc, (_, _, j, _, _) = self._zone3()
+        self._post(self.master, doc, 'approve-step', {'agent': 'J', 'comment': 'ok'})
+        j.refresh_from_db()
+        self.assertEqual(j.comment, '[MASTER mb_master 대신 처리] ok')
+        self.assertEqual(j.assignee, self.master)
+
+    def test_no_mark_on_unassigned_step(self):
+        """담당자 없는(미선점) 단계는 대신할 사람이 없다 — 처리자가 MASTER 로 기록돼 표시를 붙이지 않는다."""
+        doc = self._doc()
+        o = self._step(doc, 'O')
+        self._post(self.master, doc, 'approve-step', {'agent': 'O', 'comment': 'ok'})
+        o.refresh_from_db()
+        self.assertEqual((o.comment, o.assignee), ('ok', self.master))
 
     def test_step_id_of_other_agent_or_invalid_is_400(self):
         doc, (pv1, _, j, _, _) = self._zone3()
