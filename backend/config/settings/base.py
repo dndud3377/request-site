@@ -151,13 +151,19 @@ POST_APPROVER_LOGINID = os.environ.get('POST_APPROVER_LOGINID', '')
 # (러너는 같은 마스터 데이터 조합으로 여러 문서를 상신하고 지우지 않는다). 상세는 docs/APPROVAL.md "중복 상신 차단".
 DUPLICATE_SUBMIT_CHECK_ENABLED = os.environ.get('DUPLICATE_SUBMIT_CHECK_ENABLED', 'True') != 'False'
 
-# claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 — STEP2 숫자 확인 값이 이 값 이상이면 사진 증빙이 필수다.
-# 비어 있거나 숫자가 아니면 기본값 10. 바꾼 뒤 backend 재시작이 필요하다(화면은 /api/form-options/num-check-config/ 로 읽는다).
-NUM_CHECK_IMAGE_THRESHOLD_DEFAULT = 10.0
+# claude 수정 (2026-11-11): '숫자 확인 필수' 기준값을 2개로 — STEP2 숫자 확인 값 드롭다운 보기 '<이상 기준> 이상' / '<이하 기준> 이하'.
+# '이상'을 고르면 사진 증빙(2장 이상)이 필수다. 이상 기준 기본값 10 → 13, 이하 기준(기본 9) 신설.
+# 비어 있거나 숫자가 아니면 기본값. 바꾼 뒤 backend 재시작이 필요하다(화면은 /api/form-options/num-check-config/ 로 읽는다).
+NUM_CHECK_IMAGE_THRESHOLD_DEFAULT = 13.0
+NUM_CHECK_LOWER_THRESHOLD_DEFAULT = 9.0
 try:
     NUM_CHECK_IMAGE_THRESHOLD = float(os.environ.get('NUM_CHECK_IMAGE_THRESHOLD', '') or NUM_CHECK_IMAGE_THRESHOLD_DEFAULT)
 except ValueError:
     NUM_CHECK_IMAGE_THRESHOLD = NUM_CHECK_IMAGE_THRESHOLD_DEFAULT
+try:
+    NUM_CHECK_LOWER_THRESHOLD = float(os.environ.get('NUM_CHECK_LOWER_THRESHOLD', '') or NUM_CHECK_LOWER_THRESHOLD_DEFAULT)
+except ValueError:
+    NUM_CHECK_LOWER_THRESHOLD = NUM_CHECK_LOWER_THRESHOLD_DEFAULT
 
 # DXHUB 메일 API (결재 알림 발송)
 DXHUB_MAIL_URL = os.environ.get('DXHUB_MAIL_URL', '')
