@@ -350,8 +350,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     프론트는 조회 전·실패 시 `NUM_CHECK_IMAGE_THRESHOLD_DEFAULT`(13)·`NUM_CHECK_LOWER_THRESHOLD_DEFAULT`(9). `.env.example`·`.env.dev.example` 갱신.
   - ⚠️ 운영·개발 `.env` 에 `NUM_CHECK_IMAGE_THRESHOLD=10` 이 이미 들어 있으면 그 값(10)이 우선한다 — 13 으로 쓰려면 `.env` 를 직접 고쳐야 한다.
 - **i18n(ko/en 동시)**: 추가 `request.num_check_over`·`num_check_under`, 문구 변경 `num_check_active_hint`(`{{over}}`·`{{min}}`)·`num_check_required`(`{{min}}`).
+- **정리(같은 날 후속 — 사용자 결정)**: 숫자 입력칸이 없어져 쓰는 곳이 없어진 `helpers.ts` `sanitizeUnsignedDecimal`(숫자 입력 필터)과 그 테스트 1건을 삭제했다.
 - **결재 상세 'MAP 정보' 탭**: `숫자 확인 값`을 `formatNumCheckValue` 로 보여준다(`13 이상` / `9 이하`). `docs/APPROVAL.md` §7 같은 날짜 항목.
-- **테스트**: `numCheckImages.test.tsx` 18건(판정·저장값 해석·ko/en 표시·보기 목록·빈 칸 2개·2장 미만 오류·API 기준값·추가/삭제/교체·'이하' 초기화·
+- **테스트**: `numCheckImages.test.tsx` 17건(판정·저장값 해석·ko/en 표시·보기 목록·빈 칸 2개·2장 미만 오류·API 기준값·추가/삭제/교체·'이하' 초기화·
   저장 문서 유지·현재 보기에 없는 저장값 유지·MAP 목적/Only MAP 초기화), `PagedDetailView.numCheck.test.tsx` 4건,
   `numCheckLegacyDoc.test.tsx`·`mapInfoLockKeyboard.test.tsx` 선택자 갱신, 백엔드 `NumCheckConfigApiTest` 3건 갱신.
 - **수동 검증**:
