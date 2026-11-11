@@ -312,10 +312,11 @@ const withdrawDocument = async (id: number, reason: string) => {
   return { data };
 };
 
-const confirmWithdraw = async (docId: number, agent: AgentType) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 확인(MASTER 가 대신 확인할 팀을 선택), 없으면 agent 기준
+const confirmWithdraw = async (docId: number, agent: AgentType, stepId?: number) => {
   const data = await post<{ message: string; deleted: boolean; document?: RequestDocument }>(
     `/documents/${docId}/confirm-withdraw/`,
-    { agent }
+    stepId === undefined ? { agent } : { agent, step_id: stepId }
   );
   return { data };
 };
@@ -549,10 +550,11 @@ const requestPause = async (docId: number, reason: string) => {
   return { data };
 };
 
-const confirmPause = async (docId: number, agent: AgentType) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 확인(MASTER 가 대신 확인할 팀을 선택), 없으면 agent 기준
+const confirmPause = async (docId: number, agent: AgentType, stepId?: number) => {
   const data = await post<{ message: string; status: string; document: RequestDocument }>(
     `/documents/${docId}/confirm-pause/`,
-    { agent }
+    stepId === undefined ? { agent } : { agent, step_id: stepId }
   );
   return { data };
 };
