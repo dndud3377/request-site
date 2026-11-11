@@ -4559,6 +4559,126 @@ class PauseFlowTest(TestCase):
         self.assertEqual(PauseRequest.objects.get(document=doc).confirmed_step_ids, [])
 
 
+class MasterActOnBehalfStepIdTest(TestCase):
+    """합의·반려 6개 액션의 step_id (2026-11-11) — MASTER 가 대신할 단계를 직접 고른다.
+
+    예전엔 MASTER 가 같은 agent 다중 단계(다중 PL·SA·PV·EV·RA)에서 항상 첫 대기 단계만
+    처리할 수 있었다. step_id 를 주면 그 단계를, 주지 않으면 종전대로 첫 단계를 처리한다.
+    일반 사용자는 step_id 로도 본인 단계 외에는 찾을 수 없다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        mk = lambda lid, role: UserProfile.objects.create(loginid=lid, mail=f'{lid}@c.com', role=role, username=lid)
+        self.author = mk('mb_author', 'PL')
+        self.pl1, self.pl2 = mk('mb_pl1', 'PL'), mk('mb_pl2', 'PL')
+        self.sa1, self.sa2 = mk('mb_sa1', 'PL'), mk('mb_sa2', 'PL')
+        self.p_user, self.pv1, self.pv2 = mk('mb_p', 'TE_P'), mk('mb_pv1', 'TE_P'), mk('mb_pv2', 'TE_P')
+        self.j_user = mk('mb_j', 'TE_J')
+        self.ra1, self.ra2 = mk('mb_ra1', 'PL'), mk('mb_ra2', 'PL')
+        self.master = mk('mb_master', 'MASTER')
+
+    def _doc(self):
+        return RequestDocument.objects.create(
+            title='mb', requester=self.author, requester_name='의뢰자', requester_email='mb_author@c.com',
+            requester_department='d', product_name='p', status='under_review', designated_pl=self.pl1,
+        )
+
+    def _step(self, doc, agent, action='pending', assignee=None):
+        return ApprovalStep.objects.create(
+            document=doc, agent=agent, action=action, round=1,
+            assignee=assignee, assignee_name=(assignee.username if assignee else ''),
+        )
+
+    def _post(self, user, doc, path, payload):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/{path}/', payload, format='json')
+
+    def _zone1(self):
+        doc = self._doc()
+        steps = [self._step(doc, 'PL', assignee=self.pl1), self._step(doc, 'PL', assignee=self.pl2),
+                 self._step(doc, 'SA', assignee=self.sa1), self._step(doc, 'SA', assignee=self.sa2)]
+        return doc, steps
+
+    def _zone3(self):
+        doc = self._doc()
+        self._step(doc, 'PL', 'approved', self.pl1)
+        self._step(doc, 'P', 'approved', self.p_user)
+        steps = [self._step(doc, 'PV', assignee=self.pv1), self._step(doc, 'PV', assignee=self.pv2),
+                 self._step(doc, 'J', assignee=self.j_user),
+                 self._step(doc, 'RA', assignee=self.ra1), self._step(doc, 'RA', assignee=self.ra2)]
+        return doc, steps
+
+    def _action(self, step):
+        step.refresh_from_db()
+        return step.action
+
+    def test_master_peer_approve_second_pl_by_step_id(self):
+        doc, (pl1, pl2, _, _) = self._zone1()
+        res = self._post(self.master, doc, 'peer-approve', {'step_id': pl2.id, 'comment': '대신 합의'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((self._action(pl1), self._action(pl2)), ('pending', 'approved'))
+        self.assertEqual(pl2.comment, '대신 합의')
+
+    def test_master_peer_reject_second_pl_by_step_id(self):
+        doc, (pl1, pl2, _, _) = self._zone1()
+        res = self._post(self.master, doc, 'peer-reject', {'step_id': pl2.id, 'comment': '대신 반려'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((self._action(pl1), self._action(pl2)), ('pending', 'rejected'))
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_master_sales_agree_and_reject_second_sa_by_step_id(self):
+        doc, (_, _, sa1, sa2) = self._zone1()
+        res = self._post(self.master, doc, 'sales-agree', {'step_id': sa2.id})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((self._action(sa1), self._action(sa2)), ('pending', 'approved'))
+        res = self._post(self.master, doc, 'sales-reject', {'step_id': sa1.id, 'comment': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self._action(sa1), 'rejected')
+
+    def test_master_approve_step_second_pv_by_step_id(self):
+        doc, (pv1, pv2, _, _, _) = self._zone3()
+        res = self._post(self.master, doc, 'approve-step', {'agent': 'PV', 'step_id': pv2.id, 'comment': '대신'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((self._action(pv1), self._action(pv2)), ('pending', 'approved'))
+        self.assertEqual(pv2.comment, '대신')
+
+    def test_master_reject_step_second_ra_by_step_id(self):
+        doc, (_, _, _, ra1, ra2) = self._zone3()
+        res = self._post(self.master, doc, 'reject-step', {'agent': 'RA', 'step_id': ra2.id, 'comment': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((self._action(ra1), self._action(ra2)), ('pending', 'rejected'))
+
+    def test_without_step_id_master_still_takes_first_step(self):
+        """step_id 를 안 주면 종전과 동일 — 첫 대기 단계."""
+        doc, (pv1, pv2, _, _, _) = self._zone3()
+        res = self._post(self.master, doc, 'approve-step', {'agent': 'PV'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((self._action(pv1), self._action(pv2)), ('approved', 'pending'))
+
+    def test_non_master_cannot_use_other_assignee_step_id(self):
+        """일반 사용자는 step_id 로 남의 단계를 지정해도 찾지 못한다(본인 단계만 조회)."""
+        doc, (pv1, pv2, _, _, _) = self._zone3()
+        res = self._post(self.pv1, doc, 'approve-step', {'agent': 'PV', 'step_id': pv2.id})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertEqual(self._action(pv2), 'pending')
+
+        doc1, (_, pl2, _, _) = self._zone1()
+        res = self._post(self.pl1, doc1, 'peer-approve', {'step_id': pl2.id})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertEqual(self._action(pl2), 'pending')
+
+    def test_step_id_of_other_agent_or_invalid_is_400(self):
+        doc, (pv1, _, j, _, _) = self._zone3()
+        res = self._post(self.master, doc, 'approve-step', {'agent': 'J', 'step_id': pv1.id})
+        self.assertEqual(res.status_code, 400, res.content)
+        res = self._post(self.master, doc, 'approve-step', {'agent': 'J', 'step_id': 'abc'})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertEqual((self._action(pv1), self._action(j)), ('pending', 'pending'))
+
+
 class PauseAndOtherActionMailTest(TestCase):
     """중단(PAUSE) 전 구간 + 삭제·후결자 제거 메일 (2026-09 신설).
 
