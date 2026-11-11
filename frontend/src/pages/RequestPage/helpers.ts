@@ -1,6 +1,7 @@
+import type { TFunction } from 'i18next';
 import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ExtraLayerSnapshotRow, ExtraLayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
-  VALIDATION_KEYWORD, NUM_CHECK_PP_KEYWORD, MAP_TYPE_NEW, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, NUM_CHECK_PP_KEYWORD, NUM_CHECK_OVER, NUM_CHECK_UNDER, MAP_TYPE_NEW, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE, MERGE_PP_PREFIXES, INTER_AUTO_YES_PROCESS_PREFIXES,
   MERGE_ENABLED_PURPOSES, OTHER_PURPOSE_OVERLAY, OTHER_PURPOSE_LAYER, OTHER_PURPOSE_STEPSEQ, STEPSEQ_LEAD_DIGITS,
@@ -1204,10 +1205,32 @@ export const isNumCheckRequired = (
   mapType === MAP_TYPE_NEW
   && [...jayerRows, ...oayerRows].some((r) => !!r.pp && r.pp.toLowerCase().includes(NUM_CHECK_PP_KEYWORD));
 
-// claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 판정 신설
-/** 숫자 확인 값이 기준값 이상인가(같으면 참) — 참이면 사진 첨부 영역이 열리고 1장 이상 필수다. 숫자가 아니면 거짓. */
-export const isNumCheckImageRequired = (value: string | undefined, threshold: number): boolean =>
-  isNumericValue(value) && Number((value ?? '').trim()) >= threshold;
+// claude 수정 (2026-11-11): 숫자 입력 → '<기준값> 이상/이하' 드롭다운 — 저장값 생성·해석·판정 헬퍼로 교체
+/** 드롭다운 보기의 저장값 — '<기준값> <단어>'(예: '13 이상'). 화면 언어와 무관하게 한글 단어로 저장한다. */
+export const numCheckOptionValue = (threshold: number, word: typeof NUM_CHECK_OVER | typeof NUM_CHECK_UNDER): string =>
+  `${threshold} ${word}`;
+
+/** 저장값 '<기준값> 이상|이하' 를 나눈다. 형식이 다르면 null. */
+export const parseNumCheckValue = (
+  value: string | undefined,
+): { threshold: string; word: typeof NUM_CHECK_OVER | typeof NUM_CHECK_UNDER } | null => {
+  const [threshold, word, ...rest] = (value ?? '').trim().split(/\s+/);
+  if (rest.length > 0 || !isNumericValue(threshold)) return null;
+  if (word !== NUM_CHECK_OVER && word !== NUM_CHECK_UNDER) return null;
+  return { threshold, word };
+};
+
+/** 숫자 확인 값이 '이상' 보기인가 — 참이면 사진 첨부 영역이 열리고 NUM_CHECK_MIN_IMAGES 장 이상 필수다.
+ *  저장값의 단어로만 판정하므로 나중에 .env 기준값이 바뀌어도 옛 문서의 판정은 그대로다. */
+export const isNumCheckImageRequired = (value: string | undefined): boolean =>
+  parseNumCheckValue(value)?.word === NUM_CHECK_OVER;
+
+/** 저장값을 화면 표시 문구로 바꾼다(ko '13 이상' / en '13 or more'). 형식이 다르면 저장값 그대로, 비면 ''. */
+export const formatNumCheckValue = (t: TFunction, value: string | undefined): string => {
+  const parsed = parseNumCheckValue(value);
+  if (!parsed) return value ?? '';
+  return t(parsed.word === NUM_CHECK_OVER ? 'request.num_check_over' : 'request.num_check_under', { value: parsed.threshold });
+};
 
 /**
  * 문서 단위: 활성 J-layer 행 중 하나라도 판정 키워드를 포함하면 Validation System 대상.
