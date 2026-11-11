@@ -1,8 +1,9 @@
 // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 칸 — M-shot 붙여넣기 칸(MshotImageUpload)과 같은 방식을 여러 칸으로 확장.
-//   숫자 확인 값이 기준값 이상일 때만 StepMap 이 렌더한다. 칸 폭은 M-shot 칸과 같은 50% 가 최대이고, 3칸 이상이면 자동으로 나눈다.
+//   숫자 확인 값이 '<기준값> 이상'일 때만 StepMap 이 렌더한다(2026-11-11 변경 — 이전에는 숫자 ≥ 기준값). 칸 폭은 M-shot 칸과 같은 50% 가 최대이고, 3칸 이상이면 자동으로 나눈다.
 //   (같은 날 후속) '사진 첨부' 라벨·안내 문구를 없애고 '사진 추가' 버튼은 StepMap 의 숫자 확인 값 오른쪽으로 옮겼다 — 이 컴포넌트는 칸만 그린다.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { NUM_CHECK_MIN_IMAGES } from '../constants';
 
 /** 붙여넣기 대상 — 이미 첨부된 사진의 순번(교체) 또는 null(빈 칸 → 새 사진 추가) */
 export type NumCheckPasteTarget = number | null;
@@ -32,8 +33,8 @@ const NumCheckImageUpload: React.FC<NumCheckImageUploadProps> = ({
   images, emptySlots, locked, error, onPaste, onRemoveImage, onRemoveEmptySlot,
 }) => {
   const { t } = useTranslation();
-  // 빈 칸이 하나뿐이고 사진이 없으면 그 칸은 지울 수 없다(입력할 자리가 사라지지 않도록).
-  const canRemoveEmpty = images.length + emptySlots > 1;
+  // claude 수정 (2026-11-11): 사진 최소 2장 — 사진 + 빈 칸이 최소 사진 수 이하이면 빈 칸을 지울 수 없다(입력할 자리가 모자라지 않도록).
+  const canRemoveEmpty = images.length + emptySlots > NUM_CHECK_MIN_IMAGES;
 
   const areaStyle = (hasError: boolean): React.CSSProperties => ({
     border: `2px dashed ${hasError ? '#dc3545' : '#ccc'}`,

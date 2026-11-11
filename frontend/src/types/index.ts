@@ -668,7 +668,7 @@ export interface DetailFormState {
   // claude 수정 (2026-11-10): '숫자 확인 필수' — 해당 여부(해당 없음/해당 있음, PPPP 판정으로 자동 고정)·숫자 값·사진 경로 목록
   num_check: string;
   num_check_value: string;
-  num_check_images: string[];   // 숫자 값이 기준값(.env) 이상일 때만 첨부(여러 장, 빈 칸은 저장하지 않는다)
+  num_check_images: string[];   // num_check_value 가 '<기준값> 이상'일 때만 첨부(2장 이상, 빈 칸은 저장하지 않는다)
 
   photo_backside: string;
   eds_backside: string;
@@ -1013,10 +1013,12 @@ export interface StepInfo {
 /** CLONE/EXISTING 원본 위치·원본 제품 기준 api_maptable CC 상태 — '' 는 해당없음(원본 위치/제품 미입력). */
 export type MapTableCcStatus = '' | 'exists' | 'not_exists';
 
-// claude 수정 (2026-11-10): '숫자 확인 필수' 화면 설정 응답(GET /api/form-options/num-check-config/)
+// claude 수정 (2026-11-11): '숫자 확인 필수' 화면 설정 응답에 이하 기준(lower_threshold) 추가 — 드롭다운 보기 '<image_threshold> 이상' / '<lower_threshold> 이하'
 export interface NumCheckConfig {
-  /** 숫자 확인 값이 이 값 이상이면 사진 첨부 필수(.env NUM_CHECK_IMAGE_THRESHOLD, 기본 10) */
+  /** '이상' 보기의 기준값 — 이 보기를 고르면 사진 첨부 필수(.env NUM_CHECK_IMAGE_THRESHOLD, 기본 13) */
   image_threshold: number;
+  /** '이하' 보기의 기준값(.env NUM_CHECK_LOWER_THRESHOLD, 기본 9) */
+  lower_threshold: number;
 }
 
 export interface MapInfo {

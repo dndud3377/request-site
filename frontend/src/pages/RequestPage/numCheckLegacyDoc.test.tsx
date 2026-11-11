@@ -51,7 +51,7 @@ jest.mock('../../api/client', () => ({
     getOvlLayer: () => Promise.resolve([]),
     getBbExternalData: () => Promise.resolve([]),
     getBarcodeCandidates: () => Promise.resolve([]),
-    getNumCheckConfig: () => Promise.resolve({ image_threshold: 10 }),
+    getNumCheckConfig: () => Promise.resolve({ image_threshold: 13, lower_threshold: 9 }),
   },
   uploadImageAPI: { upload: () => Promise.resolve({ path: 'mshot_images/n1.png' }) },
   guidesAPI: { list: () => Promise.resolve({ data: { results: [], count: 0 } }) },
@@ -74,7 +74,8 @@ function buttonWith(container: HTMLElement, text: string): HTMLButtonElement {
 }
 
 const numCheckSelect = (c: HTMLElement) => c.querySelector('select[name="num_check"]') as HTMLSelectElement;
-const numCheckInput = (c: HTMLElement) => c.querySelector('input[name="num_check_value"]') as HTMLInputElement;
+// claude 수정 (2026-11-11): 숫자 확인 값이 입력칸 → '이상/이하' 드롭다운(select)으로 바뀌어 선택자 변경
+const numCheckInput = (c: HTMLElement) => c.querySelector('select[name="num_check_value"]') as HTMLSelectElement;
 const errorToasts = () =>
   Array.from(document.querySelectorAll('.toast-error')).map((el) => el.textContent ?? '').join('\n');
 

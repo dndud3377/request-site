@@ -14,7 +14,7 @@ import {
   isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
   NUM_CHECK_APPLIES,
 } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText, toExtraLayerRows } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText, toExtraLayerRows, formatNumCheckValue } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
 import {
@@ -2930,7 +2930,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                   </div>
                   <div>
                     <div style={fieldLabel}>{t('request.num_check_value')}</div>
-                    <div style={fieldValue}>{detail.num_check_value || '-'}</div>
+                    {/* claude 수정 (2026-11-11): 저장값 '13 이상'/'9 이하'를 i18n 문구로 표시(숫자 포함, 형식이 다르면 저장값 그대로) */}
+                    <div style={fieldValue}>{formatNumCheckValue(t, detail.num_check_value) || '-'}</div>
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${NUM_CHECK_IMG_COLUMNS}, minmax(0, 1fr))`, gap: '16px' }}>

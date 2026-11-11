@@ -1907,6 +1907,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   - 결재 판정 영향: 백엔드 `RequestDocument.MAP_INFO_FIELDS` 에 `num_check`·`num_check_value`·`num_check_images` 를 추가했다 → R/고정 후결자 합의 뒤 MAP 정보 잠금(PATCH 400)과
     O 재합의 생략(Case U) 비교 구간에 포함된다. 숫자·사진이 바뀌면 O 재합의가 생략되지 않는다. 결재선 생성 규칙은 바뀌지 않았다.
   - 테스트: `components/PagedDetailView.numCheck.test.tsx`(3건), `backend/api/tests.py` `MapInfoLockedFieldCoverageTest`(잠금·O 비교 3건 추가).
+  - **(2026-11-11 변경)** `숫자 확인 값` 저장값이 숫자 → `'13 이상'`/`'9 이하'`(기준값 숫자 + 단어)로 바뀌어, 카드는 `formatNumCheckValue` 로
+    i18n 문구를 보여준다(ko `13 이상`/`9 이하`, en `13 or more`/`9 or less`, 형식이 다르면 저장값 그대로). 사진은 '이상'일 때 최소 2장.
+    결재 판정·`MAP_INFO_FIELDS`·결재선 생성은 바뀌지 않았다. 테스트 `PagedDetailView.numCheck.test.tsx` 4건. 상세는 `docs/REQUEST.md` 2026-11-11 항목.
 
 ---
 

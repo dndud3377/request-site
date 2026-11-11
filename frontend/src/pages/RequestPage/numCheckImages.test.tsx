@@ -1,14 +1,16 @@
 /**
- * claude 수정 (2026-11-10): STEP2 MAP 정보 '숫자 확인 필수' 테스트 — 드롭다운(해당 없음/해당 있음) + 숫자 + 사진 구조
+ * claude 수정 (2026-11-11): STEP2 MAP 정보 '숫자 확인 필수' 테스트 — 숫자 입력칸을 '<기준값> 이상/이하' 드롭다운으로 바꾼 구조
  *
  * 규칙:
  * - MAP 목적이 NEW 이고, J-ayer·O-ayer 의 모든 행(활성·비활성 무관) 중 pp 에 'PPPP' 가 포함(대소문자 무시)되면
- *   드롭다운이 '해당 있음'으로 고정, 아니면 '해당 없음'으로 고정(드롭다운은 항상 잠김).
- * - '해당 있음'이면 숫자 입력칸이 열리고 필수다. 숫자·소수점 하나만 입력된다(음수 부호·문자 불가).
- * - 숫자가 기준값(.env NUM_CHECK_IMAGE_THRESHOLD, 기본 10) 이상이면 사진 칸이 열리고 사진 최소 1장 필수.
- * - '사진 추가' 버튼은 숫자 확인 값 오른쪽에 항상 있고, 숫자가 기준값 이상일 때만 활성화된다('사진 첨부' 라벨·안내 문구 없음).
+ *   해당 여부 드롭다운이 '해당 있음'으로 고정, 아니면 '해당 없음'으로 고정(항상 잠김).
+ * - '해당 있음'이면 숫자 확인 값 드롭다운 [선택 / 13 이상 / 9 이하]이 열리고 필수다.
+ *   숫자는 .env NUM_CHECK_IMAGE_THRESHOLD(기본 13) / NUM_CHECK_LOWER_THRESHOLD(기본 9). 저장값은 '13 이상'처럼 숫자 포함.
+ * - '이상'을 고르면 사진 칸이 2개부터 열리고 사진 최소 2장 필수. 사진 + 빈 칸이 2칸 이하이면 빈 칸 삭제 버튼이 없다.
+ * - '사진 추가' 버튼은 숫자 확인 값 오른쪽에 항상 있고, '이상'일 때만 활성화된다.
  * - 사진 칸은 M-shot 칸과 같은 50% 가 최대 폭이다.
- * - 판정이 풀리면 '해당 없음' + 숫자·사진 비움, 숫자가 기준값 미만이 되면 사진 비움. 저장 문서를 다시 열 때는 저장값을 그대로 둔다.
+ * - 판정이 풀리면 '해당 없음' + 값·사진 비움, '이하'로 바꾸면 사진 비움. 저장 문서를 다시 열 때는 저장값을 그대로 둔다.
+ * - 저장값이 현재 보기에 없으면(기준값이 바뀐 옛 문서) 그 값을 보기로 하나 더 보여 값이 바뀌지 않는다.
  */
 import React from 'react';
 import { render, act, fireEvent, screen, waitFor } from '@testing-library/react';
@@ -17,11 +19,18 @@ import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
 import i18n from '../../i18n';
 import { INITIAL_DETAIL, makeJayerRow, makeOayerRow } from './constants';
-import { isNumCheckRequired, isNumCheckImageRequired, sanitizeUnsignedDecimal } from './helpers';
+import {
+  isNumCheckRequired, isNumCheckImageRequired, numCheckOptionValue, parseNumCheckValue, formatNumCheckValue,
+} from './helpers';
+
+// jsdom 에는 scrollIntoView 가 없다 — 검증 오류 시 해당 칸으로 스크롤하는 동작(다른 RequestPage 테스트와 같은 처리)
+window.HTMLElement.prototype.scrollIntoView = () => {};
 
 beforeAll(async () => { await i18n.changeLanguage('ko'); });
 
-const REQUIRED_MSG = '사진을 1장 이상 첨부해야 합니다.';
+const REQUIRED_MSG = '사진을 2장 이상 첨부해야 합니다.';
+const OVER = '13 이상';
+const UNDER = '9 이하';
 const ADD_BTN = '사진 추가';
 const APPLIES = '해당 있음';
 const NONE = '해당 없음';
@@ -37,8 +46,10 @@ jest.mock('../../contexts/AuthContext', () => ({
   }),
 }));
 
-const mockState: { captured: unknown | null; doc: unknown | null; uploadSeq: number; threshold: number } = {
-  captured: null, doc: null, uploadSeq: 0, threshold: 10,
+const mockState: {
+  captured: unknown | null; doc: unknown | null; uploadSeq: number; imageThreshold: number; lowerThreshold: number;
+} = {
+  captured: null, doc: null, uploadSeq: 0, imageThreshold: 13, lowerThreshold: 9,
 };
 
 jest.mock('../../api/client', () => ({
@@ -60,7 +71,7 @@ jest.mock('../../api/client', () => ({
     getOvlLayer: () => Promise.resolve([]),
     getBbExternalData: () => Promise.resolve([]),
     getBarcodeCandidates: () => Promise.resolve([]),
-    getNumCheckConfig: () => Promise.resolve({ image_threshold: mockState.threshold }),
+    getNumCheckConfig: () => Promise.resolve({ image_threshold: mockState.imageThreshold, lower_threshold: mockState.lowerThreshold }),
   },
   uploadImageAPI: {
     upload: () => {
@@ -88,7 +99,9 @@ function buttonWith(container: HTMLElement, text: string): HTMLButtonElement {
 }
 
 const numCheckSelect = (c: HTMLElement) => c.querySelector('select[name="num_check"]') as HTMLSelectElement;
-const numCheckInput = (c: HTMLElement) => c.querySelector('input[name="num_check_value"]') as HTMLInputElement;
+const numCheckValueSelect = (c: HTMLElement) => c.querySelector('select[name="num_check_value"]') as HTMLSelectElement;
+const optionTexts = (sel: HTMLSelectElement) => Array.from(sel.options).map((o) => o.textContent);
+const optionValues = (sel: HTMLSelectElement) => Array.from(sel.options).map((o) => o.value);
 
 /** 사진 칸 영역 — 없으면 null */
 function imageBlock(container: HTMLElement): HTMLElement | null {
@@ -107,8 +120,8 @@ const pasteAreas = (c: HTMLElement) => Array.from(requireImageBlock(c).querySele
 const deleteButtons = (c: HTMLElement) => Array.from(requireImageBlock(c).querySelectorAll('button'))
   .filter((b) => b.textContent === '삭제') as HTMLButtonElement[];
 
-async function typeValue(container: HTMLElement, value: string) {
-  await act(async () => { fireEvent.change(numCheckInput(container), { target: { value } }); });
+async function selectValue(container: HTMLElement, value: string) {
+  await act(async () => { fireEvent.change(numCheckValueSelect(container), { target: { value } }); });
   await flushEffects();
 }
 
@@ -206,18 +219,38 @@ describe('숫자 확인 필수 — 판정 함수', () => {
     });
   });
 
-  it('isNumCheckImageRequired: 기준값 이상(같으면 참), 숫자가 아니면 거짓', () => {
-    expect(isNumCheckImageRequired('9.99', 10)).toBe(false);
-    expect(isNumCheckImageRequired('10', 10)).toBe(true);
-    expect(isNumCheckImageRequired('10.5', 10)).toBe(true);
-    expect(isNumCheckImageRequired('', 10)).toBe(false);
-    expect(isNumCheckImageRequired('.', 10)).toBe(false);
+  it('numCheckOptionValue / parseNumCheckValue: 저장값은 "<기준값> 이상|이하"', () => {
+    expect(numCheckOptionValue(13, '이상')).toBe('13 이상');
+    expect(numCheckOptionValue(9.5, '이하')).toBe('9.5 이하');
+    expect(parseNumCheckValue('13 이상')).toEqual({ threshold: '13', word: '이상' });
+    expect(parseNumCheckValue(' 9 이하 ')).toEqual({ threshold: '9', word: '이하' });
+    ['', '13', '이상', 'abc 이상', '13 초과', '13 이상 x'].forEach((v) => {
+      expect(parseNumCheckValue(v)).toBeNull();
+    });
   });
 
-  it('sanitizeUnsignedDecimal: 음수 부호·문자를 지우고 숫자와 소수점 하나만 남긴다', () => {
-    expect(sanitizeUnsignedDecimal('-12a.3.4')).toBe('12.34');
-    expect(sanitizeUnsignedDecimal('abc')).toBe('');
-    expect(sanitizeUnsignedDecimal('007')).toBe('007');
+  it('isNumCheckImageRequired: "이상" 보기일 때만 참(숫자 크기와 무관)', () => {
+    expect(isNumCheckImageRequired('13 이상')).toBe(true);
+    expect(isNumCheckImageRequired('5 이상')).toBe(true);
+    expect(isNumCheckImageRequired('9 이하')).toBe(false);
+    expect(isNumCheckImageRequired('20 이하')).toBe(false);
+    expect(isNumCheckImageRequired('')).toBe(false);
+    expect(isNumCheckImageRequired(undefined)).toBe(false);
+    expect(isNumCheckImageRequired('15')).toBe(false);
+  });
+
+  it('formatNumCheckValue: ko "13 이상" / en "13 or more", 형식이 다르면 저장값 그대로', async () => {
+    expect(formatNumCheckValue(i18n.t, '13 이상')).toBe('13 이상');
+    expect(formatNumCheckValue(i18n.t, '9 이하')).toBe('9 이하');
+    expect(formatNumCheckValue(i18n.t, '12')).toBe('12');
+    expect(formatNumCheckValue(i18n.t, '')).toBe('');
+    await i18n.changeLanguage('en');
+    try {
+      expect(formatNumCheckValue(i18n.t, '13 이상')).toBe('13 or more');
+      expect(formatNumCheckValue(i18n.t, '9 이하')).toBe('9 or less');
+    } finally {
+      await i18n.changeLanguage('ko');
+    }
   });
 });
 
@@ -226,23 +259,30 @@ describe('STEP2 숫자 확인 필수', () => {
     mockState.captured = null;
     mockState.doc = null;
     mockState.uploadSeq = 0;
-    mockState.threshold = 10;
+    mockState.imageThreshold = 13;
+    mockState.lowerThreshold = 9;
     localStorage.clear();
   });
 
-  it('PPPP(비활성 J 행) → 해당 있음 고정·숫자칸 필수, 사진 영역은 아직 없음, 숫자 없이 다음 누르면 필수 오류', async () => {
+  it('PPPP(비활성 J 행) → 해당 있음 고정, 값 드롭다운 [선택/13 이상/9 이하], 사진 영역 없음, 선택 없이 다음 누르면 필수 오류', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'ab_pppp_1', st: 'X' }], []);
     expect(numCheckSelect(container).value).toBe(APPLIES);
     expect(numCheckSelect(container).disabled).toBe(true);
-    expect(numCheckInput(container).disabled).toBe(false);
+    const valueSel = numCheckValueSelect(container);
+    expect(valueSel.disabled).toBe(false);
+    expect(valueSel.value).toBe('');
+    expect(optionValues(valueSel)).toEqual(['', OVER, UNDER]);
+    expect(optionTexts(valueSel)).toEqual(['선택하세요', OVER, UNDER]);
+    expect(container.querySelector('input[name="num_check_value"]')).toBeNull();
     expect(imageBlock(container)).toBeNull();
-    // '사진 추가' 버튼은 항상 있지만 숫자를 넣기 전에는 잠겨 있다. '사진 첨부' 라벨은 없다.
+    // '사진 추가' 버튼은 항상 있지만 '이상'을 고르기 전에는 잠겨 있다. '사진 첨부' 라벨은 없다.
     expect(addButton(container).disabled).toBe(true);
     expect(container.textContent).not.toContain('사진 첨부');
+    expect(container.textContent).toContain("'13 이상'을(를) 선택하면 사진을 2장 이상 첨부해야 합니다.");
 
     await act(async () => { buttonWith(container, '다음').click(); });
     await flushEffects();
-    const valueGroup = numCheckInput(container).closest('.form-group') as HTMLElement;
+    const valueGroup = numCheckValueSelect(container).closest('.form-group') as HTMLElement;
     expect(valueGroup.querySelector('.form-error')?.textContent).toBe('필수 입력 항목입니다.');
   });
 
@@ -251,56 +291,59 @@ describe('STEP2 숫자 확인 필수', () => {
     expect(numCheckSelect(container).value).toBe(APPLIES);
   });
 
-  it('숫자칸은 음수 부호·문자를 받지 않는다', async () => {
+  it('"9 이하" 는 사진 영역 없음, "13 이상" 이면 빈 칸 2개가 열리고 사진 2장 미만이면 필수 오류', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
-    await typeValue(container, '-1a2.3.4');
-    expect(numCheckInput(container).value).toBe('12.34');
-  });
-
-  it('기본 기준값 10: 9.9 는 사진 영역 없음, 10 이면 사진 영역이 열리고 사진 없이 다음 누르면 필수 오류', async () => {
-    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
-    await typeValue(container, '9.9');
+    await selectValue(container, UNDER);
     expect(imageBlock(container)).toBeNull();
     expect(addButton(container).disabled).toBe(true);
 
-    await typeValue(container, '10');
+    await selectValue(container, OVER);
     expect(imageBlock(container)).not.toBeNull();
     expect(addButton(container).disabled).toBe(false);
-    expect(pasteAreas(container)).toHaveLength(1);
+    expect(pasteAreas(container)).toHaveLength(2);
     expect(deleteButtons(container)).toHaveLength(0);
+    await act(async () => { buttonWith(container, '다음').click(); });
+    await flushEffects();
+    expect(requireImageBlock(container).textContent).toContain(REQUIRED_MSG);
+
+    // 1장만 붙여넣으면 사진 1 + 빈 칸 1 — 여전히 2장 미만이라 막힌다.
+    await pasteImage(pasteAreas(container)[0]);
+    expect(pasteAreas(container)).toHaveLength(2);
     await act(async () => { buttonWith(container, '다음').click(); });
     await flushEffects();
     expect(requireImageBlock(container).textContent).toContain(REQUIRED_MSG);
   });
 
-  it('기준값은 .env(API) 값을 따른다 — 20 이면 15 는 사진 영역 없음, 20 은 열림', async () => {
-    mockState.threshold = 20;
+  it('기준값은 .env(API) 값을 따른다 — 20/5 면 보기는 "20 이상"/"5 이하", 저장값도 숫자 포함', async () => {
+    mockState.imageThreshold = 20;
+    mockState.lowerThreshold = 5;
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
-    await typeValue(container, '15');
-    expect(imageBlock(container)).toBeNull();
-    expect(addButton(container).disabled).toBe(true);
-    await typeValue(container, '20');
+    expect(optionValues(numCheckValueSelect(container))).toEqual(['', '20 이상', '5 이하']);
+    await selectValue(container, '20 이상');
     expect(imageBlock(container)).not.toBeNull();
-    expect(addButton(container).disabled).toBe(false);
+    const detail = await saveDraftAndCaptureDetail();
+    expect(detail.num_check_value).toBe('20 이상');
   });
 
   it('사진 칸 폭은 M-shot 칸과 같은 50% 가 최대다', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
-    await typeValue(container, '30');
+    await selectValue(container, OVER);
     const slot = pasteAreas(container)[0].parentElement as HTMLElement;
     expect(slot.style.maxWidth).toBe('calc(50% - 8px)');
   });
 
-  it('붙여넣기·사진 추가·개별 삭제·교체 → 저장값은 해당 여부·숫자·첨부된 사진만', async () => {
+  it('붙여넣기·사진 추가·개별 삭제·교체 → 저장값은 해당 여부·"13 이상"·첨부된 사진만', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
-    await typeValue(container, '12');
+    await selectValue(container, OVER);
 
     await pasteImage(pasteAreas(container)[0]);
-    await act(async () => { addButton(container).click(); });
+    await pasteImage(pasteAreas(container)[1]);
+    expect(pasteAreas(container)).toHaveLength(2);
     await act(async () => { addButton(container).click(); });
     await flushEffects();
     expect(pasteAreas(container)).toHaveLength(3);
-    await pasteImage(pasteAreas(container)[1]);
+    // 사진 2장 + 빈 칸 1개 → 3칸이 최소 2칸보다 많아 빈 칸도 지울 수 있다.
+    expect(deleteButtons(container)).toHaveLength(3);
 
     // 사진 크기가 달라도 같은 높이의 상자에 비율을 유지한 채 맞춘다
     const img = requireImageBlock(container).querySelector('img') as HTMLImageElement;
@@ -310,46 +353,52 @@ describe('STEP2 숫자 확인 필수', () => {
 
     let detail = await saveDraftAndCaptureDetail();
     expect(detail.num_check).toBe(APPLIES);
-    expect(detail.num_check_value).toBe('12');
+    expect(detail.num_check_value).toBe(OVER);
     expect(detail.num_check_images).toEqual(['mshot_images/n1.png', 'mshot_images/n2.png']);
 
+    // 빈 칸 삭제 → 2칸(사진 2장)만 남고, 빈 칸 삭제 버튼은 사라진다(사진 삭제 버튼만 2개).
+    await act(async () => { deleteButtons(container)[2].click(); });
+    await flushEffects();
+    expect(pasteAreas(container)).toHaveLength(2);
+    expect(deleteButtons(container)).toHaveLength(2);
+
+    // 사진 1장 삭제 → 사진 1 + 빈 칸 1(최소 2칸 유지), 빈 칸은 지울 수 없다.
     await act(async () => { deleteButtons(container)[0].click(); });
     await flushEffects();
-    await act(async () => { deleteButtons(container)[1].click(); });
-    await flushEffects();
-    expect(pasteAreas(container)).toHaveLength(1);
-    await pasteImage(pasteAreas(container)[0]);
+    expect(pasteAreas(container)).toHaveLength(2);
+    expect(deleteButtons(container)).toHaveLength(1);
+    await pasteImage(pasteAreas(container)[1]);
     detail = await saveDraftAndCaptureDetail();
-    expect(detail.num_check_images).toEqual(['mshot_images/n3.png']);
+    expect(detail.num_check_images).toEqual(['mshot_images/n2.png', 'mshot_images/n3.png']);
 
     await act(async () => { buttonWith(container, '다음').click(); });
     await flushEffects();
     expect(container.textContent).not.toContain(REQUIRED_MSG);
   });
 
-  it('숫자를 기준값 미만으로 내리면 사진 영역이 사라지고 사진도 비워진다', async () => {
+  it('"이상" → "이하" 로 바꾸면 사진 영역이 사라지고 사진도 비워진다', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], []);
-    await typeValue(container, '12');
+    await selectValue(container, OVER);
     await pasteImage(pasteAreas(container)[0]);
-    await typeValue(container, '5');
+    await selectValue(container, UNDER);
     expect(imageBlock(container)).toBeNull();
     expect(addButton(container).disabled).toBe(true);
     const detail = await saveDraftAndCaptureDetail();
-    expect(detail.num_check_value).toBe('5');
+    expect(detail.num_check_value).toBe(UNDER);
     expect(detail.num_check_images).toEqual([]);
   });
 
-  it('PPPP 가 없으면 해당 없음 고정 — 숫자칸 잠김, 필수 오류 없음', async () => {
+  it('PPPP 가 없으면 해당 없음 고정 — 값 드롭다운 잠김, 필수 오류 없음', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PP01' }], [{ pp: 'PP02' }]);
     expect(numCheckSelect(container).value).toBe(NONE);
     expect(numCheckSelect(container).disabled).toBe(true);
-    expect(numCheckInput(container).disabled).toBe(true);
+    expect(numCheckValueSelect(container).disabled).toBe(true);
     expect(imageBlock(container)).toBeNull();
     expect(addButton(container).disabled).toBe(true);
     // 숫자 확인 항목 때문에 막히지 않고 다음 단계(J-ayer)로 넘어간다.
     await act(async () => { buttonWith(container, '다음').click(); });
     await flushEffects();
-    expect(numCheckInput(container)).toBeNull();
+    expect(numCheckValueSelect(container)).toBeNull();
     const detail = await saveDraftAndCaptureDetail();
     expect(detail.num_check).toBe(NONE);
     expect(detail.num_check_value).toBe('');
@@ -358,25 +407,39 @@ describe('STEP2 숫자 확인 필수', () => {
   it('CLONE 은 PPPP 가 있어도 해당 없음', async () => {
     const { container } = await openDocAtMapStep('CLONE', [{ pp: 'PPPP' }], []);
     expect(numCheckSelect(container).value).toBe(NONE);
-    expect(numCheckInput(container).disabled).toBe(true);
+    expect(numCheckValueSelect(container).disabled).toBe(true);
   });
 
-  it('저장 문서를 다시 열면 해당 여부·숫자·사진을 그대로 보여주고 다시 저장해도 유지된다', async () => {
+  it('저장 문서를 다시 열면 해당 여부·값·사진을 그대로 보여주고 다시 저장해도 유지된다', async () => {
     const saved = ['mshot_images/a.png', 'mshot_images/b.png'];
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], {
-      num_check: APPLIES, num_check_value: '12', num_check_images: saved,
+      num_check: APPLIES, num_check_value: OVER, num_check_images: saved,
     });
-    expect(numCheckInput(container).value).toBe('12');
+    expect(numCheckValueSelect(container).value).toBe(OVER);
     expect(requireImageBlock(container).querySelectorAll('img')).toHaveLength(2);
     const detail = await saveDraftAndCaptureDetail();
     expect(detail.num_check).toBe(APPLIES);
-    expect(detail.num_check_value).toBe('12');
+    expect(detail.num_check_value).toBe(OVER);
     expect(detail.num_check_images).toEqual(saved);
   });
 
-  it('MAP 목적을 NEW → CLONE 으로 바꾸면(확인) 해당 없음 + 숫자·사진이 비워진다', async () => {
+  it('저장값이 현재 보기에 없으면(기준값이 바뀐 옛 문서) 그 값을 보기로 더 두고 값·사진을 유지한다', async () => {
+    const saved = ['mshot_images/a.png', 'mshot_images/b.png'];
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], {
-      num_check: APPLIES, num_check_value: '12', num_check_images: ['mshot_images/a.png'],
+      num_check: APPLIES, num_check_value: '15 이상', num_check_images: saved,
+    });
+    const valueSel = numCheckValueSelect(container);
+    expect(optionValues(valueSel)).toEqual(['', OVER, UNDER, '15 이상']);
+    expect(valueSel.value).toBe('15 이상');
+    expect(requireImageBlock(container).querySelectorAll('img')).toHaveLength(2);
+    const detail = await saveDraftAndCaptureDetail();
+    expect(detail.num_check_value).toBe('15 이상');
+    expect(detail.num_check_images).toEqual(saved);
+  });
+
+  it('MAP 목적을 NEW → CLONE 으로 바꾸면(확인) 해당 없음 + 값·사진이 비워진다', async () => {
+    const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], {
+      num_check: APPLIES, num_check_value: OVER, num_check_images: ['mshot_images/a.png', 'mshot_images/b.png'],
     });
     await act(async () => { buttonWith(container, 'CLONE').click(); });
     await flushEffects();
@@ -390,9 +453,9 @@ describe('STEP2 숫자 확인 필수', () => {
     expect(detail.num_check_images).toEqual([]);
   });
 
-  it('요청 목적을 Only MAP 으로 바꿔 J/O 가 비면(MAP 목적 NEW 유지) 해당 없음 + 숫자·사진이 비워진다', async () => {
+  it('요청 목적을 Only MAP 으로 바꿔 J/O 가 비면(MAP 목적 NEW 유지) 해당 없음 + 값·사진이 비워진다', async () => {
     const { container } = await openDocAtMapStep('NEW', [{ pp: 'PPPP' }], [], {
-      num_check: APPLIES, num_check_value: '12', num_check_images: ['mshot_images/a.png'],
+      num_check: APPLIES, num_check_value: OVER, num_check_images: ['mshot_images/a.png', 'mshot_images/b.png'],
     });
     await act(async () => { buttonWith(container, '이전').click(); });
     await flushEffects();

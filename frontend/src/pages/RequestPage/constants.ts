@@ -234,8 +234,15 @@ export const NUM_CHECK_APPLIES = '해당 있음';
 // claude 수정 (2026-11-10): 기존 문서(이 키들 없이 저장된 문서)는 판정·검증하지 않고 저장 시에도 이 키들을 보내지 않는다
 /** '숫자 확인 필수' 저장 키 — 저장본에 num_check 가 없으면 이 기능 도입 전 문서로 본다 */
 export const NUM_CHECK_DETAIL_KEYS: readonly string[] = ['num_check', 'num_check_value', 'num_check_images'];
-/** 사진 첨부 기준값 기본값 — .env NUM_CHECK_IMAGE_THRESHOLD 조회 전·조회 실패 시 사용(백엔드 기본값과 같다) */
-export const NUM_CHECK_IMAGE_THRESHOLD_DEFAULT = 10;
+// claude 수정 (2026-11-11): 숫자 입력 → '<기준값> 이상' / '<기준값> 이하' 드롭다운으로 변경 — 기준값 2개·저장 단어·최소 사진 수
+/** 기준값 기본값 — .env NUM_CHECK_IMAGE_THRESHOLD / NUM_CHECK_LOWER_THRESHOLD 조회 전·조회 실패 시 사용(백엔드 기본값과 같다) */
+export const NUM_CHECK_IMAGE_THRESHOLD_DEFAULT = 13;
+export const NUM_CHECK_LOWER_THRESHOLD_DEFAULT = 9;
+/** detail.num_check_value 저장값의 단어 — 저장값은 '<기준값> <단어>'(예: '13 이상', '9 이하'), 화면 언어와 무관하게 한글로 저장한다 */
+export const NUM_CHECK_OVER = '이상';
+export const NUM_CHECK_UNDER = '이하';
+/** num_check_value 가 '이상'일 때 첨부해야 하는 최소 사진 수 — 빈 붙여넣기 칸도 이 수만큼 처음부터 보인다 */
+export const NUM_CHECK_MIN_IMAGES = 2;
 /**
  * detail.validation_system 에 저장되는 값.
  * 판정 키워드가 아예 없는 문서는 판정 자체가 성립하지 않으므로 VS_NA('해당없음')이며,

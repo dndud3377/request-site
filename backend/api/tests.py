@@ -12470,8 +12470,9 @@ class PersonalFilterPresetApiTest(TestCase):
 
 # claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 조회 API 테스트
 class NumCheckConfigApiTest(TestCase):
-    """GET /api/form-options/num-check-config/ 는 settings.NUM_CHECK_IMAGE_THRESHOLD(.env)를 그대로 돌려준다."""
+    """GET /api/form-options/num-check-config/ 는 settings 의 이상·이하 기준값(.env)을 그대로 돌려준다."""
 
+    # claude 수정 (2026-11-11): 기준값 2개(이상 13 / 이하 9) 응답으로 갱신
     URL = '/api/form-options/num-check-config/'
 
     def setUp(self):
@@ -12480,19 +12481,23 @@ class NumCheckConfigApiTest(TestCase):
         user = UserProfile.objects.create(loginid='ncc_a', mail='ncc_a@company.com', role='PL')
         self.client.force_authenticate(user=user)
 
-    def test_default_threshold_is_10(self):
-        """.env 에 값이 없으면 기본값 10(정수)이다."""
+    def test_default_thresholds_are_13_and_9(self):
+        """.env 에 값이 없으면 기본값 이상 13 / 이하 9(정수)다."""
         from django.conf import settings as dj_settings
-        self.assertEqual(dj_settings.NUM_CHECK_IMAGE_THRESHOLD_DEFAULT, 10.0)
-        with override_settings(NUM_CHECK_IMAGE_THRESHOLD=dj_settings.NUM_CHECK_IMAGE_THRESHOLD_DEFAULT):
+        self.assertEqual(dj_settings.NUM_CHECK_IMAGE_THRESHOLD_DEFAULT, 13.0)
+        self.assertEqual(dj_settings.NUM_CHECK_LOWER_THRESHOLD_DEFAULT, 9.0)
+        with override_settings(
+            NUM_CHECK_IMAGE_THRESHOLD=dj_settings.NUM_CHECK_IMAGE_THRESHOLD_DEFAULT,
+            NUM_CHECK_LOWER_THRESHOLD=dj_settings.NUM_CHECK_LOWER_THRESHOLD_DEFAULT,
+        ):
             res = self.client.get(self.URL)
         self.assertEqual(res.status_code, 200, res.content)
-        self.assertEqual(res.json(), {'image_threshold': 10})
+        self.assertEqual(res.json(), {'image_threshold': 13, 'lower_threshold': 9})
 
-    @override_settings(NUM_CHECK_IMAGE_THRESHOLD=25.0)
-    def test_integer_threshold_is_returned_as_int(self):
-        self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 25})
+    @override_settings(NUM_CHECK_IMAGE_THRESHOLD=25.0, NUM_CHECK_LOWER_THRESHOLD=20.0)
+    def test_integer_thresholds_are_returned_as_int(self):
+        self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 25, 'lower_threshold': 20})
 
-    @override_settings(NUM_CHECK_IMAGE_THRESHOLD=12.5)
-    def test_decimal_threshold_is_kept(self):
-        self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 12.5})
+    @override_settings(NUM_CHECK_IMAGE_THRESHOLD=12.5, NUM_CHECK_LOWER_THRESHOLD=8.5)
+    def test_decimal_thresholds_are_kept(self):
+        self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 12.5, 'lower_threshold': 8.5})

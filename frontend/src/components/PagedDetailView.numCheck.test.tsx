@@ -1,7 +1,8 @@
 /**
- * claude 수정 (2026-11-10): 결재 상세 MAP 정보 탭 '숫자 확인 필수' 사진 카드 테스트 신설
+ * claude 수정 (2026-11-11): 숫자 확인 값이 '13 이상'/'9 이하'(숫자 포함 저장값)로 바뀐 것을 반영
  *
  * '해당 있음'(detail.num_check)이거나 사진이 있으면 카드에 해당 여부·숫자 확인 값·사진을 보여주고, 해당 없음이면 카드가 없다.
+ * 숫자 확인 값은 저장값의 숫자를 그대로 i18n 문구로 보여준다(ko '13 이상' / en '13 or more'), 형식이 다르면 저장값 그대로.
  */
 import React, { useState } from 'react';
 import { render, screen, within } from '@testing-library/react';
@@ -38,13 +39,13 @@ const Harness: React.FC<{ doc: RequestDocument }> = ({ doc }) => {
 };
 
 describe('MAP 정보 탭 — 숫자 확인 필수 사진', () => {
-  it('해당 있음 + 사진이면 카드에 해당 여부·숫자·모든 사진이 보인다', () => {
+  it('해당 있음 + 사진이면 카드에 해당 여부·"13 이상"·모든 사진이 보인다', () => {
     render(<Harness doc={makeDoc({
-      num_check: '해당 있음', num_check_value: '12.5', num_check_images: ['mshot_images/a.png', 'mshot_images/b.png'],
+      num_check: '해당 있음', num_check_value: '13 이상', num_check_images: ['mshot_images/a.png', 'mshot_images/b.png'],
     })} />);
     expect(screen.getByText(TITLE)).toBeDefined();
     expect(screen.getByText(i18n.t('request.num_check_applies'))).toBeDefined();
-    expect(screen.getByText('12.5')).toBeDefined();
+    expect(screen.getByText(i18n.t('request.num_check_over', { value: '13' }))).toBeDefined();
     expect(screen.getByText(i18n.t('request.num_check_image_no', { no: 1 }))).toBeDefined();
     expect(screen.getByText(i18n.t('request.num_check_image_no', { no: 2 }))).toBeDefined();
     expect(screen.getByAltText('num-check-1').getAttribute('src')).toBe('/media/mshot_images/a.png');
@@ -57,13 +58,19 @@ describe('MAP 정보 탭 — 숫자 확인 필수 사진', () => {
     expect(grid.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))');
   });
 
-  it('해당 있음이고 숫자가 기준값 미만이라 사진이 없어도 카드에 해당 여부·숫자가 보인다', () => {
-    render(<Harness doc={makeDoc({ num_check: '해당 있음', num_check_value: '3', num_check_images: [] })} />);
-    // 카드(제목 칩의 바깥 박스) 안에서만 찾는다 — 화면 다른 곳(탭 번호 등)에도 '3' 이 있다.
+  it('해당 있음이고 "9 이하"라 사진이 없어도 카드에 해당 여부·값이 보인다', () => {
+    render(<Harness doc={makeDoc({ num_check: '해당 있음', num_check_value: '9 이하', num_check_images: [] })} />);
+    // 카드(제목 칩의 바깥 박스) 안에서만 찾는다.
     const card = screen.getByText(TITLE).closest('div')?.parentElement?.parentElement as HTMLElement;
-    expect(within(card).getByText('3')).toBeDefined();
+    expect(within(card).getByText(i18n.t('request.num_check_under', { value: '9' }))).toBeDefined();
     expect(within(card).getByText(i18n.t('request.num_check_applies'))).toBeDefined();
     expect(screen.queryByAltText('num-check-1')).toBeNull();
+  });
+
+  it('저장값 형식이 다르면(숫자만 있는 값 등) 저장값을 그대로 보여준다', () => {
+    render(<Harness doc={makeDoc({ num_check: '해당 있음', num_check_value: '12.5', num_check_images: [] })} />);
+    const card = screen.getByText(TITLE).closest('div')?.parentElement?.parentElement as HTMLElement;
+    expect(within(card).getByText('12.5')).toBeDefined();
   });
 
   it('해당 없음이거나 필드가 없는 옛 문서는 카드가 없다', () => {

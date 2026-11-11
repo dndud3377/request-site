@@ -3,13 +3,13 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
-import { DetailFormState, GuideFeatureKey, MapInfo } from '../../../types';
+import { DetailFormState, GuideFeatureKey, MapInfo, NumCheckConfig } from '../../../types';
 import {
   CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, MAP_TYPE_EXISTING, isMapRegisteredType,
   EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue, INITIAL_DETAIL, isMapOptionLockedWhenRegistered,
-  NUM_CHECK_NONE, NUM_CHECK_APPLIES, NUM_CHECK_PP_KEYWORD,
+  NUM_CHECK_NONE, NUM_CHECK_APPLIES, NUM_CHECK_PP_KEYWORD, NUM_CHECK_OVER, NUM_CHECK_UNDER, NUM_CHECK_MIN_IMAGES,
 } from '../constants';
-import { sanitizeSignedDecimal, sanitizeUnsignedDecimal, sourceCodeFromPartid } from '../helpers';
+import { sanitizeSignedDecimal, sourceCodeFromPartid, numCheckOptionValue, formatNumCheckValue } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
 import NumCheckImageUpload, { NumCheckPasteTarget } from './NumCheckImageUpload';
@@ -110,10 +110,11 @@ interface StepMapProps {
   // claude 수정 (2026-11-10): '숫자 확인 필수'(해당 여부 드롭다운 + 숫자 + 사진) props
   /** PPPP 판정(NEW + J/O pp 에 판정 단어) — 참이면 '해당 있음', 거짓이면 '해당 없음'으로 고정(드롭다운은 항상 잠김) */
   numCheckActive: boolean;
-  /** 숫자 확인 값이 기준값 이상인가 — 참이면 사진 첨부 영역을 보여준다 */
+  // claude 수정 (2026-11-11): 숫자 입력 → '이상/이하' 드롭다운 — 기준값 1개(numCheckThreshold) 대신 2개(numCheckConfig)를 받는다
+  /** 숫자 확인 값이 '이상' 보기인가 — 참이면 사진 첨부 영역을 보여준다 */
   numCheckImageRequired: boolean;
-  /** 사진 첨부 기준값(.env NUM_CHECK_IMAGE_THRESHOLD, 기본 10) */
-  numCheckThreshold: number;
+  /** 드롭다운 기준값(.env NUM_CHECK_IMAGE_THRESHOLD 기본 13 / NUM_CHECK_LOWER_THRESHOLD 기본 9) */
+  numCheckConfig: NumCheckConfig;
   /** '숫자 확인 필수' 사진 뒤에 보여줄 빈 붙여넣기 칸 수 */
   numCheckEmptySlots: number;
   handleNumCheckPaste: (e: React.ClipboardEvent<HTMLDivElement>, target: NumCheckPasteTarget) => void;
@@ -169,7 +170,7 @@ const StepMap: React.FC<StepMapProps> = ({
   interAutoLocked,
   numCheckActive,
   numCheckImageRequired,
-  numCheckThreshold,
+  numCheckConfig,
   numCheckEmptySlots,
   handleNumCheckPaste,
   handleNumCheckAddSlot,
@@ -185,6 +186,14 @@ const StepMap: React.FC<StepMapProps> = ({
   // 자동 MAP 매칭으로 정해진 EXISTING — map_type·원본 위치·원본 제품을 잠근다.
   // 자동 매칭이 채우는 값(Step1 라인 + 제품 코드)과 같을 때만 잠가서, 사용자가 EXISTING 을
   // 직접 눌러 원본을 비워 둔 경우는 계속 입력할 수 있게 둔다. Step1 이 바뀌면 자동으로 풀린다.
+  // claude 수정 (2026-11-11): '숫자 확인 값' 드롭다운 보기 — '<이상 기준> 이상' / '<이하 기준> 이하'.
+  // 저장값이 현재 보기에 없으면(나중에 .env 기준값이 바뀐 옛 문서) 그 값을 보기로 하나 더 둬서, 사용자가 고르지 않는 한 값이 바뀌지 않게 한다.
+  const numCheckOptions = [
+    numCheckOptionValue(numCheckConfig.image_threshold, NUM_CHECK_OVER),
+    numCheckOptionValue(numCheckConfig.lower_threshold, NUM_CHECK_UNDER),
+  ];
+  if (detail.num_check_value && !numCheckOptions.includes(detail.num_check_value)) numCheckOptions.push(detail.num_check_value);
+
   const existingAutoLocked = detail.map_type === MAP_TYPE_EXISTING
     && !!detail.line && detail.source_line === detail.line
     && !!detail.source_partid && detail.source_partid === sourceCodeFromPartid(detail.partid_selection);
@@ -689,9 +698,9 @@ const StepMap: React.FC<StepMapProps> = ({
           )}
         </div>
 
-        {/* claude 수정 (2026-11-10): '숫자 확인 필수' — X표시 변경 여부 아래, 예외 구역과 같은 [드롭다운 + 값] 배치.
-            드롭다운은 PPPP 판정이 정하므로 항상 잠긴다. 값은 '해당 있음'일 때만 입력·필수이고,
-            값이 기준값 이상이면 그 아래에 사진 첨부 영역이 열린다.
+        {/* claude 수정 (2026-11-11): '숫자 확인 필수' — X표시 변경 여부 아래, 예외 구역과 같은 [드롭다운 + 값] 배치.
+            해당 여부 드롭다운은 PPPP 판정이 정하므로 항상 잠긴다. 값(이상/이하 드롭다운)은 '해당 있음'일 때만 선택·필수이고,
+            '이상'을 고르면 그 아래에 사진 첨부 영역(최소 2칸)이 열린다.
             라벨 옆 GuideBadge(step2_num_check) — /guide 에서 이 항목의 기능 가이드를 작성할 수 있도록 추가. */}
         <div className="full-width">
           <div className="flex-row">
@@ -706,17 +715,20 @@ const StepMap: React.FC<StepMapProps> = ({
               <label className="form-label">
                 {t('request.num_check_value')} {detail.num_check === NUM_CHECK_APPLIES && <span className="required">*</span>}
               </label>
-              <input
+              {/* claude 수정 (2026-11-11): 숫자 직접 입력(오기입 우려) → '<기준값> 이상' / '<기준값> 이하' 드롭다운, 저장값은 '13 이상'처럼 숫자 포함 */}
+              <select
                 className={`form-control${errors.num_check_value ? ' error' : ''}`}
                 name="num_check_value"
                 value={detail.num_check_value ?? ''}
-                onChange={(e) => handleDetailSet('num_check_value', sanitizeUnsignedDecimal(e.target.value))}
-                inputMode="decimal"
+                onChange={(e) => handleDetailSet('num_check_value', e.target.value)}
                 disabled={detail.num_check !== NUM_CHECK_APPLIES}
-              />
+              >
+                <option value="">{t('request.select_placeholder')}</option>
+                {numCheckOptions.map((v) => <option key={v} value={v}>{formatNumCheckValue(t, v)}</option>)}
+              </select>
               {errors.num_check_value && <span className="form-error">{errors.num_check_value}</span>}
             </div>
-            {/* claude 수정 (2026-11-10): '사진 추가' 버튼을 숫자 확인 값 오른쪽에 항상 두고, 값이 기준값 이상일 때만 활성화 */}
+            {/* claude 수정 (2026-11-11): '사진 추가' 버튼은 숫자 확인 값 오른쪽에 항상 두고, '이상'을 골랐을 때만 활성화 */}
             <div className="form-group" style={{ flexShrink: 0 }}>
               {/* 빈 라벨 — 버튼 높이를 옆 입력칸과 맞추기 위한 자리(보이는 글자 없음) */}
               <label className="form-label" aria-hidden="true">{'\u00a0'}</label>
@@ -734,7 +746,11 @@ const StepMap: React.FC<StepMapProps> = ({
           {/* claude 수정 (2026-11-10): 활성 안내만 빨간 굵은 글씨로 강조(비활성 안내는 회색 그대로) */}
           <span style={numCheckActive ? NUM_CHECK_ACTIVE_HINT_STYLE : NUM_CHECK_LOCKED_HINT_STYLE}>
             {numCheckActive
-              ? t('request.num_check_active_hint', { keyword: NUM_CHECK_PP_KEYWORD.toUpperCase(), threshold: numCheckThreshold })
+              ? t('request.num_check_active_hint', {
+                keyword: NUM_CHECK_PP_KEYWORD.toUpperCase(),
+                over: formatNumCheckValue(t, numCheckOptionValue(numCheckConfig.image_threshold, NUM_CHECK_OVER)),
+                min: NUM_CHECK_MIN_IMAGES,
+              })
               : t('request.num_check_locked_hint', { keyword: NUM_CHECK_PP_KEYWORD.toUpperCase() })}
           </span>
           {numCheckImageRequired && (

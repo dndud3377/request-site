@@ -52,7 +52,7 @@ jest.mock('../../api/client', () => ({
     getOvlLayer: () => Promise.resolve([]),
     getBbExternalData: () => Promise.resolve([]),
     getBarcodeCandidates: () => Promise.resolve([]),
-    getNumCheckConfig: () => Promise.resolve({ image_threshold: 10 }),
+    getNumCheckConfig: () => Promise.resolve({ image_threshold: 13, lower_threshold: 9 }),
   },
   uploadImageAPI: { upload: () => Promise.resolve({ path: 'mshot_images/n1.png' }) },
   guidesAPI: { list: () => Promise.resolve({ data: { results: [], count: 0 } }) },
@@ -74,7 +74,8 @@ function buttonWith(container: HTMLElement, text: string): HTMLButtonElement {
   return btn as HTMLButtonElement;
 }
 
-const numCheckInput = (c: HTMLElement) => c.querySelector('input[name="num_check_value"]') as HTMLInputElement;
+// claude 수정 (2026-11-11): 숫자 확인 값이 입력칸 → '이상/이하' 드롭다운(select)으로 바뀌어 선택자 변경
+const numCheckInput = (c: HTMLElement) => c.querySelector('select[name="num_check_value"]') as HTMLSelectElement;
 
 /** 저장 문서를 열어(편집 로드) STEP2 로 이동한다. */
 async function openDocAtMapStep(detailOverride: Record<string, unknown>, mapInfoLocked: boolean) {
@@ -130,7 +131,7 @@ const mapControls = (c: HTMLElement) => {
 };
 
 // '해당 있음' + 숫자 저장 문서 — 숫자 칸 자체는 disabled 속성이 없어 잠금 전에는 키보드로 입력할 수 있었다.
-const APPLIES_DETAIL = { num_check: NUM_CHECK_APPLIES, num_check_value: '5', num_check_images: [] };
+const APPLIES_DETAIL = { num_check: NUM_CHECK_APPLIES, num_check_value: '9 이하', num_check_images: [] };
 
 describe('MAP 정보 잠금 — 키보드 입력 차단', () => {
   it('잠긴 문서는 영역 안 모든 입력 요소가 :disabled (숫자 확인 값 포함)', async () => {
