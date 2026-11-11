@@ -4973,16 +4973,24 @@ def form_options_mapname(request):
     return JsonResponse({'options': options})
 
 
-# claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 조회 API 신설 — 값은 .env NUM_CHECK_IMAGE_THRESHOLD
+# claude 수정 (2026-11-11): '숫자 확인 필수' 기준값 조회 API — 이하 기준(lower_threshold, .env NUM_CHECK_LOWER_THRESHOLD) 추가
 @api_view(['GET'])
 @permission_classes([IsAuthenticatedInProd])
 def form_options_num_check_config(request):
-    """STEP2 '숫자 확인 필수' 화면 설정 — 숫자 확인 값이 `image_threshold` 이상이면 사진 첨부가 필수다.
+    """STEP2 '숫자 확인 필수' 화면 설정 — 숫자 확인 값 드롭다운 보기 '<image_threshold> 이상' / '<lower_threshold> 이하'.
 
-    값은 `settings.NUM_CHECK_IMAGE_THRESHOLD`(.env, 기본 10). 정수면 정수로 돌려준다(화면 표시 '10.0' 방지).
+    '이상'을 고르면 사진 첨부(2장 이상)가 필수다.
+    값은 `settings.NUM_CHECK_IMAGE_THRESHOLD`(기본 13) · `settings.NUM_CHECK_LOWER_THRESHOLD`(기본 9) — .env.
+    정수면 정수로 돌려준다(화면 표시 '13.0' 방지).
     """
-    threshold = float(settings.NUM_CHECK_IMAGE_THRESHOLD)
-    return JsonResponse({'image_threshold': int(threshold) if threshold.is_integer() else threshold})
+    def _num(value):
+        value = float(value)
+        return int(value) if value.is_integer() else value
+
+    return JsonResponse({
+        'image_threshold': _num(settings.NUM_CHECK_IMAGE_THRESHOLD),
+        'lower_threshold': _num(settings.NUM_CHECK_LOWER_THRESHOLD),
+    })
 
 
 # claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
