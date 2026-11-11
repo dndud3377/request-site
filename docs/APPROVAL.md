@@ -1592,7 +1592,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 전이(액션) | 메일 이벤트 | 수신자 |
 |-----------|-----------|--------|
 | `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송, 제목에 `[이름님]`, 2026-07 추가) |
-| `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
+| `peer_approve`/`peer_submit` | stage_arrival(R) | R 담당자 지정 시 그 1명, **미지정 시 TE_R 팀 전원**(고정 주소 폴백은 2026-08 폐지 — `docs/MAIL.md` §3) |
 | `approve_step`(R) | stage_arrival(P·**J**·O·E) | 미배정 시 **P·J·O·E 모두 팀 전원**. **(2026-08)** J 도착 메일이 P 완료 시점에서 이 시점으로 앞당겨졌고, 수신자도 고정 주소 1곳 → TE_J 팀 전원으로 바뀌었다 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
 | `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | **현재(최종) 회차 결재 경로에 참여했던 전원 + 작성자 + 문서 공유 그룹 멤버**(중복 제거, 작성자·공유 그룹은 2026-11-10 추가). 2026-07부터 '작성자 그룹 멤버' 방식에서 변경 — `mailer.resolve_approved_recipients` |
