@@ -4993,12 +4993,13 @@ def form_options_num_check_config(request):
     })
 
 
-# claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용
+# claude 수정 (2026-11-12): 응답에 AAA4 추가(화면 표시 없음 — '숫자 확인 값' 자동 반려 비교용 값 제공)
 @api_view(['GET'])
 @permission_classes([IsAuthenticatedInProd])
 def form_options_map_info(request):
-    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 + CC 참고값(oc) 반환.
-    (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용)
+    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3/AAA4 참고 정보 + CC 참고값(oc) 반환.
+    (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용. AAA4 는 2026-11 추가 — 화면에는 아직 표시하지 않는다)
+    무인증 조회는 운영에서 막는다(R-08, 2026-10-23).
 
     AAA1~3(ox/oy/sr)과 cc_status(oc) 전부 참고용일 뿐 상신 데이터에는 포함되지 않는다
     (작성 화면에만 표시). CC 존재/미존재 자체는 이 값을 참고해 사용자가 mshot_change_cc 에
@@ -5009,7 +5010,7 @@ def form_options_map_info(request):
     partid = request.GET.get('partid', '')
     lineid = LINE_TO_LINEID_MAP.get(line)
     cc_status = compute_map_table_cc_status(line, partid)
-    empty = {'AAA1': None, 'AAA2': None, 'AAA3': None, 'cc_status': cc_status}
+    empty = {'AAA1': None, 'AAA2': None, 'AAA3': None, 'AAA4': None, 'cc_status': cc_status}
     if not lineid or not partid:
         return JsonResponse(empty)
 
@@ -5022,7 +5023,9 @@ def form_options_map_info(request):
     if not entry:
         return JsonResponse(empty)
 
-    return JsonResponse({'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3, 'cc_status': cc_status})
+    return JsonResponse({
+        'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3, 'AAA4': entry.AAA4, 'cc_status': cc_status,
+    })
 
 
 # 변경 현황 화면이 한 번에 그룹핑 대상으로 읽어올 최대 변경 이력 행 수. 이 이상 쌓여 있으면
