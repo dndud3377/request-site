@@ -3963,6 +3963,7 @@ class WithdrawFlowTest(TestCase):
         self.assertEqual(res.status_code, 403)
         self.assertTrue(self._exists(doc))
 
+    # claude 수정 (2026-11-12): 반려 문서 철회 거부 메일도 '반려 상태 유지' 문구인지 확인
     def test_rejected_withdraw_reject_keeps_document_rejected(self):
         doc, _pl, _r = self._rejected_doc_at_r()
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
@@ -3972,8 +3973,11 @@ class WithdrawFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
         self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'rejected')
-        self.assertIn('withdraw_rejected', self._events())
+        noti = MailNotification.objects.get(event_type='withdraw_rejected')
+        self.assertIn('의뢰서는 반려 상태로 유지됩니다.', noti.contents)
+        self.assertNotIn('결재는 그대로 진행됩니다.', noti.contents)
 
+    # claude 수정 (2026-11-12): 반려 문서 철회 취소 메일도 '반려 상태 유지' 문구인지 확인
     def test_rejected_withdraw_cancel_keeps_document_rejected(self):
         doc, _pl, _r = self._rejected_doc_at_r()
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
@@ -3982,6 +3986,9 @@ class WithdrawFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
         self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'cancelled')
+        noti = MailNotification.objects.get(event_type='withdraw_cancelled')
+        self.assertIn('의뢰서는 반려 상태로 유지됩니다.', noti.contents)
+        self.assertNotIn('결재를 그대로 진행해 주세요.', noti.contents)
 
     def test_rejected_withdraw_pending_blocks_resubmit_and_edit(self):
         """확인 대기 중에는 수정 저장·재상신이 막히고, 취소되면 다시 수정할 수 있다."""
@@ -4095,6 +4102,7 @@ class WithdrawFlowTest(TestCase):
         self.assertTrue(self._exists(doc))
 
     # ----- 거부 / 취소 -----
+    # claude 수정 (2026-11-12): 진행 중 문서는 종전 '결재 진행' 문구 유지(회귀 확인)
     def test_target_step_can_reject_withdraw(self):
         doc = self._doc()
         self._step(doc, 'R', assignee=self.rfg)
@@ -4106,7 +4114,9 @@ class WithdrawFlowTest(TestCase):
         self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'rejected')
         noti = MailNotification.objects.get(event_type='withdraw_rejected')
         self.assertIn('wd_a@c.com', noti.recipients)
+        self.assertIn('결재는 그대로 진행됩니다.', noti.contents)
 
+    # claude 수정 (2026-11-12): 진행 중 문서는 종전 '결재 진행' 문구 유지(회귀 확인)
     def test_requester_can_cancel_before_confirm(self):
         doc = self._doc()
         self._step(doc, 'R', assignee=self.rfg)
@@ -4118,6 +4128,7 @@ class WithdrawFlowTest(TestCase):
         self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'cancelled')
         noti = MailNotification.objects.get(event_type='withdraw_cancelled')
         self.assertEqual(noti.recipients, ['wd_r@c.com'])
+        self.assertIn('결재를 그대로 진행해 주세요.', noti.contents)
 
     def test_non_requester_cannot_cancel(self):
         doc = self._doc()
