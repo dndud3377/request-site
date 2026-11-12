@@ -547,12 +547,24 @@ def _current_round_step_emails(document, action=None):
     qs = ApprovalStep.objects.filter(document=document, round=max_round)
     if action is not None:
         qs = qs.filter(action=action)
-    return list(
+    emails = list(
         qs.exclude(assignee__isnull=True)
         .exclude(assignee__mail='')
         .values_list('assignee__mail', flat=True)
         .distinct()
     )
+    # claude 수정 (2026-11-12): 대신 처리한 처리자(MASTER·같은 팀원)도 담당자와 함께 받는다(담당자+처리자 둘 다)
+    for mail in (qs.exclude(acted_by__isnull=True).exclude(acted_by__mail='')
+                 .values_list('acted_by__mail', flat=True).distinct()):
+        if mail not in emails:
+            emails.append(mail)
+    return emails
+
+
+def _actor_mail(step):
+    """단계를 실제로 처리한 사람의 메일 — 처리자(acted_by)가 있으면 처리자, 없으면 담당자(예전 데이터·자동 반려)."""
+    person = step.acted_by or step.assignee
+    return person.mail if person and person.mail else ''
 
 
 def _remaining_stage_team_groups(document, max_round):
@@ -654,7 +666,7 @@ def resolve_reject_recipients(document):
     if max_round is not None:
         rejected_steps = list(
             ApprovalStep.objects.filter(document=document, round=max_round, action='rejected')
-            .select_related('assignee')
+            .select_related('assignee', 'acted_by')
         )
         rejected_agents = {s.agent for s in rejected_steps}
 
@@ -674,8 +686,9 @@ def resolve_reject_recipients(document):
                 if mail not in individual_emails:
                     individual_emails.append(mail)
         elif rejected_agents:
+            # claude 수정 (2026-11-12): '반려한 본인 제외'는 실제 반려 처리자 기준(대신 반려한 MASTER·팀원)
             rejecter_mails = set() if is_auto else {
-                s.assignee.mail for s in rejected_steps if s.assignee and s.assignee.mail
+                _actor_mail(s) for s in rejected_steps if _actor_mail(s)
             }
             for mail in _remaining_stage_individual_emails(document, max_round):
                 if mail and mail not in rejecter_mails and mail not in individual_emails:
@@ -782,9 +795,12 @@ def resolve_withdraw_target_recipients(document, step_ids):
     team_groups = {}
     steps = (
         ApprovalStep.objects.filter(document=document, id__in=list(step_ids or []))
-        .select_related('assignee')
+        .select_related('assignee', 'acted_by')
     )
     for step in steps:
+        # claude 수정 (2026-11-12): 그 단계를 대신 처리했던 처리자도 함께 받는다(담당자+처리자 둘 다)
+        if step.acted_by and step.acted_by.mail and step.acted_by.mail not in individual_emails:
+            individual_emails.append(step.acted_by.mail)
         if step.assignee and step.assignee.mail:
             if step.assignee.mail not in individual_emails:
                 individual_emails.append(step.assignee.mail)
@@ -872,10 +888,13 @@ def _reached_stage_individual_emails(document):
     이들은 역할(팀)이 아니라 지정된 개인이므로 그 담당자 본인만 "개인 수신자" 묶음에 넣는다.
     """
     emails = []
-    steps = ApprovalStep.objects.filter(document=document).select_related('assignee')
+    steps = ApprovalStep.objects.filter(document=document).select_related('assignee', 'acted_by')
     for step in steps:
         if step.agent in ('RA', 'SA') and step.assignee and step.assignee.mail:
             emails.append(step.assignee.mail)
+        # claude 수정 (2026-11-12): RA·SA 를 대신 처리한 처리자도 함께 받는다(담당자+처리자 둘 다)
+        if step.agent in ('RA', 'SA') and step.acted_by and step.acted_by.mail and step.acted_by.mail not in emails:
+            emails.append(step.acted_by.mail)
     return emails
 
 
@@ -1054,7 +1073,8 @@ def _route_rows(document):
             if agent == 'RA':
                 row_label = (POST_APPROVER_FIXED_LABEL if _is_fixed_post_approver(s)
                              else POST_APPROVER_EXTRA_LABEL)
-            rows.append((row_label, s.assignee_name or '', status, s.comment or ''))
+            # claude 수정 (2026-11-12): 처리한 단계는 실제 처리자 이름(대신 처리한 MASTER·팀원)을 보여 준다
+            rows.append((row_label, s.acted_by_name or s.assignee_name or '', status, s.comment or ''))
     return rows
 
 

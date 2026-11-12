@@ -3664,17 +3664,21 @@ type Page = { label: string; content: React.ReactNode; key?: string };
   };
 
   // 단일 ApprovalStep → 표시 정보
+  // claude 수정 (2026-11-12): 처리한 단계(합의·반려)는 실제 처리자(대신 처리한 MASTER·팀원)의 이름·메일을 보여 준다.
+  // 처리자 기록이 없는 예전 데이터·자동 반려는 담당자를 보여 준다.
   const stepToInfo = (s: NonNullable<ReturnType<typeof getStep>>): StepDisplayInfo => {
     const email = s.assignee_mail || undefined;
+    const actorName = s.acted_by_name || s.assignee_name || undefined;
+    const actorEmail = (s.acted_by_name ? s.acted_by_mail : s.assignee_mail) || undefined;
     if (s.action === 'approved') return {
       status: 'approved', label: t('approval.agree'),
-      assignee: s.assignee_name || undefined, email,
+      assignee: actorName, email: actorEmail,
       date: formatDateTimeShort(s.acted_at),
       comment: s.comment || undefined,
     };
     if (s.action === 'rejected') return {
       status: 'rejected', label: t('approval.reject'),
-      assignee: s.assignee_name || undefined, email,
+      assignee: actorName, email: actorEmail,
       date: formatDateTimeShort(s.acted_at),
       comment: s.comment || undefined,
     };
