@@ -1588,6 +1588,8 @@ class MapName(models.Model):
     AAA1 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA1')
     AAA2 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA2')
     AAA3 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA3')
+    # claude 수정 (2026-11-12): AAA4 추가 — '숫자 확인 값'과 비교해 자동 반려 판정(num_check_reject)에 쓴다
+    AAA4 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA4')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
