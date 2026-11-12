@@ -2482,10 +2482,19 @@ N 은 선택 당시 기준값)을 저장한다. 외부 DB 의 MAP 이름 캐시(
 - 반려 메일: 제목 `[반려] [자동반려] {제목}`(변경 감지와 같음), 안내 문구만 "숫자 확인 값이 AAA4 값과 맞지 않아 의뢰서가
   자동 반려되었습니다. 숫자 확인 값을 확인한 뒤 재상신해 주세요."(`mailer.NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX` 로 구분).
   수신자 규칙은 기존 자동 반려와 같다(반려 단계 담당자도 받음).
+- **결재 현황 '숫자 불일치' 배지** (2026-11-12 후속): 숫자 확인 자동 반려 문서는 목록 '목적' 칸에 주황 **'숫자 불일치'**
+  배지를 띄운다(누르지 않는 배지 — 툴팁 "숫자 확인 값이 AAA4 값과 맞지 않아 자동 반려되었습니다. 결재 경로 탭의 반려 의견을
+  확인하세요."). 응답 필드 `num_check_auto_rejected`(목록·상세, `serializers.is_num_check_auto_rejected` — 반려 상태 +
+  최신 회차 반려 의견이 `[자동반려] 숫자 확인 불일치` 로 시작). 재상신하면 사라진다. 목적 필터에 가상 옵션 **'숫자 불일치'**
+  추가(나만의 필터에도 저장 가능). 상세 창·이력 조회에는 표시하지 않는다. 가이드 기능 키는 두지 않는다(사용자 결정).
+  - **'변경 감지' 배지와 분리**: 결재 중 '변경 감지'가 떠 있던 문서가 숫자 확인으로 반려돼도 `layer_drift_auto_rejected` 는
+    False 다(이전에는 `[자동반려]` 머리말만 보고 True 가 돼, 반려 후에도 '변경 감지' 배지가 남아 반려 원인을 변경 감지로
+    오해할 수 있었다). 변경 감지 자동 반려 문서는 기존과 같다.
 - 경합 방지: 반려 직전 문서를 잠그고(`select_for_update`) 상태·철회·판정을 다시 확인한다 — 그 사이 수정·재상신되면 반려하지 않는다.
   문서마다 별도 트랜잭션이라 한 문서가 실패해도 나머지는 계속된다.
 - 구현: `backend/api/num_check_reject.py`, `scheduler.py` `sync_form_options`, `mailer.py` `_is_num_check_auto_rejected`.
-  테스트: `NumCheckAaa4AutoRejectTest`, `SyncFormOptionsNumCheckHookTest`.
+  배지: `serializers.py` `is_num_check_auto_rejected`, `utils/approvalTable.ts` `isNumCheckMismatchVisible`·`NUM_CHECK_MISMATCH_FILTER_OPTION`,
+  `ApprovalPage.tsx` 목적 칸. 테스트: `NumCheckAaa4AutoRejectTest`, `SyncFormOptionsNumCheckHookTest`, `approvalTable.test.ts`.
 - **수동 검증** (개발환경 — `HEAVY_SYNC_JOB_IDS` 라 dev 스케줄러에서는 `sync_form_options` 가 돌지 않으므로 판정을 직접 실행한다)
   1. 요청서 작성 → STEP1 라인·제품 선택(J/O pp 에 `PPPP` 가 든 제품) → STEP2 MAP 목적 `NEW` → '숫자 확인 값' `13 이상` + 사진 2장 → 상신.
   2. DB 에서 그 라인(lineid)·제품의 `api_mapname` 행 `AAA4` 를 `10` 으로 맞춘다(행이 없으면 `lineid`·`partid='{제품}_01'` 로 1행 추가).
@@ -2495,6 +2504,9 @@ N 은 선택 당시 기준값)을 저장한다. 외부 DB 의 MAP 이름 캐시(
      `[자동반려] 숫자 확인 불일치: 선택값 '13 이상', AAA4 10`. 이력 조회 → '반려' 탭에 반려자 `시스템(자동반려)`.
   5. 메일 큐(`MailNotification`, event `rejected`) 본문에 "숫자 확인 값이 AAA4 값과 맞지 않아" — "마스터 DB 변경" 문구가 아니어야 한다.
   6. 같은 절차로 AAA4 를 `13`·`15`, 또는 빈값·`N/A` 로 두면 3번 출력이 `[]` 이고 문서는 그대로여야 한다(실패 신호: 반려됨).
+  7. 4번 문서: 결재 현황 목록 '목적' 칸에 주황 **'숫자 불일치'** 배지, 마우스를 올리면 툴팁. 결재 중 '변경 감지'가 떠 있던 문서여도
+     **'변경 감지' 배지는 없어야** 한다(실패 신호: 빨간 '변경 감지' 배지). 목적 필터 → '숫자 불일치'만 체크 → 이 문서만 남는다.
+     '수정·재상신' 후에는 배지가 사라진다.
 
 ## 요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동 (2026-10-05)
 
