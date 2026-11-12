@@ -30,7 +30,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActiveStageStep, getStagePendingEnteredAt, isMyDocument,
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
-  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible,
+  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible, NUM_CHECK_MISMATCH_FILTER_OPTION, isNumCheckMismatchVisible,
 } from '../utils/approvalTable';
 import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
@@ -75,10 +75,14 @@ const AGENT_TO_ROLE: Record<string, string> = {
 // ADI CD 변경처럼 map_type 자체가 없는 문서를 가리키는 MAP_PURPOSE_NA.
 const MAP_PURPOSE_OPTIONS = ['NEW', MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ, MAP_PURPOSE_NA];
 
+// 요청 목적 필터 선택지 — 실제 목적 + 가상 옵션('변경 감지'·'숫자 불일치')
+// claude 수정 (2026-11-12): 가상 옵션 '숫자 불일치' 추가 — 필터 드롭다운과 나만의 필터가 같은 목록을 쓰도록 상수로 묶음
+const PURPOSE_FILTER_OPTIONS = [...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION, NUM_CHECK_MISMATCH_FILTER_OPTION];
+
 // claude 수정 (2026-11-09): '나만의 필터'가 다루는 3종의 선택지 — 필터 바 드롭다운 선택지와 같다(여기 없는 저장값은 무시)
 const PRESET_FILTER_OPTIONS: PresetFilterOptions = {
   lines: OPTION_LINE,
-  purposes: [...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION],
+  purposes: PURPOSE_FILTER_OPTIONS,
   mapPurposes: MAP_PURPOSE_OPTIONS,
 };
 
@@ -845,7 +849,9 @@ export default function ApprovalPage(): React.ReactElement {
       if (purposeFilter.size > 0) {
         const matchesPurpose = purposeFilter.has(detail.purpose);
         const matchesDrift = purposeFilter.has(LAYER_DRIFT_FILTER_OPTION) && isLayerDriftVisible(d);
-        if (!matchesPurpose && !matchesDrift) return false;
+        // claude 수정 (2026-11-12): 목적 필터 가상 옵션 '숫자 불일치' — 숫자 확인 자동 반려 문서
+        const matchesNumCheck = purposeFilter.has(NUM_CHECK_MISMATCH_FILTER_OPTION) && isNumCheckMismatchVisible(d);
+        if (!matchesPurpose && !matchesDrift && !matchesNumCheck) return false;
       }
       if (mapFilter.size > 0 && !mapFilter.has(getMapPurposeKey(detail))) return false;
       const submitted = getDocSubmittedDate(d).slice(0, 10);
@@ -2069,7 +2075,7 @@ export default function ApprovalPage(): React.ReactElement {
           >
             {renderFilterSummary(t('approval.col_purpose'), purposeFilter)}
           </button>
-          {openFilterDropdown === 'purpose' && renderCheckboxPopover([...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION], purposeFilter, setPurposeFilter)}
+          {openFilterDropdown === 'purpose' && renderCheckboxPopover(PURPOSE_FILTER_OPTIONS, purposeFilter, setPurposeFilter)}
         </div>
 
         <div className="column-filter-anchor">
@@ -2294,6 +2300,16 @@ export default function ApprovalPage(): React.ReactElement {
                           >
                             {t('approval.layer_drift_badge')}
                           </button>
+                        )}
+                        {/* claude 수정 (2026-11-12): 숫자 확인 자동 반려 '숫자 불일치' 배지 — 누르지 않는 배지, 툴팁으로 사유 안내 */}
+                        {isNumCheckMismatchVisible(doc) && (
+                          <span
+                            className="badge badge-num-check-mismatch"
+                            style={{ alignSelf: 'flex-start' }}
+                            title={t('approval.num_check_mismatch_badge_tooltip')}
+                          >
+                            {t('approval.num_check_mismatch_badge')}
+                          </span>
                         )}
                       </div>
                     </td>
