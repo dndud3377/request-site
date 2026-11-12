@@ -2460,6 +2460,42 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 - 구현: `backend/api/layer_drift.py` `auto_reject_document` / `auto_reject_if_confirmed`,
   `views.py` `cancel_withdraw`. 테스트: `LayerDriftAutoRejectTest`.
 
+## 숫자 확인 값 자동 반려 (2026-11-12)
+
+STEP2 '숫자 확인 필수'가 `해당 있음`인 문서는 '숫자 확인 값'(`detail.num_check_value` = `'<N> 이상'` / `'<N> 이하'`,
+N 은 선택 당시 기준값)을 저장한다. 외부 DB 의 MAP 이름 캐시(`api_mapname`) **`AAA4`** 가 그 선택과 맞지 않으면
+시스템이 문서를 **자동 반려**한다.
+
+| 항목 | 규칙 |
+|---|---|
+| 판정 시점 | `scheduler.sync_form_options()`(MAP 이름 동기화, **1시간** 주기) 직후. 불일치가 **1번 확인되면 바로** 반려(변경 감지와 달리 2주기 연속 확인 없음) |
+| 대상 문서 | `submitted` · `under_review` · `pause` 이고 `num_check='해당 있음'` + `num_check_value` 있음. **1·2·3구역 무관**, P·J·O 합의 여부도 보지 않는다 |
+| 제외 | 철회 확인 대기 중(`WithdrawRequest.state='requested'`, 결재 동결) — 철회가 취소·거부되면 다음 주기에 판정. `draft`·`approved`·`rejected` 는 대상 아님. '숫자 확인 필수' 도입 전 문서(`num_check` 키 없음)도 판정하지 않는다 |
+| AAA4 조회 | STEP1 **라인**(`detail.line` → `LINE_TO_LINEID_MAP`) + **제품**(`detail.partid_selection`). `partid` 가 제품과 같거나 `{제품}_` 로 시작하는 행 중 `id` 가 가장 작은 행(map-info API 와 같은 매칭) |
+| 비교 | `'<N> 이상'` → AAA4 **< N** 이면 반려 / `'<N> 이하'` → AAA4 **> N** 이면 반려(같으면 통과). N 은 문서 저장값(현재 `.env` 기준값 아님) |
+| 판정 불가 → 반려 안 함 | 매칭 행 없음 · AAA4 빈값/NULL · AAA4 숫자 아님 · 저장값 형식이 `'<N> 이상|이하'` 가 아님 · 라인/제품 없음 |
+
+- 반려 단계: 현재 회차의 **가장 앞선 pending 단계 1개**(변경 감지 자동 반려와 같다). 단계 의견은
+  `[자동반려] 숫자 확인 불일치: 선택값 '13 이상', AAA4 10.5`.
+- 이후는 변경 감지 자동 반려와 같다 — 중단 요청(`requested`·`confirmed`)은 `cancelled`, `status='rejected'`,
+  반려 이력 스냅샷(반려자 `system` / `시스템(자동반려)`, `layer_drift_detected=False`), 반려 메일.
+- 반려 메일: 제목 `[반려] [자동반려] {제목}`(변경 감지와 같음), 안내 문구만 "숫자 확인 값이 AAA4 값과 맞지 않아 의뢰서가
+  자동 반려되었습니다. 숫자 확인 값을 확인한 뒤 재상신해 주세요."(`mailer.NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX` 로 구분).
+  수신자 규칙은 기존 자동 반려와 같다(반려 단계 담당자도 받음).
+- 경합 방지: 반려 직전 문서를 잠그고(`select_for_update`) 상태·철회·판정을 다시 확인한다 — 그 사이 수정·재상신되면 반려하지 않는다.
+  문서마다 별도 트랜잭션이라 한 문서가 실패해도 나머지는 계속된다.
+- 구현: `backend/api/num_check_reject.py`, `scheduler.py` `sync_form_options`, `mailer.py` `_is_num_check_auto_rejected`.
+  테스트: `NumCheckAaa4AutoRejectTest`, `SyncFormOptionsNumCheckHookTest`.
+- **수동 검증** (개발환경 — `HEAVY_SYNC_JOB_IDS` 라 dev 스케줄러에서는 `sync_form_options` 가 돌지 않으므로 판정을 직접 실행한다)
+  1. 요청서 작성 → STEP1 라인·제품 선택(J/O pp 에 `PPPP` 가 든 제품) → STEP2 MAP 목적 `NEW` → '숫자 확인 값' `13 이상` + 사진 2장 → 상신.
+  2. DB 에서 그 라인(lineid)·제품의 `api_mapname` 행 `AAA4` 를 `10` 으로 맞춘다(행이 없으면 `lineid`·`partid='{제품}_01'` 로 1행 추가).
+  3. backend 컨테이너에서 `python manage.py shell -c "from api import num_check_reject as n; print(n.reject_mismatched_in_progress())"`
+     → 기대: 출력 목록에 1번 문서 id.
+  4. 결재 현황 → 그 문서 → 상태 `반려`, '결재 경로' 탭의 PL(또는 진행 중이던 단계) 의견이
+     `[자동반려] 숫자 확인 불일치: 선택값 '13 이상', AAA4 10`. 이력 조회 → '반려' 탭에 반려자 `시스템(자동반려)`.
+  5. 메일 큐(`MailNotification`, event `rejected`) 본문에 "숫자 확인 값이 AAA4 값과 맞지 않아" — "마스터 DB 변경" 문구가 아니어야 한다.
+  6. 같은 절차로 AAA4 를 `13`·`15`, 또는 빈값·`N/A` 로 두면 3번 출력이 `[]` 이고 문서는 그대로여야 한다(실패 신호: 반려됨).
+
 ## 요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동 (2026-10-05)
 
 ### 1. 결재 경로 탭: '검토중' 단계에도 시간 표시
