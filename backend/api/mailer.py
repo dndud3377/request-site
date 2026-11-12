@@ -527,6 +527,11 @@ def _current_round(document):
 # 머리말. 반려 메일 제목·본문 분기와 수신자 판정이 이 머리말로 '자동 반려 문서'를 알아본다.
 AUTO_REJECT_COMMENT_PREFIX = '[자동반려]'
 
+# claude 수정 (2026-11-12): '숫자 확인 값' ↔ AAA4 불일치 자동 반려(num_check_reject) 머리말 추가 — 반려 메일 안내 문구 분기용
+# 숫자 확인 자동 반려의 단계 의견 머리말. AUTO_REJECT_COMMENT_PREFIX 로 시작하므로 수신자 규칙은 변경 감지
+# 자동 반려와 같고, 안내 문구(headline)만 이 머리말로 구분한다.
+NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX = f'{AUTO_REJECT_COMMENT_PREFIX} 숫자 확인 불일치'
+
 
 def _is_auto_rejected(document):
     """현재(최종) 회차의 반려 단계가 자동 반려(단계 의견이 AUTO_REJECT_COMMENT_PREFIX 로 시작)인지."""
@@ -536,6 +541,18 @@ def _is_auto_rejected(document):
     return ApprovalStep.objects.filter(
         document=document, round=max_round, action='rejected',
         comment__startswith=AUTO_REJECT_COMMENT_PREFIX,
+    ).exists()
+
+
+# claude 수정 (2026-11-12): 숫자 확인 자동 반려 판별 함수 신설 — 반려 메일 안내 문구를 변경 감지 자동 반려와 구분
+def _is_num_check_auto_rejected(document):
+    """현재(최종) 회차의 반려 단계가 숫자 확인 자동 반려(NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX)인지."""
+    max_round = _current_round(document)
+    if max_round is None:
+        return False
+    return ApprovalStep.objects.filter(
+        document=document, round=max_round, action='rejected',
+        comment__startswith=NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX,
     ).exists()
 
 
@@ -1216,8 +1233,15 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
             subject = f'{name_prefix}[결재 요청] {document.title}'
         headline = '후결 요청이 도착했습니다.' if agent == 'RA' else f'{label} 단계 결재가 도착했습니다.'
         stage_value = label
+    # claude 수정 (2026-11-12): 숫자 확인 자동 반려는 '마스터 DB 변경' 대신 숫자 확인 불일치 안내 문구를 쓴다
     elif event_type == 'rejected':
-        if _is_auto_rejected(document):
+        if _is_num_check_auto_rejected(document):
+            subject = f'[반려] {AUTO_REJECT_COMMENT_PREFIX} {document.title}'
+            headline = (
+                '숫자 확인 값이 AAA4 값과 맞지 않아 의뢰서가 자동 반려되었습니다. '
+                '숫자 확인 값을 확인한 뒤 재상신해 주세요.'
+            )
+        elif _is_auto_rejected(document):
             subject = f'[반려] {AUTO_REJECT_COMMENT_PREFIX} {document.title}'
             headline = (
                 '마스터 DB 변경이 감지되어 의뢰서가 자동 반려되었습니다. '
