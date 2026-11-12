@@ -29,6 +29,16 @@ export const isLayerDriftVisible = (doc: RequestDocument): boolean =>
   (!!doc.layer_drift_detected && LAYER_DRIFT_IN_PROGRESS_STATUSES.includes(doc.status))
   || !!doc.layer_drift_auto_rejected;
 
+// claude 수정 (2026-11-12): 숫자 확인 자동 반려 '숫자 불일치' 배지 — 표시 판정과 목적 필터 가상 옵션 추가
+/** 요청 목적 필터 체크박스에 추가하는 가상 옵션 — 체크하면 '숫자 불일치' 배지가 보이는 문서만 남긴다 */
+export const NUM_CHECK_MISMATCH_FILTER_OPTION = '숫자 불일치';
+
+/**
+ * '숫자 불일치' 뱃지를 보여줄지 — '숫자 확인 값' ↔ AAA4 불일치로 자동 반려된 문서(서버 판정, 재상신하면 사라진다).
+ * '변경 감지' 뱃지와는 따로 판정한다(변경 감지 중이던 문서가 숫자 확인으로 반려돼도 '변경 감지'는 뜨지 않는다).
+ */
+export const isNumCheckMismatchVisible = (doc: RequestDocument): boolean => !!doc.num_check_auto_rejected;
+
 export interface DocDetailFields {
   line: string;
   /** 요청 목적 대분류(신규/차용/기타 등) */
