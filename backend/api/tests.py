@@ -12791,6 +12791,66 @@ class NumCheckAaa4AutoRejectTest(TestCase):
         self.assertEqual(self._status(first), 'under_review')
         self.assertEqual(self._status(second), 'rejected')
 
+    # ----- 결재 현황 배지: '숫자 불일치'(num_check_auto_rejected) / '변경 감지'(layer_drift_auto_rejected) 분리 -----
+    # claude 수정 (2026-11-12): 숫자 확인 자동 반려는 '변경 감지' 배지가 아니라 '숫자 불일치' 배지로 판정하는지 검증
+
+    def _rows(self, doc):
+        """(목록 행, 상세 응답) — 작성자 권한으로 조회."""
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=self.author)
+        res = client.get('/api/documents/')
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        if isinstance(rows, dict) and 'results' in rows:
+            rows = rows['results']
+        detail = client.get(f'/api/documents/{doc.id}/')
+        self.assertEqual(detail.status_code, 200, detail.content)
+        body = detail.data['data'] if isinstance(detail.data, dict) and 'data' in detail.data else detail.data
+        return next(row for row in rows if row['id'] == doc.id), body
+
+    def test_badge_flags_for_num_check_reject_while_drift_detected(self):
+        """변경 감지 중이던 문서가 숫자 확인으로 반려되면 '숫자 불일치'만 True, '변경 감지'는 False(목록·상세)."""
+        self._map('1')
+        doc = self._doc('13 이상', zone=2)
+        RequestDocument.objects.filter(pk=doc.pk).update(layer_drift_detected=True, layer_drift_detail='{"jayer": {}}')
+        self._run()
+        for row in self._rows(doc):
+            self.assertTrue(row['num_check_auto_rejected'])
+            self.assertFalse(row['layer_drift_auto_rejected'])
+
+    def test_badge_flags_for_num_check_reject_without_drift(self):
+        self._map('1')
+        doc = self._doc('13 이상')
+        self._run()
+        row, body = self._rows(doc)
+        self.assertTrue(row['num_check_auto_rejected'])
+        self.assertTrue(body['num_check_auto_rejected'])
+        self.assertFalse(row['layer_drift_auto_rejected'])
+
+    def test_badge_flag_false_after_resubmit_and_for_human_reject(self):
+        """재상신(반려 상태 벗어남)하면 False / 사람이 누른 반려도 False."""
+        self._map('1')
+        doc = self._doc('13 이상')
+        self._run()
+        RequestDocument.objects.filter(pk=doc.pk).update(status='submitted')
+        self.assertFalse(self._rows(doc)[0]['num_check_auto_rejected'])
+
+        human = self._doc('13 이하', status='rejected')
+        ApprovalStep.objects.filter(pk=self.pl_step.pk).update(action='rejected', comment='사람 반려')
+        self.assertFalse(self._rows(human)[0]['num_check_auto_rejected'])
+
+    def test_layer_drift_auto_reject_still_flags_drift_badge_only(self):
+        """변경 감지 자동 반려 의견('[자동반려] 마스터 DB 변경 감지: …')은 기존대로 '변경 감지'만 True."""
+        doc = self._doc('13 이상', status='rejected')
+        RequestDocument.objects.filter(pk=doc.pk).update(layer_drift_detected=True, layer_drift_detail='{"jayer": {}}')
+        ApprovalStep.objects.filter(pk=self.pl_step.pk).update(
+            action='rejected', comment='[자동반려] 마스터 DB 변경 감지: J-layer STEP S1 삭제',
+        )
+        row, _ = self._rows(doc)
+        self.assertTrue(row['layer_drift_auto_rejected'])
+        self.assertFalse(row['num_check_auto_rejected'])
+
     # ----- 파싱 -----
 
     def test_parse_num_check_value(self):
