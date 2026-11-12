@@ -138,6 +138,10 @@ export interface ApprovalStepFrontend {
   assignee_loginid?: string; // 담당자 loginid
   assignee_name?: string;    // 담당자 이름
   assignee_mail?: string | null; // 담당자 이메일 (결재 경로 탭 표시용)
+  // claude 수정 (2026-11-12): 실제 합의·반려 처리자(대신 처리한 MASTER·같은 팀원). 처리한 단계는 담당자 대신 이 사람을 표시한다.
+  acted_by_loginid?: string | null;
+  acted_by_name?: string;
+  acted_by_mail?: string | null;
   round: number;             // 상신 회차
   created_at?: string | null; // 단계 생성일시 (R 단계의 경우 해당 회차 상신 시각)
   review_started_at?: string | null; // 대기중→검토중 전환 시각(검토중 클릭·지정·지정 PL 변경). 상신 때부터 담당자가 정해진 단계는 null
