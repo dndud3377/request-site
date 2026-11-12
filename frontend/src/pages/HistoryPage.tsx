@@ -204,7 +204,8 @@ export default function HistoryPage(): React.ReactElement {
     const loginid = currentUser.username;
     if (!loginid) return false;
     if (doc.requester_loginid === loginid) return true;
-    return (doc.approval_steps ?? []).some((s) => s.assignee_loginid === loginid);
+    // claude 수정 (2026-11-12): 대신 처리한 처리자(acted_by)도 '관여'로 본다
+    return (doc.approval_steps ?? []).some((s) => s.assignee_loginid === loginid || s.acted_by_loginid === loginid);
   }, [currentUser.username]);
 
   const filterDocs = useCallback((all: RequestDocument[], key: string): RequestDocument[] => {
