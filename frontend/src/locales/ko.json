@@ -543,6 +543,8 @@
     "toast_job_auto_fill_error": "J-ayer 정보를 불러오는데 실패했습니다.",
     "toast_job_no_data": "J-ayer STEP 정보가 없습니다.",
     "toast_ovl_auto_fill": "O-ayer {{count}}행이 자동으로 채워졌습니다.",
+    "toast_auto_borrow": "{{table}} 표에서 제품 이름이 STEP1 제품 이름과 다른 {{count}}개 행의 요청 기준을 '차용'으로 변경했습니다. 주황색 테두리 칸을 확인한 뒤 다시 '다음'을 눌러 주세요.",
+    "auto_borrow_cell_title": "제품 이름이 STEP1 제품 이름과 달라 요청 기준이 '차용'으로 자동 변경되었습니다.",
     "toast_ovl_auto_fill_error": "O-ayer 정보를 불러오는데 실패했습니다.",
     "toast_ovl_no_data": "O-ayer STEP 정보가 없습니다.",
     "toast_bb_auto_fill": "BB 데이터 {{count}}행이 조회되었습니다.",

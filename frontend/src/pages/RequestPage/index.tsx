@@ -123,6 +123,7 @@ import {
   NUM_CHECK_IMAGE_THRESHOLD_DEFAULT,
   NUM_CHECK_LOWER_THRESHOLD_DEFAULT,
   NUM_CHECK_MIN_IMAGES,
+  NOC_BORROW,
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
@@ -137,6 +138,7 @@ import {
   layeridFieldConsensus, soleParticipantByLayerid, soleStSyncRowByLayerid, stClearExtra, stChangeExtra, isNocEditable, nocOptionsForSt,
   stPastePatches, stPasteReactivatedIds,
   isInterAutoYesProcess, isNumericValue, sortRowsBySp, isNumCheckRequired, isNumCheckImageRequired,
+  findAutoBorrowRowIds,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -170,6 +172,9 @@ const BARCODE_DEBOUNCE_MS = 300;
 
 // 작성 마법사 단계: 1 기본 정보 / 2 MAP 정보 / 3 J-ayer / 4 O-ayer / 5 Backbone
 const STEP_MAP_INFO = 2;
+// claude 수정 (2026-11-12): 요청 기준 '차용' 자동 변경 관문이 걸리는 J-ayer·O-ayer 단계 번호
+const STEP_JAYER = 3;
+const STEP_OAYER = 4;
 const STEP_LAST = 5;
 
 // 상신 모달 크기 — 지정자·후결자·합의자·통보자를 한 화면에서 다루도록 기존(520px)의 2배로 넓혔다.
@@ -296,6 +301,9 @@ export default function RequestPage(): React.ReactElement {
   const bbExtCache = useRef<Record<string, PhotoStepOption[]>>({});
   const bbExtPrevPid = useRef<Record<string, string>>({});
   const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : []);
+  // claude 수정 (2026-11-12): '다음'·'상신' 때 요청 기준이 '차용'으로 자동 변경된 J/O 행 id — 그 칸을 강조한다(단계를 통과하면 비운다)
+  const [autoBorrowJayerIds, setAutoBorrowJayerIds] = useState<Set<string>>(() => new Set());
+  const [autoBorrowOayerIds, setAutoBorrowOayerIds] = useState<Set<string>>(() => new Set());
   const [bbRows, setBbRows] = useState<BbTableRow[]>(isTourMode ? makeTourBbRows() : []);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>(isTourMode ? (makeTourBbExternalData() as PhotoStepOption[][]) : []);
   // 전체 가이드 J-ayer 데모: 실제 표 위에 떠 있는 가짜 커서 + Ctrl C/V 칩
@@ -5087,16 +5095,49 @@ export default function RequestPage(): React.ReactElement {
     goToStep(target);
   };
 
+  // claude 수정 (2026-11-12): 제품 이름이 STEP1 제품 이름과 다른 J/O 행(ST O 계열)의 요청 기준을 '차용'으로 바꾸고
+  // 그 칸을 강조한 뒤 안내 토스트를 띄운다. 바꾼 행 수를 돌려준다(0 이면 아무것도 하지 않음). 가이드 투어 미리보기는 제외.
+  const applyAutoBorrow = (table: 'jayer' | 'oayer'): number => {
+    if (isTourMode) return 0;
+    const ids = findAutoBorrowRowIds(table === 'jayer' ? jayerRows : oayerRows, detail.partid_selection);
+    if (ids.length === 0) return 0;
+    const idSet = new Set(ids);
+    const toBorrow = <Row extends { id: string; new_or_copy: string }>(rows: Row[]): Row[] =>
+      rows.map((r) => (idSet.has(r.id) ? { ...r, new_or_copy: NOC_BORROW } : r));
+    if (table === 'jayer') {
+      setJayerRows(toBorrow);
+      setAutoBorrowJayerIds(idSet);
+    } else {
+      setOayerRows(toBorrow);
+      setAutoBorrowOayerIds(idSet);
+    }
+    addToast(t('request.toast_auto_borrow', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
+    return ids.length;
+  };
+
+  const clearAutoBorrowHighlight = () => {
+    setAutoBorrowJayerIds(new Set());
+    setAutoBorrowOayerIds(new Set());
+  };
+
   const goToStep = (target: number) => {
     if (target === step || target < 1 || target > lastStep) return;
 
     if (target < step) {
+      clearAutoBorrowHighlight();
       setStep(target);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     for (let s = step; s < target; s++) {
+      // claude 수정 (2026-11-12): J-ayer·O-ayer 단계를 지날 때마다 요청 기준 '차용' 자동 변경을 먼저 확인한다 —
+      // 바꾼 행이 있으면 강조된 그 단계에 머문다(다시 '다음'을 누르면 기존 검증·요청 목적 확인 관문으로 진행).
+      if ((s === STEP_JAYER || s === STEP_OAYER) && applyAutoBorrow(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
+        if (s !== step) setStep(s);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
       const result = validate(s);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
@@ -5159,6 +5200,7 @@ export default function RequestPage(): React.ReactElement {
     setPendingStepTarget(null);
     ackedStepGatesRef.current = { specialCare: false, tbvtlv: false, purposeMismatch: false };
     duplicateClearedRef.current = false;
+    clearAutoBorrowHighlight();
     setStep(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -5204,6 +5246,17 @@ export default function RequestPage(): React.ReactElement {
   const handlePrevStep = () => startStepMove(step - 1);
 
   const handleSubmitClick = async () => {
+    // claude 수정 (2026-11-12): STEP5 에서 시작한 임시저장 문서 등 STEP3·4 '다음'을 거치지 않은 경우를 위해 상신 때도
+    // 요청 기준 '차용' 자동 변경을 확인한다. 바꾼 행이 있으면 상신을 멈추고 먼저 바뀐 표의 단계로 이동한다.
+    if (lastStep === STEP_LAST) {
+      const changedJ = applyAutoBorrow('jayer');
+      const changedO = applyAutoBorrow('oayer');
+      if (changedJ + changedO > 0) {
+        setStep(changedJ > 0 ? STEP_JAYER : STEP_OAYER);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+    }
     // 마지막 단계의 검증만 돌린다 — 앞 단계들은 전진할 때 이미 통과했다.
     // Only MAP·MAP 삭제 는 2단계가 마지막이므로 5단계(J-ayer↔Backbone 매핑) 검증을 돌리면 안 된다.
     const result = validate(lastStep);
@@ -5665,6 +5718,7 @@ export default function RequestPage(): React.ReactElement {
           handleJayerApplyFilter={handleJayerApplyFilter}
           handleJayerChange={handleJayerChange}
           cellSel={jayerCellSel}
+          autoBorrowRowIds={autoBorrowJayerIds}
           GuideTourBadge={<StepTourBadge step={3} />}
           GuideBadge={GuideBadge}
           validationSystem={detail.validation_system}
@@ -5698,6 +5752,7 @@ export default function RequestPage(): React.ReactElement {
           handleOayerApplyFilter={handleOayerApplyFilter}
           handleOayerChange={handleOayerChange}
           cellSel={oayerCellSel}
+          autoBorrowRowIds={autoBorrowOayerIds}
           GuideTourBadge={<StepTourBadge step={4} />}
           GuideBadge={GuideBadge}
         />
