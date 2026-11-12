@@ -341,7 +341,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     → 사용자가 다른 제품 이름을 넣거나 `신규`로 바꾼다(별도 처리 없음 — 사용자 확인).
   - `handleSubmitClick` — 일반 경로(`lastStep === 5`)에서 상신 전에도 J·O 를 같은 판정으로 확인하고, 바꾼 행이 있으면 상신을 멈추고
     바뀐 표의 단계(J 우선)로 이동한다. 문서는 가이드 투어가 아니면 항상 STEP1 에서 열리고 STEP5 는 STEP3·4 관문을 지나야 도달하므로
-    실제로는 중복 안전장치다.
+    실제로는 중복 안전장치다 — 이후 다른 진입 경로가 생겨도 막도록 **유지하기로 결정(사용자)**.
   - 가이드 투어 미리보기(`?embed=tour`)는 제외. `이력 바로 등록`(`handleDirectHistoryClick`)에는 넣지 않았다.
   - 판정은 J/O 각 표 자기 행만 본다(J 에서 바꾼 요청 기준을 O 로 전파하지 않음 — O 는 STEP4 에서 자기 제품 이름으로 판정).
 - **강조 (`Step2.tsx`·`Step3.tsx`, prop `autoBorrowRowIds`)**: 자동 변경된 요청 기준 칸에 주황 테두리(`constants.ts` `AUTO_BORROW_HIGHLIGHT_COLOR`)·굵은 글씨,
@@ -350,6 +350,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **가이드 기능 키**: 새 입력 항목이 아니라 추가하지 않음.
 - **테스트**: `helpers.test.ts` `findAutoBorrowRowIds` 5건, `RequestPage/autoBorrowByProductName.test.tsx` 4건(STEP3 첫 '다음' 변경·강조·머무름 → 두 번째 진행,
   '신규' 되돌림 후 재변경, STEP4 변경 후 '신규+차용' 모달, 다른 행이 없으면 바로 진행).
+  - 기존 테스트 5개 파일(`errorScrollTarget`·`refDocStConfirm`·`spAutoSort`·`pauseResumeDisabledRows`·`stNocRule`)은 픽스처 J/O 제품 이름
+    (`제품A`/`제품B`)이 STEP1 제품 이름(`PART_1000`)과 달라 이 관문에 걸려 23건이 실패했다 → 픽스처 제품 이름을 `PRODUCT` 로 맞췄다(사용자 결정, 각 테스트의 검사 내용은 그대로).
+  - `npx tsc --noEmit` 에러 0건, 프론트 60 suites / 746건 통과, 백엔드 `manage.py test api` 912건 OK. 결재 흐름 무관 — `approval_cases` 러너 대상 아님.
 - **수동 검증 시나리오** (`http://localhost:10011`, 의뢰서 작성)
   1. [STEP1 `제품 이름` 입력(예: `PART_1000`) → STEP3 J-ayer 에서 ST O 행의 제품 이름에 다른 값(예: `PART_2000`), 요청 기준 `신규`] → [`다음`]
      → [기대: STEP3 에 머물고, 그 행 요청 기준이 `차용` + 주황 테두리, 우측 상단 경고 토스트 "J-ayer 표에서 … 1개 행의 요청 기준을 '차용'으로 변경했습니다". 실패 신호: 바로 STEP4 로 넘어감.]
