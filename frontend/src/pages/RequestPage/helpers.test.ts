@@ -14,6 +14,7 @@ import {
   nocOptionsForSt, findStNocMismatchViolations, isNocEditable, stChangeExtra, soleStSyncRowByLayerid,
   stPastePatches, stPasteReactivatedIds,
   resolveFlowStepSeq, splitStepseq, findFlowStepOrderErrors, formatFlowStepText, sortRowsBySp,
+  findAutoBorrowRowIds,
 } from './helpers';
 import {
   VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, MERGE_PP_PREFIXES,
@@ -1743,5 +1744,47 @@ describe('nocOptionsForSt / findStNocMismatchViolations', () => {
       { id: 'other', st: 'X', new_or_copy: '기타값' },
     ];
     expect(findStNocMismatchViolations(rows)).toEqual(['bad_x', 'bad_o', 'bad_od']);
+  });
+});
+
+// claude 수정 (2026-11-12): 제품 이름이 STEP1 제품 이름과 다른 행의 요청 기준 '차용' 자동 변경 대상 판정
+describe('findAutoBorrowRowIds', () => {
+  const BASE = 'PART_1000';
+  const row = (id: string, st: string, new_or_copy: string, product_name: string) => ({ id, st, new_or_copy, product_name });
+
+  it('ST O 계열이고 제품 이름이 STEP1 과 다른 신규 행만 고른다', () => {
+    const rows = [
+      row('diff_o', 'O', '신규', 'PART_2000'),
+      row('diff_od', 'O (D)', '신규', 'PART_3000'),
+      row('same', 'O', '신규', 'PART_1000'),
+      row('empty_pn', 'O', '신규', ''),
+      row('already_borrow', 'O', '차용', 'PART_2000'),
+    ];
+    expect(findAutoBorrowRowIds(rows, BASE)).toEqual(['diff_o', 'diff_od']);
+  });
+
+  it('앞뒤 공백·대소문자는 무시하고 비교한다', () => {
+    const rows = [
+      row('spaced', 'O', '신규', '  PART_1000  '),
+      row('lower', 'O', '신규', 'part_1000'),
+      row('diff', 'O', '신규', 'part_1001'),
+    ];
+    expect(findAutoBorrowRowIds(rows, ' Part_1000 ')).toEqual(['diff']);
+  });
+
+  it('ST X·공란 행은 건드리지 않는다', () => {
+    const rows = [
+      row('x', 'X', '미진행', 'PART_2000'),
+      row('blank_st', '', '', 'PART_2000'),
+    ];
+    expect(findAutoBorrowRowIds(rows, BASE)).toEqual([]);
+  });
+
+  it('요청 기준이 비어 있는 ST O 행도 대상이다', () => {
+    expect(findAutoBorrowRowIds([row('noc_empty', 'O', '', 'PART_2000')], BASE)).toEqual(['noc_empty']);
+  });
+
+  it('STEP1 제품 이름이 비어 있으면 비교 기준이 없어 빈 목록', () => {
+    expect(findAutoBorrowRowIds([row('a', 'O', '신규', 'PART_2000')], '  ')).toEqual([]);
   });
 });
