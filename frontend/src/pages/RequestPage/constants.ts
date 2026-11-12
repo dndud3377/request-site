@@ -281,6 +281,8 @@ export const NOC_BORROW = '차용';
 export const NOC_REGISTERED = '기등록';
 export const NOC_LAYER_DELETE = 'layer삭제';
 export const NOC_NOT_PROCEEDING = '미진행';
+// claude 수정 (2026-11-12): '다음'·'상신' 때 요청 기준이 '차용'으로 자동 변경된 칸의 강조 테두리 색 (J/O-ayer 표 공용)
+export const AUTO_BORROW_HIGHLIGHT_COLOR = '#ea580c';
 export const ST_O = 'O';
 /** st 의 또 다른 'O 계열' 값 — 표의 선택지는 'O' / 'O (D)' / 'X' 셋뿐이다. */
 export const ST_O_D = 'O (D)';
