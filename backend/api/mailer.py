@@ -986,6 +986,9 @@ _HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
 # 딥링크 버튼을 싣지 않는 이벤트 — 발송 시점에 의뢰서가 이미 삭제돼 링크가 죽는다.
 _NO_LINK_EVENTS = ('withdraw_completed', 'document_deleted')
 
+# claude 수정 (2026-11-12): 반려 문서 철회 거부·취소 메일 문구 분기용 문서 상태값
+_REJECTED_DOCUMENT_STATUS = 'rejected'
+
 
 def _kpi_grid(tiles, tile_bg, tile_border):
     """(label, value) 튜플 4개를 히어로+KPI 카드 이메일의 2x2 타일 그리드 HTML로 렌더링한다.
@@ -1278,13 +1281,20 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'[철회 완료] {document.title}'
         headline = '아래 의뢰서가 철회되어 삭제되었습니다. 더 이상 조회할 수 없습니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
+    # claude 수정 (2026-11-12): 반려 문서는 거부·취소 후에도 반려 상태로 남으므로 '결재 진행' 안내 대신 별도 문구
     elif event_type == 'withdraw_rejected':
         subject = f'[철회 거부] {document.title}'
-        headline = '요청하신 의뢰서 철회가 거부되었습니다. 결재는 그대로 진행됩니다.'
+        if document.status == _REJECTED_DOCUMENT_STATUS:
+            headline = '요청하신 의뢰서 철회가 거부되었습니다. 의뢰서는 반려 상태로 유지됩니다.'
+        else:
+            headline = '요청하신 의뢰서 철회가 거부되었습니다. 결재는 그대로 진행됩니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'withdraw_cancelled':
         subject = f'[철회 요청 취소] {document.title}'
-        headline = '의뢰서 철회 요청이 취소되었습니다. 결재를 그대로 진행해 주세요.'
+        if document.status == _REJECTED_DOCUMENT_STATUS:
+            headline = '의뢰서 철회 요청이 취소되었습니다. 의뢰서는 반려 상태로 유지됩니다.'
+        else:
+            headline = '의뢰서 철회 요청이 취소되었습니다. 결재를 그대로 진행해 주세요.'
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'pause_requested':
         subject = f'[중단 요청] {document.title}'
