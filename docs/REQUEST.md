@@ -322,6 +322,21 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-11-12 후속 — 결재 현황 '숫자 불일치' 배지: 숫자 확인 자동 반려를 '변경 감지'와 분리)
+
+- **문제**: 결재 중 '변경 감지'가 떠 있던 문서가 숫자 확인 불일치로 자동 반려되면, 배지 판정
+  (`serializers.is_layer_drift_auto_rejected`)이 반려 의견의 `[자동반려]` 머리말만 봐서 반려 후에도 '변경 감지' 배지가 남았다
+  → 반려 원인을 마스터 DB 변경으로 오해할 수 있었다(로컬 앱 재현·스크린샷 확인).
+- **변경**
+  - 백엔드: `is_layer_drift_auto_rejected` 에서 숫자 확인 반려 의견 제외, `is_num_check_auto_rejected` + 응답 필드
+    `num_check_auto_rejected`(목록·상세) 신설. 최신 회차 반려 의견 조회는 `_latest_round_rejected_comments` 로 공용화.
+  - 프론트: `RequestDocument.num_check_auto_rejected?`, `approvalTable.ts` `isNumCheckMismatchVisible`·`NUM_CHECK_MISMATCH_FILTER_OPTION`,
+    `ApprovalPage.tsx` 목록 '목적' 칸 주황 배지(`.badge-num-check-mismatch`, 누르지 않음·툴팁) + 목적 필터·나만의 필터 가상 옵션 '숫자 불일치'.
+  - i18n(ko/en 동시): `approval.num_check_mismatch_badge`("숫자 불일치"/"Number mismatch"), `approval.num_check_mismatch_badge_tooltip`.
+  - 상세 창·이력 조회에는 표시하지 않는다. 가이드 기능 키는 두지 않는다(사용자 결정).
+- **테스트**: 백엔드 `NumCheckAaa4AutoRejectTest` 배지 4건, 프론트 `approvalTable.test.ts` 3건.
+- **수동 검증**: `docs/APPROVAL.md` "숫자 확인 값 자동 반려" 절 7번.
+
 ### 기능 추가 (2026-11-12 — MAP 이름 캐시에 AAA4 추가 + '숫자 확인 값' ↔ AAA4 불일치 자동 반려)
 
 - **의도**: STEP2 '숫자 확인 값'(`'13 이상'` / `'9 이하'`)과 외부 DB 의 `AAA4` 값을 비교해, 맞지 않는 요청서를 자동 반려한다.
