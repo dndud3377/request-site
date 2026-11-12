@@ -1025,6 +1025,9 @@ export interface MapInfo {
   AAA1: string | null;
   AAA2: string | null;
   AAA3: string | null;
+  // claude 수정 (2026-11-12): AAA4 추가 — 화면 표시 없음(자동 반려 비교용 값). 선택 필드라 기존 mock 은 그대로 둔다
+  /** AAA4 — '숫자 확인 값'과 비교하는 값(백엔드 자동 반려 판정용). 화면에는 표시하지 않는다. */
+  AAA4?: string | null;
   /** oc — AAA1~3 와 동일하게 참고용일 뿐 상신 데이터에는 포함되지 않는다(detail 에 저장 안 함). */
   cc_status: MapTableCcStatus;
 }
