@@ -334,6 +334,21 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 
 ⚠️ 네 이벤트 모두 본문 '특이사항' 칸에 **철회 사유**를 싣는다(`note_override`).
 
+✅ **(2026-11-12) 반려 문서의 거부·취소 메일 헤드라인 분기** — 반려 문서 철회(2026-11-09, `docs/APPROVAL.md`
+Case J "반려 문서 철회")는 거부·취소돼도 결재가 이어지지 않고 **반려 상태로 남는다**. 예전엔 메일이 상태와
+무관하게 '결재 진행' 문구를 써서 화면 토스트(`approval.withdraw_rejected_keep_rejected_toast`)와 어긋났다.
+이제 `_build_message` 가 `document.status == 'rejected'`(`_REJECTED_DOCUMENT_STATUS`)면 아래 문구를 쓴다.
+제목·수신자·테마는 변경 없다.
+
+| 이벤트 | 진행 중 문서(종전 그대로) | 반려 문서 |
+|---|---|---|
+| `withdraw_rejected` | 요청하신 의뢰서 철회가 거부되었습니다. 결재는 그대로 진행됩니다. | 요청하신 의뢰서 철회가 거부되었습니다. 의뢰서는 반려 상태로 유지됩니다. |
+| `withdraw_cancelled` | 의뢰서 철회 요청이 취소되었습니다. 결재를 그대로 진행해 주세요. | 의뢰서 철회 요청이 취소되었습니다. 의뢰서는 반려 상태로 유지됩니다. |
+
+테스트: `WithdrawFlowTest` 의 `test_rejected_withdraw_reject_keeps_document_rejected`·
+`test_rejected_withdraw_cancel_keeps_document_rejected`(반려 문구), `test_target_step_can_reject_withdraw`·
+`test_requester_can_cancel_before_confirm`(진행 중 문구 회귀).
+
 ### 3.3 '상신 받기' — TE_P 구독형 상신 알림 (2026-08 신설)
 
 권한 관리 '이메일 설정' 컬럼에 **TE_P 탭에서만** 보이는 별도 토글이다. 지정 담당자가 아니어도
