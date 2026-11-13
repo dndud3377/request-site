@@ -149,6 +149,8 @@
     "tab_adi_cd_not_applicable": "ADI CD 변경 요청은 MAP 정보를 작성하지 않습니다.",
     "export_btn": "export",
     "export_all_btn": "전체 export",
+    "export_all_file_suffix": "전체",
+    "export_sheet_agent_e": "agent E",
     "export_col_item": "항목",
     "export_col_value": "값",
     "export_capture_failed": "(화면을 캡처하지 못했습니다)",
