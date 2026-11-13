@@ -1392,37 +1392,57 @@ def w06(ctx):
     return f'doc={doc_id}'
 
 
-@case('W-07', 'W', '병렬 target 일부만 확인 → 문서 유지')
+# claude 수정 (2026-11-13): 철회 확인 대상 = 요청서를 본 사람의 묶음(PL·R·RA…)당 1건, 대기(미배정) 팀은 대상 아님
+def _withdraw_actor(ctx, step):
+    """철회 확인 대상 단계를 확인할 계정 — 관여자(처리자·담당자) 본인, 없으면 그 팀 첫 번째 계정."""
+    loginid = step.get('acted_by_loginid') or step.get('assignee_loginid')
+    if loginid:
+        return F._actor_for_loginid(ctx, loginid)
+    return _team_actor(ctx, step['agent'], {'approval_steps': []})
+
+
+def _withdraw_targets(doc):
+    wr = doc.get('withdraw_request') or {}
+    ids = set(wr.get('target_step_ids') or [])
+    return [s for s in (doc.get('approval_steps') or []) if s['id'] in ids]
+
+
+@case('W-07', 'W', '확인 대상 일부만 확인 → 문서 유지')
 def w07(ctx):
-    ctx.need(PL=2, TE_R=1, TE_J=1)
+    ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(ctx)
     F.withdraw(author, doc_id)
-    F.confirm_withdraw(ctx.actor('TE_J', 0), doc_id, 'J')
-    F.fetch(author, doc_id)  # 아직 살아 있어야 한다
+    F.confirm_withdraw(ctx.actor('TE_R', 0), doc_id, 'R')  # 합의했던 R 묶음만 확인
+    F.fetch(author, doc_id)  # 아직 살아 있어야 한다(PL 등 남음)
     return f'doc={doc_id}'
 
 
-@case('W-08', 'W', 'target 전원 확인 → 문서 삭제')
+@case('W-08', 'W', '확인 대상 묶음 전부 확인 → 문서 삭제 (대기 팀은 대상 아님)')
 def w08(ctx):
-    ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, TE_O=1)
+    ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(ctx, plel=False)
     F.withdraw(author, doc_id)
     doc = F.fetch(author, doc_id)
-    for agent in sorted({s['agent'] for s in F.steps(doc, action='pending')}):
-        actor = _team_actor(ctx, agent, doc)
+    targets = _withdraw_targets(doc)
+    waiting = [s['agent'] for s in targets if s.get('action') == 'pending' and not s.get('assignee_loginid')]
+    if waiting:
+        raise CaseFailure(f'아무도 맡지 않은 대기 단계가 확인 대상에 들어 있다: {waiting}')
+    agents = sorted({s['agent'] for s in targets})
+    for step in targets:
+        actor = _withdraw_actor(ctx, step)
         if actor is None:
-            raise CaseSkip(f'{agent} 단계를 확인할 계정을 찾지 못했다.')
-        F.confirm_withdraw(actor, doc_id, agent)
+            raise CaseSkip(f'{step["agent"]} 묶음을 확인할 계정을 찾지 못했다.')
+        F.confirm_withdraw(actor, doc_id, step['agent'])
     F.expect_gone(author, doc_id)
-    return f'doc={doc_id} 삭제됨'
+    return f'doc={doc_id} 대상={agents} 삭제됨'
 
 
-@case('W-09', 'W', '미배정 단계는 같은 팀 누구나 확인 가능')
+@case('W-09', 'W', '대기(미배정) 팀은 확인 대상이 아니다 → 확인 403')
 def w09(ctx):
     ctx.need(PL=2, TE_R=1, TE_J=1)
     doc_id, author, pls = F.to_parallel(ctx)
     F.withdraw(author, doc_id)
-    F.confirm_withdraw(ctx.actor('TE_J', 0), doc_id, 'J')  # J 는 미배정 상태
+    F.confirm_withdraw(ctx.actor('TE_J', 0), doc_id, 'J', expect=403)  # J 는 아무도 맡지 않은 대기
     return f'doc={doc_id}'
 
 
@@ -1431,16 +1451,17 @@ def w10(ctx):
     ctx.need(PL=2, TE_R=1, TE_O=1)
     doc_id, author, pls = F.to_parallel(ctx)
     F.withdraw(author, doc_id)
-    F.confirm_withdraw(ctx.actor('TE_O', 0), doc_id, 'J', expect=403)
+    F.confirm_withdraw(ctx.actor('TE_O', 0), doc_id, 'R', expect=403)
     return f'doc={doc_id}'
 
 
 @case('W-11', 'W', '한 단계만 거부해도 요청 전체 무효')
 def w11(ctx):
-    ctx.need(PL=2, TE_R=1, TE_J=1)
+    ctx.need(PL=2, TE_R=1)
     doc_id, author, pls = F.to_parallel(ctx)
     F.withdraw(author, doc_id)
-    F.reject_withdraw(ctx.actor('TE_J', 0), doc_id)
+    # claude 수정 (2026-11-13): 대기 J 는 확인 대상이 아니어서 거부도 못 한다 — 합의했던 R 이 거부
+    F.reject_withdraw(ctx.actor('TE_R', 0), doc_id)
     doc = F.fetch(author, doc_id)
     wr = doc.get('withdraw_request') or {}
     if wr.get('state') == 'requested':
@@ -1480,7 +1501,8 @@ def w15(ctx):
     ctx.need(PL=2, TE_R=1, TE_J=1)
     doc_id, author, pls = F.to_parallel(ctx)
     F.withdraw(author, doc_id)
-    F.reject_withdraw(ctx.actor('TE_J', 0), doc_id)
+    # claude 수정 (2026-11-13): 대기 J 는 확인 대상이 아니어서 거부도 못 한다 — 합의했던 R 이 거부
+    F.reject_withdraw(ctx.actor('TE_R', 0), doc_id)
     F.claim_step(ctx.actor('TE_J', 0), doc_id, 'J')
     return f'doc={doc_id}'
 
