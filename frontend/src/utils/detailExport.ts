@@ -1,13 +1,17 @@
 import ExcelJS from 'exceljs';
 import type { TFunction } from 'i18next';
-import { RequestDocument, DetailFormState, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, MergeRowInfo, ColorFilterSet } from '../types';
+import { RequestDocument, DetailFormState, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, MergeRowInfo, ColorFilterSet, ValidationSystemValue } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
 import {
   VALIDATION_CELL_COLOR, EA_HAS_CHANGE, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive,
   isLockedMapDefault, isLockedEaDefault, isLockedMshotDefault, isLockedProdcDetailDefault, isMapOptionLockedWhenRegistered,
+  NUM_CHECK_APPLIES, VS_TARGET, VS_NONTARGET, VS_NA,
 } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText, toExtraLayerRows } from '../pages/RequestPage/helpers';
+import {
+  isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor, formatFlowStepText, toExtraLayerRows,
+  formatNumCheckValue,
+} from '../pages/RequestPage/helpers';
 
 const NO_ACTIVE_COLOR_FILTERS = new Set<string>();
 
@@ -495,6 +499,17 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
     blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: withLockedMark(detail.mshot_change) });
   }
 
+  // claude 수정 (2026-11-13): '숫자 확인 필수'를 상세 보기 MAP 정보 탭과 같은 조건·위치(X표시 바로 다음)로 내보낸다(사진은 캡처 시트에만)
+  const hasNumCheckImages = Array.isArray(detail.num_check_images) && detail.num_check_images.length > 0;
+  if (!isDeleteType && (detail.num_check === NUM_CHECK_APPLIES || hasNumCheckImages)) {
+    blocks.push({
+      kind: 'kv',
+      label: t('request.num_check_title'),
+      value: detail.num_check === NUM_CHECK_APPLIES ? t('request.num_check_applies') : t('request.num_check_none'),
+    });
+    blocks.push({ kind: 'kv', label: t('request.num_check_value'), value: formatNumCheckValue(t, detail.num_check_value) || '-' });
+  }
+
   if (!isDeleteType && detail.only_prodc) {
     blocks.push({ kind: 'kv', label: t('request.prodc_status'), value: detail.only_prodc });
     if (isProdc) {
@@ -564,6 +579,32 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
 function addEtcInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string): void {
   addInfoSheet(wb, t, sheetName, [
     { kind: 'kv', label: t('request.section_etc'), value: t('request.value_none') },
+  ]);
+}
+
+// claude 수정 (2026-11-13): 전체 export 'agent E' 시트 — 상세 보기 JOB 탭의 Validation System 표시(판정·변경 이력)를 그대로 담는다
+function validationSystemLabel(v: ValidationSystemValue, t: TFunction): string {
+  if (v === VS_TARGET) return t('request.validation_system_target');
+  if (v === VS_NONTARGET) return t('request.validation_system_nontarget');
+  return t('request.validation_system_na');
+}
+
+function addAgentESheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>, jayer: JayerRow[]): void {
+  const hasPlel = isValidationTarget(jayer);
+  const current: ValidationSystemValue = !hasPlel
+    ? VS_NA
+    : ((detail.validation_system === VS_TARGET || detail.validation_system === VS_NONTARGET) ? detail.validation_system : VS_TARGET);
+  const lines = [validationSystemLabel(current, t)];
+  const submitted = detail.validation_system_submitted;
+  if (hasPlel && submitted && submitted !== current) {
+    lines.push(t('request.validation_system_changed', { from: validationSystemLabel(submitted, t), to: validationSystemLabel(current, t) }));
+  }
+  if (detail.validation_system_changed_by) {
+    const at = (detail.validation_system_changed_at ?? '').slice(0, 16).replace('T', ' ');
+    lines.push(t('request.validation_system_changed_by', { name: detail.validation_system_changed_by, at }));
+  }
+  addInfoSheet(wb, t, t('request.export_sheet_agent_e'), [
+    { kind: 'kv', label: t('request.validation_system'), value: lines.join('\n') },
   ]);
 }
 
@@ -690,12 +731,14 @@ export interface ExportAllScreenshots {
   detail: ScreenshotCapture | null;
   map: ScreenshotCapture | null;
   etc: ScreenshotCapture | null;
+  // claude 수정 (2026-11-13): 결재 이력 증빙용으로 결재 경로 탭 캡처를 전체 export 마지막 시트에 담는다
+  route: ScreenshotCapture | null;
 }
 
 /**
- * 결재 경로를 제외한 모든 sector(상세 정보/MAP 정보/JOB/OVL/정보/BB)를 시트별로 나눠 한 파일에 담는다.
- * 상세 정보/MAP 정보는 호출부(PagedDetailView)가 미리 캡처해 넘긴 화면 이미지 시트 + 텍스트 시트
- * 두 장씩을 담는다.
+ * 상세 모달의 모든 sector(상세 정보/MAP 정보/JOB/agent E/OVL/OVL 정보/XXXXXX/BB/기타/결재 경로)를 시트별로 나눠 한 파일에 담는다.
+ * 상세 정보/MAP 정보/기타는 호출부(PagedDetailView)가 미리 캡처해 넘긴 화면 이미지 시트 + 텍스트 시트
+ * 두 장씩을, 결재 경로는 캡처 이미지 시트 한 장만 담는다.
  */
 export interface ExportAllColorFilters {
   jayerColorFilterSets?: ColorFilterSet[];
@@ -718,6 +761,8 @@ export async function exportAll(
   addScreenshotSheet(wb, mapSheetName, screenshots.map, t('request.export_capture_failed'));
   addMapInfoSheet(wb, t, textSheetName(mapSheetName, t), detail);
   addJobSheet(wb, t, jayer, colorFilters.jayerColorFilterSets, colorFilters.activeJayerColorFilterIds);
+  // claude 수정 (2026-11-13): JOB 바로 뒤에 Validation System 을 담은 'agent E' 시트를 넣는다
+  addAgentESheet(wb, t, detail, jayer);
   addOvlSheet(wb, t, oayer, colorFilters.oayerColorFilterSets, colorFilters.activeOayerColorFilterIds);
   addOvlInfoSheet(wb, t, detail);
   // claude 수정 (2026-10-28): 전체 export 에 XXXXXX 시트를 OVL 뒤에 추가(상세 모달 탭 순서와 같다)
@@ -726,5 +771,7 @@ export async function exportAll(
   const etcSheetName = t('request.section_etc');
   addScreenshotSheet(wb, etcSheetName, screenshots.etc, t('request.export_capture_failed'));
   addEtcInfoSheet(wb, t, textSheetName(etcSheetName, t));
-  await downloadWorkbook(wb, `${doc.title}_전체_${getNowString()}.xlsx`);
+  // claude 수정 (2026-11-13): 결재 경로 캡처 시트(탭 순서와 같게 맨 끝) 추가, 파일명 '전체' 하드코딩을 i18n 키로 교체
+  addScreenshotSheet(wb, t('approval.tab_route'), screenshots.route, t('request.export_capture_failed'));
+  await downloadWorkbook(wb, `${doc.title}_${t('request.export_all_file_suffix')}_${getNowString()}.xlsx`);
 }
