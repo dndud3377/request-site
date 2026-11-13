@@ -116,7 +116,8 @@ export type VocStatus = 'checking' | 'completed';
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
 // SA = 영업/기술지원 합의자(PL 검토와 병렬, 상신 시 지정했을 때만 존재)
-export type AgentType = 'PL' | 'R' | 'RV' | 'P' | 'PV' | 'J' | 'O' | 'E' | 'EV' | 'RA' | 'SA';
+// claude 수정 (2026-11-13): System R(RS) 추가 — 2구역에서 R 과 병렬로 MAP 정보를 시스템이 검증(담당자 없음, MASTER 만 수동 처리)
+export type AgentType = 'PL' | 'R' | 'RV' | 'P' | 'PV' | 'J' | 'O' | 'E' | 'EV' | 'RA' | 'SA' | 'RS';
 export type StepAction = 'pending' | 'approved' | 'rejected' | 'skip';
 
 // 역할 → 담당자 매핑 (null 제외)
@@ -307,8 +308,6 @@ export interface RequestDocument {
   layer_drift_detected?: boolean;
   // 마스터 DB 변경 감지로 자동 반려된 문서인지 (읽기 전용) — 반려 후에도 결재 현황에 '변경 감지' 배지를 유지한다
   layer_drift_auto_rejected?: boolean;
-  // claude 수정 (2026-11-12): '숫자 확인 값' ↔ AAA4 불일치로 자동 반려된 문서인지 (읽기 전용) — 결재 현황 '숫자 불일치' 배지
-  num_check_auto_rejected?: boolean;
   // claude 수정 (2026-10-28): 상세 모달 XXXXXX 페이지용 — 상신 시점 XXXXXX 스냅샷 행 (상세 응답만, 읽기 전용)
   extra_layer_snapshot?: ExtraLayerSnapshotRow[];
   // 해외 의뢰서 여부 (읽기 전용). 의뢰자 역할로 최초 상신 시 서버가 확정한다.
