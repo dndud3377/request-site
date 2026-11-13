@@ -473,7 +473,8 @@ def r15(ctx):
 
 
 # claude 수정 (2026-10-15): 2026-09 R 분리(APPROVAL.md Case O) 기준으로 기대값 갱신 — PL 합의 직후엔 P·J·O 만, R 은 그 셋이 끝난 뒤
-@case('R-16', 'R', "'MAP 삭제': PL 합의 직후 P·J·O 병렬(R 은 아직 없음), E·RA 없음")
+# claude 수정 (2026-11-13): MAP 삭제에는 System R(RS)도 없다
+@case('R-16', 'R', "'MAP 삭제': PL 합의 직후 P·J·O 병렬(R 은 아직 없음), E·RA·RS 없음")
 def r16(ctx):
     ctx.need(PL=2)
     doc_id, author, pls = F.submitted_doc(ctx, request_purpose=P.MAP_DELETE_EDIT_PURPOSE)
@@ -484,7 +485,84 @@ def r16(ctx):
     F.expect_no_step(doc, 'R', '(R 은 P·J·O 완료 후 3구역에서 생성돼야 한다)')
     F.expect_no_step(doc, 'E')
     F.expect_no_step(doc, 'RA')
+    F.expect_no_step(doc, 'RS')
     return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+# ------------------------------------------------------------ 2구역 System R (2026-11-13)
+# claude 수정 (2026-11-13): System R(RS) 케이스 추가 — 생성·병렬 대기·MASTER 수동 처리·권한
+
+@case('R-17', 'R', 'PL 합의 → R 과 System R(RS) 함께 생성, RS 는 담당자 없음')
+def r17(ctx):
+    ctx.need(PL=2)
+    doc_id, author, pls = F.submitted_doc(ctx)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    doc = F.fetch(author, doc_id)
+    F.expect_steps(doc, 'R', count=1, action='pending')
+    rs = F.expect_steps(doc, 'RS', count=1, action='pending')
+    if rs[0].get('assignee_loginid'):
+        raise CaseFailure(f"RS 에 담당자가 있다: {rs[0].get('assignee_loginid')}")
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('R-18', 'R', 'R 합의 후 RS 대기 → 병렬 미생성, MASTER RS 합의 → 병렬 생성')
+def r18(ctx):
+    ctx.need(PL=2, TE_R=1, MASTER=1)
+    doc_id, author, pls = F.submitted_doc(ctx)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    te_r = ctx.actor('TE_R', 0)
+    F.assign_step(te_r, doc_id, 'R', ctx.user('TE_R', 0))
+    F.approve_step(te_r, doc_id, 'R')
+    doc = F.expect_doc_status(author, doc_id, 'under_review')
+    if F.steps(doc, agent='RS', action='approved'):
+        raise CaseSkip('RS 가 이미 시스템 판정으로 합의돼 있다(동기화 주기와 겹침) — 다시 실행한다.')
+    F.expect_no_step(doc, 'P', '(System R 이 남았는데 3구역이 열렸다)')
+    F.approve_step(ctx.actor('MASTER', 0), doc_id, 'RS', comment='케이스 러너 System R 수동 합의')
+    doc = F.fetch(author, doc_id)
+    for agent in ('P', 'J', 'O'):
+        F.expect_steps(doc, agent, count=1)
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('R-19', 'R', 'TE_R 이 RS 합의·반려 시도 → 403 (MASTER 만 수동 처리)')
+def r19(ctx):
+    ctx.need(PL=2, TE_R=1)
+    doc_id, author, pls = F.submitted_doc(ctx)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    F.approve_step(ctx.actor('TE_R', 0), doc_id, 'RS', expect=403)
+    F.reject_step(ctx.actor('TE_R', 0), doc_id, 'RS', expect=403)
+    return f'doc={doc_id}'
+
+
+@case('R-20', 'R', 'MASTER RS 반려 → rejected, 재상신 시 R·RS 다시 생성')
+def r20(ctx):
+    ctx.need(PL=2, MASTER=1)
+    doc_id, author, pls = F.submitted_doc(ctx)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    F.reject_step(ctx.actor('MASTER', 0), doc_id, 'RS', comment='케이스 러너 System R 수동 반려')
+    F.expect_doc_status(author, doc_id, 'rejected')
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls])
+    F.pass_pl_stage(ctx, doc_id, pls)
+    doc = F.fetch(author, doc_id)
+    F.expect_steps(doc, 'R', count=1, action='pending', note='(RS 반려 뒤 재상신은 R 생략 대상이 아니다)')
+    F.expect_steps(doc, 'RS', count=1, action='pending')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('R-21', 'R', '2구역 중단 요청 → 확인 대상에 RS 없음')
+def r21(ctx):
+    ctx.need(PL=2)
+    doc_id, author, pls = F.submitted_doc(ctx)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    F.request_pause(author, doc_id)
+    doc = F.fetch(author, doc_id)
+    pr = doc.get('pause_request') or {}
+    target_agents = sorted({s['agent'] for s in (doc.get('approval_steps') or [])
+                            if s['id'] in (pr.get('target_step_ids') or [])})
+    if target_agents != ['R']:
+        raise CaseFailure(f'중단 확인 대상이 R 만이 아니다: {target_agents}')
+    F.cancel_pause(author, doc_id)
+    return f'doc={doc_id}'
 
 
 # ============================================================ C. 검토중(claim)
