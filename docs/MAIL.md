@@ -36,6 +36,18 @@ RS 몫의 수신자는 없다).
 - 2026-11-12 의 '숫자 확인 자동 반려' 메일(`[반려] [자동반려]` + "숫자 확인 값이 AAA4 값과 맞지 않아…")은 이것으로 대체됐다.
 - 결재 경로 카드(모든 메일): 일반·Only MAP 의 2구역에 `System R` 행이 추가된다. RS 가 없는 회차는 `해당없음`. 규칙은 `docs/APPROVAL.md` "System R".
 
+### System R 보류 확인 요청 메일 (2026-11-13)
+System R 이 AAA5(Map Option)·AAA6(MAP 목적 CLONE) 불일치로 **보류**하면(RS 는 대기 그대로, 반려 아님) R 쪽에 확인을 요청한다.
+- 이벤트: `system_r_hold`(`MailNotification.EVENT_CHOICES` 'System R 확인 요청', 마이그레이션 `0063`). 적재: `mailer.enqueue_system_r_hold(document, reason)`.
+- **수신자**(`mailer.resolve_system_r_hold_recipients`): 현재 회차 **R 담당자 + RV 검토자**(지정된 경우). R 담당자가 아직 없으면
+  **TE_R 팀 전원**. 라인 수신 설정 필터·`MAIL_REDIRECT_TO` 는 다른 의뢰서 메일과 같이 적용된다. 작성자에게는 보내지 않는다.
+- **RS 단계당 1번만**(사용자 결정) — 같은 RS 에 이미 적재된 `system_r_hold` 가 있으면 다시 보내지 않는다(불일치 사유가 바뀌어도).
+  재상신으로 새 회차 RS 가 생기면 다시 1번.
+- **제목**: `[System R 확인 필요] {제목}`. 본문 안내문: "System R 검증에서 의뢰서의 MAP 정보가 MAP 데이터와 맞지 않아 System R
+  합의가 보류되었습니다. 특이사항의 불일치 항목을 확인해 주세요. 값이 일치하면 System R 이 자동으로 합의합니다."
+  KPI '결재 단계' 칸은 `System R 보류`, **특이사항 칸에 보류 의견**(`[System R 보류] Map Option 요청서 … ↔ AAA5 …`)을 싣는다. 레드 테마.
+- 결재 경로 카드의 `System R` 행은 대기중 + 보류 의견으로 나온다.
+
 ### 작성자·공유 그룹도 상신 통보·결재 완료 통보·승인 완료 수신 (2026-11-10)
 작성자(의뢰자)가 자기 문서의 **반려 메일 외에는 아무 메일도 받지 못하던** 문제를 보완했다.
 아래 3종 메일에 **작성자(`requester_email`) + 문서 공유 그룹(`shared_group`) 멤버**를 수신자로 추가한다
