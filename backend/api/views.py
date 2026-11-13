@@ -1286,7 +1286,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     {'error': '진행 중인 결재 단계가 없습니다.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            accepted_message = '철회 요청이 접수되었습니다. 현재 단계의 확인을 기다립니다.'
+            # claude 수정 (2026-11-13): 확인 대상이 '관여했던 팀'으로 바뀌어 반려 문서와 같은 안내 문구
+            accepted_message = '철회 요청이 접수되었습니다. 관여했던 팀의 확인을 기다립니다.'
         target_steps = self._withdraw_target_steps(document)
         if not target_steps:
             return Response(
