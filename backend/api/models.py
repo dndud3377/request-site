@@ -1601,6 +1601,9 @@ class MapName(models.Model):
     AAA3 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA3')
     # claude 수정 (2026-11-13): AAA4 — '숫자 확인 값'과 비교하는 System R 검증 항목(system_r.check_num_check_aaa4)에 쓴다
     AAA4 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA4')
+    # claude 수정 (2026-11-13): AAA5(Map Option 번호 '1|2|3|4', 옵션 없으면 빈 값)·AAA6(CLONE 검증값, 빈 값 가능) — System R 검증 항목에 쓴다
+    AAA5 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA5')
+    AAA6 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA6')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
@@ -1765,6 +1768,8 @@ class MailNotification(models.Model):
         ('route_member_removed', '결재선 제외'),
         # R/J/O 완료 → P 팀 통보 (2026-09 추가)
         ('notify_rjo_completed', 'R/J/O 완료 통보'),
+        # claude 수정 (2026-11-13): System R 보류(MAP 데이터 불일치) → R 담당자·검토자 확인 요청
+        ('system_r_hold', 'System R 확인 요청'),
     ]
 
     STATUS_CHOICES = [
