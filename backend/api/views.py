@@ -1150,10 +1150,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # 확인 절차 없이 즉시 삭제되는 문서 상태 — 결재선이 아직 없거나(draft) 이미 종료돼
     # (approved) '확인'을 받을 진행 중 단계가 존재하지 않는다.
     _WITHDRAW_IMMEDIATE_STATUSES = ('draft', 'approved')
-    # 현재 단계 전원의 확인을 받아야 철회되는 상태
+    # claude 수정 (2026-11-13): 주석을 새 기준으로 — 관여했던 묶음마다 한 명씩 확인받아야 철회되는 상태
     _WITHDRAW_CONFIRM_STATUSES = ('under_review', 'submitted')
-    # claude 수정 (2026-11-09): 반려 문서도 철회 가능 — 관여했던 팀 전원 확인 후 삭제(2026-08 '반려 철회 불가' 폐지)
-    # 반려 문서는 진행 중 단계가 없으므로, 이 문서에 관여했던 팀 전원의 확인을 받아야 철회된다.
+    # claude 수정 (2026-11-09): 반려 문서도 철회 가능(2026-08 '반려 철회 불가' 폐지)
+    # 반려 문서도 진행 중 문서와 같은 기준(관여했던 묶음마다 한 명씩 확인, 2026-11-13)으로 철회된다.
     _WITHDRAW_REJECTED_STATUS = 'rejected'
     _WITHDRAW_PENDING_EDIT_ERROR = '철회 요청 확인 대기 중인 의뢰서는 수정·재상신할 수 없습니다. 철회가 거부·취소된 뒤 진행해 주세요.'
 
