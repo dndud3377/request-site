@@ -3923,8 +3923,9 @@ class WithdrawFlowTest(TestCase):
         noti = MailNotification.objects.get(event_type='withdraw_requested')
         self.assertCountEqual(noti.recipients, ['wd_pl@c.com', 'wd_r@c.com'])
 
+    # claude 수정 (2026-11-13): 확인 대상이 묶음(PL·R·J…)당 대표 1건으로 바뀜 — PL 도 묶음 1건
     def test_rejected_withdraw_targets_latest_round_pls_and_deeper_zones(self):
-        """1구역은 최신 회차 PL 전원(미결정 PL 포함), 2·3구역은 팀별 최근 관여 단계(미선점 팀 제외)."""
+        """묶음마다 최근 관여 단계 1건(PL 은 최신 회차 미결정 PL 이 대표), 미선점 팀은 제외."""
         pl2 = UserProfile.objects.create(loginid='wd_pl2', mail='wd_pl2@c.com', role='PL', username='지정PL2')
         doc = self._doc('rejected')
         self._step(doc, 'PL', action='approved', assignee=self.pl, round=1)
@@ -3937,7 +3938,8 @@ class WithdrawFlowTest(TestCase):
         res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
         self.assertEqual(res.status_code, 200, res.content)
         wr = WithdrawRequest.objects.get(document=doc)
-        self.assertCountEqual(wr.target_step_ids, [pl_rejected.id, pl_undecided.id, r1.id, j1.id])
+        self.assertCountEqual(wr.target_step_ids, [pl_undecided.id, r1.id, j1.id])
+        self.assertNotIn(pl_rejected.id, wr.target_step_ids)
 
     def test_rejected_withdraw_all_confirm_deletes_document(self):
         doc, _pl, _r = self._rejected_doc_at_r()
@@ -4076,22 +4078,111 @@ class WithdrawFlowTest(TestCase):
         self.assertFalse(WithdrawRequest.objects.filter(document_id=doc.id).exists())
         self.assertIn('withdraw_completed', self._events())
 
-    def test_unassigned_step_can_be_confirmed_by_team_member(self):
-        """담당자 미배정 단계는 같은 팀 누구나 1명이 확인하면 그 단계는 확인 완료."""
+    # claude 수정 (2026-11-13): 철회 확인은 묶음당 한 명 — 검토 중인 팀은 담당자 본인이 아니어도 그 팀 누구나 확인
+    def test_reviewing_team_step_can_be_confirmed_by_any_team_member(self):
+        """담당자가 있는(검토 중) 팀 단계도 장기 부재 대응으로 같은 팀 누구나 1명이 확인하면 끝난다."""
         doc = self._doc()
-        self._step(doc, 'R')  # 미배정
+        self._step(doc, 'R', assignee=self.rfg)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
         res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
         self.assertEqual(res.status_code, 200, res.content)
         self.assertTrue(res.data['deleted'])
         self.assertFalse(self._exists(doc))
 
-    def test_unassigned_step_mails_whole_team(self):
+    # claude 수정 (2026-11-13): 아무도 맡지 않은 대기 팀은 요청서를 본 적이 없어 확인 대상·메일 수신에서 빠진다
+    def test_waiting_unassigned_team_is_not_target_nor_mailed(self):
         doc = self._doc()
-        self._step(doc, 'R')
-        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        pl_step = self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'R')  # 대기(미배정)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).target_step_ids, [pl_step.id])
         noti = MailNotification.objects.get(event_type='withdraw_requested')
-        self.assertCountEqual(noti.recipients, ['wd_r@c.com', 'wd_r2@c.com'])
+        self.assertEqual(noti.recipients, ['wd_pl@c.com'])
+        # R 팀은 확인 대상이 아니므로 확인할 수 없다
+        res = self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 403)
+        res = self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'})
+        self.assertTrue(res.data['deleted'])
+
+    # claude 수정 (2026-11-13): 같은 회차의 이미 합의한 사람도 요청서를 본 사람이라 확인 대상·메일 수신자
+    def test_in_progress_targets_every_involved_group(self):
+        """3구역 진행 중: PL·SA·R·O(합의) + P(검토중)·RA(배정)가 대상, 대기 J 는 제외."""
+        sa = UserProfile.objects.create(loginid='wd_sa', mail='wd_sa@c.com', role='NONE', username='SA')
+        ra = UserProfile.objects.create(loginid='wd_ra', mail='wd_ra@c.com', role='NONE', username='RA')
+        o_user = UserProfile.objects.create(loginid='wd_o1', mail='wd_o1@c.com', role='TE_O', username='O담당')
+        doc = self._doc()
+        pl_s = self._step(doc, 'PL', action='approved', assignee=self.pl)
+        sa_s = self._step(doc, 'SA', action='approved', assignee=sa)
+        r_s = self._step(doc, 'R', action='approved', assignee=self.rfg)
+        p_s = self._step(doc, 'P', assignee=self.p_user)  # 검토중
+        self._step(doc, 'J')  # 대기(미배정) → 제외
+        o_s = self._step(doc, 'O', action='approved')
+        o_s.acted_by = o_user
+        o_s.save(update_fields=['acted_by'])
+        ra_s = self._step(doc, 'RA', assignee=ra)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [pl_s.id, sa_s.id, r_s.id, p_s.id, o_s.id, ra_s.id])
+        notis = list(MailNotification.objects.filter(event_type='withdraw_requested'))
+        self.assertEqual(len(notis), 1, '팀별 메일 없이 관여자 메일 1통')
+        self.assertCountEqual(
+            notis[0].recipients,
+            ['wd_pl@c.com', 'wd_sa@c.com', 'wd_r@c.com', 'wd_p@c.com', 'wd_o1@c.com', 'wd_ra@c.com'],
+        )
+        self.assertNotIn('wd_j@c.com', notis[0].recipients)
+
+    # claude 수정 (2026-11-13): 모든 회차의 관여자에게 메일, 확인은 묶음당 한 명(관여 안 한 팀원도 대신 가능)
+    def test_all_rounds_involved_people_mailed_once_and_one_confirm_per_group(self):
+        r3 = UserProfile.objects.create(loginid='wd_r3', mail='wd_r3@c.com', role='TE_R', username='R팀원3')
+        doc = self._doc()
+        self._step(doc, 'PL', action='approved', assignee=self.pl, round=1)
+        self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'PL', action='approved', assignee=self.pl, round=2)
+        r2_step = self._step(doc, 'R', action='approved', round=2)  # 담당자 없이 rfg2 가 합의
+        r2_step.acted_by = self.rfg2
+        r2_step.save(update_fields=['acted_by'])
+        self._step(doc, 'J', round=2)  # 대기
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(len(wr.target_step_ids), 2, 'PL 1건 + R 1건')
+        noti = MailNotification.objects.get(event_type='withdraw_requested')
+        self.assertCountEqual(noti.recipients, ['wd_pl@c.com', 'wd_r@c.com', 'wd_r2@c.com'])
+        self.assertNotIn('wd_r3@c.com', noti.recipients)  # 관여하지 않은 팀원은 메일 없음
+
+        res = self._post(r3, doc, 'confirm-withdraw', {'agent': 'R'})  # 같은 팀 누구나 대신 확인
+        self.assertEqual(res.status_code, 200, res.content)
+        res = self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})  # 이미 확인된 묶음
+        self.assertEqual(res.status_code, 403)
+        res = self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'})
+        self.assertTrue(res.data['deleted'])
+
+    # claude 수정 (2026-11-13): PL 은 팀이 없어 관여한 PL 끼리만 대신 확인(묶음당 한 명)
+    def test_pl_group_confirmed_by_any_involved_pl_only(self):
+        pl2 = UserProfile.objects.create(loginid='wd_pl2', mail='wd_pl2@c.com', role='PL', username='지정PL2')
+        other_pl = UserProfile.objects.create(loginid='wd_pl3', mail='wd_pl3@c.com', role='PL', username='무관PL')
+        doc = self._doc()
+        self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'PL', assignee=pl2)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(len(WithdrawRequest.objects.get(document=doc).target_step_ids), 1)
+        res = self._post(other_pl, doc, 'confirm-withdraw', {'agent': 'PL'})
+        self.assertEqual(res.status_code, 403)
+        res = self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'})  # 대표 단계 담당자가 아니어도 관여자
+        self.assertTrue(res.data['deleted'])
+
+    # claude 수정 (2026-11-13): 취소 메일은 요청 메일을 받은 사람(관여자)에게 같은 1통
+    def test_cancel_mail_goes_to_request_recipients(self):
+        doc = self._doc()
+        self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'R')  # 대기
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.author, doc, 'cancel-withdraw')
+        notis = list(MailNotification.objects.filter(event_type='withdraw_cancelled'))
+        self.assertEqual(len(notis), 1)
+        self.assertEqual(notis[0].recipients, ['wd_pl@c.com'])
 
     def test_other_team_cannot_confirm(self):
         doc = self._doc()
@@ -4175,6 +4266,8 @@ class WithdrawFlowTest(TestCase):
         self._step(doc, 'PL', action='approved', assignee=self.pl)
         self._step(doc, 'R', assignee=self.rfg)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        # claude 수정 (2026-11-13): 합의한 PL 도 확인 대상이 돼 PL·R 둘 다 확인해야 삭제된다
+        self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'})
         self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
 
         # (2026-09) 개인 수신자(지정PL+작성자) 메일 1통 + 도달한 팀(R) 메일 1통으로 분리된다.
@@ -4193,6 +4286,8 @@ class WithdrawFlowTest(TestCase):
         self._step(doc, 'R', action='approved', assignee=self.rfg)
         self._step(doc, 'J', assignee=self.job)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        # claude 수정 (2026-11-13): 합의한 R 도 확인 대상이 돼 R·J 둘 다 확인해야 삭제된다
+        self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
         self._post(self.job, doc, 'confirm-withdraw', {'agent': 'J'})
 
         notis = list(MailNotification.objects.filter(event_type='withdraw_completed'))
@@ -4357,8 +4452,9 @@ class WithdrawFlowTest(TestCase):
         self.assertIn(ra_step.id, wr.confirmed_step_ids)
 
     # ----- 같은 agent 다중 단계 확인 / step_id 지정 (2026-11-11) -----
+    # claude 수정 (2026-11-13): 확인 대상이 묶음당 1건이 됨 — PV 2명·RA 2명이어도 P·RA 묶음 각 1건
     def _multi_zone3_withdraw(self):
-        """3구역 진행 중 + PV 2명·RA 2명(같은 agent 다중 단계)인 문서에 철회 요청을 건다."""
+        """3구역 진행 중 + PV 2명·RA 2명인 문서에 철회 요청을 건다. 확인 대상 = PL·R·P·RA 4건."""
         pv1 = UserProfile.objects.create(loginid='wd_pv1', mail='wd_pv1@c.com', role='TE_P', username='PV1')
         pv2 = UserProfile.objects.create(loginid='wd_pv2', mail='wd_pv2@c.com', role='TE_P', username='PV2')
         ra1 = UserProfile.objects.create(loginid='wd_ra1', mail='wd_ra1@c.com', role='PL', username='RA1')
@@ -4374,52 +4470,67 @@ class WithdrawFlowTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         return doc, steps
 
-    def test_master_agent_confirm_skips_already_confirmed_step(self):
-        """agent 만 보내도 이미 확인한 단계는 건너뛴다 — 예전엔 같은 PV 단계만 반복 확인돼 확정되지 않았다."""
+    def test_multi_steps_of_same_agent_collapse_to_one_target(self):
         doc, steps = self._multi_zone3_withdraw()
-        for agent in ('PV', 'PV', 'RA'):
-            res = self._post(self.master, doc, 'confirm-withdraw', {'agent': agent})
-            self.assertEqual(res.status_code, 200, res.content)
         wr = WithdrawRequest.objects.get(document=doc)
-        self.assertEqual(set(wr.confirmed_step_ids), {steps[0].id, steps[1].id, steps[2].id})
+        self.assertEqual(len(wr.target_step_ids), 4)
+        self.assertEqual(len([sid for sid in wr.target_step_ids if sid in {steps[0].id, steps[1].id}]), 1)
+        self.assertEqual(len([sid for sid in wr.target_step_ids if sid in {steps[2].id, steps[3].id}]), 1)
 
-        res = self._post(self.master, doc, 'confirm-withdraw', {'agent': 'RA'})
-        self.assertTrue(res.data['deleted'])
+    def test_master_agent_confirm_skips_already_confirmed_step(self):
+        """agent 만 보내도 이미 확인한 단계는 건너뛴다 — 같은 묶음을 다시 확인하면 대상이 없어 403."""
+        doc, _steps = self._multi_zone3_withdraw()
+        wr = WithdrawRequest.objects.get(document=doc)
+        targets = list(ApprovalStep.objects.filter(id__in=wr.target_step_ids).order_by('id'))
+        first = targets[0]
+        res = self._post(self.master, doc, 'confirm-withdraw', {'agent': first.agent})
+        self.assertEqual(res.status_code, 200, res.content)
+        res = self._post(self.master, doc, 'confirm-withdraw', {'agent': first.agent})
+        self.assertEqual(res.status_code, 403, res.content)
+        for s in targets[1:]:
+            res = self._post(self.master, doc, 'confirm-withdraw', {'agent': s.agent})
+            self.assertEqual(res.status_code, 200, res.content)
         self.assertFalse(self._exists(doc))
 
     def test_master_confirms_chosen_step_by_step_id(self):
-        """MASTER 가 step_id 로 고른 단계(두 번째 PV)가 정확히 확인된다."""
-        doc, steps = self._multi_zone3_withdraw()
-        res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': steps[1].id})
+        """MASTER 가 step_id 로 고른 묶음이 정확히 확인되고, 전부 확인하면 삭제된다."""
+        doc, _steps = self._multi_zone3_withdraw()
+        targets = WithdrawRequest.objects.get(document=doc).target_step_ids
+        res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': targets[1]})
         self.assertEqual(res.status_code, 200, res.content)
-        self.assertEqual(WithdrawRequest.objects.get(document=doc).confirmed_step_ids, [steps[1].id])
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).confirmed_step_ids, [targets[1]])
 
-        for s in (steps[3], steps[0], steps[2]):
-            res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': s.id})
+        for sid in [targets[0]] + list(targets[2:]):
+            res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': sid})
             self.assertEqual(res.status_code, 200, res.content)
         self.assertFalse(self._exists(doc))
 
     def test_step_id_already_confirmed_is_400(self):
-        doc, steps = self._multi_zone3_withdraw()
-        self._post(self.master, doc, 'confirm-withdraw', {'step_id': steps[0].id})
-        res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': steps[0].id})
+        doc, _steps = self._multi_zone3_withdraw()
+        targets = WithdrawRequest.objects.get(document=doc).target_step_ids
+        self._post(self.master, doc, 'confirm-withdraw', {'step_id': targets[0]})
+        res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': targets[0]})
         self.assertEqual(res.status_code, 400, res.content)
 
     def test_step_id_not_in_target_is_400(self):
-        doc, _ = self._multi_zone3_withdraw()
-        approved_r = ApprovalStep.objects.get(document=doc, agent='R')
-        for bad in (approved_r.id, 'abc'):
+        doc, steps = self._multi_zone3_withdraw()
+        targets = set(WithdrawRequest.objects.get(document=doc).target_step_ids)
+        non_target = next(s for s in steps if s.id not in targets)  # 대표가 아닌 PV/RA 단계
+        for bad in (non_target.id, 'abc'):
             res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': bad})
             self.assertEqual(res.status_code, 400, res.content)
         self.assertEqual(WithdrawRequest.objects.get(document=doc).confirmed_step_ids, [])
 
-    def test_step_id_of_other_assignee_is_403_for_non_master(self):
-        """일반 사용자는 step_id 로도 남의 단계를 확인할 수 없다(권한 규칙은 그대로)."""
+    def test_step_id_of_other_team_is_403_for_non_master(self):
+        """일반 사용자는 step_id 로도 다른 묶음을 확인할 수 없고, 자기 팀 묶음은 대표가 남이어도 확인한다."""
         doc, steps = self._multi_zone3_withdraw()
+        targets = WithdrawRequest.objects.get(document=doc).target_step_ids
+        p_target = next(sid for sid in targets if sid in {steps[0].id, steps[1].id})
+        r_target = ApprovalStep.objects.get(document=doc, agent='R').id
         pv1 = steps[0].assignee
-        res = self._post(pv1, doc, 'confirm-withdraw', {'step_id': steps[1].id})
+        res = self._post(pv1, doc, 'confirm-withdraw', {'step_id': r_target})
         self.assertEqual(res.status_code, 403, res.content)
-        res = self._post(pv1, doc, 'confirm-withdraw', {'step_id': steps[0].id})
+        res = self._post(pv1, doc, 'confirm-withdraw', {'step_id': p_target})
         self.assertEqual(res.status_code, 200, res.content)
 
 
