@@ -30,7 +30,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActiveStageStep, getStagePendingEnteredAt, isMyDocument,
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
-  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible,
+  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible, SYSTEM_R_AGENT,
 } from '../utils/approvalTable';
 import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
@@ -1873,10 +1873,13 @@ export default function ApprovalPage(): React.ReactElement {
           >
             <input type="radio" name={name} checked={checked} onChange={() => onSelect(s)} disabled={processing} />
             <span style={{ fontWeight: 700, minWidth: 110 }}>{stepTeamLabel(s)}</span>
+            {/* claude 수정 (2026-11-13): System R 은 사람 팀이 없어 '담당자 미배정 (팀 전체)' 대신 '시스템 판정'으로 표시 */}
             <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              {s.assignee_name
-                ? t('approval.master_confirm_assignee', { name: s.assignee_name })
-                : t('approval.master_confirm_unassigned')}
+              {s.agent === SYSTEM_R_AGENT
+                ? t('approval.master_confirm_system_r')
+                : s.assignee_name
+                  ? t('approval.master_confirm_assignee', { name: s.assignee_name })
+                  : t('approval.master_confirm_unassigned')}
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               {s.zone_index != null && `${t('approval.zone_label', { zone: s.zone_index + 1 })} · `}
