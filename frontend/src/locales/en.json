@@ -986,6 +986,7 @@
     "master_confirm_reviewer_of": "{{team}} Reviewer",
     "master_confirm_assignee": "Assignee: {{name}}",
     "master_confirm_unassigned": "Unassigned (whole team)",
+    "master_confirm_system_r": "System check",
     "master_confirm_round": "Round {{round}}",
     "master_confirm_submit": "Confirm for selected team",
     "master_confirm_empty": "There is no team you can confirm for.",
