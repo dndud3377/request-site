@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0059_personalfilterpreset"),
+        ("api", "0060_approvalstep_acted_by"),
     ]
 
     operations = [
