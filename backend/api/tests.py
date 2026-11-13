@@ -3796,11 +3796,11 @@ class DocumentDeleteAuthTest(TestCase):
 
 
 class WithdrawFlowTest(TestCase):
-    """철회 = '요청 → 현재 단계 전원 확인 → 완전 삭제' (2026-08 개편).
+    """철회 = '요청 → 관여했던 묶음마다 한 명씩 확인 → 완전 삭제' (2026-08 개편, 2026-11-13 확인 대상 개편).
 
     - draft 는 확인 없이 즉시 삭제(사유 선택), approved 는 MASTER 만
-    - rejected 는 사유 필수 + 철회 요청 생성 → 관여했던 팀 전원 확인 시 삭제(2026-11)
-    - under_review/submitted 는 사유 필수 + 철회 요청 생성 → 전원 확인 시 삭제
+    - rejected·under_review/submitted 는 사유 필수 + 철회 요청 생성 → 관여했던 묶음(대기 팀 제외)마다
+      한 명씩 확인 시 삭제(claude 수정 2026-11-13: docstring 을 새 기준으로)
     - 확인 대기 중에는 결재 동결, 요청자만 취소 가능, 대상 단계는 거부 가능
     """
 
