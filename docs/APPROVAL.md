@@ -423,14 +423,49 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 | 상태 | 동작 | 사유 |
 |---|---|---|
 | `draft` | 확인 없이 **즉시 삭제** (결재선이 없다). 프론트는 사유 입력란 없이 단순 확인 모달만 띄운다(2026-08) | 선택 |
-| `rejected` | **철회 요청 생성** → 이 문서에 **관여했던 팀 전원** 확인 시 삭제(2026-11, 아래 "반려 문서 철회" 참고). 2026-08 의 '철회 불가'는 폐지 | **필수** |
+| `rejected` | **철회 요청 생성** → 관여한 묶음마다 한 명씩 확인 시 삭제(2026-11-13, 아래 "확인 대상·메일" 참고). 2026-08 의 '철회 불가'는 폐지 | **필수** |
 | `approved` | **MASTER 만** 즉시 삭제, 그 외 403 (결재 완료본 = 이력, `can_delete` 와 같은 기준) | 선택 |
-| `under_review` / `submitted` | **철회 요청 생성** → 현재 단계 전원 확인 시 삭제 | **필수** |
+| `under_review` / `submitted` | **철회 요청 생성** → 관여한 묶음마다 한 명씩 확인 시 삭제(2026-11-13) | **필수** |
 | `pause` | 400 — 재개한 뒤 철회한다 | - |
 
 응답의 `deleted`(bool)로 "이미 삭제됨"과 "요청만 접수됨"을 구분한다.
 
+**확인 대상·메일 — 요청서를 본 사람 기준 (2026-11-13 개편, 진행 중·반려 문서 공통)**
+
+"아무도 맡지 않은 대기 팀은 그 요청서를 본 적이 없으니 철회 메일도, 철회 확인도 필요 없다.
+요청서를 본 사람(합의·반려했던 사람, 지금 검토 중인 사람)이 받고 확인한다"(사용자 결정).
+
+- **관여 단계(`mailer.is_withdraw_involved`)**: 모든 회차를 통틀어 **합의·반려한 단계** + 담당자가 정해진
+  **대기 단계**(검토중으로 맡음, 지정 PL·SA·후결자·검토자 RV/PV/EV, 지정된 R). 아무도 맡지 않은
+  대기 단계(`pending` + 담당자 없음)는 관여가 아니다.
+- **확인 대상(`views._withdraw_target_steps`)**: 관여 단계가 하나라도 있는 **묶음마다 대표 단계 1건** —
+  묶음 = PL / SA / R(+RV) / P(+PV) / J / O / E(+EV) / RA(`mailer.withdraw_group`). 대표는 가장 최근 회차의
+  단계(같은 회차면 대기 중인 단계 → 담당자 agent 단계 우선). 같은 회차에서 이미 합의한 앞 구역(PL·R 등)과
+  같은 구역의 먼저 합의한 팀(O 등)도 대상이다. 대상이 0건이면 400 `철회를 확인할 결재 단계가 없습니다.`
+  진행 중 문서는 현재 회차에 대기 단계가 없으면 종전대로 400 `진행 중인 결재 단계가 없습니다.`
+- **확인·거부 인가(`views._can_confirm_withdraw`) — 묶음당 한 명이면 끝**: MASTER 항상 / 그 묶음에 관여한
+  사람(담당자·처리자, 즉 메일을 받은 사람) 누구나 / 팀 묶음(R·P·J·O·E)은 **지금 그 팀 누구나**(장기 부재 대응 —
+  검토 중인 담당자 본인이 아니어도 된다) / RA 는 이 문서의 현재 후결자 누구나. PL·SA 는 팀이 없어 그 묶음의
+  관여자끼리만 대신한다(같은 역할의 무관한 사람은 403).
+- **메일(`mailer.resolve_withdraw_involved_recipients`)**: `withdraw_requested`·`withdraw_cancelled` 는 확인 대상 묶음에
+  관여한 **사람 전원**(모든 회차의 담당자·처리자)에게 **1통**. 팀 전원 메일은 없다 — 확인은 팀 누구나 할 수 있지만
+  메일은 요청서를 본 사람에게만 간다. 같은 사람이 두 통 받던 중복(담당자 없이 처리한 단계 → 처리자 개인 메일 +
+  팀 메일)도 이걸로 사라졌다. 완료·거부 메일과 **중단 메일은 바뀌지 않았다**(중단은 기존
+  `resolve_withdraw_target_recipients` — 이제 중단 전용).
+- 프론트(`ApprovalPage.tsx` `canConfirmWithdrawStep`/`getWithdrawNeedItems`)가 같은 규칙으로 [철회 확인] 버튼·
+  MASTER '대신 확인할 팀' 후보를 계산한다. RA 는 서버가 '현재 후결자 전원'까지 허용하지만 프론트는 문서의
+  RA 관여자로 근사한다(하이라이트 힌트, 최종 인가는 서버).
+- 예) 3구역 진행 중(PL·SA·R·O 합의, P 검토중 p1, J 대기, RA 배정) → 대상 PL·SA·R·P·O·RA, J 제외.
+  2회차 문서(1회차 R 반려 r1, 2회차 R 을 담당 없이 r2 합의) → R 묶음 1건, 메일은 r1·r2, 확인은 TE_R 누구나.
+- 테스트: `WithdrawFlowTest` `test_waiting_unassigned_team_is_not_target_nor_mailed`·
+  `test_in_progress_targets_every_involved_group`·`test_all_rounds_involved_people_mailed_once_and_one_confirm_per_group`·
+  `test_pl_group_confirmed_by_any_involved_pl_only`·`test_reviewing_team_step_can_be_confirmed_by_any_team_member`·
+  `test_cancel_mail_goes_to_request_recipients`·`test_multi_steps_of_same_agent_collapse_to_one_target`. 러너 W-07~W-11·W-15.
+
 **반려 문서 철회 (2026-11-09 추가)**
+
+> ⚠️ 아래 '확인 대상'·'확인·거부·취소' 판정은 **2026-11-13 개편으로 대체**됐다(위 "확인 대상·메일" 참고 — 반려 문서도
+> 진행 중 문서와 같은 규칙, PL 도 최신 회차 전원이 아니라 묶음 1건). 요청 자격·사유 필수·동결·프론트 문구는 그대로다.
 
 반려 문서가 정리되지 않고 계속 쌓이는 문제(사용자 리포트)로, 2026-08 에 막았던 반려 문서 철회를
 다시 허용한다. 단 **즉시 삭제가 아니라 관여했던 팀 전원의 확인**을 받는다 — 반려 문서에는
@@ -469,6 +504,11 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   "관여 팀 전원 확인" 원칙을 우회할 수 있다. 사용자 결정으로 이번에는 기록만 남긴다.
 
 **요청 → 확인 → 삭제**
+
+> ⚠️ 아래 '철회 요청'(현재 pending 단계 + 이전 회차 도달 구역)·'철회 확인'(`_can_confirm_pause`/`_can_confirm_extra_zone`)
+> 판정은 **2026-11-13 개편으로 대체**됐다 — 위 "확인 대상·메일" 참고. `_extra_zone_target_steps`·
+> `_rejected_withdraw_target_steps`·`_can_confirm_extra_zone`·`_zone_index` 는 삭제됐다. 한 문서에 활성 요청 1건·
+> 동결·거부·취소·MASTER `step_id` 대신 확인·이력 미보존 규칙은 그대로다.
 
 - **철회 요청**: 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다.
   한 문서에 활성 요청(`state='requested'`)은 1건뿐이다. 상태 뱃지는 그대로 유지되고,
@@ -543,7 +583,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - ⚠️ **철회 이력은 남지 않는다**(2026-08 결정). 문서 삭제 시 `ApprovalStep`·`WithdrawRequest` 가
   CASCADE 로 함께 사라지고, 누가 왜 철회했는지는 서버 로그
   `[WITHDRAW_DOCUMENT] user=… doc=… reason=…` 에만 남는다.
-- **메일**: 요청/완료/거부/취소 4종이 발송된다. 수신자 규칙은 `docs/MAIL.md` §3.2.
+- **메일**: 요청/완료/거부/취소 4종이 발송된다. 수신자 규칙은 `docs/MAIL.md` §3.2(요청·취소는 2026-11-13 개편).
 - 테스트: `backend/api/tests.py::WithdrawFlowTest`
 
 ### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근) — **R 전용**
