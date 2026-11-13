@@ -642,7 +642,7 @@ def sync_form_options():
                 logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e), exc_info=True)
                 failures.append({'context': '-', 'target': '바코드-품목'})
 
-            # claude 수정 (2026-11-12): MAP 이름 조회·저장 컬럼에 AAA4 추가 — '숫자 확인 값' 자동 반려 비교용
+            # claude 수정 (2026-11-13): MAP 이름 조회·저장 컬럼에 AAA4 추가 — System R '숫자 확인 값 ↔ AAA4' 검증(system_r.check_num_check_aaa4) 비교용
             try:
                 lineid_list = list(LINE_TO_LINEID_MAP.values())
                 placeholders = ' OR '.join([f"lineid = '{lid}'" for lid in lineid_list])
