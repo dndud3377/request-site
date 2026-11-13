@@ -29,15 +29,9 @@ export const isLayerDriftVisible = (doc: RequestDocument): boolean =>
   (!!doc.layer_drift_detected && LAYER_DRIFT_IN_PROGRESS_STATUSES.includes(doc.status))
   || !!doc.layer_drift_auto_rejected;
 
-// claude 수정 (2026-11-12): 숫자 확인 자동 반려 '숫자 불일치' 배지 — 표시 판정과 목적 필터 가상 옵션 추가
-/** 요청 목적 필터 체크박스에 추가하는 가상 옵션 — 체크하면 '숫자 불일치' 배지가 보이는 문서만 남긴다 */
-export const NUM_CHECK_MISMATCH_FILTER_OPTION = '숫자 불일치';
-
-/**
- * '숫자 불일치' 뱃지를 보여줄지 — '숫자 확인 값' ↔ AAA4 불일치로 자동 반려된 문서(서버 판정, 재상신하면 사라진다).
- * '변경 감지' 뱃지와는 따로 판정한다(변경 감지 중이던 문서가 숫자 확인으로 반려돼도 '변경 감지'는 뜨지 않는다).
- */
-export const isNumCheckMismatchVisible = (doc: RequestDocument): boolean => !!doc.num_check_auto_rejected;
+// claude 수정 (2026-11-13): System R agent 코드 상수
+/** System R — 2구역에서 R 과 병렬로 MAP 정보를 시스템이 검증하는 단계(담당자 없음) */
+export const SYSTEM_R_AGENT = 'RS';
 
 export interface DocDetailFields {
   line: string;
@@ -188,8 +182,9 @@ export const getDisplayStatus = (doc: RequestDocument): string => {
   const steps = doc.approval_steps ?? [];
   const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
   const pending = steps.filter((s) => (s.round ?? 1) === maxRound && s.action === 'pending');
+  // claude 수정 (2026-11-13): System R(RS)은 담당자가 없는 시스템 단계라 '미지정' 판정에서 뺀다
   const needsAssignment = pending.some(
-    (s) => s.agent !== 'O' && s.agent !== 'E' && s.agent !== 'P' && !s.assignee_loginid
+    (s) => s.agent !== 'O' && s.agent !== 'E' && s.agent !== 'P' && s.agent !== SYSTEM_R_AGENT && !s.assignee_loginid
   );
   return needsAssignment ? 'unassigned' : 'under_review';
 };
@@ -295,7 +290,8 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
 export type StageCellState = 'na' | 'wait' | 'review' | 'done' | 'pause';
 
 /** 그리드 칸 슬롯. GRID_SLOT_ORDER 의 순서가 곧 화면 배치(행 우선, 2열)다. */
-export type StageCellSlot = 'P' | 'RA_FIXED' | 'J' | 'E' | 'O' | 'RA_EXTRA' | 'PL' | 'SA';
+// claude 수정 (2026-11-13): 2구역 그리드 칸(R·RS) 추가
+export type StageCellSlot = 'P' | 'RA_FIXED' | 'J' | 'E' | 'O' | 'RA_EXTRA' | 'PL' | 'SA' | 'R' | 'RS';
 
 const GRID_SLOT_ORDER: StageCellSlot[] = ['RA_FIXED', 'P', 'J', 'O', 'E', 'RA_EXTRA'];
 
@@ -348,6 +344,8 @@ const buildStageText = (
   if (isDone) return t('common.status_approved');
   if (!step) return t('common.status_approved');
   const label = stageLabel(step.agent, t, isFixedPostApproverStep(step, fixedLoginid));
+  // claude 수정 (2026-11-13): System R 은 처리자 이름도 'System R' 이라 이름을 붙이지 않는다(MASTER 수동 처리 포함 — 상세에서 확인)
+  if (step.agent === SYSTEM_R_AGENT) return label;
   const name = step.acted_by_name || step.assignee_name;
   return name ? `${label}(${name})` : label;
 };
@@ -437,8 +435,8 @@ const buildParallelGrid = (
     ? doc.pause_request.target_step_ids
     : [];
 
-  // PL/SA 는 병렬 합의 단계가 아니라 그 앞 PL 검토 단계의 칸이라 여기 오지 않는다.
-  const specs: Record<Exclude<StageCellSlot, 'PL' | 'SA'>, CellSpec> = {
+  // PL/SA·R/RS 는 병렬 합의 단계가 아니라 그 앞 1·2구역의 칸이라 여기 오지 않는다.
+  const specs: Record<Exclude<StageCellSlot, 'PL' | 'SA' | 'R' | 'RS'>, CellSpec> = {
     P: {
       slot: 'P', label: t('approval.agent_P' as any),
       main: of('P'), reviewers: of('PV'), showName: true,
@@ -463,7 +461,7 @@ const buildParallelGrid = (
     },
   };
 
-  return GRID_SLOT_ORDER.map(slot => buildCell(specs[slot as Exclude<StageCellSlot, 'PL' | 'SA'>], pauseTargetIds));
+  return GRID_SLOT_ORDER.map(slot => buildCell(specs[slot as Exclude<StageCellSlot, 'PL' | 'SA' | 'R' | 'RS'>], pauseTargetIds));
 };
 
 /**
@@ -484,6 +482,26 @@ const buildPlStageGrid = (
     SA: { slot: 'SA', label: t('approval.agent_SA' as any), main: of('SA'), showName: true },
   };
   return PL_STAGE_SLOT_ORDER.map(slot => buildCell(specs[slot as 'PL' | 'SA'], pauseTargetIds));
+};
+
+// claude 수정 (2026-11-13): 2구역 그리드 신설 — R(→RV) 과 System R(RS) 이 병렬이라 PL 단계처럼 1열 2줄로 그린다
+/**
+ * 2구역의 2칸(세로 2줄)을 계산한다 — 1줄 RFG(R, 담당자 합의 후 검토자 RV) / 2줄 System R.
+ * 한쪽이 끝나도 다른 쪽이 남아 있으면 2구역이 이어진다. RS 는 담당자가 없어 끝날 때까지 '대기중'이다.
+ */
+export const R_STAGE_SLOT_ORDER: StageCellSlot[] = ['R', SYSTEM_R_AGENT];
+
+const buildRStageGrid = (
+  currentSteps: ApprovalStepFrontend[],
+  t: TFunction,
+  pauseTargetIds: number[],
+): StageCell[] => {
+  const of = (agent: string) => currentSteps.filter(s => s.agent === agent);
+  const specs: Record<'R' | 'RS', CellSpec> = {
+    R: { slot: 'R', label: t('approval.agent_R' as any), main: of('R'), reviewers: of('RV'), showName: true },
+    RS: { slot: 'RS', label: t('approval.agent_RS' as any), main: of(SYSTEM_R_AGENT), showName: false },
+  };
+  return R_STAGE_SLOT_ORDER.map(slot => buildCell(specs[slot as 'R' | 'RS'], pauseTargetIds));
 };
 
 /** 중단 확정(pause) 문서: 6칸을 전부 PAUSE 뱃지로 덮고 이름은 표시하지 않는다. */
@@ -599,6 +617,21 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
   }
 
   if (!parallelPresent) {
+    // claude 수정 (2026-11-13): System R(RS)이 있는 회차의 2구역은 R ∥ RS 1열 2줄 그리드로 그린다
+    // (RS 가 없는 회차 — System R 도입 전에 R 이 생성된 문서 — 는 아래 기존 단일 행 표시를 그대로 쓴다)
+    if (currentSteps.some(s => s.agent === SYSTEM_R_AGENT)) {
+      const pauseTargetIds = pauseRequested ? (doc.pause_request?.target_step_ids ?? []) : [];
+      const cells = buildRStageGrid(currentSteps, t, pauseTargetIds);
+      return [{
+        pathKey: 'grid',
+        stageText: '',
+        isDone: cells.every(c => c.state === 'done' || c.state === 'na'),
+        pathStatus: doc.status,
+        cells,
+        gridColumns: 1,
+        pauseRequested,
+      }];
+    }
     // R단계: 담당자(R) → 검토자(RV) 순차. 병렬 진입 이전 구간은 기존 표시를 그대로 유지한다.
     const rStep = currentSteps.find(s => s.agent === 'R');
     const rvStep = currentSteps.find(s => s.agent === 'RV');
