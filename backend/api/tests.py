@@ -12919,9 +12919,10 @@ class SystemRStageTest(TestCase):
 
     # ----- 헬퍼 -----
 
-    def _map(self, aaa4, partid=None, lineid=None):
+    # claude 수정 (2026-11-13): AAA5·AAA6 등 MapName 필드를 함께 넣을 수 있게 fields 추가
+    def _map(self, aaa4, partid=None, lineid=None, **fields):
         return self.MapName.objects.create(
-            lineid=lineid or self.lineid, partid=partid or f'{self.PRODUCT}_01', AAA4=aaa4,
+            lineid=lineid or self.lineid, partid=partid or f'{self.PRODUCT}_01', AAA4=aaa4, **fields,
         )
 
     def _detail(self, value='13 이상', num_check='해당 있음', line=None, product=None, **extra):
@@ -13137,13 +13138,22 @@ class SystemRStageTest(TestCase):
             self._judge()
         self.assertEqual(self._rs(doc).comment, "[System R 반려] 숫자 확인 값 '13 이상' ↔ AAA4 1 / 다른 항목 불일치")
 
+    # claude 수정 (2026-11-13): 종합 순서 반려 > 보류 > 대기 > 합의 — 반려 항목이 있으면 대기 항목이 있어도 반려
     def test_check_returning_none_keeps_waiting(self):
+        from . import system_r
+        self._map('14')
+        doc = self._to_zone2()
+        with patch.object(system_r, 'CHECKS', (system_r.check_num_check_aaa4, lambda d, e: None)):
+            self._judge()
+        self.assertEqual(self._rs(doc).action, 'pending', '반려·보류 없이 판정 못 한 항목이 있으면 기다린다')
+
+    def test_reject_wins_over_waiting_check(self):
         from . import system_r
         self._map('1')
         doc = self._to_zone2()
         with patch.object(system_r, 'CHECKS', (system_r.check_num_check_aaa4, lambda d, e: None)):
             self._judge()
-        self.assertEqual(self._rs(doc).action, 'pending', '판정 못 한 항목이 하나라도 있으면 기다린다')
+        self.assertEqual(self._rs(doc).action, 'rejected', '반려 항목이 있으면 결론이 반려로 정해진다')
 
     # ----- 반려 경로 -----
 
@@ -13302,6 +13312,202 @@ class SystemRStageTest(TestCase):
             self.assertIsNone(parse_num_check_value(bad), bad)
 
 
+    # ----- (2026-11-13) AAA5 ↔ Map Option / AAA6 ↔ MAP 목적 CLONE — 불일치는 보류 + R 확인 요청 -----
+
+    OPTS_1_TO_4 = {'photo_backside': '적용', 'eds_backside': '적용', 'inter': 'YES', 'tsv': '적용'}
+
+    def _hold_mails(self, doc):
+        return list(MailNotification.objects.filter(document=doc, event_type='system_r_hold'))
+
+    def _assign_r(self, doc, reviewer=None):
+        data = {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'R담당'}
+        if reviewer is not None:
+            data['reviewer_loginid'] = reviewer.loginid
+        self._post(self.r_user, doc, 'assign-step', data)
+
+    def test_map_options_exact_match_approves(self):
+        self._map('14', AAA5='1|2|3|4')
+        doc = self._to_zone2(map_type='NEW', **self.OPTS_1_TO_4)
+        self.assertEqual(self._judge(), {doc.pk: 'approved'})
+        self.assertEqual(self._hold_mails(doc), [])
+
+    def test_map_options_mismatch_holds_and_mails_r_and_rv(self):
+        """문서 1~5 vs AAA5 1~4 → RS 는 대기 그대로, 보류 의견 + R 담당자·RV 검토자에게 확인 요청 메일."""
+        reviewer = UserProfile.objects.create(loginid='sr_rv2', mail='sr_rv2@c.com', role='TE_R')
+        self._map('14', AAA5='1|2|3|4')
+        doc = self._to_zone2(map_type='NEW', rf='적용', **self.OPTS_1_TO_4)
+        self._assign_r(doc, reviewer=reviewer)
+        self.assertEqual(self._judge(), {doc.pk: 'hold'})
+
+        rs = self._rs(doc)
+        self.assertEqual(rs.action, 'pending')
+        self.assertEqual(rs.comment, '[System R 보류] Map Option 요청서 1|2|3|4|5 ↔ AAA5 1|2|3|4')
+        self.assertEqual(self._status(doc), 'under_review')
+        self.assertFalse({'P', 'J', 'O', 'RA'} & self._agents(doc))
+        self.assertFalse(MailNotification.objects.filter(document=doc, event_type='rejected').exists())
+
+        mails = self._hold_mails(doc)
+        self.assertEqual(len(mails), 1)
+        self.assertEqual(set(mails[0].recipients), {'sr_r@c.com', 'sr_rv2@c.com'})
+        self.assertTrue(mails[0].subject.startswith('[System R 확인 필요]'))
+        self.assertIn('Map Option 요청서 1|2|3|4|5 ↔ AAA5 1|2|3|4', mails[0].contents)
+
+    def test_fewer_options_than_aaa5_also_holds(self):
+        self._map('14', AAA5='1|2|3|4')
+        doc = self._to_zone2(map_type='NEW', photo_backside='적용', eds_backside='적용', inter='YES')
+        self.assertEqual(self._judge(), {doc.pk: 'hold'})
+        self.assertEqual(self._rs(doc).comment, '[System R 보류] Map Option 요청서 1|2|3 ↔ AAA5 1|2|3|4')
+
+    def test_blank_aaa5_means_no_options(self):
+        for name, aaa5 in (('null', None), ('empty', ''), ('spaces', '  '), ('nan', 'nan')):
+            with self.subTest(name):
+                self.MapName.objects.all().delete()
+                RequestDocument.objects.all().delete()
+                self._map('14', AAA5=aaa5)
+                no_opts = self._to_zone2(map_type='NEW')
+                with_opts = self._to_zone2(map_type='NEW', photo_backside='적용', eds_backside='적용', inter='YES')
+                self.assertEqual(self._judge(), {no_opts.pk: 'approved', with_opts.pk: 'hold'})
+                self.assertEqual(self._rs(with_opts).comment, '[System R 보류] Map Option 요청서 1|2|3 ↔ AAA5 없음')
+
+    def test_aaa5_tokens_are_trimmed_and_unordered(self):
+        self._map('14', AAA5=' 4 | 01 |3| 2 |')
+        doc = self._to_zone2(map_type='NEW', **self.OPTS_1_TO_4)
+        self.assertEqual(self._judge(), {doc.pk: 'approved'})
+
+    def test_hold_mail_once_then_approves_when_data_matches(self):
+        """같은 RS 단계에는 메일 1번만 — 사유가 바뀌면 의견만 갱신하고, 일치하면 합의한다."""
+        entry = self._map('14', AAA5='1|2|3|4')
+        doc = self._to_zone2(map_type='NEW', rf='적용', **self.OPTS_1_TO_4)
+        self._assign_r(doc)
+        self._judge()
+        self._judge()
+        entry.AAA5 = '1|2'
+        entry.save()
+        self.assertEqual(self._judge(), {doc.pk: 'hold'})
+        self.assertEqual(self._rs(doc).comment, '[System R 보류] Map Option 요청서 1|2|3|4|5 ↔ AAA5 1|2')
+        self.assertEqual(len(self._hold_mails(doc)), 1)
+
+        entry.AAA5 = '1|2|3|4|5'
+        entry.save()
+        self.assertEqual(self._judge(), {doc.pk: 'approved'})
+        rs = self._rs(doc)
+        self.assertEqual((rs.action, rs.comment, rs.acted_by_name), ('approved', '[System R 합의]', 'System R'))
+        self._post(self.r_user, doc, 'approve-step', {'agent': 'R'})
+        self.assertIn('P', self._agents(doc))
+
+    def test_hold_mail_goes_to_r_team_when_r_unassigned(self):
+        self._map('14', AAA5='1')
+        doc = self._to_zone2(map_type='NEW')
+        self._judge()
+        mails = self._hold_mails(doc)
+        self.assertEqual(len(mails), 1)
+        self.assertEqual(set(mails[0].recipients), {'sr_r@c.com', 'sr_f@c.com'}, 'R 미배정이면 TE_R 전원')
+
+    def test_registered_map_types_compare_only_option_4(self):
+        """CLONE/EXISTING 은 4번(TSV)만 고를 수 있으므로 4번만 비교한다."""
+        cases = [
+            ('clone_tsv_on', 'CLONE', '적용', 'approved', ''),
+            ('clone_tsv_off', 'CLONE', '미적용', 'hold',
+             '[System R 보류] Map Option 요청서 없음 ↔ AAA5 4 (CLONE: 4번만 비교)'),
+            ('existing_tsv_on', 'EXISTING', '적용', 'approved', ''),
+        ]
+        for name, map_type, tsv, expected, comment in cases:
+            with self.subTest(name):
+                self.MapName.objects.all().delete()
+                RequestDocument.objects.all().delete()
+                self._map('14', AAA5='1|2|3|4', AAA6='SRC')
+                doc = self._to_zone2(map_type=map_type, tsv=tsv)
+                self.assertEqual(self._judge(), {doc.pk: expected})
+                if comment:
+                    self.assertEqual(self._rs(doc).comment, comment)
+
+    def test_registered_map_type_without_aaa5_option_4(self):
+        self._map('14', AAA5='1|2|3', AAA6='SRC')
+        on = self._to_zone2(map_type='EXISTING', tsv='적용')
+        off = self._to_zone2(map_type='EXISTING')
+        self.assertEqual(self._judge(), {on.pk: 'hold', off.pk: 'approved'})
+        self.assertEqual(self._rs(on).comment, '[System R 보류] Map Option 요청서 4 ↔ AAA5 없음 (EXISTING: 4번만 비교)')
+
+    def test_clone_requires_aaa6(self):
+        cases = [
+            ('clone_with_aaa6', 'CLONE', 'SRC', 'approved'),
+            ('clone_null_aaa6', 'CLONE', None, 'hold'),
+            ('clone_blank_aaa6', 'CLONE', '  ', 'hold'),
+            ('new_null_aaa6', 'NEW', None, 'approved'),
+            ('existing_null_aaa6', 'EXISTING', None, 'approved'),
+        ]
+        for name, map_type, aaa6, expected in cases:
+            with self.subTest(name):
+                self.MapName.objects.all().delete()
+                RequestDocument.objects.all().delete()
+                self._map('14', AAA6=aaa6)
+                doc = self._to_zone2(map_type=map_type)
+                self.assertEqual(self._judge(), {doc.pk: expected})
+                if expected == 'hold':
+                    self.assertEqual(self._rs(doc).comment, "[System R 보류] MAP 목적 'CLONE' ↔ AAA6 없음")
+
+    def test_multiple_hold_reasons_are_joined(self):
+        self._map('14', AAA5='1|2|3|4', AAA6=None)
+        doc = self._to_zone2(map_type='CLONE')
+        self._judge()
+        self.assertEqual(
+            self._rs(doc).comment,
+            "[System R 보류] Map Option 요청서 없음 ↔ AAA5 4 (CLONE: 4번만 비교) / MAP 목적 'CLONE' ↔ AAA6 없음",
+        )
+        self.assertEqual(len(self._hold_mails(doc)), 1)
+
+    def test_reject_wins_over_hold(self):
+        """AAA4 반려 + AAA5 보류 → 반려. 의견은 반려 항목만, 보류 메일은 보내지 않는다."""
+        self._map('1', AAA5='1|2|3|4')
+        doc = self._to_zone2(map_type='NEW', rf='적용')
+        self.assertEqual(self._judge(), {doc.pk: 'rejected'})
+        self.assertEqual(self._rs(doc).comment, "[System R 반려] 숫자 확인 값 '13 이상' ↔ AAA4 1")
+        self.assertEqual(self._status(doc), 'rejected')
+        self.assertEqual(self._hold_mails(doc), [])
+
+    def test_hold_while_aaa4_waiting_then_clears_when_options_match(self):
+        """AAA4 값이 없어도 AAA5 불일치는 보류로 알리고, 보류가 풀리면 대기로 돌아가며 보류 의견을 지운다."""
+        entry = self._map(None, AAA5='1')
+        doc = self._to_zone2(map_type='NEW')
+        self.assertEqual(self._judge(), {doc.pk: 'hold'})
+        self.assertEqual(len(self._hold_mails(doc)), 1)
+
+        entry.AAA5 = ''
+        entry.save()
+        self.assertEqual(self._judge(), {})
+        rs = self._rs(doc)
+        self.assertEqual((rs.action, rs.comment), ('pending', ''))
+
+        entry.AAA4 = '14'
+        entry.save()
+        self.assertEqual(self._judge(), {doc.pk: 'approved'})
+
+    def test_new_round_rs_sends_hold_mail_again(self):
+        """메일 1번은 RS 단계(회차) 기준 — 재상신으로 새 RS 가 생기면 다시 알린다."""
+        self._map('14', AAA5='1')
+        doc = self._to_zone2(map_type='NEW')
+        self._judge()
+        self._assign_r(doc)
+        self._post(self.r_user, doc, 'reject-step', {'agent': 'R', 'comment': '반려'})
+        self._post(self.author, doc, 'resubmit', {'designated_pl_loginid': self.pl.loginid})
+        self._post(self.pl, doc, 'peer-approve')
+        self.assertEqual(self._judge(), {doc.pk: 'hold'})
+        self.assertEqual(len(self._hold_mails(doc)), 2)
+        self.assertEqual(self._rs(doc, 2).comment, '[System R 보류] Map Option 요청서 없음 ↔ AAA5 1')
+
+    def test_parse_aaa5_and_selected_options(self):
+        from .system_r import parse_aaa5, selected_map_options
+        self.assertEqual(parse_aaa5('1|2|3|4'), {'1', '2', '3', '4'})
+        self.assertEqual(parse_aaa5(' 10 | 04 ||'), {'10', '4'})
+        for blank in (None, '', '  ', 'nan', 'NaN'):
+            self.assertEqual(parse_aaa5(blank), set(), blank)
+        self.assertEqual(selected_map_options({}), set(), '필드가 없는 구 문서는 옵션 없음')
+        self.assertEqual(
+            selected_map_options({'inter': 'YES', 'hpkglabelheight': '적용', 'labelsideshot': '적용', 'tsv': '미적용'}),
+            {'3', '10', '11'},
+        )
+
+
 class MapInfoAaa4ResponseTest(TestCase):
     """map-info 응답에 AAA4 가 포함된다(값 없음·행 없음이면 None)."""
 
@@ -13358,6 +13564,47 @@ class SyncFormOptionsSystemRHookTest(TestCase):
     def test_hook_failure_does_not_raise(self):
         _, hook = self._run(reject_side_effect=RuntimeError('boom'))
         hook.assert_called_once_with()
+
+    # claude 수정 (2026-11-13): AAA5·AAA6 조회·저장 — 값이 비어 있어도 행을 그대로 저장한다
+    def test_map_name_query_and_store_include_aaa5_aaa6_even_when_blank(self):
+        import contextlib
+        import numpy as np
+        import pandas as pd
+        from . import scheduler
+        rows = pd.DataFrame([
+            {'lineid': 'aaaaa', 'partid': 'P1_01', 'AAA1': 'x', 'AAA2': 'y', 'AAA3': 'z', 'AAA4': '1',
+             'AAA5': '1|2|3|4', 'AAA6': 'SRC'},
+            {'lineid': 'aaaaa', 'partid': 'P2_01', 'AAA1': None, 'AAA2': None, 'AAA3': None, 'AAA4': None,
+             'AAA5': None, 'AAA6': np.nan},
+        ])
+        queries, stored = [], {}
+
+        def fake_dcq(query, dcq_id):
+            queries.append(query)
+            return rows.copy() if 'lineid, partid, AAA1' in query else None
+
+        def fake_to_sql(df, name, *args, **kwargs):
+            stored[name] = df.copy()
+
+        with patch.object(scheduler, 'get_django_engine', return_value=MagicMock()), \
+                patch.object(scheduler, 'external_sync_lock', side_effect=lambda: contextlib.nullcontext()), \
+                patch.object(scheduler, 'ensure_dcq_session', return_value='dcq'), \
+                patch.object(scheduler, 'get_data_from_dcq', side_effect=fake_dcq), \
+                patch.object(scheduler, '_send_sync_failure_alert') as alert, \
+                patch.object(scheduler.system_r, 'judge_pending'), \
+                patch.object(pd.DataFrame, 'to_sql', autospec=True, side_effect=fake_to_sql):
+            scheduler.sync_form_options()
+
+        map_name_query = next(q for q in queries if 'lineid, partid, AAA1' in q)
+        self.assertIn('AAA1, AAA2, AAA3, AAA4, AAA5, AAA6', map_name_query)
+        self.assertNotIn('AAA5 IS NOT NULL', map_name_query)
+        self.assertNotIn('AAA6 IS NOT NULL', map_name_query)
+        df = stored['api_mapname']
+        self.assertEqual(list(df.columns), ['lineid', 'partid', 'AAA1', 'AAA2', 'AAA3', 'AAA4', 'AAA5', 'AAA6', 'last_synced'])
+        self.assertEqual(len(df), 2, '빈 AAA5·AAA6 행도 버리지 않는다')
+        self.assertTrue(pd.isna(df.iloc[1]['AAA5']) and pd.isna(df.iloc[1]['AAA6']))
+        failed_targets = {f['target'] for call in alert.call_args_list for f in call.args[1]}
+        self.assertNotIn('MAP 이름', failed_targets)
 
     def test_dcq_login_failure_skips_hook(self):
         from . import scheduler
