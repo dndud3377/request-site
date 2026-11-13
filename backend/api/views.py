@@ -267,9 +267,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     # 역할 → 담당 agent 매핑 (프론트 ROLE_TO_AGENT 와 동일)
     _ROLE_TO_AGENT = {'TE_R': 'R', 'TE_P': 'P', 'TE_J': 'J', 'TE_O': 'O', 'TE_E': 'E'}
-    # 구역별 '팀'을 대표하는 agent(reviewer 변형 RV/PV/EV는 같은 팀이라 대표에서 제외).
-    # 철회 시 "이전 회차 도달 구역" 확인 대상을 이 agent 단위로 묶는다(Case J 2026-09).
-    _ZONE_MAIN_AGENTS = ('R', 'P', 'J', 'O', 'E', 'RA')
 
     def _blocked_progress_response(self, document):
         """결재를 진행할 수 없는 문서 상태면 400 Response, 진행 가능하면 None 을 반환한다.
@@ -1160,74 +1157,46 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     _WITHDRAW_REJECTED_STATUS = 'rejected'
     _WITHDRAW_PENDING_EDIT_ERROR = '철회 요청 확인 대기 중인 의뢰서는 수정·재상신할 수 없습니다. 철회가 거부·취소된 뒤 진행해 주세요.'
 
-    def _zone_index(self, document, agent):
-        for i, zone in enumerate(document.pause_zones()):
-            if agent in zone:
-                return i
-        return None
+    # claude 수정 (2026-11-13): 철회 확인 대상 = 요청서를 실제로 본 사람(관여 단계)만, 묶음당 1건·1명 확인
+    def _withdraw_target_steps(self, document):
+        """철회 확인 대상 단계 — 묶음(PL·SA·R·P·J·O·E·RA)마다 대표 단계 1건.
 
-    def _extra_zone_target_steps(self, document, current_zone_idx):
-        """반려 후 재상신으로 회차가 바뀐 뒤 철회할 때, 과거 회차에서 현재 구역보다 더
-        깊이 도달했던 구역의 팀들을 대표하는 ApprovalStep 목록을 반환한다(2026-09).
-
-        팀(agent)당 그 구역에 가장 최근에 있었던 회차의 단계 하나만 대표로 삼는다 — 몇 회차
-        전 반려자였는지는 따지지 않고, "지금 그 팀"의 합의만 받으면 되기 때문이다. 그 회차에
-        **대기중(미선점, action='pending'이고 담당자 없음)** 이었던 팀은 실제로 관여한 적이
-        없으므로 대상에서 제외한다(검토중·합의완료·반려는 관여로 본다).
+        모든 회차를 통틀어 관여한 단계(`mailer.is_withdraw_involved` — 합의·반려했거나 담당자가
+        정해진 단계, 아무도 맡지 않은 대기 단계 제외)가 하나라도 있는 묶음만 대상이다.
+        대표는 가장 최근 회차의 단계(같은 회차면 지금 검토 중인 pending 단계 → 담당자 단계 순)이며,
+        누가 확인할 수 있는지는 대표가 아니라 묶음 전체로 판정한다(`_can_confirm_withdraw`).
+        진행 중 문서와 반려 문서가 같은 규칙을 쓴다(2026-11-13 사용자 결정).
         """
-        latest_by_agent = {}
-        for step in ApprovalStep.objects.filter(document=document, agent__in=self._ZONE_MAIN_AGENTS):
-            zone_idx = self._zone_index(document, step.agent)
-            if zone_idx is None or zone_idx <= current_zone_idx:
+        reps = {}
+        for step in ApprovalStep.objects.filter(document=document):
+            if not mailer.is_withdraw_involved(step):
                 continue
-            prev = latest_by_agent.get(step.agent)
-            if prev is None or step.round > prev.round:
-                latest_by_agent[step.agent] = step
+            group = mailer.withdraw_group(step.agent)
+            key = (step.round, step.action == 'pending', step.agent == group, step.id)
+            prev = reps.get(group)
+            if prev is None or key > prev[0]:
+                reps[group] = (key, step)
+        return [step for _key, step in sorted(reps.values(), key=lambda item: item[0])]
 
-        return [
-            step for step in latest_by_agent.values()
-            if not (step.action == 'pending' and not step.assignee_id)
-        ]
+    def _can_confirm_withdraw(self, user, step):
+        """철회 확인·거부 인가 — 묶음당 한 명만 확인하면 되므로 대표 단계가 아니라 묶음 기준으로 본다.
 
-    # claude 수정 (2026-11-09): 반려 문서 철회 확인 대상 = 1구역(최신 회차 PL·SA) + 2·3구역 관여 팀
-    def _rejected_withdraw_target_steps(self, document, max_round):
-        """반려 문서 철회 시 확인을 받아야 하는 단계 목록 — 이 문서에 관여했던 팀 전원.
-
-        - 1구역(PL·SA): 최신 회차의 단계 전부(담당자가 지정돼 있으면 관여로 본다 — 다중 PL 중
-          아직 결정하지 않은 PL 도 포함, 2026-11 결정). 담당자 없는 대기 단계만 뺀다.
-        - 2·3구역(R·P·J·O·E·RA): `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 가장 최근
-          회차의 단계 1건을 대표로, 대기중(미선점)이었던 팀은 제외. 반려 문서에는 '현재 구역'이
-          없으므로 1구역(인덱스 0)보다 깊은 구역 전부가 대상이다.
-        """
-        zone_1_steps = [
-            step for step in ApprovalStep.objects.filter(
-                document=document, round=max_round, agent__in=RequestDocument.PAUSE_ZONE_1_AGENTS,
-            )
-            if not (step.action == 'pending' and not step.assignee_id)
-        ]
-        return zone_1_steps + self._extra_zone_target_steps(document, 0)
-
-    def _can_confirm_extra_zone(self, user, step):
-        """'이전 회차 도달 구역' 철회 확인 인가 — 그 회차의 담당자 개인이 아니라 '지금 그 팀'.
-
-        MASTER는 항상. 팀 역할(_ROLE_TO_AGENT)이 있는 agent(R/P/J/O/E)는 같은 팀 누구나
-        확인할 수 있다(이전에 그 단계를 처리했던 사람일 필요 없음). RA(후결자)는 역할로
-        묶이는 팀이 없으므로, 그 대신 이 문서의 '팀'에 해당하는 현재 후결자 전원
-        (`mailer.post_approver_users` — 고정 후결자 + C가문 추가 후결자, RA 반려 수신자
-        산출과 같은 기준) 누구나 확인할 수 있다(2026-09, 그 회차에 배정됐던 개인으로 제한하지
-        않는다).
+        MASTER 는 항상. 그 묶음에 관여한 사람(메일을 받은 사람)이면 누구나. 장기 부재 대응을 위해
+        팀 묶음(R·P·J·O·E, 검토자 포함)은 지금 그 팀 누구나, 후결자(RA)는 이 문서의 현재 후결자
+        전원(`mailer.post_approver_users`)도 확인할 수 있다. PL·SA 는 팀이 없어 관여자끼리만 대신한다.
         """
         role = getattr(user, 'role', '')
         if role == 'MASTER':
             return True
-        if self._ROLE_TO_AGENT.get(role) == step.agent:
+        group = mailer.withdraw_group(step.agent)
+        if self._ROLE_TO_AGENT.get(role) == group:
             return True
         caller_loginid = getattr(user, 'loginid', '')
         if not caller_loginid:
             return False
-        if step.agent == 'RA':
-            return any(u.loginid == caller_loginid for u in mailer.post_approver_users(step.document))
-        return bool(step.assignee_id and step.assignee.loginid == caller_loginid)
+        if group == 'RA' and any(u.loginid == caller_loginid for u in mailer.post_approver_users(step.document)):
+            return True
+        return any(u.loginid == caller_loginid for u in mailer.withdraw_involved_users(step.document, {group}))
 
     def _delete_withdrawn_document(self, request, document, reason, send_mail=True):
         """철회 확정 — 완료 메일을 먼저 적재한 뒤 문서를 완전히 삭제한다.
@@ -1262,10 +1231,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
           (2026-08 확장). 완료 메일은 보내지 않고 서버 로그만 남긴다.
         - draft            : 확인할 진행 중 단계가 없다 → 즉시 삭제(사유 선택)
         - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
-        - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
-          이 경로만 **사유(reason) 필수**이고, 확인 대기 동안 결재가 동결된다.
-        - rejected         : 철회 요청 생성 → 이 문서에 관여했던 팀 전원 확인 시 삭제
-          (2026-11, `_rejected_withdraw_target_steps`). 사유 필수, 확인 대기 동안 수정·재상신 차단.
+        - under_review / submitted : 철회 요청 생성 → 관여한 묶음마다 한 명씩 확인 시 삭제
+          (2026-11-13, `_withdraw_target_steps`). 사유 필수, 확인 대기 동안 결재가 동결된다.
+        - rejected         : 철회 요청 생성 → 진행 중 문서와 같은 기준으로 확인 시 삭제.
+          사유 필수, 확인 대기 동안 수정·재상신 차단.
         - pause            : 재개한 뒤 철회해야 한다(400).
         """
         document = self.get_object()
@@ -1308,36 +1277,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
 
         max_round = self._max_round(document)
+        # claude 수정 (2026-11-13): 진행 중·반려 문서 모두 '요청서를 본 사람' 기준 확인 대상(묶음당 1건)
         if is_rejected:
-            target_steps = self._rejected_withdraw_target_steps(document, max_round)
-            if not target_steps:
-                return Response(
-                    {'error': '철회를 확인할 결재 단계가 없습니다.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             accepted_message = '철회 요청이 접수되었습니다. 관여했던 팀의 확인을 기다립니다.'
         else:
-            pending = list(ApprovalStep.objects.filter(
-                document=document, action='pending', round=max_round
-            ))
-            if not pending:
+            if not ApprovalStep.objects.filter(document=document, action='pending', round=max_round).exists():
                 return Response(
                     {'error': '진행 중인 결재 단계가 없습니다.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-
-            # 반려 후 재상신으로 회차가 바뀐 경우, 과거 회차에서 현재 구역보다 더 깊이
-            # 도달했던 구역의 팀들도 함께 확인 대상에 넣는다(2026-09, Case J 참고).
-            current_zone_idx = max(
-                (self._zone_index(document, s.agent) for s in pending if self._zone_index(document, s.agent) is not None),
-                default=None,
-            )
-            extra_steps = (
-                self._extra_zone_target_steps(document, current_zone_idx)
-                if current_zone_idx is not None else []
-            )
-            target_steps = pending + extra_steps
             accepted_message = '철회 요청이 접수되었습니다. 현재 단계의 확인을 기다립니다.'
+        target_steps = self._withdraw_target_steps(document)
+        if not target_steps:
+            return Response(
+                {'error': '철회를 확인할 결재 단계가 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         wr = WithdrawRequest.objects.create(
             document=document,
@@ -1359,13 +1314,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='confirm-withdraw')
     @transaction.atomic
     def confirm_withdraw(self, request, pk=None):
-        """철회 확인: 현재 단계 담당자/팀 + '이전 회차 도달 구역' 팀이 철회 요청을 확인한다.
+        """철회 확인: 확인 대상 묶음(`_withdraw_target_steps`)마다 한 명씩 확인한다.
 
-        요청 시점의 pending 단계와 이전 회차 도달 구역 대표 단계 '전원'이 확인하면 그 순간
-        의뢰서가 **완전히 삭제**된다(병렬 단계 대응). 현재 회차의 pending 단계는 중단 확인과
-        같은 규칙(`_can_confirm_pause`) — 담당자가 있으면 그 담당자 본인, 미배정이면 같은 팀
-        누구나, MASTER는 항상. 이전 회차 도달 구역 단계는 `_can_confirm_extra_zone` — 그
-        회차의 담당자 개인이 아니라 '지금 그 팀' 누구나 확인할 수 있다(2026-09).
+        모든 묶음이 확인되면 그 순간 의뢰서가 **완전히 삭제**된다. 누가 확인할 수 있는지는
+        `_can_confirm_withdraw` — 그 묶음에 관여한 사람, 팀 묶음은 지금 그 팀 누구나, 후결자는
+        현재 후결자 누구나, MASTER 는 항상(2026-11-13).
         """
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -1374,19 +1327,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not wr:
             return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        max_round = self._max_round(document)
-
         # claude 수정 (2026-11-11): step_id 로 확인할 단계를 직접 지정(MASTER 팀 선택), agent 경로는 이미 확인한 단계 제외
+        # claude 수정 (2026-11-13): 확인 인가를 묶음 기준(`_can_confirm_withdraw`)으로 통일
         base_qs = ApprovalStep.objects.select_for_update().filter(
             document=document, id__in=wr.target_step_ids,
         )
         step, err = self._pick_confirm_step(
             request, wr.target_step_ids, wr.confirmed_step_ids, base_qs,
-            lambda s: (
-                self._can_confirm_pause(request.user, s)
-                if (s.round == max_round and s.action == 'pending')
-                else self._can_confirm_extra_zone(request.user, s)
-            ),
+            lambda s: self._can_confirm_withdraw(request.user, s),
         )
         if err:
             return err
@@ -1413,9 +1361,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def reject_withdraw(self, request, pk=None):
         """철회 거부: 확인 대상 단계가 철회 요청을 거부한다 → 결재가 그대로 이어진다.
 
-        인가는 확인(confirm_withdraw)과 동일하다 — 확인할 수 있는 사람이 거부도 할 수 있다.
-        현재 회차 pending 단계와 이전 회차 도달 구역 단계 양쪽 모두에서 확인 권한자를 찾는다.
-        단계 하나만 거부해도 요청 전체가 무효가 된다(전원 확인이 성립할 수 없으므로).
+        인가는 확인(confirm_withdraw)과 동일하다(`_can_confirm_withdraw`) — 확인할 수 있는
+        사람이 거부도 할 수 있다. 단계 하나만 거부해도 요청 전체가 무효가 된다(전원 확인이 성립할 수 없으므로).
         """
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -1424,16 +1371,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not wr:
             return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        max_round = self._max_round(document)
+        # claude 수정 (2026-11-13): 거부 인가도 확인과 같은 묶음 기준
         candidates = ApprovalStep.objects.filter(document=document, id__in=wr.target_step_ids)
-        authorized = any(
-            (
-                self._can_confirm_pause(request.user, s)
-                if (s.round == max_round and s.action == 'pending')
-                else self._can_confirm_extra_zone(request.user, s)
-            )
-            for s in candidates
-        )
+        authorized = any(self._can_confirm_withdraw(request.user, s) for s in candidates)
         if not authorized:
             return Response({'error': '거부 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
