@@ -2650,7 +2650,8 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 
 - 백엔드: `SystemRStageTest`(32 — 생성/미생성 경로, R·RS 순서별 3구역 개방, RV 포함, Only MAP, 비교 규칙, 대기→판정, 결론 후 재판정 없음,
   다중 항목 반려 의견, 반려 경로·메일·이력, RS 반려 후 재상신, 동결, 실패 격리, MASTER 수동·비MASTER 403, 중단·철회 대상 제외, 경로 카드,
-  '변경 감지' 배지 비간섭), `SyncFormOptionsSystemRHookTest`(3). 기존 흐름 테스트는 `_approve_pending_system_r` 로 R 합의 전에 RS 를 합의시킨다.
+  '변경 감지' 배지 비간섭 + 2026-11-13 AAA5·AAA6 보류: 완전 일치·더 많음/적음·빈 AAA5·CLONE/EXISTING 4번만·AAA6·사유 결합·
+  반려>보류·반려>대기·보류 중 AAA4 대기·메일 1회/회차별·R 미배정 시 TE_R → 총 45), `SyncFormOptionsSystemRHookTest`(4 — AAA5·AAA6 빈 값 행 저장 포함). 기존 흐름 테스트는 `_approve_pending_system_r` 로 R 합의 전에 RS 를 합의시킨다.
 - 프론트: `approvalTable.test.ts` 2구역 그리드 7건, `approvalListExport.test.ts` 1건, `PagedDetailView.systemRRoute.test.tsx` 5건.
 - 러너: `R-16`(RS 없음 추가), `R-17`~`R-21` 신설. 러너는 `flows.pass_system_r` 로 R 합의 전에 MASTER 가 RS 를 수동 합의한다.
 
