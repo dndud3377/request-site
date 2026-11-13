@@ -1,6 +1,6 @@
 # 결재 경우의 수 케이스 러너 (개발환경 전용)
 
-`docs/APPROVAL_CASES_VALIDATION.md` 에 열거한 **134개 케이스를 개발환경에서 실제로 실행**한다.
+`docs/APPROVAL_CASES_VALIDATION.md` 에 열거한 **139개 케이스를 개발환경에서 실제로 실행**한다.
 
 - **개발용 사이트의 Django REST API 를 직접 호출**해 케이스마다 의뢰서를 **실제로 상신**하고
   결재를 끝까지 진행한다. 화면 조작이나 모의 객체 없이
@@ -48,7 +48,7 @@
    | `TE_J` | 2명 | J 담당자 + 선점 경쟁(C-02) |
    | `TE_O` | 2명 | O 담당자 + 팀 공동 합의(A-04) |
    | `TE_E` | 3명 | E 담당자 + 검토자(EV) 2명 — **E 는 검토자 필수라 최소 2명** |
-   | `MASTER` | 1명 | 관리자 권한 케이스 |
+   | `MASTER` | 1명 | 관리자 권한 케이스 · **2구역 System R 수동 합의(2026-11-13 — R 단계를 지나는 모든 케이스)** |
 
 5. 메일은 서버 설정을 그대로 따른다. 개발환경에 **`MAIL_REDIRECT_TO`** 가 설정돼 있으면
    모든 메일이 그 주소로만 가므로 안전하다. 개발 DB 는 운영 복사본(실사용자 주소)이라
@@ -82,6 +82,13 @@ python3 -m scripts.approval_cases.run_cases --report /tmp/result.md
 
 종료 코드: `0` = FAIL·ERROR 없음 / `1` = 실패 있음 / `2` = 환경 준비 실패.
 
+## 2구역 System R(RS) 통과 방식 (2026-11-13)
+
+일반·Only MAP 문서는 PL 합의 시 R 과 함께 **System R(RS)** 이 생기고, R(+RV)과 RS 가 모두 합의해야 병렬 단계가 열린다.
+RS 의 실제 판정은 MAP 이름 동기화(1시간 주기, 개발환경 스케줄러에서는 돌지 않는다) 뒤에 일어나 러너가 기다릴 수 없으므로,
+`flows.pass_system_r` 이 **R 합의 전에 MASTER 계정으로 RS 를 수동 합의**한다(사용자 결정 — MASTER 수동 처리). 시스템 판정은
+백엔드 `api.tests.SystemRStageTest` 가 검증한다. MASTER 계정이 없으면 R 단계를 지나는 케이스는 SKIP 된다.
+
 ## 상신에 쓰는 값은 전부 실제 DB 값이다
 
 화면(RequestPage)이 쓰는 것과 **같은 form-options API 를 같은 순서로** 호출해 조합을 찾는다.
@@ -112,7 +119,7 @@ GET /api/form-options/ovl-layer/         → O-layer 행
 | 파일 | 역할 |
 |---|---|
 | `run_cases.py` | CLI 진입점 · 결과 표/보고서 출력 |
-| `cases.py` | 케이스 134건 정의(문서의 ID 와 1:1) |
+| `cases.py` | 케이스 139건 정의(문서의 ID 와 1:1) |
 | `flows.py` | 상신·합의·반려·중단·철회 조작 + 검증 헬퍼 |
 | `payload.py` | 화면과 같은 모양의 의뢰서 payload 빌더 |
 | `masterdata.py` | 실제 DB 마스터 데이터·역할 계정 탐색 |
