@@ -791,6 +791,14 @@ class ApprovalStep(models.Model):
         related_name='assigned_steps', verbose_name='담당자'
     )
     assignee_name = models.CharField(max_length=100, blank=True, verbose_name='담당자 이름')
+    # claude 수정 (2026-11-12): 실제 합의·반려 처리자 — 담당자(assignee)는 판정 로직이 쓰므로 그대로 두고,
+    # 다른 사람(MASTER·같은 팀원)이 대신 처리하면 화면·메일·이력은 이 처리자를 보여 준다.
+    # 이 필드 이전 데이터와 시스템 자동 반려는 비어 있다(그때는 담당자를 표시).
+    acted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='acted_steps', verbose_name='처리자'
+    )
+    acted_by_name = models.CharField(max_length=100, blank=True, default='', verbose_name='처리자 이름')
     round = models.PositiveSmallIntegerField(default=1, verbose_name='상신 회차')
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True, verbose_name='생성일시')
     # 대기중 → 검토중 으로 바뀐 시각 — 검토중 클릭(claim_step)·R 지정(assign_step)·지정 PL 변경

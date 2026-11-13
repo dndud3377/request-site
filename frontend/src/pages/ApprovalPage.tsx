@@ -159,6 +159,20 @@ const canConfirmExtraZoneStep = (
 // 어느 구역에도 속하지 않는 단계(zone_index 가 null)를 묶는 그룹 키 — 구역 이름을 붙이지 않는다.
 const NO_ZONE_INDEX = -1;
 
+// claude 수정 (2026-11-11): MASTER 가 철회·중단 확인을 대신할 팀을 고르는 창용 — 팀 이름 키와 검토자의 소속 팀
+type MasterConfirmKind = 'withdraw' | 'pause';
+interface MasterConfirmPick {
+  stepId: number;
+  teamLabel: string;
+}
+const AGENT_LABEL_KEY: Record<AgentType, `approval.agent_${AgentType}`> = {
+  PL: 'approval.agent_PL', SA: 'approval.agent_SA', R: 'approval.agent_R', RV: 'approval.agent_RV',
+  P: 'approval.agent_P', PV: 'approval.agent_PV', J: 'approval.agent_J', O: 'approval.agent_O',
+  E: 'approval.agent_E', EV: 'approval.agent_EV', RA: 'approval.agent_RA',
+};
+// 검토자(RV/PV/EV)는 라벨이 모두 '검토자'라 어느 팀 검토자인지 소속 팀 이름을 붙인다.
+const REVIEWER_PARENT_AGENT: Partial<Record<AgentType, AgentType>> = { RV: 'R', PV: 'P', EV: 'E' };
+
 interface WithdrawNeedItem {
   step: ApprovalStepFrontend;
   isCurrentZone: boolean;
@@ -438,7 +452,10 @@ export default function ApprovalPage(): React.ReactElement {
   const [commentModalOpen, setCommentModalOpen] = useState(false);
   // isPeer = PL 검토 단계(peer-approve/reject), isSalesAgreer = 영업/기술지원 합의자(sales-agree/reject).
   // 둘 다 아니면 일반 단계(approve-step/reject-step).
-  const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType; isPeer?: boolean; isSalesAgreer?: boolean } | null>(null);
+  // claude 수정 (2026-11-11): masterPick — MASTER 가 대신 합의·반려할 단계를 창에서 고르는 경우(masterActStepId 로 단계 지정)
+  const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType; isPeer?: boolean; isSalesAgreer?: boolean; masterPick?: boolean } | null>(null);
+  const [masterActStepId, setMasterActStepId] = useState<number | null>(null);
+  const [reviewerLoadError, setReviewerLoadError] = useState(false);
   const [commentInput, setCommentInput] = useState('');
 
   // 중단 요청 사유 입력 모달
@@ -1233,43 +1250,56 @@ export default function ApprovalPage(): React.ReactElement {
     setCommentModalOpen(true);
   };
 
+  // claude 수정 (2026-11-11): MASTER 팀 선택(masterPick)이면 고른 단계의 agent 로 API 를 고르고 step_id 를 함께 보낸다
   const handleConfirmAction = async () => {
     if (!selected || !pendingAction) return;
+    const picked = pendingAction.masterPick
+      ? getMasterActCandidates(selected).find((s) => s.id === masterActStepId)
+      : undefined;
+    if (pendingAction.masterPick && !picked) return;
+    const agent = picked ? picked.agent : pendingAction.agent;
+    const isSalesAgreer = picked ? agent === 'SA' : pendingAction.isSalesAgreer;
+    const isPeer = picked ? agent === 'PL' : pendingAction.isPeer;
+    const stepId = picked?.id;
+    const pickedToast = picked
+      ? t(pendingAction.type === 'agree' ? 'approval.master_act_done_agree' : 'approval.master_act_done_reject',
+        { team: picked.assignee_name ? `${stepTeamLabel(picked)} (${picked.assignee_name})` : stepTeamLabel(picked) })
+      : undefined;
     setCommentModalOpen(false);
     setProcessing(true);
     try {
-      if (pendingAction.isSalesAgreer) {
+      if (isSalesAgreer) {
         if (pendingAction.type === 'agree') {
-          await documentsAPI.salesAgree(selected.id, commentInput || undefined);
-          addToast(t('approval.agree_success', { agent: t('approval.agent_SA' as any) }), 'success');
+          await documentsAPI.salesAgree(selected.id, commentInput || undefined, stepId);
+          addToast(pickedToast ?? t('approval.agree_success', { agent: t(AGENT_LABEL_KEY.SA) }), 'success');
           setModalOpen(false);
           fetchDocs();
         } else {
-          await documentsAPI.salesReject(selected.id, commentInput || undefined);
-          addToast(t('approval.reject_success'), 'error');
+          await documentsAPI.salesReject(selected.id, commentInput || undefined, stepId);
+          addToast(pickedToast ?? t('approval.reject_success'), 'error');
           await refreshAndSelect(selected.id);
         }
-      } else if (pendingAction.isPeer) {
+      } else if (isPeer) {
         if (pendingAction.type === 'agree') {
-          await documentsAPI.peerApprove(selected.id, commentInput || undefined);
-          addToast(t('approval.agree_success', { agent: t('approval.agent_PL' as any) }), 'success');
+          await documentsAPI.peerApprove(selected.id, commentInput || undefined, stepId);
+          addToast(pickedToast ?? t('approval.agree_success', { agent: t(AGENT_LABEL_KEY.PL) }), 'success');
           setModalOpen(false);
           fetchDocs();
         } else {
-          await documentsAPI.peerReject(selected.id, commentInput || undefined);
-          addToast(t('approval.reject_success'), 'error');
+          await documentsAPI.peerReject(selected.id, commentInput || undefined, stepId);
+          addToast(pickedToast ?? t('approval.reject_success'), 'error');
           await refreshAndSelect(selected.id);
         }
       } else if (pendingAction.type === 'agree') {
         // P/E 담당자 합의 시, 지금 선택돼 있는 검토자(PV/EV)를 함께 지정한다(별도 확인 없이 한 번에 처리).
-        const reviewerLoginids = REVIEW_AGENT_OF[pendingAction.agent] ? reviewerSelectedIds : undefined;
-        await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined, currentUser.name, reviewerLoginids);
-        addToast(t('approval.agree_success', { agent: t(`approval.agent_${pendingAction.agent}` as any) }), 'success');
+        const reviewerLoginids = REVIEW_AGENT_OF[agent] ? reviewerSelectedIds : undefined;
+        await documentsAPI.approveStep(selected.id, agent, commentInput || undefined, currentUser.name, reviewerLoginids, stepId);
+        addToast(pickedToast ?? t('approval.agree_success', { agent: t(AGENT_LABEL_KEY[agent]) }), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
-        await documentsAPI.rejectStep(selected.id, pendingAction.agent, commentInput || undefined);
-        addToast(t('approval.reject_success'), 'error');
+        await documentsAPI.rejectStep(selected.id, agent, commentInput || undefined, stepId);
+        addToast(pickedToast ?? t('approval.reject_success'), 'error');
         await refreshAndSelect(selected.id);
       }
     } catch {
@@ -1368,7 +1398,8 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleConfirmPause = async (agent: AgentType) => {
+  // claude 수정 (2026-11-11): pick(단계 id·팀 이름)을 주면 그 단계를 확인하고 '어느 팀 대신 확인했는지' 알린다(MASTER 팀 선택)
+  const handleConfirmPause = async (agent: AgentType, pick?: MasterConfirmPick) => {
     if (!selected) return;
     if (isTourMode) {
       // 투어: 실제 API 대신 로컬 상태로 해당 단계만 확인 처리(병렬 대상 전원이 확인해야 최종 'pause' 전이됨을 그대로 반영)
@@ -1393,13 +1424,17 @@ export default function ApprovalPage(): React.ReactElement {
     }
     setProcessing(true);
     try {
-      const r = await documentsAPI.confirmPause(selected.id, agent);
+      const r = await documentsAPI.confirmPause(selected.id, agent, pick?.stepId);
+      setMasterConfirmKind(null);
       if (r.data.status === 'pause') {
         addToast(t('approval.pause_confirmed_toast'), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
-        addToast(t('approval.pause_confirm_progress_toast'), 'success');
+        addToast(
+          pick ? t('approval.master_confirm_done_toast', { team: pick.teamLabel }) : t('approval.pause_confirm_progress_toast'),
+          'success',
+        );
         await refreshAndSelect(selected.id);
       }
     } catch {
@@ -1533,6 +1568,10 @@ export default function ApprovalPage(): React.ReactElement {
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
   const [withdrawReasonInput, setWithdrawReasonInput] = useState('');
+
+  // claude 수정 (2026-11-11): MASTER 가 철회·중단 확인을 대신할 팀(단계)을 고르는 창 상태
+  const [masterConfirmKind, setMasterConfirmKind] = useState<MasterConfirmKind | null>(null);
+  const [masterConfirmStepId, setMasterConfirmStepId] = useState<number | null>(null);
 
   // '변경 감지' 배지 클릭 시 diff 모달 — layer-drift API 는 캐시된 값을 반환하므로 클릭할 때마다 조회한다.
   const [layerDriftDoc, setLayerDriftDoc] = useState<RequestDocument | null>(null);
@@ -1693,17 +1732,22 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleConfirmWithdraw = async (agent: AgentType) => {
+  // claude 수정 (2026-11-11): pick(단계 id·팀 이름)을 주면 그 단계를 확인하고 '어느 팀 대신 확인했는지' 알린다(MASTER 팀 선택)
+  const handleConfirmWithdraw = async (agent: AgentType, pick?: MasterConfirmPick) => {
     if (!selected) return;
     setProcessing(true);
     try {
-      const r = await documentsAPI.confirmWithdraw(selected.id, agent);
+      const r = await documentsAPI.confirmWithdraw(selected.id, agent, pick?.stepId);
+      setMasterConfirmKind(null);
       if (r.data.deleted) {
         addToast(t('approval.withdraw_confirmed_toast'), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
-        addToast(t('approval.withdraw_confirm_progress_toast'), 'success');
+        addToast(
+          pick ? t('approval.master_confirm_done_toast', { team: pick.teamLabel }) : t('approval.withdraw_confirm_progress_toast'),
+          'success',
+        );
         await refreshAndSelect(selected.id);
       }
     } catch {
@@ -1712,6 +1756,137 @@ export default function ApprovalPage(): React.ReactElement {
       setProcessing(false);
     }
   };
+
+  // claude 수정 (2026-11-11): MASTER 가 철회·중단 확인을 대신할 팀(단계)을 직접 고르는 창 — 같은 agent 가 여럿
+  // (다중 PL·PV·EV·RA)이어도 어느 팀 대신 확인하는지 보이고, 고른 단계를 step_id 로 정확히 확인한다.
+  const stepTeamLabel = (step: ApprovalStepFrontend): string => {
+    const parent = REVIEWER_PARENT_AGENT[step.agent];
+    return parent
+      ? t('approval.master_confirm_reviewer_of', { team: t(AGENT_LABEL_KEY[parent]) })
+      : t(AGENT_LABEL_KEY[step.agent]);
+  };
+
+  const getMasterConfirmCandidates = (kind: MasterConfirmKind, doc: RequestDocument): ApprovalStepFrontend[] => {
+    if (kind === 'withdraw') {
+      return getWithdrawNeedItems(doc, currentUser).filter((item) => item.mine).map((item) => item.step);
+    }
+    const pr = doc.pause_request;
+    if (!pr || pr.state !== 'requested') return [];
+    return (doc.approval_steps ?? []).filter(
+      (s) => s.action === 'pending'
+        && pr.target_step_ids.includes(s.id)
+        && !pr.confirmed_step_ids.includes(s.id)
+        && canConfirmPauseStep(currentUser, s)
+    );
+  };
+
+  const openMasterConfirm = (kind: MasterConfirmKind) => {
+    if (!selected) return;
+    const candidates = getMasterConfirmCandidates(kind, selected);
+    setMasterConfirmStepId(candidates[0]?.id ?? null);
+    setMasterConfirmKind(kind);
+  };
+
+  const submitMasterConfirm = async () => {
+    if (!selected || !masterConfirmKind) return;
+    const step = getMasterConfirmCandidates(masterConfirmKind, selected).find((s) => s.id === masterConfirmStepId);
+    if (!step) return;
+    const pick: MasterConfirmPick = {
+      stepId: step.id,
+      teamLabel: step.assignee_name ? `${stepTeamLabel(step)} (${step.assignee_name})` : stepTeamLabel(step),
+    };
+    if (masterConfirmKind === 'withdraw') {
+      await handleConfirmWithdraw(step.agent, pick);
+    } else {
+      await handleConfirmPause(step.agent, pick);
+    }
+  };
+
+  // claude 수정 (2026-11-11): MASTER 대신 합의·반려 — 처리할 팀(단계)을 고르는 후보와 선택 처리
+  // 후보 = 지금 MASTER 가 처리할 수 있는 현재 회차 대기 단계 전부(PL·SA 포함). 검토자(RV/PV/EV)는
+  // 담당자(R/P/E) 합의 후에만 — 상세 하단 [합의] 버튼(actableStep)과 같은 규칙이다.
+  const getMasterActCandidates = (doc: RequestDocument): ApprovalStepFrontend[] => {
+    if (doc.status !== 'under_review' || doc.withdraw_request != null || doc.pause_request?.state === 'requested') {
+      return [];
+    }
+    const round = getCurrentRound(doc);
+    const steps = doc.approval_steps ?? [];
+    const mainApproved = (agent: AgentType) =>
+      steps.some((s) => s.agent === agent && s.action === 'approved' && (s.round ?? 1) === round);
+    return steps.filter((s) => {
+      if (s.action !== 'pending' || (s.round ?? 1) !== round) return false;
+      const parent = REVIEWER_PARENT_AGENT[s.agent];
+      return !parent || mainApproved(parent);
+    });
+  };
+
+  // 고른 단계가 P/E(합의 시 검토자 지정)면 그 팀 인원을 검토자 후보로 불러온다.
+  const loadMasterActReviewers = async (step: ApprovalStepFrontend | undefined, type: 'agree' | 'reject') => {
+    setReviewerSelectedIds([]);
+    setReviewerCandidates([]);
+    setReviewerLoadError(false);
+    if (!step || type !== 'agree' || !REVIEW_AGENT_OF[step.agent]) return;
+    setLoadingMembers(true);
+    try {
+      setReviewerCandidates(await handleLoadTeamMembers(step.agent));
+    } catch {
+      setReviewerLoadError(true);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const openMasterAct = (type: 'agree' | 'reject') => {
+    if (!selected) return;
+    const first = getMasterActCandidates(selected)[0];
+    setPendingAction({ type, agent: first?.agent ?? 'PL', masterPick: true });
+    setMasterActStepId(first?.id ?? null);
+    setCommentInput('');
+    setCommentModalOpen(true);
+    loadMasterActReviewers(first, type);
+  };
+
+  const selectMasterActStep = (step: ApprovalStepFrontend) => {
+    setMasterActStepId(step.id);
+    if (pendingAction) loadMasterActReviewers(step, pendingAction.type);
+  };
+
+  // 팀 선택 창(철회·중단 확인 / 대신 합의·반려) 공용 라디오 목록 — 팀 이름·담당자·구역·회차를 보여 준다.
+  const renderStepRadioList = (
+    candidates: ApprovalStepFrontend[],
+    selectedId: number | null,
+    onSelect: (step: ApprovalStepFrontend) => void,
+    name: string,
+  ): React.ReactElement => (
+    <div role="radiogroup" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {candidates.map((s) => {
+        const checked = s.id === selectedId;
+        return (
+          <label
+            key={s.id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer',
+              borderRadius: 'var(--radius-md)',
+              border: `1px solid ${checked ? 'var(--accent)' : 'var(--border)'}`,
+              background: checked ? 'var(--accent-light)' : 'transparent',
+            }}
+          >
+            <input type="radio" name={name} checked={checked} onChange={() => onSelect(s)} disabled={processing} />
+            <span style={{ fontWeight: 700, minWidth: 110 }}>{stepTeamLabel(s)}</span>
+            <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              {s.assignee_name
+                ? t('approval.master_confirm_assignee', { name: s.assignee_name })
+                : t('approval.master_confirm_unassigned')}
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {s.zone_index != null && `${t('approval.zone_label', { zone: s.zone_index + 1 })} · `}
+              {t('approval.master_confirm_round', { round: s.round })}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
 
   const handleRejectWithdraw = async () => {
     if (!selected) return;
@@ -2489,43 +2664,116 @@ export default function ApprovalPage(): React.ReactElement {
       )}
 
       {/* 합의/반려 이유 입력 모달 */}
-      {commentModalOpen && pendingAction && (
-        <Modal
-          isOpen={commentModalOpen}
-          onClose={() => { setCommentModalOpen(false); setPendingAction(null); }}
-          title={pendingAction.type === 'agree' ? t('approval.modal_agree_title', { agent: t(`approval.agent_${pendingAction.agent}` as any) }) : t('approval.modal_reject_title', { agent: t(`approval.agent_${pendingAction.agent}` as any) })}
-          size="md"
-          topLevel
-          footer={
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                className={pendingAction.type === 'agree' ? 'btn btn-primary' : 'btn btn-danger'}
-                onClick={handleConfirmAction}
-                disabled={processing}
-              >
-                {t('common.confirm')}
-              </button>
-              <button className="btn btn-secondary" onClick={() => { setCommentModalOpen(false); setPendingAction(null); }}>
-                {t('common.cancel')}
-              </button>
+      {/* claude 수정 (2026-11-11): MASTER(masterPick)는 같은 창에서 대신 합의·반려할 팀을 고르고 코멘트를 적는다 */}
+      {commentModalOpen && pendingAction && selected && (() => {
+        const closeComment = () => { setCommentModalOpen(false); setPendingAction(null); };
+        const isAgree = pendingAction.type === 'agree';
+        const masterPick = !!pendingAction.masterPick;
+        const actCandidates = masterPick ? getMasterActCandidates(selected) : [];
+        const pickedStep = actCandidates.find((s) => s.id === masterActStepId);
+        const reviewerAgent = isAgree && pickedStep ? REVIEW_AGENT_OF[pickedStep.agent] : undefined;
+        const existingReviewers = reviewerAgent
+          ? (selected.approval_steps ?? [])
+            .filter((s) => s.agent === reviewerAgent && (s.round ?? 1) === getCurrentRound(selected))
+            .map((s) => s.assignee_loginid)
+            .filter((v): v is string => !!v)
+          : [];
+        // E(MASK) 합의는 검토자(EV)가 한 명 이상 필요 — 하단 [합의] 버튼의 needsReviewerPick 과 같은 규칙
+        const masterNeedsReviewer = pickedStep?.agent === 'E' && isAgree
+          && reviewerSelectedIds.length === 0 && existingReviewers.length === 0;
+        const reviewerOptions = reviewerCandidates.filter((u) =>
+          u.loginid !== pickedStep?.assignee_loginid && !existingReviewers.includes(u.loginid)
+        );
+        const title = masterPick
+          ? t(isAgree ? 'approval.master_act_title_agree' : 'approval.master_act_title_reject')
+          : isAgree
+            ? t('approval.modal_agree_title', { agent: t(AGENT_LABEL_KEY[pendingAction.agent]) })
+            : t('approval.modal_reject_title', { agent: t(AGENT_LABEL_KEY[pendingAction.agent]) });
+        return (
+          <Modal
+            isOpen={commentModalOpen}
+            onClose={closeComment}
+            title={title}
+            size="md"
+            topLevel
+            footer={
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  className={isAgree ? 'btn btn-primary' : 'btn btn-danger'}
+                  onClick={handleConfirmAction}
+                  disabled={processing || (masterPick && (!pickedStep || masterNeedsReviewer))}
+                >
+                  {masterPick
+                    ? t(isAgree ? 'approval.master_act_submit_agree' : 'approval.master_act_submit_reject')
+                    : t('common.confirm')}
+                </button>
+                <button className="btn btn-secondary" onClick={closeComment}>
+                  {t('common.cancel')}
+                </button>
+              </div>
+            }
+          >
+            <div>
+              {masterPick && (
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ margin: '0 0 12px', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                    {t(isAgree ? 'approval.master_act_desc_agree' : 'approval.master_act_desc_reject')}
+                  </p>
+                  {actCandidates.length === 0 ? (
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('approval.master_act_empty')}</p>
+                  ) : renderStepRadioList(actCandidates, masterActStepId, selectMasterActStep, 'master-act-step')}
+                  {reviewerAgent && pickedStep && (
+                    <div style={{ marginTop: 12 }}>
+                      <p style={{ margin: '0 0 6px', fontSize: '0.85rem', fontWeight: 700 }}>
+                        {t('approval.master_act_reviewer_label', { team: stepTeamLabel(pickedStep) })}
+                      </p>
+                      {loadingMembers ? (
+                        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('common.loading')}</p>
+                      ) : reviewerLoadError ? (
+                        <p style={{ fontSize: '0.82rem', color: 'var(--danger)' }}>{t('approval.master_act_reviewer_load_error')}</p>
+                      ) : reviewerOptions.length === 0 ? (
+                        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('approval.no_team_members')}</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {reviewerOptions.map((u) => (
+                            <label key={u.loginid} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.85rem', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={reviewerSelectedIds.includes(u.loginid)}
+                                disabled={processing}
+                                onChange={(e) => setReviewerSelectedIds((prev) => (
+                                  e.target.checked ? [...prev, u.loginid] : prev.filter((x) => x !== u.loginid)
+                                ))}
+                              />
+                              {u.name}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      {masterNeedsReviewer && (
+                        <p style={{ margin: '6px 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {t('approval.reviewer_required_hint')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <p style={{ marginBottom: 8, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                {isAgree ? t('approval.comment_agree_label') : t('approval.comment_reject_label')}
+              </p>
+              <textarea
+                className="form-control"
+                rows={4}
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                placeholder={isAgree ? t('approval.comment_agree_placeholder') : t('approval.comment_reject_placeholder')}
+                style={{ width: '100%', resize: 'vertical' }}
+              />
             </div>
-          }
-        >
-          <div>
-            <p style={{ marginBottom: 8, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              {pendingAction.type === 'agree' ? t('approval.comment_agree_label') : t('approval.comment_reject_label')}
-            </p>
-            <textarea
-              className="form-control"
-              rows={4}
-              value={commentInput}
-              onChange={(e) => setCommentInput(e.target.value)}
-              placeholder={pendingAction.type === 'agree' ? t('approval.comment_agree_placeholder') : t('approval.comment_reject_placeholder')}
-              style={{ width: '100%', resize: 'vertical' }}
-            />
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
 
       {/* 중단 요청 사유 입력 모달 */}
       {pauseReasonModalOpen && (
@@ -2687,6 +2935,45 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
+      {/* claude 수정 (2026-11-11): MASTER 전용 — 철회·중단 확인을 대신할 팀(단계)을 한 개 고르는 창 */}
+      {masterConfirmKind && selected && (() => {
+        const candidates = getMasterConfirmCandidates(masterConfirmKind, selected);
+        const closePicker = () => setMasterConfirmKind(null);
+        return (
+          <Modal
+            isOpen
+            onClose={closePicker}
+            title={t('approval.master_confirm_title')}
+            size="md"
+            topLevel
+            hideFullscreen
+            footer={
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  className={masterConfirmKind === 'withdraw' ? 'btn btn-danger' : 'btn btn-pause'}
+                  onClick={submitMasterConfirm}
+                  disabled={processing || !candidates.some((s) => s.id === masterConfirmStepId)}
+                >
+                  {t('approval.master_confirm_submit')}
+                </button>
+                <button className="btn btn-secondary" onClick={closePicker} disabled={processing}>
+                  {t('common.cancel')}
+                </button>
+              </div>
+            }
+          >
+            <p style={{ margin: '0 0 12px', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+              {t(masterConfirmKind === 'withdraw' ? 'approval.master_confirm_desc_withdraw' : 'approval.master_confirm_desc_pause')}
+            </p>
+            {candidates.length === 0 ? (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('approval.master_confirm_empty')}</p>
+            ) : (
+              renderStepRadioList(candidates, masterConfirmStepId, (step) => setMasterConfirmStepId(step.id), 'master-confirm-step')
+            )}
+          </Modal>
+        );
+      })()}
+
       {layerDriftDoc && (
         <LayerDriftModal
           data={layerDriftData}
@@ -2763,7 +3050,9 @@ export default function ApprovalPage(): React.ReactElement {
           // 검토중 취소 가능 단계: 내가 선점한 J/O/E/P 단계를 다시 대기중으로 되돌린다.
           const unclaimableStep = (isTourMode || progressFrozen) ? undefined : pendingSteps.find((s) => canUserUnclaim(currentUser, s));
           // 검토자 선택 UI 대상: 지금 '합의'를 누를 수 있는 단계가 P/E일 때 그 단계에 검토자를 함께 지정한다.
-          const reviewerPickStep = (!isTourMode && actableStep && REVIEW_AGENT_OF[actableStep.agent]) ? actableStep : undefined;
+          // claude 수정 (2026-11-11): MASTER 는 [합의]/[반려]에서 대신할 팀을 고르는 창을 쓰므로(검토자 선택도 창 안에서) 하단 검토자 UI 를 숨긴다
+          const masterActsByPick = isMaster && !isTourMode;
+          const reviewerPickStep = (!isTourMode && !masterActsByPick && actableStep && REVIEW_AGENT_OF[actableStep.agent]) ? actableStep : undefined;
           const existingReviewerLoginids = reviewerPickStep
             ? (selected?.approval_steps ?? [])
                 .filter((s) => s.agent === REVIEW_AGENT_OF[reviewerPickStep.agent] && (s.round ?? 1) === currentRound)
@@ -3033,12 +3322,14 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.pause_request')}
                 </button>
               )}
-              {/* 중단 확인 (현재 단계 담당자/팀) */}
+              {/* 중단 확인 (현재 단계 담당자/팀) — claude 수정 (2026-11-11): MASTER 는 대신 확인할 팀을 고르는 창을 연다 */}
               {pauseConfirmAgent && (
                 <button
                   className="btn btn-pause"
                   data-tour={isTourMode ? 'pause-confirm-btn' : undefined}
-                  onClick={() => handleConfirmPause(pauseConfirmAgent as AgentType)}
+                  onClick={() => (isMaster && !isTourMode
+                    ? openMasterConfirm('pause')
+                    : handleConfirmPause(pauseConfirmAgent as AgentType))}
                   disabled={processing}
                 >
                   {t('approval.pause_confirm')}
@@ -3085,8 +3376,15 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 확인 (현재 단계 담당자/팀) — 전원 확인 시 의뢰서가 삭제된다 */}
+              {/* claude 수정 (2026-11-11): MASTER 는 대신 확인할 팀을 고르는 창을 연다 */}
               {withdrawConfirmAgent && (
-                <button className="btn btn-danger" onClick={() => handleConfirmWithdraw(withdrawConfirmAgent as AgentType)} disabled={processing}>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => (isMaster && !isTourMode
+                    ? openMasterConfirm('withdraw')
+                    : handleConfirmWithdraw(withdrawConfirmAgent as AgentType))}
+                  disabled={processing}
+                >
                   {t('approval.withdraw_confirm')}
                 </button>
               )}
@@ -3283,10 +3581,10 @@ export default function ApprovalPage(): React.ReactElement {
               {/* PL 검토 단계 액션 */}
               {actableStep && isPLStep && selected && (
                 <>
-                  <button className="btn btn-primary" disabled={processing} onClick={() => triggerAgree(actableStep.agent, true)}>
+                  <button className="btn btn-primary" disabled={processing} onClick={() => (masterActsByPick ? openMasterAct('agree') : triggerAgree(actableStep.agent, true))}>
                     {t('approval.agree')}
                   </button>
-                  <button className="btn btn-danger" disabled={processing} onClick={() => triggerReject(actableStep.agent, true)}>
+                  <button className="btn btn-danger" disabled={processing} onClick={() => (masterActsByPick ? openMasterAct('reject') : triggerReject(actableStep.agent, true))}>
                     {t('approval.reject')}
                   </button>
                   <button className="btn btn-secondary" disabled={processing} onClick={() => handlePeerSubmitNav(selected)}>
@@ -3297,10 +3595,10 @@ export default function ApprovalPage(): React.ReactElement {
               {/* 영업/기술지원 합의자 단계 액션 — '수정 후 상신'은 PL 전용이라 여기엔 없다 */}
               {actableStep && isSalesAgreerStep && (
                 <>
-                  <button className="btn btn-primary" disabled={processing} onClick={() => triggerAgree(actableStep.agent, false, true)}>
+                  <button className="btn btn-primary" disabled={processing} onClick={() => (masterActsByPick ? openMasterAct('agree') : triggerAgree(actableStep.agent, false, true))}>
                     {t('approval.agree')}
                   </button>
-                  <button className="btn btn-danger" disabled={processing} onClick={() => triggerReject(actableStep.agent, false, true)}>
+                  <button className="btn btn-danger" disabled={processing} onClick={() => (masterActsByPick ? openMasterAct('reject') : triggerReject(actableStep.agent, false, true))}>
                     {t('approval.reject')}
                   </button>
                 </>
@@ -3389,14 +3687,14 @@ export default function ApprovalPage(): React.ReactElement {
                   <button
                     className="btn btn-primary"
                     disabled={processing || needsReviewerPick}
-                    onClick={() => triggerAgree(actableStep.agent)}
+                    onClick={() => (masterActsByPick ? openMasterAct('agree') : triggerAgree(actableStep.agent))}
                   >
                     {t('approval.agree')}
                   </button>
                   <button
                     className="btn btn-danger"
                     disabled={processing}
-                    onClick={() => triggerReject(actableStep.agent)}
+                    onClick={() => (masterActsByPick ? openMasterAct('reject') : triggerReject(actableStep.agent))}
                   >
                     {t('approval.reject')}
                   </button>

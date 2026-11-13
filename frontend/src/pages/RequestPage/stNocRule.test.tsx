@@ -178,13 +178,14 @@ const fixtureDetail = {
   adi_cd_after: [{ id: 'adi2', step_id: 'S2', step_desc: 'D2' }],
 };
 
-const LOADED_J = { id: 'j1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PLEL01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10', item_id: 'ITEM_1' };
-const MANUAL_J_FILLED = { id: 'j2', updated: '', sortOrder: 2, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'O', new_or_copy: '신규', product_name: '제품B', step: '20', item_id: '' };
+// claude 수정 (2026-11-12): J/O 제품 이름을 STEP1 제품 이름(PRODUCT)과 맞춘다 — 다르면 STEP3/4 '다음'에서 요청 기준 '차용' 자동 변경 관문에 걸린다
+const LOADED_J = { id: 'j1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PLEL01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: PRODUCT, step: '10', item_id: 'ITEM_1' };
+const MANUAL_J_FILLED = { id: 'j2', updated: '', sortOrder: 2, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'O', new_or_copy: '신규', product_name: PRODUCT, step: '20', item_id: '' };
 const MANUAL_J_EMPTY = { id: 'j3', updated: '', sortOrder: 3, process_id: '', sp: '', sd: '', pp: '', layerid: '', st: '', new_or_copy: '', product_name: '', step: '', item_id: '' };
 const fixtureJayerRows = [LOADED_J, MANUAL_J_FILLED, MANUAL_J_EMPTY];
 
-const LOADED_O = { id: 'o1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'TBV_SD', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' };
-const MANUAL_O_FILLED = { id: 'o2', updated: '', sortOrder: 2, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'O', new_or_copy: '신규', product_name: '제품B', step: '20' };
+const LOADED_O = { id: 'o1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'TBV_SD', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: PRODUCT, step: '10' };
+const MANUAL_O_FILLED = { id: 'o2', updated: '', sortOrder: 2, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'O', new_or_copy: '신규', product_name: PRODUCT, step: '20' };
 const MANUAL_O_EMPTY = { id: 'o3', updated: '', sortOrder: 3, process_id: '', sp: '', sd: '', pp: '', layerid: '', st: '', new_or_copy: '', product_name: '', step: '' };
 const fixtureOayerRows = [LOADED_O, MANUAL_O_FILLED, MANUAL_O_EMPTY];
 // 수동 행 j2 가 bb 에 매핑돼 있다(삭제 시 매핑이 함께 풀려야 한다).

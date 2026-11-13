@@ -251,35 +251,39 @@ const directApproveDocument = async (id: number, submittedAt: string, approvedAt
   return { data };
 };
 
-const peerApprove = async (docId: number, comment?: string) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 처리(MASTER 가 대신할 팀 선택), 없으면 기존과 동일
+const peerApprove = async (docId: number, comment?: string, stepId?: number) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/peer-approve/`,
-    { comment: comment ?? '' }
+    { comment: comment ?? '', ...(stepId === undefined ? {} : { step_id: stepId }) }
   );
   return { data };
 };
 
-const peerReject = async (docId: number, comment?: string) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 처리(MASTER 가 대신할 팀 선택), 없으면 기존과 동일
+const peerReject = async (docId: number, comment?: string, stepId?: number) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/peer-reject/`,
-    { comment: comment ?? '' }
+    { comment: comment ?? '', ...(stepId === undefined ? {} : { step_id: stepId }) }
   );
   return { data };
 };
 
 // 영업/기술지원 합의자(SA) — PL 검토와 병렬인 단계. 담당자 본인만 처리할 수 있다.
-const salesAgree = async (docId: number, comment?: string) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 처리(MASTER 가 대신할 팀 선택), 없으면 기존과 동일
+const salesAgree = async (docId: number, comment?: string, stepId?: number) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/sales-agree/`,
-    { comment: comment ?? '' }
+    { comment: comment ?? '', ...(stepId === undefined ? {} : { step_id: stepId }) }
   );
   return { data };
 };
 
-const salesReject = async (docId: number, comment?: string) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 처리(MASTER 가 대신할 팀 선택), 없으면 기존과 동일
+const salesReject = async (docId: number, comment?: string, stepId?: number) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/sales-reject/`,
-    { comment: comment ?? '' }
+    { comment: comment ?? '', ...(stepId === undefined ? {} : { step_id: stepId }) }
   );
   return { data };
 };
@@ -312,10 +316,11 @@ const withdrawDocument = async (id: number, reason: string) => {
   return { data };
 };
 
-const confirmWithdraw = async (docId: number, agent: AgentType) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 확인(MASTER 가 대신 확인할 팀을 선택), 없으면 agent 기준
+const confirmWithdraw = async (docId: number, agent: AgentType, stepId?: number) => {
   const data = await post<{ message: string; deleted: boolean; document?: RequestDocument }>(
     `/documents/${docId}/confirm-withdraw/`,
-    { agent }
+    stepId === undefined ? { agent } : { agent, step_id: stepId }
   );
   return { data };
 };
@@ -354,12 +359,14 @@ const deleteDocument = async (id: number) => {
   return { data };
 };
 
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 처리(MASTER 가 대신할 팀 선택), 없으면 기존과 동일
 const approveStep = async (
   docId: number,
   agent: AgentType,
   comment?: string,
   approverName?: string,
-  reviewerLoginids?: string[]
+  reviewerLoginids?: string[],
+  stepId?: number
 ) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/approve-step/`,
@@ -367,15 +374,17 @@ const approveStep = async (
       agent, comment: comment ?? '', approver_name: approverName ?? '',
       // P/E 담당자 합의 시 검토자(PV/EV, 다중)를 함께 지정 — 별도 API 없이 한 번에 처리
       ...((agent === 'P' || agent === 'E') && reviewerLoginids?.length ? { reviewer_loginids: reviewerLoginids } : {}),
+      ...(stepId === undefined ? {} : { step_id: stepId }),
     }
   );
   return { data };
 };
 
-const rejectStep = async (docId: number, agent: AgentType, comment?: string) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 처리(MASTER 가 대신할 팀 선택), 없으면 기존과 동일
+const rejectStep = async (docId: number, agent: AgentType, comment?: string, stepId?: number) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/reject-step/`,
-    { agent, comment: comment ?? '' }
+    { agent, comment: comment ?? '', ...(stepId === undefined ? {} : { step_id: stepId }) }
   );
   return { data };
 };
@@ -549,10 +558,11 @@ const requestPause = async (docId: number, reason: string) => {
   return { data };
 };
 
-const confirmPause = async (docId: number, agent: AgentType) => {
+// claude 수정 (2026-11-11): stepId 를 주면 그 단계를 확인(MASTER 가 대신 확인할 팀을 선택), 없으면 agent 기준
+const confirmPause = async (docId: number, agent: AgentType, stepId?: number) => {
   const data = await post<{ message: string; status: string; document: RequestDocument }>(
     `/documents/${docId}/confirm-pause/`,
-    { agent }
+    stepId === undefined ? { agent } : { agent, step_id: stepId }
   );
   return { data };
 };

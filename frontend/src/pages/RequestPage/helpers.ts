@@ -344,6 +344,27 @@ export const findNocBorrowViolations = (
     .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
     .map((r) => r.id);
 
+// claude 수정 (2026-11-12): 다른 제품 이름을 적고 요청 기준을 '신규'로 둔 채 상신하는 경우가 많아, '다음'·'상신' 때 '차용'으로 자동 변경한다.
+/**
+ * 요청 기준을 '차용'으로 자동 변경할 행 id 목록 (J/O-ayer 공용).
+ * ST 가 O 계열이고, 제품 이름이 비어 있지 않으며 STEP1 제품 이름(baseProductName)과 다르고(앞뒤 공백·대소문자 무시),
+ * 요청 기준이 아직 '차용'이 아닌 행. ST X·공란 행, 제품 이름이 비었거나 STEP1 과 같은 행은 건드리지 않는다.
+ * STEP1 제품 이름이 비어 있으면 비교 기준이 없으므로 빈 목록.
+ */
+export const findAutoBorrowRowIds = (
+  rows: { id: string; st: string; new_or_copy: string; product_name: string }[],
+  baseProductName: string,
+): string[] => {
+  const base = (baseProductName ?? '').trim().toLowerCase();
+  if (!base) return [];
+  return rows
+    .filter((r) => {
+      const pn = (r.product_name ?? '').trim().toLowerCase();
+      return isStO(r.st) && !!pn && pn !== base && r.new_or_copy !== NOC_BORROW;
+    })
+    .map((r) => r.id);
+};
+
 // claude 수정 (2026-10-22): pp 에 ID 선택 입력 문구가 든 행은 ID 바코드가 없을 수도 있어 item_id 필수에서 제외.
 /** pp 에 ID 선택 입력 문구(ITEM_ID_OPTIONAL_PP_KEYWORDS)가 포함되는가 — 대소문자 무관·부분 일치 */
 export const isItemIdOptionalPp = (pp: string | undefined): boolean => {

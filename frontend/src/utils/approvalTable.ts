@@ -338,8 +338,9 @@ export const resolvePathStatus = (
   return pendingStep.assignee_loginid ? 'under_review' : 'unassigned';
 };
 
+// claude 수정 (2026-11-12): 반려된 단계 등 처리된 단계는 실제 처리자(대신 처리한 MASTER·팀원) 이름을 우선 표시
 const buildStageText = (
-  step: { agent: string; assignee_name?: string; assignee_loginid?: string } | undefined,
+  step: { agent: string; assignee_name?: string; assignee_loginid?: string; acted_by_name?: string } | undefined,
   isDone: boolean,
   t: TFunction,
   fixedLoginid = '',
@@ -347,7 +348,8 @@ const buildStageText = (
   if (isDone) return t('common.status_approved');
   if (!step) return t('common.status_approved');
   const label = stageLabel(step.agent, t, isFixedPostApproverStep(step, fixedLoginid));
-  return step.assignee_name ? `${label}(${step.assignee_name})` : label;
+  const name = step.acted_by_name || step.assignee_name;
+  return name ? `${label}(${name})` : label;
 };
 
 /** 이름을 ' / ' 로 연결. 이름이 하나도 없으면 undefined */

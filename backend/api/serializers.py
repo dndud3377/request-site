@@ -265,17 +265,26 @@ class UserSerializer(serializers.ModelSerializer):
 class ApprovalStepSerializer(serializers.ModelSerializer):
     assignee_loginid = serializers.SerializerMethodField()
     assignee_mail = serializers.SerializerMethodField()
+    # claude 수정 (2026-11-12): 실제 처리자(대신 처리한 MASTER·팀원) — 화면은 처리자가 있으면 처리자를 표시한다
+    acted_by_loginid = serializers.SerializerMethodField()
+    acted_by_mail = serializers.SerializerMethodField()
     zone_index = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovalStep
-        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name', 'assignee_mail', 'round', 'created_at', 'review_started_at', 'due_date', 'zone_index']
+        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name', 'assignee_mail', 'acted_by_loginid', 'acted_by_name', 'acted_by_mail', 'round', 'created_at', 'review_started_at', 'due_date', 'zone_index']
 
     def get_assignee_loginid(self, obj):
         return obj.assignee.loginid if obj.assignee else None
 
     def get_assignee_mail(self, obj):
         return obj.assignee.mail if obj.assignee else None
+
+    def get_acted_by_loginid(self, obj):
+        return obj.acted_by.loginid if obj.acted_by else None
+
+    def get_acted_by_mail(self, obj):
+        return obj.acted_by.mail if obj.acted_by else None
 
     def get_zone_index(self, obj):
         """이 단계가 속한 구역의 0-based 인덱스(1구역=0, 2구역=1, ...). 어디에도 속하지

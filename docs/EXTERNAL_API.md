@@ -102,6 +102,8 @@ X-API-Key: <EXTERNAL_API_KEY 값>
 ]
 ```
 
+`approval_steps` 각 항목은 담당자(`assignee_loginid`/`assignee_name`/`assignee_mail`)와 함께 **실제 처리자**(`acted_by_loginid`/`acted_by_name`/`acted_by_mail`, 2026-11-12 추가)를 담는다. 처리자는 합의·반려를 실제로 누른 사람으로, MASTER·같은 팀원이 대신 처리하면 담당자와 다르다. 이 필드 이전에 처리된 단계와 시스템 자동 반려는 처리자가 `null`/빈 값이며 그때는 담당자가 처리자다.
+
 `additional_notes`는 위저드(RequestPage)에서 입력된 상세 폼 데이터가 그대로 담긴 JSON **문자열**이다. 외부에서 파싱할 때는 `json.loads()` 등으로 재파싱해야 한다(`RequestDocument.get_detail()`과 동일한 구조).
 
 ### 오류 응답

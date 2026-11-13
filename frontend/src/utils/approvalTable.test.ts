@@ -368,6 +368,18 @@ describe('getDocTableRows — 반려 / 중단', () => {
     expect(rows[0].stageText).toBe('approval.agent_E(강동원)');
   });
 
+  // claude 수정 (2026-11-12): 대신 반려한 처리자(acted_by)가 있으면 담당자 대신 처리자 이름을 보여 준다
+  it('대신 반려한 처리자가 있으면 담당자 대신 처리자 이름을 보여 준다', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([
+        makeStep({ agent: 'R', action: 'approved' }),
+        makeStep({ agent: 'E', action: 'rejected', assignee_name: '강동원', acted_by_name: '관리자' }),
+      ]),
+      status: 'rejected',
+    };
+    expect(getDocTableRows(doc, t)[0].stageText).toBe('approval.agent_E(관리자)');
+  });
+
   it('병렬 단계에서 중단(pause)되면 6칸을 전부 PAUSE 로 덮고 이름을 지운다', () => {
     const doc: RequestDocument = {
       ...makeDoc([

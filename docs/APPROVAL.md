@@ -334,7 +334,24 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   `assignee__loginid` 필터")은 팀 공동 합의 도입 이전의 동작이다.
   최종 판정은 `all(s.action == 'approved' for s in j_steps)`로, 검토중 방식에서는 J step이 1개이므로 그 1명의 합의로 완료된다.
   (과거 다중 배정된 J 문서는 하위호환으로 전원 합의 로직이 그대로 적용된다.)
-- ✅ **(2026-09) 검토중(A) ↔ 실제 합의자(B)가 다르면 B가 최종 담당자로 갱신된다**
+- ✅ **(2026-11-12 변경) 실제 처리자는 `acted_by` 에 따로 기록하고, 담당자(`assignee`)는 바꾸지 않는다**
+  (`_record_actor`, 합의·반려 5지점 공통: `approve_step`/`reject_step`/`_advance_after_pl`[peer-approve·sales-agree·peer-submit]/
+  `peer_reject`/`sales_reject`). 같은 팀원 B 가 A 의 선점 단계를 처리하거나 MASTER 가 다른 담당자 단계를 대신 처리하면,
+  담당자는 A(또는 원래 지정자) 그대로 두고 처리자(`acted_by`/`acted_by_name`, 마이그레이션 `0060`)에 실제 처리자를 남긴다.
+  화면(결재 경로 탭)·메일 결재 경로 카드는 **처리자가 있으면 처리자 이름·메일**을, 없으면 담당자를 보여 준다.
+  이력 '반려' 탭 반려자는 원래부터 요청자 기준(`rejection_snapshots._rejected_by`)이라 그대로 맞다.
+  - 이유: 담당자는 판정 로직(고정 후결자 MAP 잠금 `has_map_info_approval`, 후결자 관리 고정/추가 구분, 결재 경로 변경의
+    합의 완료자 잠금·`designated_pl` 재계산, 재상신 검토자 프리필, 메일 수신자 등)이 쓰므로 덮어쓰면 MASTER 대신 처리 한 번에
+    원래 담당자의 권한·메일·경로가 함께 바뀐다(2026-11-12 검토).
+  - 메일: 기합의자·결재완료·철회 확인 대상·철회 완료(RA·SA) 수신자에 **담당자와 처리자를 둘 다** 넣는다(사용자 결정).
+    반려 메일의 '반려한 본인 제외'는 처리자 기준이다(대신 반려한 MASTER 는 빠지고, 선점만 한 A 는 팀 메일로 받는다).
+  - 이력 조회 MY 탭은 담당자 **또는 처리자**인 문서를 보여 준다. 결재 현황 목록 '현재 단계'·목록 엑셀 다운로드의 **반려 표시**(`반려됨 영업/기술지원 합의자(이름)`)도 처리자 이름을 쓴다(`approvalTable.ts` `buildStageText`). 진행 중 단계 이름은 처리자가 없어 그대로다.
+  - 외부 조회 API 응답(`approval_steps`)에도 `acted_by_*` 필드가 추가된다(`docs/EXTERNAL_API.md`).
+  - 재개(resume)로 단계를 대기로 되돌리면 처리자도 비운다.
+  - **기존 데이터**: 아래 2026-09 방식으로 담당자가 이미 처리자로 덮어쓰인 J·O·E·P 단계는 처리자가 비어 있어 담당자(=당시
+    처리자)를 그대로 보여 준다 — 화면·판정 모두 변화 없음. 원래 선점자는 그때 덮어써져 복구할 수 없다.
+  - 2026-11-11 의 코멘트 앞 `[MASTER 이름 대신 처리]` 표시는 처리자 이름이 직접 보이게 되어 제거했다(머지 전 브랜치에만 있던 동작).
+- (2026-09 ~ 2026-11-12, 폐지) **검토중(A) ↔ 실제 합의자(B)가 다르면 B가 최종 담당자로 갱신된다**
   (`_reassign_claim_actor`, `approve_step`/`reject_step` 저장 직전 호출). J·O·E·P 는 선점자(A)가
   아니라 같은 팀 누구나(또는 MASTER) 합의/반려할 수 있는데, 예전엔 실제로 버튼을 누른 사람(B)이
   아니라 **선점만 하고 처리는 안 한 A가 계속 `assignee`/`assignee_name`으로 남아**, 결재 경로
@@ -497,6 +514,23 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   `_can_confirm_extra_zone` 규칙을 쓴다. **target 단계 전원**(현재 구역 + 이전 회차 도달
   구역)이 확인해야 확정된다(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)`).
   확정되는 순간 완료 메일을 적재한 뒤 `document.delete()` 를 호출한다.
+- ✅ **(2026-11-11) MASTER 대신 확인 — 팀 선택 + `step_id`** (철회·중단 공통, `_pick_confirm_step`)
+  - 🐛 **수정 전 버그**: 확인 API 가 `agent` 만 받아 그 agent 의 '확인 가능한 첫 단계'를 골랐고, 이미 확인한
+    단계를 건너뛰지 않았다. 같은 agent 단계가 여럿(다중 PL·RV·PV·EV·RA)이면 MASTER 가 두 번째 단계부터
+    같은 첫 단계만 반복 확인해(`confirmed_step_ids` 고정) 철회·중단이 확정되지 않았다. 화면에는 매번
+    "확인했습니다" 토스트가 떠 정상처럼 보였고, 버튼이 그 단계에 묶여 뒤 단계(J·O·E·RA 등)로도 못 넘어갔다.
+    담당자 본인 확인 경로는 영향 없었다(본인 단계만 확인 가능). 이전 회차 도달 구역은 팀당 대표 1건이라 무관.
+  - **서버**: `confirm-withdraw/`·`confirm-pause/` 가 선택 파라미터 **`step_id`** 를 받는다. 주면 그 단계를 확인한다 —
+    확인 대상(`target_step_ids`)이 아니거나 형식이 틀리면 400, 이미 확인한 단계면 400, 확인 권한(기존 규칙
+    `_can_confirm_pause`/`_can_confirm_extra_zone`)이 없으면 403. `step_id` 없이 `agent` 만 오면 종전 방식이되
+    **이미 확인한 단계는 후보에서 뺀다**(러너·투어·일반 사용자 경로 호환 + 위 버그 수정).
+  - **프론트(MASTER 전용)**: 상세의 [철회 확인]/[⏸ 중단 확인]을 누르면 **'대신 확인할 팀 선택' 창**이 열린다.
+    아직 확인되지 않은 대상 단계를 라디오 목록(한 팀만 선택)으로 보여 주며, 각 항목에 팀 이름(검토자는
+    `PHPSI 검토자`·`MASK 검토자`·`RFG 검토자`처럼 소속 팀을 붙임)·담당자(미배정이면 '담당자 미배정 (팀 전체)')·
+    구역·회차를 표시한다. [선택한 팀 대신 확인] → `step_id` 로 호출, 토스트 `{팀} ({담당자}) 대신 확인했습니다`.
+    MASTER 가 아닌 사용자와 투어 모드는 종전대로 버튼 → 바로 확인(창 없음). 거부(`reject-*`)는 변경 없음.
+    구현: `ApprovalPage.tsx` `openMasterConfirm`/`submitMasterConfirm`/`getMasterConfirmCandidates`, i18n `approval.master_confirm_*`.
+  - 테스트: `WithdrawFlowTest`·`PauseFlowTest` 의 `test_master_*`/`test_step_id_*`/`test_pause_step_id_*` 8건.
 - **철회 거부 (`reject_withdraw`)**: 확인할 수 있는 사람이면(현재 구역이든 이전 회차 도달
   구역이든) 거부도 할 수 있다. 단계 **하나만 거부해도** 요청 전체가 `rejected` 로 무효화되고
   결재가 그대로 이어진다.
@@ -648,7 +682,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 
 - **중단 요청 (`request_pause`)**: 작성자 본인(또는 MASTER) + `status == 'under_review'` + **활성 중단요청 없음**일 때. **사유(reason) 필수**. 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다. 상태 뱃지는 **확인 완료 전까지 그대로 유지**(검토중), 목록 현재단계 칸에 '중단 요청중' 칩만 표시.
   - ✅ **메일 수신 범위는 구역 전체(2026-09)**: `target_step_ids`(확인 대상, pending)는 그대로지만, **메일 수신자는 그 단계가 속한 구역(CLAUDE.md "용어 정리" 표의 1/2/3구역) 전체**로 넓힌다(`RequestDocument.pause_zones`/`pause_zone_for_agent`, `mailer._pause_zone_step_ids`). 같은 구역에서 이미 합의를 마친 사람도 중단 사실을 알아야 하기 때문이다(합의를 마쳤다고 확인 의무가 생기지는 않는다 — 확인 대상은 그대로 pending만). 단계별로 담당자가 지정돼 있으면 그 사람에게만(개인 메일), 미배정이면 담당 팀 전체에게(팀 메일) 가는 기존 규칙(`resolve_withdraw_target_recipients`)은 그대로다.
-- **중단 확인 (`confirm_pause`)**: 현재 단계 담당자(assignee) 본인, 미배정 단계면 같은 팀(역할↔agent 일치), + MASTER (`_can_confirm_pause`). 병렬(P/J ∥ O/E)이면 **target 단계 전원**이 확인해야 최종 `pause` 전이(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)` 시 확정). 그 전엔 under_review 유지.
+- **중단 확인 (`confirm_pause`)**: 현재 단계 담당자(assignee) 본인, 미배정 단계면 같은 팀(역할↔agent 일치), + MASTER (`_can_confirm_pause`). 병렬(P/J ∥ O/E)이면 **target 단계 전원**이 확인해야 최종 `pause` 전이(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)` 시 확정). 그 전엔 under_review 유지. **(2026-11-11)** `step_id`(선택)로 확인할 단계를 지정할 수 있고, `agent` 만 오면 이미 확인한 단계는 건너뛴다. MASTER 는 화면에서 '대신 확인할 팀 선택' 창으로 고른다 — 같은 agent 다중 단계(PV·EV·RA 등)에서 확정되지 않던 버그 수정 포함, 상세는 Case J '(2026-11-11) MASTER 대신 확인'.
 - ✅ **중단 거부 (`reject_pause`, 2026-08 추가)**: 인가는 확인과 동일(`_can_confirm_pause` 통과하는 대상 단계가 있으면 거부 가능 — 확인할 수 있는 사람이면 거부도 할 수 있다, `reject_withdraw`와 동일 패턴). **대상 단계 중 하나만 거부해도 요청 전체가 무효화**된다(전원 확인이 더 이상 성립할 수 없으므로) — `state → 'rejected'`, 결재는 그대로 이어진다. 이미 확인을 마친 다른 대상 단계가 있어도 그 확인은 함께 무효화되며(재요청 시 처음부터 다시 확인받아야 함), 문서·단계 자체는 바뀌지 않는다. 메일 발송 없음(중단 기능은 원래 메일 범위 밖).
 - **재개 (`resume`)**: 작성자 본인(또는 MASTER) + `status == 'pause'`. `pause → under_review` 로 되돌리고 **중단 시점 진행 중이던 구역부터** 이어간다(회차는 새로 만들지 않음). 문서 내용은 사전에 `/request` 편집(update)에서 저장되며, 재개 시 지정 PL 재선택 불필요(`RequestPage` 가 pause 문서 편집 시 상신 대신 `resume` 호출).
   - ✅ **(2026-09) 구역 전체를 처음부터 재합의하도록 초기화**: 예전엔 "멈춘 시점의 pending 단계만 유지, 이미 합의된 병렬 경로는 그대로"였으나, 문서 내용을 고쳐 재개하는 경우가 많아 이미 끝난 합의를 그대로 두면 바뀐 내용을 못 보고 지나칠 수 있었다. 이제 중단 시점 진행 중이던 구역(1/2/3구역, `RequestDocument.pause_zone_for_agent`) **전체**를 다시 대기중으로 되돌린다(그 구역에서 이미 완료됐던 단계 포함) — agent 성격에 따라 셋으로 나뉜다:
@@ -945,7 +979,7 @@ RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 
 #### API
 | 엔드포인트 | 동작 |
 |---|---|
-| `POST /documents/{id}/sales-agree/` | 본인 SA step `approved` → 단계 완료 시 다음 단계 생성 |
+| `POST /documents/{id}/sales-agree/` | 본인 SA step `approved` → 단계 완료 시 다음 단계 생성. **(2026-11-11)** `step_id`(선택)로 처리할 SA 단계 지정(MASTER 대신 합의, sales-reject 도 동일) |
 | `POST /documents/{id}/sales-reject/` | 본인 SA step `rejected` → **문서 즉시 반려**(PL 반려와 동일) |
 
 - 권한: MASTER 또는 해당 step 의 assignee 본인(`_get_caller_sales_agreer_step`).
@@ -1511,6 +1545,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 액션 | 버튼 노출 조건(프론트) | 호출 API |
 |------|----------------------|----------|
 | 합의 / 반려 (R·RV·P·PV·J·O·E·EV·RA) | `canUserAgree`가 참 | `approveStep` / `rejectStep` |
+| **MASTER 대신 합의 / 반려 (2026-11-11)** | MASTER(투어 제외)가 [합의]/[반려] 클릭 → **'대신 합의할 팀 선택' / '대신 반려할 팀 선택' 창**. 후보 = 현재 회차 대기 단계 전부(PL·SA 포함, RV/PV/EV 는 담당자 합의 후 — `getMasterActCandidates`). 한 팀 선택(팀 이름·담당자·구역·회차) + 같은 창의 코멘트(합의 이유/반려 사유, 선택). P·E 를 고르면 창 안에서 검토자 지정(E 는 기존 검토자 없으면 필수 — 하단 검토자 UI 는 MASTER 에게 숨김). 고른 단계의 API(PL→peer, SA→sales, 그 외→step)를 `step_id` 와 함께 호출, 토스트 `{팀} ({담당자}) 대신 합의/반려했습니다`. **예전엔 첫 대기 단계 하나에 고정**돼 다른 팀을 대신하려면 앞 단계부터 처리해야 했고, 서버도 다중 PL·SA·PV·EV·RA 에서 첫 단계를 골랐다. 서버의 `step_id` 는 기존 조회 조건(현재 회차·대기·agent, 일반 사용자는 본인 담당)에 id 조건만 더하므로 권한 규칙은 그대로다. i18n `approval.master_act_*`, 테스트 `MasterActOnBehalfStepIdTest` 8건. **처리자 표시(2026-11-12)**: 대신 처리한 단계는 결재 경로 탭·메일에 **처리한 MASTER 이름**이 담당자 자리에 나온다(`acted_by`, 위 Case K '실제 처리자' 참고). 2026-11-11 의 코멘트 앞 `[MASTER … 대신 처리]` 표시는 제거 | `openMasterAct` → `handleConfirmAction`(`masterPick`) |
 | PL 합의 / 반려 / **수정 후 상신** | PL 검토 단계 + 본인 | `peerApprove` / `peerReject` / `/request`로 이동(peerSubmit) |
 | 담당자 지정 (R) | `canUserAssign`가 참 | `assignStep` |
 | 검토중 (J·O·E·P, 2026-07 P 포함) | `canUserClaim`가 참 | `claimStep` |
@@ -1519,11 +1554,11 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 결재 경로 변경 (2026-10) | 작성자(`requester_loginid`)/MASTER + under_review + 확인 대기 요청 없음 | `changeRoute` (`RouteChangeModal`) |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
 | 철회 | `can_withdraw` + 철회 요청중이 아닐 때(목록·상세 공통, 2026-11-09 목록도 적용) (draft / under_review / rejected(2026-11) / MASTER 는 전부) | 사유 입력 모달 → `withdraw`(진행 중·반려면 철회 요청, 그 외 즉시 삭제) |
-| 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함) | `confirmWithdraw` / `rejectWithdraw` |
+| 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함). **(2026-11-11) MASTER 는 [철회 확인] 시 '대신 확인할 팀 선택' 창**(Case J) | `confirmWithdraw`(MASTER 는 `stepId` 동봉) / `rejectWithdraw` |
 | 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중). **(2026-11-09) 목록 행에도 노출** — 요청중이면 목록의 [철회] 대신 [철회 요청 취소]가 보인다(MASTER 포함, 상세 모달과 동일 기준). 예전엔 목록에 [철회]가 남아 눌러도 400(이미 진행 중인 철회 요청)이었다 | `cancelWithdraw` (목록: `handleCancelWithdrawFromList`, 상세: `handleCancelWithdraw`) |
 | 수정 후 재상신 | rejected/draft + 철회 요청중이 아닐 때(2026-11) | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
-| 중단 확인 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmPause` |
+| 중단 확인 | 현재 pending 단계 담당자/팀+MASTER (요청중). **(2026-11-11) MASTER 는 '대신 확인할 팀 선택' 창**(Case J 참고) | `confirmPause`(MASTER 는 `stepId` 동봉) |
 | 중단 요청 취소 | 작성자 (요청중) | `cancelPause` |
 | 재개 | 작성자·pause (`can_resume`) | `/request`로 이동(editDocId) → `resume` |
 
@@ -1548,20 +1583,20 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 재상신 | `resubmit/` | 상신과 동일(배열 우선 + 단일 호환) |
 | 상신 전 중복 확인 (2026-11-04) | **`GET /documents/duplicate-check/`**(목록 경로, `{id}` 없음) | 쿼리 `line`·`partid_selection`·`process_id`·`request_purpose`·`exclude_id` → `{duplicate: null \| {id, title, status, requester_name, can_open}}`. 아래 "중복 상신 차단" 절 |
 | 철회 | `withdraw/` | `reason`(진행 중 문서는 필수) |
-| 철회 확인 | `confirm-withdraw/` | `agent` |
+| 철회 확인 | `confirm-withdraw/` | `agent`, `step_id`(선택, 2026-11-11 — 주면 그 단계를 확인) |
 | 철회 거부 | `reject-withdraw/` | - |
 | 철회 요청 취소 | `cancel-withdraw/` | - |
-| 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) |
-| 반려 | `reject-step/` | `agent`, `comment` |
+| 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
+| 반려 | `reject-step/` | `agent`, `comment` · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
 | 담당자 지정 (R) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
 | 검토중 선점 (J·O·E·P) | `claim-step/` | `agent` |
 | 검토중 취소 (J·O·E·P, 2026-08) | `unclaim-step/` | `agent` |
 | 중단 요청 | `request-pause/` | `reason`(필수) |
-| 중단 확인 | `confirm-pause/` | `agent` |
+| 중단 확인 | `confirm-pause/` | `agent`, `step_id`(선택, 2026-11-11 — 주면 그 단계를 확인) |
 | 중단 거부 (2026-08) | `reject-pause/` | - |
 | 재개 | `resume/` | - (pause → under_review) |
 | 중단 요청 취소 | `cancel-pause/` | - |
-| PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
+| PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` (peer-approve·peer-reject 는 · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용)) |
 | 결재 경로 변경 (2026-10) | `change-route/` | `designated_pl_loginids`·`sales_agreer_loginids`·`sales_agreer_none_reason`·`post_approver_loginids`·`notifiers` (실린 항목만, 의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |

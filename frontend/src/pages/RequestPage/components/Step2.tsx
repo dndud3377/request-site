@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, NOC_NEW, NOC_BORROW, NOC_NOT_PROCEEDING, NOC_REGISTERED, NOC_LAYER_DELETE } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, NOC_NEW, NOC_BORROW, NOC_NOT_PROCEEDING, NOC_REGISTERED, NOC_LAYER_DELETE, AUTO_BORROW_HIGHLIGHT_COLOR } from '../constants';
 import { isValidationKeywordRow, stripDateBracket, formatMultiItemId, nocOptionsForSt, isNocEditable } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
@@ -20,6 +20,8 @@ interface Step2Props {
   handleJayerApplyFilter: (filterId: string) => void;
   handleJayerChange: (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => void;
   cellSel: CellSelectionApi;
+  /** claude 수정 (2026-11-12): '다음'·'상신' 때 요청 기준이 '차용'으로 자동 변경된 행 id — 그 요청 기준 칸을 강조한다 */
+  autoBorrowRowIds?: ReadonlySet<string>;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
@@ -32,6 +34,7 @@ interface Step2Props {
 }
 
 const ST_OPTIONS = ['O', 'O (D)', 'X'];
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 
 const Step2: React.FC<Step2Props> = ({
   jayerRows,
@@ -45,6 +48,7 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerApplyFilter,
   handleJayerChange,
   cellSel,
+  autoBorrowRowIds = EMPTY_ID_SET,
   GuideTourBadge,
   GuideBadge,
   validationSystem,
@@ -163,6 +167,8 @@ const Step2: React.FC<Step2Props> = ({
               const greyBg = isRegistered || rowInactive;
               const stError = errors[`jayer_stnoc_${row.id}_st`];
               const nocError = errors[`jayer_stnoc_${row.id}_new_or_copy`];
+              // claude 수정 (2026-11-12): 자동 '차용' 변경 강조 — 사용자가 값을 다시 바꾸면 강조도 사라진다
+              const autoBorrowed = autoBorrowRowIds.has(row.id) && row.new_or_copy === NOC_BORROW;
               const itemIdError = errors[`jayer_noc_${row.id}_item_id`];
               const regBg = '#e5e7eb';
               // 편집 셀 공통 props: 셀 선택(드래그/Ctrl) + 선택 하이라이트
@@ -204,7 +210,7 @@ const Step2: React.FC<Step2Props> = ({
                       disableFilter
                     />
                   </td>
-                  <td {...cellProps('new_or_copy')} data-tour="jayer-sync-cols" className={nocError ? 'field-error-target' : undefined}>
+                  <td {...cellProps('new_or_copy')} data-tour="jayer-sync-cols" className={nocError ? 'field-error-target' : undefined} title={autoBorrowed ? t('request.auto_borrow_cell_title') : undefined} data-auto-borrow={autoBorrowed ? 'true' : undefined}>
                     <AutocompleteInput
                       value={row.new_or_copy}
                       onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
@@ -213,6 +219,7 @@ const Step2: React.FC<Step2Props> = ({
                       disabled={!isNocEditable(row.st)}
                       inputStyle={{
                         backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
+                        ...(autoBorrowed ? { outline: `2px solid ${AUTO_BORROW_HIGHLIGHT_COLOR}`, outlineOffset: '-2px', fontWeight: 700 } : {}),
                         ...(nocError ? { border: '1px solid var(--danger)' } : {}),
                       }}
                       dropdownFontSize="0.7rem"
