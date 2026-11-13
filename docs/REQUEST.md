@@ -342,7 +342,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **의도**: STEP2 '숫자 확인 값'(`'13 이상'` / `'9 이하'`)과 외부 DB 의 `AAA4` 값을 비교해, 맞지 않는 요청서를 자동 반려한다.
 - **AAA4 데이터**
   - `scheduler.sync_form_options()` MAP 이름 쿼리(`X.Y`)에 `AAA4` 를 함께 조회·저장한다.
-  - `MapName.AAA4`(`CharField(200)`, null 허용) 추가 — 마이그레이션 `0060_mapname_aaa4`. 기존 행은 다음 1시간 주기 동기화 전까지 `NULL`.
+  - `MapName.AAA4`(`CharField(200)`, null 허용) 추가 — 마이그레이션 `0061_mapname_aaa4`. 기존 행은 다음 1시간 주기 동기화 전까지 `NULL`.
   - `GET /api/form-options/map-info/` 응답에 `AAA4` 추가(행 없음이면 `null`). **화면(StepMap 참고 칸)에는 표시하지 않는다.**
   - `types/index.ts` `MapInfo.AAA4?: string | null` — **선택 필드**라 기존 테스트 mock(`{AAA1, AAA2, AAA3}`)은 그대로 둔다.
 - **자동 반려** — 규칙·반려 경로는 `docs/APPROVAL.md` "숫자 확인 값 자동 반려 (2026-11-12)" 절. 요약:
@@ -350,7 +350,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - AAA4 조회 키는 **STEP1 라인 + 제품(`partid_selection`)**(원본 위치/원본 제품이 아님 — 숫자 확인은 NEW 문서에서만 켜진다).
   - 판정 불가(행 없음·AAA4 빈값·숫자 아님·저장값 형식 다름)는 반려하지 않는다.
   - 반려 메일 안내 문구: "숫자 확인 값이 AAA4 값과 맞지 않아 의뢰서가 자동 반려되었습니다. 숫자 확인 값을 확인한 뒤 재상신해 주세요."
-- **영향 파일**: `backend/api/scheduler.py`, `models.py`, `migrations/0060_mapname_aaa4.py`, `views.py`, `num_check_reject.py`(신규),
+- **영향 파일**: `backend/api/scheduler.py`, `models.py`, `migrations/0061_mapname_aaa4.py`, `views.py`, `num_check_reject.py`(신규),
   `mailer.py`, `tests.py`, `frontend/src/types/index.ts`.
 - **테스트**: `NumCheckAaa4AutoRejectTest`(16) · `MapInfoAaa4ResponseTest`(2) · `SyncFormOptionsNumCheckHookTest`(3).
 - **확인하지 못한 것**: 소스 `X.Y` 에 `AAA4` 컬럼이 실제로 있는지(없으면 MAP 이름 동기화가 실패해 DCQ 동기화 실패 알림이 간다),
