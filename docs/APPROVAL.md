@@ -455,6 +455,10 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - 프론트(`ApprovalPage.tsx` `canConfirmWithdrawStep`/`getWithdrawNeedItems`)가 같은 규칙으로 [철회 확인] 버튼·
   MASTER '대신 확인할 팀' 후보를 계산한다. RA 는 서버가 '현재 후결자 전원'까지 허용하지만 프론트는 문서의
   RA 관여자로 근사한다(하이라이트 힌트, 최종 인가는 서버).
+- **안내 문구(2026-11-13)**: 진행 중 문서의 "현재 단계가 모두 확인" 문구를 "관여했던 팀마다 한 명씩 확인"으로 바꾸고
+  반려 문서 문구도 같은 기준으로 맞췄다 — i18n `approval.withdraw_reason_hint`·`withdraw_reason_hint_rejected`·
+  `withdraw_requested_toast`·`withdraw_confirm_status`·`withdraw_confirm_status_rejected`(ko/en), 서버 `withdraw` 응답
+  `철회 요청이 접수되었습니다. 관여했던 팀의 확인을 기다립니다.`(진행 중·반려 공통).
 - 예) 3구역 진행 중(PL·SA·R·O 합의, P 검토중 p1, J 대기, RA 배정) → 대상 PL·SA·R·P·O·RA, J 제외.
   2회차 문서(1회차 R 반려 r1, 2회차 R 을 담당 없이 r2 합의) → R 묶음 1건, 메일은 r1·r2, 확인은 TE_R 누구나.
 - 테스트: `WithdrawFlowTest` `test_waiting_unassigned_team_is_not_target_nor_mailed`·
