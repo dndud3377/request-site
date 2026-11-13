@@ -792,6 +792,9 @@ const buildTbvtlvTable = (entries: any, t: TFunction): DiffTable | null => {
 
 /** 탭 목록에서 '기타' 탭을 찾는 식별자(전체 export 캡처용). */
 const ETC_PAGE_KEY = 'etc';
+// claude 수정 (2026-11-13): 전체 export 가 결재 경로 탭도 캡처하도록 탭 위치를 key 로 찾는다
+/** 탭 목록에서 '결재 경로' 탭을 찾는 식별자(전체 export 캡처용). */
+const ROUTE_PAGE_KEY = 'route';
 
 // 대기중 → 검토중 전환이 사용자 동작(검토중 클릭·담당자 지정)으로 일어나는 단계 — 결재 경로 탭의 검토중 시각 판정용.
 const REVIEW_START_BY_ACTION_AGENTS: string[] = ['R', 'P', 'J', 'O', 'E'];
@@ -1743,6 +1746,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const detailTabRef = useRef<HTMLDivElement>(null);
   const mapTabRef = useRef<HTMLDivElement>(null);
   const etcTabRef = useRef<HTMLDivElement>(null);
+  const routeTabRef = useRef<HTMLDivElement>(null);
 
   /** DOM 노드 하나를 화면 그대로 PNG 로 캡처한다(html2canvas). 실패하면 null. */
   const captureNode = async (el: HTMLElement | null): Promise<ScreenshotCapture | null> => {
@@ -2709,10 +2713,18 @@ type Page = { label: string; content: React.ReactNode; key?: string };
         etcShot = await captureNode(etcTabRef.current);
       }
 
+      // claude 수정 (2026-11-13): 결재 이력 증빙용으로 결재 경로 탭(전 회차)도 캡처한다
+      let routeShot: ScreenshotCapture | null = null;
+      const routeIdx = pages.findIndex((page) => page.key === ROUTE_PAGE_KEY);
+      if (routeIdx >= 0) {
+        flushSync(() => setPageIdx(routeIdx));
+        routeShot = await captureNode(routeTabRef.current);
+      }
+
       flushSync(() => setPageIdx(originalPageIdx));
       if (!wasFullscreen) flushSync(() => setIsFullscreen(false));
 
-      return { detail: detailShot, map: mapShot, etc: etcShot };
+      return { detail: detailShot, map: mapShot, etc: etcShot, route: routeShot };
     },
   }));
 
@@ -3956,9 +3968,10 @@ type Page = { label: string; content: React.ReactNode; key?: string };
   }
 
   pages.push({
+    key: ROUTE_PAGE_KEY,
     label: t('approval.tab_route'),
     content: (
-      <div style={cardStyle} data-tour="approval-route-tab">
+      <div style={cardStyle} data-tour="approval-route-tab" ref={routeTabRef}>
         <div style={sectionTitle}>{t('approval.tab_route')}</div>
 
         {/* 상신자 행 */}

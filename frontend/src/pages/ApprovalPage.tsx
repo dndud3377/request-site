@@ -22,7 +22,7 @@ import {
 import RouteChangeModal from '../components/RouteChangeModal';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, PersonalFilterPreset, ColorFilterSet, LayerDriftResponse, isPlRole, plRoleFor } from '../types';
 import { formatDate, formatTime } from '../utils/date';
-import { exportAll as exportAllXlsx } from '../utils/detailExport';
+import ExportAllButton from '../components/ExportAllButton';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
 import ColorFilterManageModal, { emptyColorDraftWords } from './RequestPage/components/ColorFilterManageModal';
 import { emptyDraftWords } from './RequestPage/helpers';
@@ -2980,21 +2980,16 @@ export default function ApprovalPage(): React.ReactElement {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={selected?.title ?? ''}
+        // claude 수정 (2026-11-13): 전체 export 버튼을 공용 ExportAllButton 으로 교체(오류·진행 중·일부 캡처 실패 처리)
         titleExtra={selected && (
-          <button
-            onClick={async () => {
-              const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
-                ?? { detail: null, map: null, etc: null };
-              await exportAllXlsx(selected, t, screenshots, {
-                jayerColorFilterSets, activeJayerColorFilterIds,
-                oayerColorFilterSets, activeOayerColorFilterIds,
-              });
+          <ExportAllButton
+            doc={selected}
+            pagedDetailViewRef={pagedDetailViewRef}
+            colorFilters={{
+              jayerColorFilterSets, activeJayerColorFilterIds,
+              oayerColorFilterSets, activeOayerColorFilterIds,
             }}
-            className="btn btn-secondary btn-sm"
-            style={{ fontSize: '0.75rem', padding: '2px 10px' }}
-          >
-            📊 {t('request.export_all_btn')}
-          </button>
+          />
         )}
         size="xl"
         footer={(() => {

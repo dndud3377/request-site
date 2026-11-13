@@ -1953,6 +1953,39 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   - **(2026-11-11 변경)** `숫자 확인 값` 저장값이 숫자 → `'13 이상'`/`'9 이하'`(기준값 숫자 + 단어)로 바뀌어, 카드는 `formatNumCheckValue` 로
     i18n 문구를 보여준다(ko `13 이상`/`9 이하`, en `13 or more`/`9 or less`, 형식이 다르면 저장값 그대로). 사진은 '이상'일 때 최소 2장.
     결재 판정·`MAP_INFO_FIELDS`·결재선 생성은 바뀌지 않았다. 테스트 `PagedDetailView.numCheck.test.tsx` 4건. 상세는 `docs/REQUEST.md` 2026-11-11 항목.
+- **(2026-11-13) 전체 export — 결재 경로 캡처 시트·`agent E` 시트 추가, 숫자 확인 필수 텍스트 행, 파일명 i18n**: 결재 이력 증빙·보관을 위해
+  상세 모달 `📊 전체 export` 한 파일에 결재 경로까지 담고, 엑셀에서 빠져 있거나 번역되지 않던 항목을 바로잡았다(사용자 결정).
+  - **시트 구성(전체 export, 모든 문서 유형 공통 13장)**:
+    `의뢰 상세` → `의뢰 상세 (텍스트)` → `MAP 정보` → `MAP 정보 (텍스트)` → `JOB` → **`agent E`** → `OVL` → `OVL 정보` → `XXXXXX` → `BB`
+    → `기타` → `기타 (텍스트)` → **`결재 경로`**. 상세 모달 탭 순서와 같다(`agent E` 만 탭이 없는 시트로 JOB 바로 뒤).
+  - **결재 경로 — 캡처 이미지 1장만**(텍스트 시트 없음, 사용자 결정): `captureAllScreenshots()` 가 기타 탭 다음에 결재 경로 탭(`key: 'route'`,
+    `ROUTE_PAGE_KEY`, `routeTabRef`)을 전체화면으로 캡처한다. 탭 화면 그대로라 **전 회차**(상신자·통보처·팀별 결재 이력)가 들어간다.
+    `ExportAllScreenshots` 에 `route` 가 추가됐고, 캡처에 실패하면 다른 캡처 시트처럼 `request.export_capture_failed` 문구가 들어간다.
+    결재 경로 탭에는 개별 export 버튼을 달지 않았다(범위 밖).
+  - **`agent E` 시트(전체 export 전용)**: 항목/값 1행 — `Validation System` = 대상/비대상/해당없음. 판정은 상세 보기 JOB 탭과 같다
+    (활성 J-layer 에 판정 키워드가 없으면 해당없음, 있으면 저장값, 저장값이 없으면 대상). 상신 값과 현재 값이 다르면 같은 칸에 줄을 바꿔
+    `상신 시 A → 현재 B`, 변경자가 있으면 `<이름>, <YYYY-MM-DD HH:mm> 변경` 을 함께 담는다(화면 JOB 탭과 같은 문구). JOB 탭 개별 export 에는 넣지 않는다.
+  - **MAP 정보 (텍스트) — 숫자 확인 필수**: 상세 보기 카드와 같은 조건(`num_check === '해당 있음'` 이거나 사진 1장 이상, MAP 삭제 문서 제외)에서
+    X표시 행 바로 다음에 `숫자 확인 필수`(해당 있음/해당 없음)·`숫자 확인 값`(`formatNumCheckValue`, 없으면 `-`) 2행을 넣는다. 사진은 텍스트 시트에
+    넣지 않는다(캡처 시트에 화면 그대로 들어간다). 개별 MAP 정보 export 에도 똑같이 적용된다(같은 `addMapInfoSheet`).
+  - **파일명**: `<제목>_전체_<시각>.xlsx` 의 `전체` 하드코딩을 `request.export_all_file_suffix`(ko `전체` / en `All`)로 바꿨다.
+  - **i18n 신규 키(ko/en 동시)**: `request.export_all_file_suffix`, `request.export_sheet_agent_e`(ko/en 모두 `agent E`).
+  - **영향 파일**: `utils/detailExport.ts`, `components/PagedDetailView.tsx`, `pages/ApprovalPage.tsx`·`pages/HistoryPage.tsx`(캡처 기본값에 `route: null`),
+    `locales/ko.json`·`en.json`. 결재 흐름·백엔드는 바뀌지 않았다.
+  - **테스트**: `utils/detailExport.exportAll.test.ts`(시트 순서·결재 경로 캡처 실패 문구·파일명 ko/en·숫자 확인 3건·agent E 3건 = 10건),
+    `components/PagedDetailView.exportAllCapture.test.tsx`(결재 경로 탭 캡처 후 원래 탭 복귀 1건). 변경 전 코드에서는 이 중 8건이 실패함을 확인했다.
+  - **수동 확인**: 결재 현황 → 의뢰서 행 클릭 → 모달 우측 상단 `📊 전체 export` → 마지막 시트 `결재 경로` 에 결재 경로 탭 화면(전 회차)이,
+    `JOB` 다음 `agent E` 시트에 Validation System 값이 보이면 정상. 숫자 확인 '해당 있음' 문서는 `MAP 정보 (텍스트)` 에 두 행이 보여야 한다.
+- **(2026-11-13 후속) 전체 export 버튼 — 오류·진행 중 처리(규칙 J) + 일부 캡처 실패 경고**: 결재 현황·이력 두 화면에 똑같이 인라인으로 있던
+  버튼을 공용 `components/ExportAllButton.tsx` 로 바꿨다(props: `doc`, `pagedDetailViewRef`, 결재 현황만 `colorFilters`).
+  - **진행 중**: 클릭하면 끝날 때까지 버튼을 비활성화하고 라벨을 `📊 생성 중…`(`request.export_all_generating`)으로 바꾼다. 같은 틱 안의 연타는 `useRef` 로도 막아 한 번만 실행한다.
+  - **오류**: 캡처·엑셀 생성 중 예외가 나면 오류 토스트 `request.export_all_error` 를 띄우고 버튼을 다시 켠다(파일은 받아지지 않는다).
+  - **일부 캡처 실패**: 캡처 4장(의뢰 상세·MAP 정보·기타·결재 경로) 중 하나라도 `null` 이면 파일은 그대로 받고 경고 토스트
+    `request.export_capture_partial_failed` 를 띄운다(실패한 시트에는 종전대로 `request.export_capture_failed` 문구). 상세 보기 핸들이 없으면 전부 실패로 본다.
+  - **범위 밖(그대로)**: 탭 안 개별 export 버튼 7개(JOB/OVL/XXXXXX/BB/의뢰 상세/MAP 정보/기타)는 아직 오류·진행 중 처리가 없다.
+    `captureAllScreenshots` 에 예외 시 탭·전체화면 복구(try/finally)는 넣지 않았다(`captureNode` 가 오류를 자체 처리해 예외가 나기 어렵다).
+  - **i18n 신규 키(ko/en 동시)**: `request.export_all_generating`, `request.export_all_error`, `request.export_capture_partial_failed`.
+  - **테스트**: `components/ExportAllButton.test.tsx` 5건(정상·일부 캡처 실패 경고·핸들 없음·exportAll 실패 오류 토스트·생성 중 비활성/1회 실행).
 
 ---
 
