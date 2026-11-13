@@ -642,12 +642,14 @@ def sync_form_options():
                 logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e), exc_info=True)
                 failures.append({'context': '-', 'target': '바코드-품목'})
 
-            # claude 수정 (2026-11-13): MAP 이름 조회·저장 컬럼에 AAA4 추가 — System R '숫자 확인 값 ↔ AAA4' 검증(system_r.check_num_check_aaa4) 비교용
+            # claude 수정 (2026-11-13): MAP 이름 조회·저장 컬럼에 AAA4·AAA5·AAA6 추가 — System R 검증 비교용
+            # (AAA4 ↔ 숫자 확인 값, AAA5 ↔ Map Option, AAA6 ↔ MAP 목적 CLONE). AAA5·AAA6 은 값이 없을 수 있어
+            # 조건에 넣지 않는다 — 비어 있어도 행을 그대로 불러와 NULL 로 저장한다.
             try:
                 lineid_list = list(LINE_TO_LINEID_MAP.values())
                 placeholders = ' OR '.join([f"lineid = '{lid}'" for lid in lineid_list])
                 query_mn = f"""
-                    SELECT DISTINCT lineid, partid, AAA1, AAA2, AAA3, AAA4
+                    SELECT DISTINCT lineid, partid, AAA1, AAA2, AAA3, AAA4, AAA5, AAA6
                     FROM X.Y
                     WHERE ({placeholders})
                       AND partid IS NOT NULL AND partid != ''
@@ -659,7 +661,7 @@ def sync_form_options():
                     failures.append({'context': '-', 'target': 'MAP 이름'})
                 else:
                     df_mn['last_synced'] = pd.Timestamp.now()
-                    df_mn = df_mn[['lineid', 'partid', 'AAA1', 'AAA2', 'AAA3', 'AAA4', 'last_synced']]
+                    df_mn = df_mn[['lineid', 'partid', 'AAA1', 'AAA2', 'AAA3', 'AAA4', 'AAA5', 'AAA6', 'last_synced']]
 
                     with engine.begin() as db_conn:
                         db_conn.execute(text("DELETE FROM api_mapname"))
