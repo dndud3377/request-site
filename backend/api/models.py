@@ -455,7 +455,8 @@ class RequestDocument(models.Model):
     # 중단 요청 메일 수신 범위·MAP 정보 잠금 판정에 쓰는 "구역(zone)" — CLAUDE.md "용어 정리" 표와
     # 같다. 구역은 순서대로 진행되며(2구역이 없는 경로는 건너뛴다), 같은 구역 안은 병렬이다.
     PAUSE_ZONE_1_AGENTS = ('PL', 'SA')
-    PAUSE_ZONE_2_AGENTS = ('R', 'RV')
+    # claude 수정 (2026-11-13): 2구역에 System R(RS) 추가 — R(+RV)과 병렬로 MAP 정보를 시스템이 검증한다(일반·Only MAP)
+    PAUSE_ZONE_2_AGENTS = ('R', 'RV', 'RS')
 
     def pause_zones(self):
         """이 문서의 결재 경로에서 구역별 agent 집합을 순서대로 반환한다.
@@ -763,6 +764,8 @@ class ApprovalStep(models.Model):
         ('EV', '검토자'),           # E 검토자(담당자가 지정, 다중 가능)
         ('RA', '후결자'),           # 후결자(R단계 이후 병렬)
         ('SA', '영업/기술지원 합의자'),  # PL 검토와 병렬(작성자가 상신 시 지정, 다중 가능)
+        # claude 수정 (2026-11-13): System R 추가 — 2구역에서 R 과 병렬로 MAP 정보를 시스템이 검증(system_r.py)
+        ('RS', 'System R'),
     ]
 
     ACTION_CHOICES = [
@@ -1596,7 +1599,7 @@ class MapName(models.Model):
     AAA1 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA1')
     AAA2 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA2')
     AAA3 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA3')
-    # claude 수정 (2026-11-12): AAA4 추가 — '숫자 확인 값'과 비교해 자동 반려 판정(num_check_reject)에 쓴다
+    # claude 수정 (2026-11-13): AAA4 — '숫자 확인 값'과 비교하는 System R 검증 항목(system_r.check_num_check_aaa4)에 쓴다
     AAA4 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA4')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
