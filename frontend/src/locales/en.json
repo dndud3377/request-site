@@ -149,6 +149,8 @@
     "tab_adi_cd_not_applicable": "ADI CD change requests do not include MAP information.",
     "export_btn": "export",
     "export_all_btn": "Export all",
+    "export_all_file_suffix": "All",
+    "export_sheet_agent_e": "agent E",
     "export_col_item": "Item",
     "export_col_value": "Value",
     "export_capture_failed": "(Could not capture the screen)",
