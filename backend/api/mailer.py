@@ -35,8 +35,9 @@
 - 철회 완료(withdraw_completed): "개인 수신자" 메일 1통(지정 PL 전원 + 통보처 전원 +
   RA/SA 개인 담당자 + 작성자) + 실제로 결재가 진행된 팀별로 각각 별도 메일 1통씩
   (2026-09 개편)
-- 철회 요청/취소(withdraw_requested/withdraw_cancelled): 확인 대상 단계 중 담당자가
-  배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각각 별도 메일 1통씩(2026-09 개편)
+- 철회 요청/취소(withdraw_requested/withdraw_cancelled): 확인 대상 묶음에 관여한 사람
+  (모든 회차의 합의·반려자 + 검토 중·배정된 담당자, 처리자 포함) 전원에게 메일 1통.
+  아무도 맡지 않은 대기 팀에는 보내지 않는다(2026-11-13 개편)
 - 팀별 분리 발송으로 한 결재 액션에서 여러 통이 나올 때는 동시에 겹쳐 보내지 않는다 —
   트랜잭션 커밋 후 스레드 1개가 순서대로(순서 자체는 무관) 즉시 발송을 시도한다
   (`_dispatch_batch`/`_send_now_async_sequential`). 재시도 안전망(`process_mail_queue`)은
@@ -58,8 +59,8 @@
   토글과는 독립적으로 관리되지만(하나를 꺼도 다른 하나는 그대로), 라인 수신 설정
   (mail_lines) 필터 자체는 2026-09부터 이 메일에도 적용된다.
 - 중단(PAUSE, 2026-09 신설): 요청/재개(pause_requested/pause_resumed)는 확인 대상·재개
-  대상 단계에 담당자가 있으면 그 1명, 없으면 담당 팀별로 각각 별도 메일(withdraw_requested와
-  동일 규칙 재사용). 확정(pause_confirmed)은 대상 단계 전원 확인이 끝난 시점에만 작성자 +
+  대상 단계에 담당자가 있으면 그 1명, 없으면 담당 팀별로 각각 별도 메일
+  (resolve_withdraw_target_recipients — 2026-11-13부터 중단 전용). 확정(pause_confirmed)은 대상 단계 전원 확인이 끝난 시점에만 작성자 +
   지금까지 진행된 팀별로 각각 별도 메일 1통씩(부분 확인 시점엔 무메일). 거부(pause_rejected)는
   요청자 + 작성자 1통. cancel-pause(요청 취소)는 resume과 목적이 겹쳐 이번 범위에서 제외했다.
 - 삭제(document_deleted, 2026-09 신설): withdraw_completed와 동일한 수신자 규칙
@@ -780,17 +781,20 @@ def resolve_submit_subscriber_recipients(document):
 
 
 def resolve_withdraw_target_recipients(document, step_ids):
-    """철회 요청/취소 확인 대상 단계의 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
+    """중단 요청/재개 메일 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
+
+    (2026-11-13) 철회 요청/취소는 `resolve_withdraw_involved_recipients` 로 옮겨 이제 중단 전용이다.
+    이름은 호출부 변경을 줄이려고 그대로 둔다.
 
     단계마다 "담당자가 배정돼 있으면 그 1명(개인 수신자), 미배정이면 그 단계 담당 팀 전원
-    (팀 수신자)"이다 — 확인 인가(`views._can_confirm_pause`, 중단 확인과 동일 규칙)와 같은
-    기준이라, 실제로 '철회 확인'을 누를 수 있는 사람에게만 메일이 간다. 확인 대상 단계가
+    (팀 수신자)"이다 — 확인 인가(`views._can_confirm_pause`)와 같은 기준이라, 실제로
+    '중단 확인'을 누를 수 있는 사람에게만 메일이 간다. 대상 단계가
     여럿이고 서로 다른 팀에 걸쳐 있으면(예: 병렬 J·O 단계 동시 확인 대상) 한 메일에 묶지
     않고 팀별로 그룹을 나눠 돌려준다.
 
-    ⚠️ 통보처는 여기에 포함하지 않는다(2026-08 결정) — 통보처는 확인 주체가 아니므로
-    철회 '완료' 시점에만 통보받는다.
+    ⚠️ 통보처는 여기에 포함하지 않는다(2026-08 결정) — 통보처는 확인 주체가 아니다.
     """
+    # claude 수정 (2026-11-13): 철회 요청/취소가 resolve_withdraw_involved_recipients 로 옮겨가 중단 전용이 됨(동작 변경 없음)
     individual_emails = []
     team_groups = {}
     steps = (
@@ -812,6 +816,50 @@ def resolve_withdraw_target_recipients(document, step_ids):
                     group.append(mail)
 
     return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
+
+
+# claude 수정 (2026-11-13): 철회 요청·취소 수신자 = 요청서를 실제로 본 사람(관여자)만 — 대기 팀 전원 브로드캐스트 없음
+def withdraw_group(agent):
+    """철회 확인 묶음 키 — 검토자(RV/PV/EV)는 담당자와 같은 팀이라 담당자 agent 로 환산한다."""
+    return REVIEWER_TO_MAIN_AGENT.get(agent, agent)
+
+
+def is_withdraw_involved(step):
+    """그 요청서를 실제로 본 단계인가 — 합의·반려했거나, 담당자가 정해져 검토 중·배정된 단계.
+
+    아무도 맡지 않은 대기 단계(pending + 담당자 없음)는 요청서를 본 적이 없으므로 아니다.
+    """
+    return step.action != 'pending' or bool(step.assignee_id)
+
+
+def withdraw_involved_users(document, groups):
+    """묶음(`withdraw_group`)들에 관여한 사람 — 모든 회차의 관여 단계 담당자·처리자(중복 제거)."""
+    users = []
+    seen = set()
+    steps = ApprovalStep.objects.filter(document=document).select_related('assignee', 'acted_by')
+    for step in steps:
+        if withdraw_group(step.agent) not in groups or not is_withdraw_involved(step):
+            continue
+        for user in (step.assignee, step.acted_by):
+            if user and user.pk not in seen:
+                seen.add(user.pk)
+                users.append(user)
+    return users
+
+
+def resolve_withdraw_involved_recipients(document, step_ids):
+    """철회 요청/취소 수신자 — 확인 대상 묶음에 관여한 사람 전원(개인 메일 1통 대상).
+
+    확인은 묶음당 한 명이면 되지만(장기 부재 시 팀 대응), 메일은 그 요청서를 실제로 본
+    사람에게만 보낸다(2026-11-13 사용자 결정). 팀 전원 메일은 만들지 않는다. 통보처는 제외.
+    """
+    groups = {
+        withdraw_group(agent)
+        for agent in ApprovalStep.objects.filter(document=document, id__in=list(step_ids or []))
+        .values_list('agent', flat=True)
+    }
+    emails = [u.mail for u in withdraw_involved_users(document, groups) if u.mail]
+    return _apply_redirect(emails, document)
 
 
 def _pause_zone_step_ids(document, step_ids):
@@ -1493,25 +1541,12 @@ def enqueue_notify_rjo_completed(document):
     return _enqueue(document, 'notify_rjo_completed', recipients, agent='P')
 
 
+# claude 수정 (2026-11-13): 수신자를 확인 대상 묶음의 관여자로 변경 — 팀별 메일 없이 1통
 def enqueue_withdraw_requested(document, withdraw_request):
-    """철회 요청 접수 알림 적재 — 확인 대상 단계의 담당자/팀 대상(통보처 제외).
-
-    배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
-    """
-    individual_emails, team_groups = resolve_withdraw_target_recipients(
-        document, withdraw_request.target_step_ids,
-    )
-    notis = [_enqueue(
-        document, 'withdraw_requested', individual_emails,
-        note_override=withdraw_request.reason, dispatch=False,
-    )]
-    for team_key, emails in team_groups.items():
-        notis.append(_enqueue(
-            document, 'withdraw_requested', emails, agent=team_key,
-            note_override=withdraw_request.reason, dispatch=False,
-        ))
-    _dispatch_batch(notis)
-    return [n for n in notis if n is not None]
+    """철회 요청 접수 알림 적재 — 확인 대상 묶음에 관여한 사람 대상(통보처 제외), 메일 1통."""
+    recipients = resolve_withdraw_involved_recipients(document, withdraw_request.target_step_ids)
+    noti = _enqueue(document, 'withdraw_requested', recipients, note_override=withdraw_request.reason)
+    return [noti] if noti is not None else []
 
 
 def enqueue_withdraw_completed(document, reason=''):
@@ -1542,25 +1577,12 @@ def enqueue_withdraw_rejected(document, withdraw_request):
     )
 
 
+# claude 수정 (2026-11-13): 요청 메일과 같은 수신자(확인 대상 묶음의 관여자)에게 1통
 def enqueue_withdraw_cancelled(document, withdraw_request):
-    """철회 요청 취소 알림 적재 — 요청 메일을 받았던 확인 대상 단계 담당자/팀 대상.
-
-    배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
-    """
-    individual_emails, team_groups = resolve_withdraw_target_recipients(
-        document, withdraw_request.target_step_ids,
-    )
-    notis = [_enqueue(
-        document, 'withdraw_cancelled', individual_emails,
-        note_override=withdraw_request.reason, dispatch=False,
-    )]
-    for team_key, emails in team_groups.items():
-        notis.append(_enqueue(
-            document, 'withdraw_cancelled', emails, agent=team_key,
-            note_override=withdraw_request.reason, dispatch=False,
-        ))
-    _dispatch_batch(notis)
-    return [n for n in notis if n is not None]
+    """철회 요청 취소 알림 적재 — 요청 메일을 받았던 사람(확인 대상 묶음의 관여자) 대상, 메일 1통."""
+    recipients = resolve_withdraw_involved_recipients(document, withdraw_request.target_step_ids)
+    noti = _enqueue(document, 'withdraw_cancelled', recipients, note_override=withdraw_request.reason)
+    return [noti] if noti is not None else []
 
 
 def enqueue_pause_requested(document, pause_request):
