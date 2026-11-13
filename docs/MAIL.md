@@ -106,7 +106,7 @@ P/O/J/E 각각에게 개별 메일을 보내는 것(`_advance_to_parallel`)과 �
 | `enqueue_notify_p_completed` | 없음 | TE_O, TE_J 각각 별도 메일 (결재 경로에 J 가 없는 'Overlay만 변경' 단독 문서는 TE_O 만, 2026-10-19) |
 | `enqueue_rejected` | 작성자+공유 그룹 멤버+기합의자+미합의 RA/SA(반려 단계에 따라 미합의 PL) | `resolve_reject_recipients`가 돌려주는 잔여 결재선 팀별로 각각 별도 메일(§3.1) |
 | `enqueue_withdraw_completed` | 지정 PL+통보처+RA/SA+작성자 | `resolve_withdraw_completed_recipients`가 돌려주는 실제 진행된 팀별로 각각 별도 메일(§3.2) |
-| `enqueue_withdraw_requested`/`enqueue_withdraw_cancelled` | 확인 대상 단계 중 담당자 배정된 개인들 | `resolve_withdraw_target_recipients`가 돌려주는 미배정 팀별로 각각 별도 메일(§3.2) |
+| `enqueue_withdraw_requested`/`enqueue_withdraw_cancelled` | 확인 대상 묶음에 관여한 사람 전원(2026-11-13, `resolve_withdraw_involved_recipients`) | 없음 — 팀별 메일을 만들지 않는다(§3.2) |
 
 ⚠️ 위 4개 `resolve_*` 함수는 이제 **`(개인 수신자 리스트, {팀키: 팀 수신자 리스트})` 튜플**을
 반환한다(이전에는 평탄화된 리스트 하나였다). `mailer.py` 안에서만 쓰는 내부 계약이며,
@@ -303,16 +303,20 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 철회는 `요청 → 현재 단계 전원 확인 → 의뢰서 완전 삭제` 절차라 이벤트가 4종이다
 (결재 흐름은 `docs/APPROVAL.md` Case J).
 
+✅ **(2026-11-13) 철회 요청·취소는 "요청서를 본 사람"에게만 1통** — 아무도 맡지 않은 대기 팀은 받지 않고, 팀 전원 메일·
+팀별 분리도 없다(확인은 묶음당 한 명, 팀 묶음은 그 팀 누구나 — `docs/APPROVAL.md` Case J "확인 대상·메일").
+아래 (2026-09) 팀별 분리 설명은 이제 `withdraw_completed` 에만 해당한다.
+
 ⚠️ **(2026-09)** `withdraw_requested`/`withdraw_completed`/`withdraw_cancelled`는 대상이
 둘 이상의 팀에 걸치면 **팀별로 각각 별도 메일**로 나뉜다(§ 위 "팀별 분리 발송" 참고).
 `withdraw_rejected`는 원래도 개인 2명뿐이라 분리 대상이 아니다.
 
 | 이벤트 | 시점 | 수신자 |
 |---|---|---|
-| `withdraw_requested` | 철회 요청 접수 | **확인 대상 단계**의 담당자(assignee) 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**(`resolve_withdraw_target_recipients`). ⚠️ **통보처는 제외** — 확인 주체가 아니다 |
+| `withdraw_requested` | 철회 요청 접수 | ✅ **(2026-11-13) 확인 대상 묶음에 관여한 사람 전원에게 1통**(`resolve_withdraw_involved_recipients`) — 모든 회차의 합의·반려자 + 검토 중·배정된 담당자(담당자·처리자 둘 다). **아무도 맡지 않은 대기 팀에는 보내지 않고, 팀 전원 메일도 없다.** ⚠️ **통보처는 제외** — 확인 주체가 아니다 |
 | `withdraw_completed` | 철회 확정(문서 삭제 직전) · 즉시 삭제 경로 | 개인 수신자 메일 1통(① 상신 시 **지정된 PL 전원** ② **통보처 전원** ③ RA/SA 개인 담당자 ④ **작성자**) + **실제로 결재가 진행된 단계의 담당 팀별로 각각 별도 메일**(`resolve_withdraw_completed_recipients`) |
 | `withdraw_rejected` | 대상 단계가 철회 거부 | 철회를 **요청한 사람** + 의뢰서 **작성자** (분리 대상 아님) |
-| `withdraw_cancelled` | 요청자가 철회 요청 취소 | 요청 메일을 받았던 **확인 대상 단계**의 담당자(개인 수신자 메일)/팀(팀별로 각각 별도 메일) |
+| `withdraw_cancelled` | 요청자가 철회 요청 취소 | 요청 메일을 받았던 사람 = `withdraw_requested` 와 같은 수신자 1통(2026-11-13) |
 
 **"실제로 결재가 진행된 팀" 판정**(`_reached_stage_emails`) — 기준은 **단계(ApprovalStep)가
 생성됐는지**다. `TE_R`+`TE_P`+`TE_J`+`TE_O`+`TE_E` 5개 팀 전원에게 뿌리지 않는다.
@@ -369,7 +373,7 @@ Case J "반려 문서 철회")는 거부·취소돼도 결재가 이어지지 �
 
 | 이벤트 | 시점 | 수신자 |
 |---|---|---|
-| `pause_requested` | 중단 요청 접수 | ✅ **(2026-09 확장) 확인 대상 단계가 속한 구역 전체**(요청 시점 pending 단계 + 같은 구역에서 이미 합의를 마친 단계, `mailer._pause_zone_step_ids`) — 각 단계 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 그대로 재사용한다(withdraw_requested 와 동일 규칙). 확인 의무(`target_step_ids`) 자체는 여전히 pending 단계만이다 — 넓어진 건 메일 수신 범위뿐 |
+| `pause_requested` | 중단 요청 접수 | ✅ **(2026-09 확장) 확인 대상 단계가 속한 구역 전체**(요청 시점 pending 단계 + 같은 구역에서 이미 합의를 마친 단계, `mailer._pause_zone_step_ids`) — 각 단계 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 쓴다(2026-11-13부터 중단 전용 — 철회 요청은 다른 규칙). 확인 의무(`target_step_ids`) 자체는 여전히 pending 단계만이다 — 넓어진 건 메일 수신 범위뿐 |
 | `pause_confirmed` | 중단 확정(대상 단계 **전원 확인 완료**로 문서가 pause 로 전이되는 시점) | 개인 수신자 메일 1통(**작성자** + 진행된 단계의 RA/SA 개인 담당자) + **실제로 결재가 진행된 단계의 담당 팀별로 각각 별도 메일**(`_reached_stage_team_groups` 재사용, withdraw_completed 와 동일 판정 기준). ⚠️ 부분 확인 시점에는 발송하지 않는다 — 대상 단계가 병렬이면 마지막 확인자가 확정시킬 때 1회만 나간다 |
 | `pause_rejected` | 대상 단계가 중단 거부 | 중단을 **요청한 사람** + 의뢰서 **작성자**(withdraw_rejected 와 동일 패턴, 분리 대상 아님) |
 | `pause_resumed` | 재개(작성자가 pause 문서를 under_review 로 되돌릴 때) | ✅ **(2026-09 확장) 재개 시점 pending 단계가 속한 구역 전체**(`pause_requested`와 동일한 `_pause_zone_step_ids`) — 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 그대로 재사용한다. 중단 중엔 결재가 막혀 구역 구성이 바뀌지 않으므로, 결과적으로 `pause_requested` 를 받았던 사람 전원이 재개 알림도 받는다 |
@@ -508,10 +512,10 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | 액션(엔드포인트) | 발송 | 내용 |
 |---|:---:|---|
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원 **+ '상신 받기'를 켠 TE_P 전원**(2026-08 신설, §3.3) **+ 작성자·공유 그룹 멤버**(2026-11-10)에게 notify_submitted |
-| `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중 문서는 확인 대상 단계에 `withdraw_requested`(개인 1통 + 팀별 각 1통). 반려 문서(2026-11)도 같은 메일이 **관여했던 팀**(최신 회차 PL·SA + 2·3구역 관여 팀, `docs/APPROVAL.md` Case J "반려 문서 철회")의 담당자/팀에게 간다. 임시저장 문서는 즉시 삭제되며 `withdraw_completed`(개인 1통 + 팀별 각 1통). MASTER 철회는 상태와 무관하게 즉시 삭제하며 메일을 보내지 않는다(서버 로그만). §3.2 참고 |
+| `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중·반려 문서 모두 확인 대상 묶음의 관여자에게 `withdraw_requested` 1통(2026-11-13, `docs/APPROVAL.md` Case J "확인 대상·메일"). 임시저장 문서는 즉시 삭제되며 `withdraw_completed`(개인 1통 + 팀별 각 1통). MASTER 철회는 상태와 무관하게 즉시 삭제하며 메일을 보내지 않는다(서버 로그만). §3.2 참고 |
 | `confirm-withdraw` (철회 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 삭제될 때만** `withdraw_completed`(개인 1통 + 팀별 각 1통). 아직 남은 단계가 있으면 무메일 |
 | `reject-withdraw` (철회 거부) | ✅ | 철회 요청자 + 작성자에게 `withdraw_rejected`(1통, 분리 대상 아님) |
-| `cancel-withdraw` (철회 요청 취소) | ✅ | 확인 대상 단계 담당자(개인 1통)/팀(팀별 각 1통)에게 `withdraw_cancelled` |
+| `cancel-withdraw` (철회 요청 취소) | ✅ | 요청 메일을 받았던 관여자에게 `withdraw_cancelled` 1통(2026-11-13) |
 | `delete` (삭제) | ✅ | `document_deleted`: withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients`) 재사용(개인 1통 + 진행된 팀별 각 1통). 삭제 전 적재 + `@transaction.atomic` 추가(2026-09) |
 | `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자가 0명이면 2026-10-27부터 R 합의 자체가 400 으로 막혀 메일도 없다 — B-04). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
 | `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(위와 동일) |
@@ -522,7 +526,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 개인 수신자 메일 1통(작성자 + 현재 회차 기합의자 전원 등) + **아직 합의를 마치지 않은 결재선 단계의 담당 팀별로 각각 별도 메일**(반려자 본인·기합의자 제외, 2026-07 개편 / 2026-09 팀별 분리). §3.1 참고 |
 | `assign-step` agent=R (담당자 지정) | ✅ | 지정된 R 담당자에게 발송. **같이 고른 검토자(RV)는 이 시점엔 무메일**(R 담당자가 합의하는 시점에 발송됨) |
 | `claim-step` / `unclaim-step` (검토중 선점/취소, J/O/E/P) | ❌ | 선점·선점취소(클릭) 자체는 알림 없음(2026-09: 잦은 클릭 액션이라 범위에서 제외하기로 결정) |
-| `request-pause` (중단 요청) | ✅ | `pause_requested`: 확인 대상 단계(개인 1통 + 미배정 팀별 각 1통), withdraw_requested 와 동일한 수신자 규칙(`resolve_withdraw_target_recipients`) 재사용(2026-09) |
+| `request-pause` (중단 요청) | ✅ | `pause_requested`: 확인 대상 단계(개인 1통 + 미배정 팀별 각 1통), `resolve_withdraw_target_recipients`(2026-11-13부터 중단 전용) |
 | `confirm-pause` (중단 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 pause 로 확정될 때만** `pause_confirmed`(작성자 개인 1통 + 지금까지 진행된 팀별 각 1통). 부분 확인은 무메일(2026-09) |
 | `reject-pause` (중단 거부, 2026-08) | ✅ | `pause_rejected`: 중단 요청자 + 작성자(1통, withdraw_rejected 와 동일 패턴, 2026-09) |
 | `resume` (재개) | ✅ | `pause_resumed`: 재개 시점 pending 단계 담당자/팀(개인 1통 + 미배정 팀별 각 1통, 2026-09) |
