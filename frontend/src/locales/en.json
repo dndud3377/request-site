@@ -914,7 +914,7 @@
     "withdraw_modal_title": "Withdraw Request",
     "withdraw_warning": "Once the withdrawal is confirmed, the request is permanently deleted and cannot be restored.",
     "withdraw_reason_label": "Withdrawal Reason",
-    "withdraw_reason_placeholder": "Enter why this request should be withdrawn. (Shown to the current stage owners)",
+    "withdraw_reason_placeholder": "Enter why this request should be withdrawn. (Shown to everyone involved in this request)",
     "withdraw_reason_hint": "The withdrawal takes effect once one person from each involved team (teams that approved, rejected, or are currently reviewing it) confirms. You can cancel the request until then.",
     "withdraw_reason_placeholder_rejected": "Enter why this request should be withdrawn. (Shown to the teams involved in this request)",
     "withdraw_reason_hint_rejected": "A rejected request is also withdrawn once one person from each involved team (teams that approved or rejected it) confirms. You can cancel the request until then, and the request cannot be edited or resubmitted meanwhile.",
@@ -1454,7 +1454,7 @@
             "review_items": "The 'Review Items' sub-tab on the JOB tab manages the items to be checked at the JOB stage and the reviewer of each item. It stays read-only until an approver takes the step with 'Review', and the step can be agreed even if not every item is complete.",
             "pause_request": "The requester can pause an in-progress approval with 'Pause Request'. A reason is required, and submitting it sends a confirmation request to every assignee of the steps that were in progress at that moment.",
             "pause_confirm": "Each assignee must click 'Confirm Pause' — for parallel steps, every one of them must confirm before the document actually switches to 'Paused'. Meanwhile all other approval actions freeze; an assignee can choose 'Reject Pause' instead, and the requester can 'Cancel Request'. On resume, the due date is automatically pushed back by however long it was paused.",
-            "withdraw": "Withdrawing deletes the request for good. A draft is deleted as soon as you confirm; while approval is in progress every assignee of the current step must confirm before it is deleted. A rejected request can also be withdrawn; it is deleted once every team involved in it confirms."
+            "withdraw": "Withdrawing deletes the request for good. A draft is deleted as soon as you confirm; a request in progress or rejected is deleted once one person from each involved team (teams that approved, rejected, or are currently reviewing it) confirms. Waiting teams that nobody has picked up do not need to confirm."
           }
         },
         "permission": {
