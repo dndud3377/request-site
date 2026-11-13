@@ -18,7 +18,7 @@ from django.utils.translation import gettext_lazy as _
 
 from .models import PhotoStepChangeLog
 from . import layer_drift
-from . import num_check_reject
+from . import system_r
 from .utils import (
     ensure_dcq_session,
     get_django_engine,
@@ -745,12 +745,12 @@ def sync_form_options():
 
         _send_sync_failure_alert('enqueue_dcq_sync_failed', failures)
 
-    # claude 수정 (2026-11-12): MAP 이름(AAA4) 동기화 직후 '숫자 확인 값' 불일치 문서 자동 반려 판정 추가
-    # (docs/APPROVAL.md "숫자 확인 값 자동 반려"). 판정이 실패해도 위 동기화는 이미 끝났으므로 로그만 남긴다.
+    # claude 수정 (2026-11-13): 숫자 확인 자동 반려 → 대기 중인 System R(RS) 판정으로 교체
+    # (docs/APPROVAL.md "System R"). 판정이 실패해도 위 동기화는 이미 끝났으므로 로그만 남긴다.
     try:
-        num_check_reject.reject_mismatched_in_progress()
+        system_r.judge_pending()
     except Exception as e:
-        logger.error(_("[scheduler] 숫자 확인 자동 반려 판정 실패: {e}").format(e=e), exc_info=True)
+        logger.error(_("[scheduler] System R 판정 실패: {e}").format(e=e), exc_info=True)
 
 
 def sync_holidays():
