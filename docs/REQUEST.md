@@ -322,6 +322,40 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-11-12 후속 — 결재 현황 '숫자 불일치' 배지: 숫자 확인 자동 반려를 '변경 감지'와 분리)
+
+- **문제**: 결재 중 '변경 감지'가 떠 있던 문서가 숫자 확인 불일치로 자동 반려되면, 배지 판정
+  (`serializers.is_layer_drift_auto_rejected`)이 반려 의견의 `[자동반려]` 머리말만 봐서 반려 후에도 '변경 감지' 배지가 남았다
+  → 반려 원인을 마스터 DB 변경으로 오해할 수 있었다(로컬 앱 재현·스크린샷 확인).
+- **변경**
+  - 백엔드: `is_layer_drift_auto_rejected` 에서 숫자 확인 반려 의견 제외, `is_num_check_auto_rejected` + 응답 필드
+    `num_check_auto_rejected`(목록·상세) 신설. 최신 회차 반려 의견 조회는 `_latest_round_rejected_comments` 로 공용화.
+  - 프론트: `RequestDocument.num_check_auto_rejected?`, `approvalTable.ts` `isNumCheckMismatchVisible`·`NUM_CHECK_MISMATCH_FILTER_OPTION`,
+    `ApprovalPage.tsx` 목록 '목적' 칸 주황 배지(`.badge-num-check-mismatch`, 누르지 않음·툴팁) + 목적 필터·나만의 필터 가상 옵션 '숫자 불일치'.
+  - i18n(ko/en 동시): `approval.num_check_mismatch_badge`("숫자 불일치"/"Number mismatch"), `approval.num_check_mismatch_badge_tooltip`.
+  - 상세 창·이력 조회에는 표시하지 않는다. 가이드 기능 키는 두지 않는다(사용자 결정).
+- **테스트**: 백엔드 `NumCheckAaa4AutoRejectTest` 배지 4건, 프론트 `approvalTable.test.ts` 3건.
+- **수동 검증**: `docs/APPROVAL.md` "숫자 확인 값 자동 반려" 절 7번.
+
+### 기능 추가 (2026-11-12 — MAP 이름 캐시에 AAA4 추가 + '숫자 확인 값' ↔ AAA4 불일치 자동 반려)
+
+- **의도**: STEP2 '숫자 확인 값'(`'13 이상'` / `'9 이하'`)과 외부 DB 의 `AAA4` 값을 비교해, 맞지 않는 요청서를 자동 반려한다.
+- **AAA4 데이터**
+  - `scheduler.sync_form_options()` MAP 이름 쿼리(`X.Y`)에 `AAA4` 를 함께 조회·저장한다.
+  - `MapName.AAA4`(`CharField(200)`, null 허용) 추가 — 마이그레이션 `0061_mapname_aaa4`. 기존 행은 다음 1시간 주기 동기화 전까지 `NULL`.
+  - `GET /api/form-options/map-info/` 응답에 `AAA4` 추가(행 없음이면 `null`). **화면(StepMap 참고 칸)에는 표시하지 않는다.**
+  - `types/index.ts` `MapInfo.AAA4?: string | null` — **선택 필드**라 기존 테스트 mock(`{AAA1, AAA2, AAA3}`)은 그대로 둔다.
+- **자동 반려** — 규칙·반려 경로는 `docs/APPROVAL.md` "숫자 확인 값 자동 반려 (2026-11-12)" 절. 요약:
+  - MAP 이름 동기화(1시간) 직후, 결재 진행 중(`submitted`·`under_review`·`pause`) + `num_check='해당 있음'` 문서를 **구역 무관** 판정, 불일치 **1회 확인 즉시** 반려.
+  - AAA4 조회 키는 **STEP1 라인 + 제품(`partid_selection`)**(원본 위치/원본 제품이 아님 — 숫자 확인은 NEW 문서에서만 켜진다).
+  - 판정 불가(행 없음·AAA4 빈값·숫자 아님·저장값 형식 다름)는 반려하지 않는다.
+  - 반려 메일 안내 문구: "숫자 확인 값이 AAA4 값과 맞지 않아 의뢰서가 자동 반려되었습니다. 숫자 확인 값을 확인한 뒤 재상신해 주세요."
+- **영향 파일**: `backend/api/scheduler.py`, `models.py`, `migrations/0061_mapname_aaa4.py`, `views.py`, `num_check_reject.py`(신규),
+  `mailer.py`, `tests.py`, `frontend/src/types/index.ts`.
+- **테스트**: `NumCheckAaa4AutoRejectTest`(16) · `MapInfoAaa4ResponseTest`(2) · `SyncFormOptionsNumCheckHookTest`(3).
+- **확인하지 못한 것**: 소스 `X.Y` 에 `AAA4` 컬럼이 실제로 있는지(없으면 MAP 이름 동기화가 실패해 DCQ 동기화 실패 알림이 간다),
+  `partid_selection` 값이 `api_mapname.partid` 와 매칭되는 형식인지(맞지 않으면 '행 없음'으로 반려가 일어나지 않는다).
+- **수동 검증** — `docs/APPROVAL.md` 같은 절의 시나리오.
 ### 기능 추가 (2026-11-12 — J/O-ayer 제품 이름이 STEP1 제품 이름과 다르면 '다음'·'상신' 때 요청 기준을 '차용'으로 자동 변경)
 
 - **의도(사용자)**: J/O 표에 다른 제품 이름을 적어 놓고(= 차용) 요청 기준을 `신규`로 둔 채 상신하는 경우가 많다 → 단계 이동 때 자동으로 `차용`으로 바로잡는다.

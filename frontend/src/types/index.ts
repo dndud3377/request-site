@@ -307,6 +307,8 @@ export interface RequestDocument {
   layer_drift_detected?: boolean;
   // 마스터 DB 변경 감지로 자동 반려된 문서인지 (읽기 전용) — 반려 후에도 결재 현황에 '변경 감지' 배지를 유지한다
   layer_drift_auto_rejected?: boolean;
+  // claude 수정 (2026-11-12): '숫자 확인 값' ↔ AAA4 불일치로 자동 반려된 문서인지 (읽기 전용) — 결재 현황 '숫자 불일치' 배지
+  num_check_auto_rejected?: boolean;
   // claude 수정 (2026-10-28): 상세 모달 XXXXXX 페이지용 — 상신 시점 XXXXXX 스냅샷 행 (상세 응답만, 읽기 전용)
   extra_layer_snapshot?: ExtraLayerSnapshotRow[];
   // 해외 의뢰서 여부 (읽기 전용). 의뢰자 역할로 최초 상신 시 서버가 확정한다.
@@ -1029,6 +1031,9 @@ export interface MapInfo {
   AAA1: string | null;
   AAA2: string | null;
   AAA3: string | null;
+  // claude 수정 (2026-11-12): AAA4 추가 — 화면 표시 없음(자동 반려 비교용 값). 선택 필드라 기존 mock 은 그대로 둔다
+  /** AAA4 — '숫자 확인 값'과 비교하는 값(백엔드 자동 반려 판정용). 화면에는 표시하지 않는다. */
+  AAA4?: string | null;
   /** oc — AAA1~3 와 동일하게 참고용일 뿐 상신 데이터에는 포함되지 않는다(detail 에 저장 안 함). */
   cc_status: MapTableCcStatus;
 }

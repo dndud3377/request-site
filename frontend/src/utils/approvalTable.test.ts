@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument,
   hasActiveStageStep, getStagePendingEnteredAt, getDocDetailFields, StageCell, StageCellSlot,
-  buildAdiCdTargets, groupAdiTargetsByProcessId, isLayerDriftVisible,
+  buildAdiCdTargets, groupAdiTargetsByProcessId, isLayerDriftVisible, isNumCheckMismatchVisible,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -956,5 +956,27 @@ describe('isLayerDriftVisible — 변경 감지 자동 반려 문서는 반려 �
 
   it('완료 문서는 감지값이 남아 있어도 숨긴다', () => {
     expect(isLayerDriftVisible(docWith({ status: 'approved', layer_drift_detected: true }))).toBe(false);
+  });
+});
+
+// claude 수정 (2026-11-12): 숫자 확인 자동 반려 '숫자 불일치' 배지 판정 테스트 추가
+describe('isNumCheckMismatchVisible — 숫자 확인 자동 반려 문서만 숫자 불일치 배지', () => {
+  const docWith = (overrides: Partial<RequestDocument>): RequestDocument => ({ ...makeDoc([]), ...overrides });
+
+  it('숫자 확인 자동 반려 문서는 보인다', () => {
+    expect(isNumCheckMismatchVisible(docWith({ status: 'rejected', num_check_auto_rejected: true }))).toBe(true);
+  });
+
+  it('필드가 없거나 false 면 숨긴다', () => {
+    expect(isNumCheckMismatchVisible(docWith({ status: 'rejected' }))).toBe(false);
+    expect(isNumCheckMismatchVisible(docWith({ status: 'rejected', num_check_auto_rejected: false }))).toBe(false);
+  });
+
+  it('변경 감지 중이던 문서가 숫자 확인으로 반려되면 숫자 불일치만 보이고 변경 감지는 숨긴다', () => {
+    const doc = docWith({
+      status: 'rejected', layer_drift_detected: true, layer_drift_auto_rejected: false, num_check_auto_rejected: true,
+    });
+    expect(isNumCheckMismatchVisible(doc)).toBe(true);
+    expect(isLayerDriftVisible(doc)).toBe(false);
   });
 });

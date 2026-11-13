@@ -12864,3 +12864,369 @@ class NumCheckConfigApiTest(TestCase):
     @override_settings(NUM_CHECK_IMAGE_THRESHOLD=12.5, NUM_CHECK_LOWER_THRESHOLD=8.5)
     def test_decimal_thresholds_are_kept(self):
         self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 12.5, 'lower_threshold': 8.5})
+
+
+# claude 수정 (2026-11-12): '숫자 확인 값' ↔ AAA4 자동 반려(num_check_reject)·map-info AAA4 응답·스케줄러 연결 테스트 추가
+class NumCheckAaa4AutoRejectTest(TestCase):
+    """숫자 확인 값('<N> 이상|이하')과 MapName.AAA4 가 맞지 않으면 MAP 이름 동기화 직후 자동 반려한다.
+
+    규칙(docs/APPROVAL.md "숫자 확인 값 자동 반려"): 결재 진행 중이면 구역 무관 · 철회 확인 대기만 제외 ·
+    1회 확인 즉시 반려 · 판정 불가(행 없음/AAA4 빈값/숫자 아님/저장값 형식 다름)는 반려하지 않는다.
+    """
+
+    LINE = '라인1'
+    PRODUCT = 'ABCD1234'
+
+    def setUp(self):
+        from .models import MapName
+        from .utils import LINE_TO_LINEID_MAP
+        self.MapName = MapName
+        self.lineid = LINE_TO_LINEID_MAP[self.LINE]
+        self.author = UserProfile.objects.create(loginid='nc_author', mail='nc_a@c.com', role='PL', username='의뢰자')
+        self.pl = UserProfile.objects.create(loginid='nc_pl', mail='nc_pl@c.com', role='PL', username='지정PL')
+        self.r_user = UserProfile.objects.create(loginid='nc_r', mail='nc_r@c.com', role='TE_R', username='R담당')
+
+    def _map(self, aaa4, partid=None, lineid=None):
+        return self.MapName.objects.create(
+            lineid=lineid or self.lineid, partid=partid or f'{self.PRODUCT}_01', AAA4=aaa4,
+        )
+
+    def _doc(self, value, status='under_review', zone=1, num_check='해당 있음', line=None, product=None):
+        """결재 중 문서. zone 1: PL 대기 / 2: PL 합의 + R 대기 / 3: PL·R 합의 + RA 대기."""
+        doc = RequestDocument.objects.create(
+            title='nc-doc', requester=self.author, requester_name='의뢰자', requester_email='nc_a@c.com',
+            requester_department='d', product_name=self.PRODUCT, status=status, designated_pl=self.pl,
+            additional_notes=json.dumps({'detail': {
+                'line': self.LINE if line is None else line,
+                'partid_selection': self.PRODUCT if product is None else product,
+                'map_type': 'NEW', 'num_check': num_check, 'num_check_value': value,
+            }}),
+        )
+        self.pl_step = ApprovalStep.objects.create(
+            document=doc, agent='PL', action='pending' if zone == 1 else 'approved', round=1,
+            assignee=self.pl, assignee_name='지정PL',
+        )
+        if zone >= 2:
+            self.r_step = ApprovalStep.objects.create(
+                document=doc, agent='R', action='approved' if zone == 3 else 'pending', round=1,
+                assignee=self.r_user, assignee_name='R담당',
+            )
+        if zone == 3:
+            self.ra_step = ApprovalStep.objects.create(
+                document=doc, agent='RA', action='pending', round=1, assignee=self.r_user, assignee_name='RA담당',
+            )
+        return doc
+
+    def _run(self):
+        from . import num_check_reject
+        return num_check_reject.reject_mismatched_in_progress()
+
+    def _status(self, doc):
+        doc.refresh_from_db()
+        return doc.status
+
+    # ----- 비교 규칙 -----
+
+    def test_over_rejects_when_aaa4_below_threshold(self):
+        self._map('12.9')
+        doc = self._doc('13 이상')
+        self.assertEqual(self._run(), [doc.pk])
+        self.assertEqual(self._status(doc), 'rejected')
+
+    def test_over_keeps_when_aaa4_equal_or_above(self):
+        self._map('13')
+        doc = self._doc('13 이상')
+        self.assertEqual(self._run(), [])
+        self.assertEqual(self._status(doc), 'under_review')
+
+    def test_under_rejects_when_aaa4_above_threshold(self):
+        self._map('9.5')
+        doc = self._doc('9 이하')
+        self._run()
+        self.assertEqual(self._status(doc), 'rejected')
+
+    def test_under_keeps_when_aaa4_equal_or_below(self):
+        self._map(' 9 ')
+        doc = self._doc('9 이하')
+        self._run()
+        self.assertEqual(self._status(doc), 'under_review')
+
+    def test_threshold_is_the_stored_value_not_current_env(self):
+        """기준 숫자는 문서 저장값(선택 당시) — 현재 .env 기준값이 바뀌어도 저장값으로 비교한다."""
+        self._map('11')
+        doc = self._doc('10 이상')
+        with override_settings(NUM_CHECK_IMAGE_THRESHOLD=13.0):
+            self._run()
+        self.assertEqual(self._status(doc), 'under_review')
+
+    def test_partid_exact_match_is_used(self):
+        self._map('1', partid=self.PRODUCT)
+        doc = self._doc('13 이상')
+        self._run()
+        self.assertEqual(self._status(doc), 'rejected')
+
+    def test_first_row_by_id_is_used(self):
+        """여러 행이 매칭되면 id 순 첫 행 — map-info API 와 같은 기준."""
+        self._map('20', partid=f'{self.PRODUCT}_01')
+        self._map('1', partid=f'{self.PRODUCT}_02')
+        doc = self._doc('13 이상')
+        self._run()
+        self.assertEqual(self._status(doc), 'under_review')
+
+    # ----- 판정 불가 → 반려하지 않음 -----
+
+    def test_skips_when_undecidable(self):
+        from . import num_check_reject as ncr
+        cases = [
+            ('no_row', lambda: None, {}),
+            ('other_line_row_only', lambda: self._map('1', lineid='zzzzz'), {}),
+            ('prefix_without_underscore', lambda: self._map('1', partid=f'{self.PRODUCT}9'), {}),
+            ('empty_aaa4', lambda: self._map('  '), {}),
+            ('null_aaa4', lambda: self._map(None), {}),
+            ('non_numeric_aaa4', lambda: self._map('N/A'), {}),
+            ('nan_aaa4', lambda: self._map('nan'), {}),
+            ('bad_value', lambda: self._map('1'), {'value': '13'}),
+            ('unknown_line', lambda: self._map('1'), {'line': '없는라인'}),
+            ('no_product', lambda: self._map('1'), {'product': ''}),
+            ('num_check_none', lambda: self._map('1'), {'num_check': '해당 없음'}),
+            ('value_not_selected', lambda: self._map('1'), {'value': ''}),
+        ]
+        for name, setup, kwargs in cases:
+            with self.subTest(name):
+                self.MapName.objects.all().delete()
+                RequestDocument.objects.all().delete()
+                setup()
+                doc = self._doc(kwargs.pop('value', '13 이상'), **kwargs)
+                self.assertEqual(ncr.evaluate_document(doc)['result'], ncr.RESULT_SKIP)
+                self.assertEqual(self._run(), [])
+                self.assertEqual(self._status(doc), 'under_review')
+
+    def test_legacy_document_without_num_check_key_is_skipped(self):
+        """'숫자 확인 필수' 도입 전 문서(detail 에 num_check 키 없음)는 판정하지 않는다."""
+        self._map('1')
+        doc = self._doc('13 이상')
+        doc.additional_notes = json.dumps({'detail': {'line': self.LINE, 'partid_selection': self.PRODUCT}})
+        doc.save()
+        self._run()
+        self.assertEqual(self._status(doc), 'under_review')
+
+    # ----- 대상 상태·구역 -----
+
+    def test_all_zones_and_in_progress_statuses_are_rejected(self):
+        """구역 무관 — 1·2·3구역 모두, submitted·under_review·pause 모두 반려한다."""
+        for zone in (1, 2, 3):
+            for status in ('submitted', 'under_review', 'pause'):
+                with self.subTest(zone=zone, status=status):
+                    self.MapName.objects.all().delete()
+                    self._map('1')
+                    doc = self._doc('13 이상', status=status, zone=zone)
+                    self._run()
+                    self.assertEqual(self._status(doc), 'rejected')
+
+    def test_not_in_progress_statuses_are_ignored(self):
+        self._map('1')
+        docs = [self._doc('13 이상', status=s) for s in ('draft', 'approved', 'rejected')]
+        self.assertEqual(self._run(), [])
+        self.assertEqual([self._status(d) for d in docs], ['draft', 'approved', 'rejected'])
+
+    def test_withdraw_requested_document_is_skipped(self):
+        """철회 확인 대기 중(결재 동결)이면 반려하지 않는다 — 철회가 취소되면 다음 주기에 판정."""
+        self._map('1')
+        doc = self._doc('13 이상')
+        withdraw = WithdrawRequest.objects.create(document=doc, requester=self.author, state='requested')
+        self._run()
+        self.assertEqual(self._status(doc), 'under_review')
+        withdraw.state = 'cancelled'
+        withdraw.save()
+        self._run()
+        self.assertEqual(self._status(doc), 'rejected')
+
+    # ----- 반려 경로 -----
+
+    def test_reject_path_step_snapshot_pause_and_mail(self):
+        """가장 앞선 대기 단계 반려 + [자동반려] 의견 + 이력(시스템 반려자) + 중단 요청 닫기 + 반려 메일."""
+        self._map('10.5')
+        doc = self._doc('13 이상', status='pause', zone=3)
+        pause = PauseRequest.objects.create(document=doc, requester=self.author, state='confirmed')
+        self._run()
+
+        self.ra_step.refresh_from_db()
+        self.assertEqual(self.ra_step.action, 'rejected')
+        self.assertEqual(self.ra_step.comment, "[자동반려] 숫자 확인 불일치: 선택값 '13 이상', AAA4 10.5")
+        self.assertIsNotNone(self.ra_step.acted_at)
+
+        snap = RejectionSnapshot.objects.get(document=doc)
+        self.assertEqual(snap.rejected_agent, 'RA')
+        self.assertEqual(snap.rejected_by_loginid, 'system')
+        self.assertEqual(snap.rejected_by_name, '시스템(자동반려)')
+        self.assertFalse(snap.layer_drift_detected)
+
+        pause.refresh_from_db()
+        self.assertEqual(pause.state, 'cancelled')
+
+        notis = list(MailNotification.objects.filter(document=doc, event_type='rejected'))
+        self.assertTrue(notis)
+        self.assertTrue(all(n.subject.startswith('[반려] [자동반려]') for n in notis))
+        self.assertTrue(all('숫자 확인 값이 AAA4 값과 맞지 않아' in n.contents for n in notis))
+        self.assertFalse(any('마스터 DB 변경이 감지되어' in n.contents for n in notis))
+        self.assertIn('nc_a@c.com', {m for n in notis for m in n.recipients})
+
+    def test_already_rejected_document_is_not_rejected_twice(self):
+        self._map('1')
+        doc = self._doc('13 이상')
+        self._run()
+        self._run()
+        self.assertEqual(RejectionSnapshot.objects.filter(document=doc).count(), 1)
+
+    def test_one_document_failure_does_not_stop_others(self):
+        from . import num_check_reject
+        self._map('1')
+        first = self._doc('13 이상')
+        second = self._doc('13 이상')
+        original = num_check_reject.auto_reject_document
+
+        def flaky(document_id):
+            if document_id == first.pk:
+                raise RuntimeError('boom')
+            return original(document_id)
+
+        with patch.object(num_check_reject, 'auto_reject_document', side_effect=flaky):
+            self.assertEqual(num_check_reject.reject_mismatched_in_progress(), [second.pk])
+        self.assertEqual(self._status(first), 'under_review')
+        self.assertEqual(self._status(second), 'rejected')
+
+    # ----- 결재 현황 배지: '숫자 불일치'(num_check_auto_rejected) / '변경 감지'(layer_drift_auto_rejected) 분리 -----
+    # claude 수정 (2026-11-12): 숫자 확인 자동 반려는 '변경 감지' 배지가 아니라 '숫자 불일치' 배지로 판정하는지 검증
+
+    def _rows(self, doc):
+        """(목록 행, 상세 응답) — 작성자 권한으로 조회."""
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=self.author)
+        res = client.get('/api/documents/')
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        if isinstance(rows, dict) and 'results' in rows:
+            rows = rows['results']
+        detail = client.get(f'/api/documents/{doc.id}/')
+        self.assertEqual(detail.status_code, 200, detail.content)
+        body = detail.data['data'] if isinstance(detail.data, dict) and 'data' in detail.data else detail.data
+        return next(row for row in rows if row['id'] == doc.id), body
+
+    def test_badge_flags_for_num_check_reject_while_drift_detected(self):
+        """변경 감지 중이던 문서가 숫자 확인으로 반려되면 '숫자 불일치'만 True, '변경 감지'는 False(목록·상세)."""
+        self._map('1')
+        doc = self._doc('13 이상', zone=2)
+        RequestDocument.objects.filter(pk=doc.pk).update(layer_drift_detected=True, layer_drift_detail='{"jayer": {}}')
+        self._run()
+        for row in self._rows(doc):
+            self.assertTrue(row['num_check_auto_rejected'])
+            self.assertFalse(row['layer_drift_auto_rejected'])
+
+    def test_badge_flags_for_num_check_reject_without_drift(self):
+        self._map('1')
+        doc = self._doc('13 이상')
+        self._run()
+        row, body = self._rows(doc)
+        self.assertTrue(row['num_check_auto_rejected'])
+        self.assertTrue(body['num_check_auto_rejected'])
+        self.assertFalse(row['layer_drift_auto_rejected'])
+
+    def test_badge_flag_false_after_resubmit_and_for_human_reject(self):
+        """재상신(반려 상태 벗어남)하면 False / 사람이 누른 반려도 False."""
+        self._map('1')
+        doc = self._doc('13 이상')
+        self._run()
+        RequestDocument.objects.filter(pk=doc.pk).update(status='submitted')
+        self.assertFalse(self._rows(doc)[0]['num_check_auto_rejected'])
+
+        human = self._doc('13 이하', status='rejected')
+        ApprovalStep.objects.filter(pk=self.pl_step.pk).update(action='rejected', comment='사람 반려')
+        self.assertFalse(self._rows(human)[0]['num_check_auto_rejected'])
+
+    def test_layer_drift_auto_reject_still_flags_drift_badge_only(self):
+        """변경 감지 자동 반려 의견('[자동반려] 마스터 DB 변경 감지: …')은 기존대로 '변경 감지'만 True."""
+        doc = self._doc('13 이상', status='rejected')
+        RequestDocument.objects.filter(pk=doc.pk).update(layer_drift_detected=True, layer_drift_detail='{"jayer": {}}')
+        ApprovalStep.objects.filter(pk=self.pl_step.pk).update(
+            action='rejected', comment='[자동반려] 마스터 DB 변경 감지: J-layer STEP S1 삭제',
+        )
+        row, _ = self._rows(doc)
+        self.assertTrue(row['layer_drift_auto_rejected'])
+        self.assertFalse(row['num_check_auto_rejected'])
+
+    # ----- 파싱 -----
+
+    def test_parse_num_check_value(self):
+        from .num_check_reject import parse_num_check_value
+        self.assertEqual(parse_num_check_value('13 이상'), (13.0, '이상'))
+        self.assertEqual(parse_num_check_value('12.5 이하'), (12.5, '이하'))
+        self.assertEqual(parse_num_check_value('9이하'), (9.0, '이하'))
+        for bad in ('', None, '13', '이상', '13 or more', 'abc 이상'):
+            self.assertIsNone(parse_num_check_value(bad), bad)
+
+
+class MapInfoAaa4ResponseTest(TestCase):
+    """map-info 응답에 AAA4 가 포함된다(값 없음·행 없음이면 None)."""
+
+    URL = '/api/form-options/map-info/'
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        from .models import MapName
+        from .utils import LINE_TO_LINEID_MAP
+        self.client = APIClient()
+        self.client.force_authenticate(user=UserProfile.objects.create(loginid='mi_a', role='PL'))
+        MapName.objects.create(lineid=LINE_TO_LINEID_MAP['라인1'], partid='ABCD1234_01',
+                               AAA1='x', AAA2='y', AAA3='z', AAA4='12.5')
+
+    def test_aaa4_is_returned(self):
+        body = self.client.get(self.URL, {'line': '라인1', 'partid': 'ABCD1234'}).json()
+        self.assertEqual((body['AAA1'], body['AAA2'], body['AAA3'], body['AAA4']), ('x', 'y', 'z', '12.5'))
+
+    def test_aaa4_is_none_when_no_row(self):
+        body = self.client.get(self.URL, {'line': '라인1', 'partid': 'ZZZZ9999'}).json()
+        self.assertIsNone(body['AAA4'])
+        self.assertIn('AAA4', body)
+
+
+class SyncFormOptionsNumCheckHookTest(TestCase):
+    """sync_form_options(): MAP 이름 쿼리에 AAA4 를 조회하고, 끝에서 숫자 확인 자동 반려 판정을 호출한다."""
+
+    def _run(self, reject_side_effect=None):
+        import contextlib
+        from . import scheduler
+        queries = []
+
+        def fake_dcq(query, dcq_id):
+            queries.append(query)
+            return None
+
+        with patch.object(scheduler, 'get_django_engine', return_value=MagicMock()), \
+                patch.object(scheduler, 'external_sync_lock', side_effect=lambda: contextlib.nullcontext()), \
+                patch.object(scheduler, 'ensure_dcq_session', return_value='dcq'), \
+                patch.object(scheduler, 'get_data_from_dcq', side_effect=fake_dcq), \
+                patch.object(scheduler, '_send_sync_failure_alert'), \
+                patch.object(scheduler.num_check_reject, 'reject_mismatched_in_progress',
+                             side_effect=reject_side_effect) as hook:
+            scheduler.sync_form_options()
+        return queries, hook
+
+    def test_map_name_query_selects_aaa4_and_hook_runs(self):
+        queries, hook = self._run()
+        map_name_query = next(q for q in queries if 'lineid, partid, AAA1' in q)
+        self.assertIn('AAA1, AAA2, AAA3, AAA4', map_name_query)
+        hook.assert_called_once_with()
+
+    def test_hook_failure_does_not_raise(self):
+        _, hook = self._run(reject_side_effect=RuntimeError('boom'))
+        hook.assert_called_once_with()
+
+    def test_dcq_login_failure_skips_hook(self):
+        from . import scheduler
+        with patch.object(scheduler, 'get_django_engine', return_value=MagicMock()), \
+                patch.object(scheduler, 'ensure_dcq_session', return_value=None), \
+                patch.object(scheduler, '_send_sync_failure_alert'), \
+                patch.object(scheduler.num_check_reject, 'reject_mismatched_in_progress') as hook:
+            scheduler.sync_form_options()
+        hook.assert_not_called()

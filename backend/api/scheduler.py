@@ -18,6 +18,7 @@ from django.utils.translation import gettext_lazy as _
 
 from .models import PhotoStepChangeLog
 from . import layer_drift
+from . import num_check_reject
 from .utils import (
     ensure_dcq_session,
     get_django_engine,
@@ -641,11 +642,12 @@ def sync_form_options():
                 logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e), exc_info=True)
                 failures.append({'context': '-', 'target': '바코드-품목'})
 
+            # claude 수정 (2026-11-12): MAP 이름 조회·저장 컬럼에 AAA4 추가 — '숫자 확인 값' 자동 반려 비교용
             try:
                 lineid_list = list(LINE_TO_LINEID_MAP.values())
                 placeholders = ' OR '.join([f"lineid = '{lid}'" for lid in lineid_list])
                 query_mn = f"""
-                    SELECT DISTINCT lineid, partid, AAA1, AAA2, AAA3
+                    SELECT DISTINCT lineid, partid, AAA1, AAA2, AAA3, AAA4
                     FROM X.Y
                     WHERE ({placeholders})
                       AND partid IS NOT NULL AND partid != ''
@@ -657,7 +659,7 @@ def sync_form_options():
                     failures.append({'context': '-', 'target': 'MAP 이름'})
                 else:
                     df_mn['last_synced'] = pd.Timestamp.now()
-                    df_mn = df_mn[['lineid', 'partid', 'AAA1', 'AAA2', 'AAA3', 'last_synced']]
+                    df_mn = df_mn[['lineid', 'partid', 'AAA1', 'AAA2', 'AAA3', 'AAA4', 'last_synced']]
 
                     with engine.begin() as db_conn:
                         db_conn.execute(text("DELETE FROM api_mapname"))
@@ -742,6 +744,13 @@ def sync_form_options():
                 engine.dispose()
 
         _send_sync_failure_alert('enqueue_dcq_sync_failed', failures)
+
+    # claude 수정 (2026-11-12): MAP 이름(AAA4) 동기화 직후 '숫자 확인 값' 불일치 문서 자동 반려 판정 추가
+    # (docs/APPROVAL.md "숫자 확인 값 자동 반려"). 판정이 실패해도 위 동기화는 이미 끝났으므로 로그만 남긴다.
+    try:
+        num_check_reject.reject_mismatched_in_progress()
+    except Exception as e:
+        logger.error(_("[scheduler] 숫자 확인 자동 반려 판정 실패: {e}").format(e=e), exc_info=True)
 
 
 def sync_holidays():

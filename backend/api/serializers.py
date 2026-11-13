@@ -12,29 +12,55 @@ from .models import (
 from . import doc_permissions
 from .pop3_mail import TARGET_STATUSES as MAP_BADGE_TARGET_STATUSES
 from . import design_rule_stats
-from .mailer import AUTO_REJECT_COMMENT_PREFIX
+from .mailer import AUTO_REJECT_COMMENT_PREFIX, NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX
 
 User = get_user_model()
 
 
 
+# claude 수정 (2026-11-12): 최신 회차 반려 의견 조회를 공용 함수로 분리 — 변경 감지 / 숫자 확인 자동 반려 판정이 함께 쓴다
+def _latest_round_rejected_comments(document):
+    """반려 상태 문서의 최신 회차 반려 단계 의견 목록. 반려 상태가 아니거나 단계가 없으면 빈 목록.
+
+    prefetch 된 approval_steps 만 읽는다.
+    """
+    if document.status != 'rejected':
+        return []
+    steps = list(document.approval_steps.all())
+    if not steps:
+        return []
+    max_round = max(step.round for step in steps)
+    return [step.comment or '' for step in steps if step.round == max_round and step.action == 'rejected']
+
+
+# claude 수정 (2026-11-12): 숫자 확인 자동 반려('[자동반려] 숫자 확인 불일치')는 제외 — '숫자 불일치' 배지로 따로 표시한다
 def is_layer_drift_auto_rejected(document):
     """마스터 DB 변경 감지로 자동 반려된 문서인지 — 결재 현황에서 반려 후에도 '변경 감지' 배지를 유지할지.
 
     문서가 반려 상태이고 감지값이 남아 있으며, 최신 회차의 반려 단계 의견이 자동 반려 머리말로
     시작하면 True. 사람이 누른 반려(감지 중이었어도)는 False 다. 재상신하면 감지값이 초기화되므로
-    (`layer_drift.reset_document_drift`) 자연히 False 가 된다. prefetch 된 approval_steps 만 읽는다.
+    (`layer_drift.reset_document_drift`) 자연히 False 가 된다. 숫자 확인 자동 반려(감지값이 남아 있었어도)는
+    False 다 — 반려 원인이 변경 감지가 아니기 때문이다(`is_num_check_auto_rejected` 가 따로 판정한다).
     """
-    if document.status != 'rejected' or not document.layer_drift_detected:
+    if not document.layer_drift_detected:
         return False
-    steps = list(document.approval_steps.all())
-    if not steps:
-        return False
-    max_round = max(step.round for step in steps)
     return any(
-        step.round == max_round and step.action == 'rejected'
-        and (step.comment or '').startswith(AUTO_REJECT_COMMENT_PREFIX)
-        for step in steps
+        comment.startswith(AUTO_REJECT_COMMENT_PREFIX)
+        and not comment.startswith(NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX)
+        for comment in _latest_round_rejected_comments(document)
+    )
+
+
+# claude 수정 (2026-11-12): 결재 현황 '숫자 불일치' 배지 판정 신설
+def is_num_check_auto_rejected(document):
+    """'숫자 확인 값' ↔ AAA4 불일치로 자동 반려된 문서인지 — 결재 현황 '숫자 불일치' 배지.
+
+    반려 상태이고 최신 회차 반려 단계 의견이 숫자 확인 자동 반려 머리말로 시작하면 True.
+    재상신하면 반려 상태가 아니므로 자연히 False 가 된다.
+    """
+    return any(
+        comment.startswith(NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX)
+        for comment in _latest_round_rejected_comments(document)
     )
 
 
@@ -339,6 +365,8 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
     designated_pl_loginid = serializers.SerializerMethodField()
     notifier_mails = serializers.SerializerMethodField()
     layer_drift_auto_rejected = serializers.SerializerMethodField()
+    # claude 수정 (2026-11-12): 숫자 확인 자동 반려 여부('숫자 불일치' 배지) 응답 필드 추가
+    num_check_auto_rejected = serializers.SerializerMethodField()
     extra_layer_snapshot = serializers.SerializerMethodField()
 
     class Meta:
@@ -353,7 +381,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'partial_shot_locked',
             'mail_completion_matched',
             'shared_group', 'shared_group_name', 'review_items', 'layer_drift_detected',
-            'layer_drift_auto_rejected', 'is_overseas', 'sales_agreer_none_reasons',
+            'layer_drift_auto_rejected', 'num_check_auto_rejected', 'is_overseas', 'sales_agreer_none_reasons',
             'requires_sales_agreer', 'can_act_as_requester', 'is_shared_with_me', 'round_submitters',
             'extra_layer_snapshot',
         ]
@@ -374,6 +402,9 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
 
     def get_layer_drift_auto_rejected(self, obj):
         return is_layer_drift_auto_rejected(obj)
+
+    def get_num_check_auto_rejected(self, obj):
+        return is_num_check_auto_rejected(obj)
 
     # claude 수정 (2026-10-28): 상세 모달 XXXXXX 페이지용 — 상신 시점 스냅샷(JSON 문자열)을 행 목록으로 내려준다
     def get_extra_layer_snapshot(self, obj):
@@ -418,6 +449,8 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
     my_mark_category = serializers.SerializerMethodField()
     detail_summary = serializers.SerializerMethodField()
     layer_drift_auto_rejected = serializers.SerializerMethodField()
+    # claude 수정 (2026-11-12): 숫자 확인 자동 반려 여부('숫자 불일치' 배지) 응답 필드 추가
+    num_check_auto_rejected = serializers.SerializerMethodField()
     map_scheduled_date = serializers.SerializerMethodField()
 
     class Meta:
@@ -430,7 +463,7 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid', 'mail_completion_matched', 'map_scheduled_date',
             'shared_group', 'shared_group_name', 'my_pending_review_items', 'my_mark_category',
-            'layer_drift_detected', 'layer_drift_auto_rejected', 'is_overseas',
+            'layer_drift_detected', 'layer_drift_auto_rejected', 'num_check_auto_rejected', 'is_overseas',
             'can_act_as_requester', 'is_shared_with_me',
         ]
         read_only_fields = ['shared_group', 'mail_completion_matched', 'layer_drift_detected',
@@ -441,6 +474,9 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
 
     def get_layer_drift_auto_rejected(self, obj):
         return is_layer_drift_auto_rejected(obj)
+
+    def get_num_check_auto_rejected(self, obj):
+        return is_num_check_auto_rejected(obj)
 
     # claude 수정 (2026-10-29): 'MM/DD 예정' 배지용 예정일 추가 — 완료(mail_completion_matched) 문서는 예정과 공존할 수 없어 None
     def get_map_scheduled_date(self, obj):

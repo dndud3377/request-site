@@ -820,6 +820,8 @@
     "map_scheduled_badge_tooltip": "예정일: {{date}}",
     "layer_drift_badge": "변경 감지",
     "layer_drift_badge_tooltip": "상신 이후 마스터 DB의 J-layer/O-layer/XXXXXX 정보가 달라졌습니다. 눌러서 확인하세요.",
+    "num_check_mismatch_badge": "숫자 불일치",
+    "num_check_mismatch_badge_tooltip": "숫자 확인 값이 AAA4 값과 맞지 않아 자동 반려되었습니다. 결재 경로 탭의 반려 의견을 확인하세요.",
     "layer_drift_modal_title": "레이어 정보 변경 감지",
     "layer_drift_checked_at": "확인 시각: {{date}} {{time}}",
     "layer_drift_jayer_title": "J-layer",
