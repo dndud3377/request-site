@@ -170,7 +170,7 @@ response.json() → data
 
 | 대상 테이블 | DCQ 소스 | 조회 컬럼 |
 |-------------|----------|-----------|
-| `api_mapname` | `X.Y` | `lineid`, `partid`, `AAA1`, `AAA2`, `AAA3`, `AAA4` (2026-09 추가 — `AAA1`~`AAA3` 는 실제 배포 전 이름이 확정되면 쿼리·모델 필드명을 함께 변경할 예정인 임시 컬럼명. `AAA4` 는 2026-11-12 추가 — 마이그레이션 `0060_mapname_aaa4`) |
+| `api_mapname` | `X.Y` | `lineid`, `partid`, `AAA1`, `AAA2`, `AAA3`, `AAA4` (2026-09 추가 — `AAA1`~`AAA3` 는 실제 배포 전 이름이 확정되면 쿼리·모델 필드명을 함께 변경할 예정인 임시 컬럼명. `AAA4` 는 2026-11-12 추가 — 마이그레이션 `0061_mapname_aaa4`) |
 
 `AAA1`/`AAA2`/`AAA3`/`AAA4` 는 값이 항상 있다는 보장이 없어 `MapName` 모델에서 `null=True, blank=True` 로
 저장한다(`backend/api/models.py`).
