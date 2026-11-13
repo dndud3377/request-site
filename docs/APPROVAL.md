@@ -2572,6 +2572,7 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 - 목록 다운로드: R 완료 칸을 두 번 적지 않는다(`approvalListExport.ts`).
 - 상세 '결재 경로' 탭: 2구역 머리글 아래 `RFG` · `System R` 행. MAP 삭제·ADI CD 변경은 '해당없음' 묶음에 `System R`.
 - MASTER: 상세 하단 [합의]/[반려] → 처리할 팀 선택 창에 `System R` 이 후보로 나온다(기존 MASTER 대신 처리 흐름 그대로).
+  담당자 칸은 '담당자 미배정 (팀 전체)' 대신 **'시스템 판정'**(`approval.master_confirm_system_r`, en "System check")으로 표시한다(사용자 결정 2026-11-13).
 - i18n: `approval.agent_RS`("System R" / "System R"). 가이드 기능 키는 두지 않는다(사용자 결정).
 
 ### 알려진 한계 / 확인하지 못한 것
