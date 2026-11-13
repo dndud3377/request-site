@@ -12,7 +12,7 @@ import { OPTION_LINE } from './RequestPage/constants';
 import { getDocDetailFields } from '../utils/approvalTable';
 import { RejectionSnapshot, RequestDocument } from '../types';
 import { formatDate, formatDateTime } from '../utils/date';
-import { exportAll as exportAllXlsx } from '../utils/detailExport';
+import ExportAllButton from '../components/ExportAllButton';
 
 // ===== 필터 탭 키 =====
 // 전체/MY/라인N 은 결재 완료 문서(docs)를, 반려는 반려 이력(snapshots)을 대상으로 한다.
@@ -589,19 +589,9 @@ export default function HistoryPage(): React.ReactElement {
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           title={selected.title}
+          // claude 수정 (2026-11-13): 전체 export 버튼을 공용 ExportAllButton 으로 교체(오류·진행 중·일부 캡처 실패 처리)
           titleExtra={(
-            <button
-              onClick={async () => {
-                // claude 수정 (2026-11-13): 캡처 기본값에 결재 경로(route) 추가 — 전체 export 가 결재 경로 탭도 담는다
-                const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
-                  ?? { detail: null, map: null, etc: null, route: null };
-                await exportAllXlsx(selected, t, screenshots);
-              }}
-              className="btn btn-secondary btn-sm"
-              style={{ fontSize: '0.75rem', padding: '2px 10px' }}
-            >
-              📊 {t('request.export_all_btn')}
-            </button>
+            <ExportAllButton doc={selected} pagedDetailViewRef={pagedDetailViewRef} />
           )}
           size="lg"
           footer={
