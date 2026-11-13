@@ -119,7 +119,7 @@ const buildPageNumbers = (current: number, total: number): (number | 'ellipsis')
 };
 
 // 중단 요청 '확인' 가능 여부(프론트 가드): MASTER / 담당자 본인 / (미배정 시) 같은 팀
-// 철회 요청 확인·거부도 같은 규칙을 쓴다(서버 `_can_confirm_pause` 를 두 액션이 공유).
+// claude 수정 (2026-11-13): 철회 확인은 2026-11-13부터 `canConfirmWithdrawStep`(묶음 기준)을 쓴다 — 이 함수는 중단 전용.
 const canConfirmPauseStep = (
   user: { role?: UserRole | string | null; username?: string },
   step: ApprovalStepFrontend,
@@ -129,27 +129,6 @@ const canConfirmPauseStep = (
   if (step.assignee_loginid) return !!loginid && step.assignee_loginid === loginid;
   const agent = user.role ? ROLE_TO_AGENT[user.role as UserRole] : undefined;
   return agent === step.agent;
-};
-
-// '이전 회차 도달 구역' 철회 확인 가능 여부 — 그 회차의 담당자 개인이 아니라 '지금 그 팀'이면
-// 된다(서버 `_can_confirm_extra_zone` 과 동일 규칙). MASTER 항상 / 같은 팀 누구나. RA(후결자)는
-// 역할로 묶이는 팀이 없으므로, 이 문서에서 RA 담당자로 등장한 적 있는 사람 누구나로 근사한다
-// (서버의 `post_approver_users` 기준과 정확히 같지는 않다 — 프론트는 하이라이트 힌트일 뿐이고
-// 실제 인가는 서버가 최종 판단한다).
-const canConfirmExtraZoneStep = (
-  user: { role?: UserRole | string | null; username?: string },
-  step: ApprovalStepFrontend,
-  allSteps: ApprovalStepFrontend[],
-): boolean => {
-  if (user.role === 'MASTER') return true;
-  const agent = user.role ? ROLE_TO_AGENT[user.role as UserRole] : undefined;
-  if (agent === step.agent) return true;
-  const loginid = user.username;
-  if (!loginid) return false;
-  if (step.agent === 'RA') {
-    return allSteps.some((s) => s.agent === 'RA' && s.assignee_loginid === loginid);
-  }
-  return !!step.assignee_loginid && step.assignee_loginid === loginid;
 };
 
 // 어느 구역에도 속하지 않는 단계(zone_index 가 null)를 묶는 그룹 키 — 구역 이름을 붙이지 않는다.
@@ -169,16 +148,42 @@ const AGENT_LABEL_KEY: Record<AgentType, `approval.agent_${AgentType}`> = {
 // 검토자(RV/PV/EV)는 라벨이 모두 '검토자'라 어느 팀 검토자인지 소속 팀 이름을 붙인다.
 const REVIEWER_PARENT_AGENT: Partial<Record<AgentType, AgentType>> = { RV: 'R', PV: 'P', EV: 'E' };
 
+// claude 수정 (2026-11-13): 철회 확인은 묶음(PL·SA·R·P·J·O·E·RA)당 한 명 — 서버 `_can_confirm_withdraw` 와 같은 규칙
+// 철회 확인 묶음 키 — 검토자(RV/PV/EV)는 담당자와 같은 팀이다(서버 `mailer.withdraw_group`).
+const withdrawGroupOf = (agent: AgentType): AgentType => REVIEWER_PARENT_AGENT[agent] ?? agent;
+
+// 그 요청서를 실제로 본 단계 — 합의·반려했거나 담당자가 정해진 단계(서버 `mailer.is_withdraw_involved`).
+const isWithdrawInvolved = (step: ApprovalStepFrontend): boolean =>
+  step.action !== 'pending' || !!step.assignee_loginid;
+
+// 철회 확인 가능 여부(프론트 가드): MASTER / 그 묶음에 관여한 사람(담당자·처리자) / 팀 묶음은 지금 그 팀 누구나.
+// 후결자(RA)는 서버가 '현재 후결자 전원'도 허용하지만, 프론트는 이 문서의 RA 관여자로 근사한다
+// (하이라이트 힌트일 뿐이고 실제 인가는 서버가 최종 판단한다).
+const canConfirmWithdrawStep = (
+  user: { role?: UserRole | string | null; username?: string },
+  step: ApprovalStepFrontend,
+  allSteps: ApprovalStepFrontend[],
+): boolean => {
+  if (user.role === 'MASTER') return true;
+  const group = withdrawGroupOf(step.agent);
+  const agent = user.role ? ROLE_TO_AGENT[user.role as UserRole] : undefined;
+  if (agent === group) return true;
+  const loginid = user.username;
+  if (!loginid) return false;
+  return allSteps.some(
+    (s) => withdrawGroupOf(s.agent) === group
+      && isWithdrawInvolved(s)
+      && (s.assignee_loginid === loginid || s.acted_by_loginid === loginid),
+  );
+};
+
 interface WithdrawNeedItem {
   step: ApprovalStepFrontend;
-  isCurrentZone: boolean;
   done: boolean;
   mine: boolean;
 }
 
-// 철회 확인이 필요한 팀 전체(현재 구역 + 이전 회차 도달 구역) — 목록 칩과 상세 배너가
-// 공유한다. 현재 구역 = 최신 회차의 pending 단계, 그 외(더 과거 회차·이미 종료된 단계)는
-// '이전 회차 도달 구역'(서버 `confirm_withdraw`/`withdraw` 판정 기준과 동일).
+// 철회 확인이 필요한 묶음 전체(서버 `_withdraw_target_steps` 의 대표 단계) — 목록 칩과 상세 배너가 공유한다.
 const getWithdrawNeedItems = (
   doc: RequestDocument,
   user: { role?: UserRole | string | null; username?: string },
@@ -186,14 +191,12 @@ const getWithdrawNeedItems = (
   const wr = doc.withdraw_request;
   if (!wr) return [];
   const steps = doc.approval_steps ?? [];
-  const maxRound = steps.reduce((m, s) => Math.max(m, s.round), 0);
   return steps
     .filter((s) => wr.target_step_ids.includes(s.id))
     .map((s) => {
-      const isCurrentZone = s.round === maxRound && s.action === 'pending';
       const done = wr.confirmed_step_ids.includes(s.id);
-      const mine = !done && (isCurrentZone ? canConfirmPauseStep(user, s) : canConfirmExtraZoneStep(user, s, steps));
-      return { step: s, isCurrentZone, done, mine };
+      const mine = !done && canConfirmWithdrawStep(user, s, steps);
+      return { step: s, done, mine };
     });
 };
 
@@ -3077,7 +3080,7 @@ export default function ApprovalPage(): React.ReactElement {
             pauseConfirmAgent = target?.agent;
           }
 
-          // 철회 요청 관련 버튼 노출 계산 (확인 인가는 중단 확인과 동일 규칙)
+          // 철회 요청 관련 버튼 노출 계산 (확인 인가는 `canConfirmWithdrawStep` — 묶음당 한 명)
           const wr = selected?.withdraw_request;
           let withdrawConfirmAgent: AgentType | undefined;
           if (wr && selected) {
