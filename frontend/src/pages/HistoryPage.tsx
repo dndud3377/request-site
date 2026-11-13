@@ -592,8 +592,9 @@ export default function HistoryPage(): React.ReactElement {
           titleExtra={(
             <button
               onClick={async () => {
+                // claude 수정 (2026-11-13): 캡처 기본값에 결재 경로(route) 추가 — 전체 export 가 결재 경로 탭도 담는다
                 const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
-                  ?? { detail: null, map: null, etc: null };
+                  ?? { detail: null, map: null, etc: null, route: null };
                 await exportAllXlsx(selected, t, screenshots);
               }}
               className="btn btn-secondary btn-sm"
