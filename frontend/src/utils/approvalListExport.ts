@@ -77,6 +77,8 @@ export const splitStageColumns = (doc: RequestDocument, t: TFunction): StageColu
   const chip = (on?: boolean) => (on ? ` ⏸ ${t('approval.pause_requested_chip')}` : '');
   if (row.cells) {
     row.cells.forEach((c) => {
+      // claude 수정 (2026-11-13): 2구역 그리드(R ∥ System R)의 R 완료 칸은 위에서 이미 넣었으므로 한 번만 적는다
+      if (rDone && c.slot === R_AGENT && c.state === 'done') return;
       const text = `${c.label}${c.name ? `(${c.name})` : ''}${chip(c.pauseRequested)}`;
       if (c.state === 'wait') cols.waiting.push(text);
       else if (c.state === 'review') cols.reviewing.push(text);

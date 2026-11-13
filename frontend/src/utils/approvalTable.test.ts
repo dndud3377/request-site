@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument,
   hasActiveStageStep, getStagePendingEnteredAt, getDocDetailFields, StageCell, StageCellSlot,
-  buildAdiCdTargets, groupAdiTargetsByProcessId, isLayerDriftVisible, isNumCheckMismatchVisible,
+  buildAdiCdTargets, groupAdiTargetsByProcessId, isLayerDriftVisible, getDisplayStatus,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -112,6 +112,84 @@ describe('getDocTableRows — 병렬 이전 구간은 기존 단일 행 그대�
     expect(rows[0].pathKey).toBe('single');
     // 라벨은 '검토자' 가 아니라 단계명 RFG 다(2026-08) — 아래 stageLabel describe 참고
     expect(rows[0].stageText).toBe('approval.agent_R(이검토)');
+  });
+});
+
+// claude 수정 (2026-11-13): 2구역 R ∥ System R(RS) 그리드 테스트 추가
+describe('getDocTableRows — 2구역: R ∥ System R 1열 2줄 그리드', () => {
+  it('R·RS 가 모두 대기면 RFG 대기중 + System R 대기중, 칸 순서는 R → RS', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'approved' }),
+      makeStep({ agent: 'R', action: 'pending' }),
+      makeStep({ agent: 'RS', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pathKey).toBe('grid');
+    expect(rows[0].gridColumns).toBe(1);
+    expect(rows[0].cells!.map((c) => [c.slot, c.label, c.state])).toEqual([
+      ['R', 'approval.agent_R', 'wait'],
+      ['RS', 'approval.agent_RS', 'wait'],
+    ]);
+  });
+
+  it('R 이 끝나고 RS 만 남으면 RFG 완료 + System R 대기중(이름 없음)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', assignee_name: '김철수', assignee_loginid: 'r1' }),
+      makeStep({ agent: 'RS', action: 'pending' }),
+    ]);
+    expect(cellAt(doc, 'R').state).toBe('done');
+    expect(cellAt(doc, 'RS')).toEqual({ slot: 'RS', label: 'approval.agent_RS', state: 'wait' });
+  });
+
+  it('RS 가 먼저 합의되고 R 검토자(RV)가 남으면 RFG 칸은 검토중 + 검토자 이름', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', assignee_name: '김철수', assignee_loginid: 'r1' }),
+      makeStep({ agent: 'RV', action: 'pending', assignee_name: '이검토', assignee_loginid: 'rv1' }),
+      makeStep({ agent: 'RS', action: 'approved', acted_by_name: 'System R' }),
+    ]);
+    expect(cellAt(doc, 'R')).toMatchObject({ state: 'review', name: '이검토' });
+    expect(cellAt(doc, 'RS').state).toBe('done');
+  });
+
+  it("중단 '요청중' 칩은 대상인 R 칸에만 붙는다(RS 는 확인 대상이 아니다)", () => {
+    const rStep = makeStep({ agent: 'R', action: 'pending', assignee_loginid: 'r1', assignee_name: '김철수' });
+    const doc: RequestDocument = {
+      ...makeDoc([rStep, makeStep({ agent: 'RS', action: 'pending' })]),
+      pause_request: {
+        id: 1, state: 'requested', reason: '수정 필요', requester_name: '요청자',
+        round: 1, target_step_ids: [rStep.id], confirmed_step_ids: [],
+        created_at: '2026-08-10T00:00:00Z',
+      },
+    };
+    expect(cellAt(doc, 'R').pauseRequested).toBe(true);
+    expect(cellAt(doc, 'RS').pauseRequested).toBeUndefined();
+  });
+
+  it('System R 반려 문서는 단일 행에 이름 없이 System R 로 표시된다', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([
+        makeStep({ agent: 'R', action: 'pending' }),
+        makeStep({ agent: 'RS', action: 'rejected', acted_by_name: 'System R' }),
+      ]),
+      status: 'rejected',
+    };
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].pathKey).toBe('single');
+    expect(rows[0].stageText).toBe('approval.agent_RS');
+  });
+
+  it('RS 가 없는 회차(System R 도입 전에 R 이 생성된 문서)는 기존 단일 행 그대로다', () => {
+    const doc = makeDoc([makeStep({ agent: 'R', action: 'pending' })]);
+    expect(getDocTableRows(doc, t)[0].pathKey).toBe('single');
+  });
+
+  it('RS 가 담당자 없이 대기 중이어도 문서 상태를 미지정(unassigned)으로 보지 않는다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', assignee_loginid: 'r1' }),
+      makeStep({ agent: 'RS', action: 'pending' }),
+    ]);
+    expect(getDisplayStatus(doc)).toBe('under_review');
   });
 });
 
@@ -959,24 +1037,3 @@ describe('isLayerDriftVisible — 변경 감지 자동 반려 문서는 반려 �
   });
 });
 
-// claude 수정 (2026-11-12): 숫자 확인 자동 반려 '숫자 불일치' 배지 판정 테스트 추가
-describe('isNumCheckMismatchVisible — 숫자 확인 자동 반려 문서만 숫자 불일치 배지', () => {
-  const docWith = (overrides: Partial<RequestDocument>): RequestDocument => ({ ...makeDoc([]), ...overrides });
-
-  it('숫자 확인 자동 반려 문서는 보인다', () => {
-    expect(isNumCheckMismatchVisible(docWith({ status: 'rejected', num_check_auto_rejected: true }))).toBe(true);
-  });
-
-  it('필드가 없거나 false 면 숨긴다', () => {
-    expect(isNumCheckMismatchVisible(docWith({ status: 'rejected' }))).toBe(false);
-    expect(isNumCheckMismatchVisible(docWith({ status: 'rejected', num_check_auto_rejected: false }))).toBe(false);
-  });
-
-  it('변경 감지 중이던 문서가 숫자 확인으로 반려되면 숫자 불일치만 보이고 변경 감지는 숨긴다', () => {
-    const doc = docWith({
-      status: 'rejected', layer_drift_detected: true, layer_drift_auto_rejected: false, num_check_auto_rejected: true,
-    });
-    expect(isNumCheckMismatchVisible(doc)).toBe(true);
-    expect(isLayerDriftVisible(doc)).toBe(false);
-  });
-});

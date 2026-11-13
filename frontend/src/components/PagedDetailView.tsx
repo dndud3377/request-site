@@ -3770,6 +3770,18 @@ type Page = { label: string; content: React.ReactNode; key?: string };
       rvSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.stage_reviewer' as any) }));
       return out;
     }
+    // claude 수정 (2026-11-13): System R(RS) — R 과 함께 생성되는 시스템 단계. 그 회차에 RS 가 없으면
+    // R 생략 회차·'Overlay만 변경' 단독·System R 도입 전에 R 이 생성된 회차이므로 '해당없음', R 도 아직 없으면 '대기'.
+    if (agent === 'RS') {
+      if (isMapDeleteEdit || isAdiCdChange) return [{ status: 'na', label: t('approval.step_na') }];
+      const rsSteps = allSteps.filter((s) => s.agent === 'RS' && (s.round ?? 1) === round);
+      if (rsSteps.length > 0) return rsSteps.map(stepToInfo);
+      const roundHasLaterStage = allSteps.some(
+        (s) => (s.round ?? 1) === round && ['R', 'P', 'J', 'O', 'E', 'RA'].includes(s.agent)
+      );
+      if (roundHasLaterStage || skipJStage) return [{ status: 'na', label: t('approval.step_na') }];
+      return [{ status: 'waiting', label: t('approval.step_pending') }];
+    }
     // P/E단계: 담당자(P/E, 검토중) + 검토자(PV/EV, 다중 지정 시)를 한 행에 함께 표시
     if (agent === 'P' || agent === 'E') {
       const reviewAgent = agent === 'P' ? 'PV' : 'EV';
@@ -3861,6 +3873,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
     PL: t('approval.agent_PL' as any),
     SA: t('approval.agent_SA' as any),
     R: t('approval.agent_R'),
+    // claude 수정 (2026-11-13): System R(RS) 행 라벨
+    RS: t('approval.agent_RS' as any),
     RA: t('approval.agent_RA' as any),
     P: t('approval.agent_P'),
     J: t('approval.agent_J'),
@@ -3872,16 +3886,17 @@ type Page = { label: string; content: React.ReactNode; key?: string };
   // (2026-09) 예전엔 PL→SA→R→RA→P→J→O→E 고정 순서였다. 'MAP 삭제'는 R이 2구역(P·J·O)이
   // 아니라 그 다음 3구역 단독 관문이라, 고정 순서로는 R이 실제보다 앞서 표시됐다. 이제 문서
   // 타입별 실제 구역 순서를 그대로 따른다 — 일반 문서는 결과적으로 예전과 같은 순서다.
+  // claude 수정 (2026-11-13): 일반·Only MAP 의 2구역에 System R(RS) 추가(R 과 병렬). MAP 삭제·ADI CD 변경은 해당없음 묶음
   const ZONE_AGENT_KEYS: string[][] = isMapDeleteEdit
     ? [['PL', 'SA'], ['P', 'J', 'O'], ['R']]
     : isAdiCdChange
     ? [['PL', 'SA'], ['P', 'J']]
     : isOnlyMap
-    ? [['PL', 'SA'], ['R'], ['RA']]
-    : [['PL', 'SA'], ['R'], ['P', 'J', 'O', 'E', 'RA']];
+    ? [['PL', 'SA'], ['R', 'RS'], ['RA']]
+    : [['PL', 'SA'], ['R', 'RS'], ['P', 'J', 'O', 'E', 'RA']];
 
   const zonedKeys = new Set(ZONE_AGENT_KEYS.flat());
-  const naGroupKeys = ['PL', 'SA', 'R', 'RA', 'P', 'J', 'O', 'E'].filter((k) => !zonedKeys.has(k));
+  const naGroupKeys = ['PL', 'SA', 'R', 'RS', 'RA', 'P', 'J', 'O', 'E'].filter((k) => !zonedKeys.has(k));
 
   // 구역 라벨 없이 순서만 필요한 값이라면 AGENT_GROUPS.flatMap(g => g.agents) 로 펼치면 된다.
   const AGENT_GROUPS: Array<{ zoneNumber?: number; agents: Array<{ key: string; label: string }> }> = [
@@ -4003,7 +4018,8 @@ type Page = { label: string; content: React.ReactNode; key?: string };
               <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') || (isAdiCdChange && ['R', 'O', 'RA'].includes(key)) ? (
+              {/* claude 수정 (2026-11-13): MAP 삭제·ADI CD 변경은 System R(RS)이 없어 '해당없음' 한 줄로 표시 */}
+              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') || (isAdiCdChange && ['R', 'O', 'RA'].includes(key)) || ((isMapDeleteEdit || isAdiCdChange) && key === 'RS') ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>

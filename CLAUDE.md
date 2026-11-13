@@ -9,15 +9,15 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
 결재 경로를 구역으로 나눠 부른다(**일반 경로 기준**):
 
 - **1구역**: `PL`(검토) + `SA`(영업·기술지원 합의자) — 병렬
-- **2구역**: `R`(RFG) / `RV`(검토자)
+- **2구역**: `R`(RFG) / `RV`(검토자) + `RS`(System R — MAP 정보 시스템 검증, 2026-11-13) — 병렬
 - **3구역**: `P`(PHPSI)/`PV`, `J`(JOB), `O`(OVL), `E`(MASK)/`EV`, `RA`(후결자) — 병렬
 
 문서 유형(`request_purpose`)마다 구역 구성이 다르다 — 상세는 `docs/APPROVAL.md` §2 참조:
 
 | 문서 유형 | 1구역 | 2구역 | 3구역 |
 |---|---|---|---|
-| 일반 | PL+SA | R/RV | P/PV, J, O, E/EV, RA |
-| Only MAP | PL | R | RA만 |
+| 일반 | PL+SA | R/RV + RS | P/PV, J, O, E/EV, RA |
+| Only MAP | PL | R + RS | RA만 |
 | MAP 삭제 | PL | (없음 — R이 3구역으로 이동) | P/PV, R/RV, J, O |
 | ADI CD 변경 | PL+SA | (없음 — R 자체가 없음) | P/PV, J |
 | 일반 + 기타 목적 'Overlay만 변경' 단독 | PL+SA | (없음 — R 생성 안 함, 2026-10-19) | P/PV, O, E/EV, RA (J 없음) |
@@ -143,7 +143,7 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
 
    ```bash
    # 개발환경(AUTH_MODE=dev)이 떠 있어야 한다. 실제 DB 마스터 데이터로 상신한다.
-   python3 -m scripts.approval_cases.run_cases --list              # 케이스 133건 목록
+   python3 -m scripts.approval_cases.run_cases --list              # 케이스 139건 목록
    python3 -m scripts.approval_cases.run_cases                     # 전체 실행
    python3 -m scripts.approval_cases.run_cases --group F --group X # 바꾼 영역만
    python3 -m scripts.approval_cases.run_cases --report /tmp/approval_cases.md

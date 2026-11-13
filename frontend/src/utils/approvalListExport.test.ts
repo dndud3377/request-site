@@ -83,6 +83,16 @@ describe('splitStageColumns', () => {
     expect(reviewing).toEqual({ waiting: [], reviewing: ['approval.agent_R(김R)'], done: [] });
   });
 
+  // claude 수정 (2026-11-13): 2구역 R ∥ System R 그리드 — R 완료 칸을 두 번 적지 않는다
+  it('2구역(R ∥ System R): R 이 끝나고 System R 이 남으면 R 은 완료에 한 번만, System R 은 대기중', () => {
+    const cols = splitStageColumns(withSteps('under_review', [
+      { agent: 'PL', action: 'approved' },
+      { agent: 'R', action: 'approved', assignee_name: '김R', assignee_loginid: 'r' },
+      { agent: 'RS' },
+    ]), t);
+    expect(cols).toEqual({ waiting: ['approval.agent_RS'], reviewing: [], done: ['approval.agent_R'] });
+  });
+
   it('반려: 반려된 단계를 검토중 칸에 둔다', () => {
     const cols = splitStageColumns(withSteps('rejected', [
       { agent: 'PL', action: 'approved' }, { agent: 'R', action: 'rejected', assignee_name: '김R', assignee_loginid: 'r' },

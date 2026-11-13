@@ -41,6 +41,20 @@ def tearDownModule():
     _MAIL_REDIRECT_OFF.disable()
 
 
+# claude 수정 (2026-11-13): 2구역에 System R(RS)이 생겨 R 합의만으로는 3구역이 열리지 않는다 — 기존 흐름 테스트용 헬퍼
+def _approve_pending_system_r(doc):
+    """현재 회차의 대기 중인 System R(RS)을 합의 상태로 만든다(시스템 판정 결과를 흉내 낸다).
+
+    R 합의 API 를 부르기 **전에** 호출하면, 그 R 합의가 2구역 마지막 합의가 되어 예전처럼 3구역이 열린다.
+    System R 판정 자체는 `SystemRStageTest` 가 따로 검증한다.
+    """
+    from django.db.models import Max
+    max_round = ApprovalStep.objects.filter(document=doc).aggregate(Max('round'))['round__max']
+    ApprovalStep.objects.filter(
+        document=doc, agent='RS', action='pending', round=max_round,
+    ).update(action='approved', acted_at=timezone.now(), comment='[System R 합의]', acted_by_name='System R')
+
+
 def _make_document(requester):
     return RequestDocument.objects.create(
         title='테스트 의뢰서',
@@ -1503,6 +1517,7 @@ class PEStageReviewerFlowTest(TestCase):
                 'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
             }, format='json')
             self.assertEqual(r.status_code, 200, r.content)
+            _approve_pending_system_r(doc)
             r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
             self.assertEqual(r.status_code, 200, r.content)
 
@@ -1735,6 +1750,7 @@ class PEStageReviewerFlowTest(TestCase):
         self.client.post(f'/api/documents/{doc.id}/assign-step/', {
             'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
         }, format='json')
+        _approve_pending_system_r(doc)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
@@ -3342,12 +3358,13 @@ class MapDeleteEditRouteTest(TestCase):
         normal = self._make_doc(purpose='신규')
         self.assertEqual(mailer.route_agents_for(normal), mailer.ROUTE_AGENTS_DEFAULT)
 
+    # claude 수정 (2026-11-13): 일반 목적은 PL 합의 시 R 과 System R(RS)이 함께 생성된다
     def test_normal_purpose_still_uses_gate_route(self):
-        """일반 목적은 기존대로 PL 합의 시 R 만 생성된다(회귀 방지)."""
+        """일반 목적은 기존대로 PL 합의 시 2구역(R + System R)만 생성된다(회귀 방지)."""
         doc = self._submit_and_pl_approve(self._make_doc(purpose='신규'))
         agents = set(ApprovalStep.objects.filter(document=doc, round=1)
                      .exclude(agent='PL').values_list('agent', flat=True))
-        self.assertEqual(agents, {'R'}, f'일반 목적은 R 만 생겨야 한다. 실제: {agents}')
+        self.assertEqual(agents, {'R', 'RS'}, f'일반 목적은 R·RS 만 생겨야 한다. 실제: {agents}')
 
 
 class LabProductPostApproverTest(TestCase):
@@ -3418,6 +3435,7 @@ class LabProductPostApproverTest(TestCase):
             'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
+        _approve_pending_system_r(doc)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(
@@ -3480,6 +3498,7 @@ class PostApproverManagementTest(TestCase):
             'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
+        _approve_pending_system_r(doc)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
@@ -9519,6 +9538,7 @@ class RSkipStageIntegrationTest(TestCase):
             'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'rx1',
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
+        _approve_pending_system_r(doc)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
@@ -9558,6 +9578,8 @@ class RSkipStageIntegrationTest(TestCase):
 
         r_steps = ApprovalStep.objects.filter(document=doc, agent='R', round=2)
         self.assertEqual(r_steps.count(), 0, '변경 없이 재상신하면 2회차 R 은 생성되지 않아야 한다')
+        # claude 수정 (2026-11-13): R 생략 회차에는 System R(RS)도 만들지 않는다(사용자 결정)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RS', round=2).exists())
         self.assertTrue(
             ApprovalStep.objects.filter(document=doc, agent='J', round=2, action='pending').exists()
         )
@@ -9801,6 +9823,7 @@ class OSkipStageIntegrationTest(TestCase):
     def _approve_r(self, doc):
         self._post(self.r_user, doc, 'assign-step',
                    {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'r'})
+        _approve_pending_system_r(doc)
         self._post(self.r_user, doc, 'approve-step', {'agent': 'R'})
 
     def _act(self, agent, doc, verb):
@@ -9890,7 +9913,8 @@ class OSkipStageIntegrationTest(TestCase):
         self._post(self.r_user, doc, 'reject-step', {'agent': 'R', 'comment': 'r'})
         self._resubmit(doc)
         self._approve_r(doc)
-        self.assertEqual(self._agents(doc, 3), {'PL', 'R', 'P', 'J'})
+        # claude 수정 (2026-11-13): 2구역에 System R(RS)이 함께 생성된다
+        self.assertEqual(self._agents(doc, 3), {'PL', 'R', 'RS', 'P', 'J'})
 
     def test_reject_in_o_skipped_round_excludes_te_o_from_mail(self):
         doc = self._round1_o_approved_then_rejected_by('P')
@@ -10052,6 +10076,7 @@ class PartialShotLockTest(TestCase):
         self._post(self.req, 'submit', {'designated_pl_loginid': self.pl.loginid})
         self._post(self.pl, 'peer-approve')
         self._post(self.r, 'assign-step', {'agent': 'R', 'assignee_loginid': self.r.loginid, 'assignee_name': 'r'})
+        _approve_pending_system_r(self.doc)
         self._post(self.r, 'approve-step', {'agent': 'R'})
 
     def _o_approved_then_p_rejected(self):
@@ -12512,6 +12537,7 @@ class OnlyMapPostApproverRequiredTest(TestCase):
             'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
+        _approve_pending_system_r(self.doc)
         return self.client.post(f'/api/documents/{self.doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
 
     @override_settings(POST_APPROVER_LOGINID='')
@@ -12866,129 +12892,210 @@ class NumCheckConfigApiTest(TestCase):
         self.assertEqual(self.client.get(self.URL).json(), {'image_threshold': 12.5, 'lower_threshold': 8.5})
 
 
-# claude 수정 (2026-11-12): '숫자 확인 값' ↔ AAA4 자동 반려(num_check_reject)·map-info AAA4 응답·스케줄러 연결 테스트 추가
-class NumCheckAaa4AutoRejectTest(TestCase):
-    """숫자 확인 값('<N> 이상|이하')과 MapName.AAA4 가 맞지 않으면 MAP 이름 동기화 직후 자동 반려한다.
+# claude 수정 (2026-11-13): '숫자 확인 자동 반려' 테스트를 System R(RS) 단계 테스트로 교체 — 생성·판정·대기·병렬 완료·MASTER 수동·중단/철회 대상
+@override_settings(POST_APPROVER_LOGINID='sr_fixed')
+class SystemRStageTest(TestCase):
+    """2구역 System R(RS): R 과 병렬로 생성되고, MAP 이름 동기화마다 MAP 정보를 검증해 합의/반려한다.
 
-    규칙(docs/APPROVAL.md "숫자 확인 값 자동 반려"): 결재 진행 중이면 구역 무관 · 철회 확인 대기만 제외 ·
-    1회 확인 즉시 반려 · 판정 불가(행 없음/AAA4 빈값/숫자 아님/저장값 형식 다름)는 반려하지 않는다.
+    규칙: docs/APPROVAL.md "System R" 절. 제품 이름 행이 매칭되고 각 검증 항목이 판정될 수 있을 때까지
+    대기하며, 결론(합의·반려)이 나면 다시 판정하지 않는다. R(+RV)과 RS 가 모두 합의해야 3구역이 열린다.
     """
 
     LINE = '라인1'
     PRODUCT = 'ABCD1234'
 
     def setUp(self):
+        from rest_framework.test import APIClient
         from .models import MapName
         from .utils import LINE_TO_LINEID_MAP
+        self.client = APIClient()
         self.MapName = MapName
         self.lineid = LINE_TO_LINEID_MAP[self.LINE]
-        self.author = UserProfile.objects.create(loginid='nc_author', mail='nc_a@c.com', role='PL', username='의뢰자')
-        self.pl = UserProfile.objects.create(loginid='nc_pl', mail='nc_pl@c.com', role='PL', username='지정PL')
-        self.r_user = UserProfile.objects.create(loginid='nc_r', mail='nc_r@c.com', role='TE_R', username='R담당')
+        self.author = UserProfile.objects.create(loginid='sr_author', mail='sr_a@c.com', role='NONE', username='의뢰자')
+        self.pl = UserProfile.objects.create(loginid='sr_pl', mail='sr_pl@c.com', role='PL', username='지정PL')
+        self.r_user = UserProfile.objects.create(loginid='sr_r', mail='sr_r@c.com', role='TE_R', username='R담당')
+        self.fixed_ra = UserProfile.objects.create(loginid='sr_fixed', mail='sr_f@c.com', role='TE_R', username='고정후결')
+        self.master = UserProfile.objects.create(loginid='sr_m', mail='sr_m@c.com', role='MASTER', username='마스터')
+
+    # ----- 헬퍼 -----
 
     def _map(self, aaa4, partid=None, lineid=None):
         return self.MapName.objects.create(
             lineid=lineid or self.lineid, partid=partid or f'{self.PRODUCT}_01', AAA4=aaa4,
         )
 
-    def _doc(self, value, status='under_review', zone=1, num_check='해당 있음', line=None, product=None):
-        """결재 중 문서. zone 1: PL 대기 / 2: PL 합의 + R 대기 / 3: PL·R 합의 + RA 대기."""
+    def _detail(self, value='13 이상', num_check='해당 있음', line=None, product=None, **extra):
+        detail = {
+            'line': self.LINE if line is None else line,
+            'partid_selection': self.PRODUCT if product is None else product,
+            'num_check': num_check, 'num_check_value': value,
+        }
+        detail.update(extra)
+        return detail
+
+    def _post(self, user, doc, path, data=None, expect=200):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{doc.id}/{path}/', data or {}, format='json')
+        self.assertEqual(r.status_code, expect, r.content)
+        return r
+
+    def _to_zone2(self, **detail_kwargs):
+        """실제 API 로 상신 → PL 합의까지 진행해 2구역(R·RS)을 연다."""
         doc = RequestDocument.objects.create(
-            title='nc-doc', requester=self.author, requester_name='의뢰자', requester_email='nc_a@c.com',
-            requester_department='d', product_name=self.PRODUCT, status=status, designated_pl=self.pl,
-            additional_notes=json.dumps({'detail': {
-                'line': self.LINE if line is None else line,
-                'partid_selection': self.PRODUCT if product is None else product,
-                'map_type': 'NEW', 'num_check': num_check, 'num_check_value': value,
-            }}),
+            title='sr-doc', requester=self.author, requester_name='의뢰자', requester_email='sr_a@c.com',
+            requester_department='d', product_name=self.PRODUCT, status='draft',
+            additional_notes=json.dumps({'detail': self._detail(**detail_kwargs), 'jayerRows': []}),
         )
-        self.pl_step = ApprovalStep.objects.create(
-            document=doc, agent='PL', action='pending' if zone == 1 else 'approved', round=1,
-            assignee=self.pl, assignee_name='지정PL',
-        )
-        if zone >= 2:
-            self.r_step = ApprovalStep.objects.create(
-                document=doc, agent='R', action='approved' if zone == 3 else 'pending', round=1,
-                assignee=self.r_user, assignee_name='R담당',
-            )
-        if zone == 3:
-            self.ra_step = ApprovalStep.objects.create(
-                document=doc, agent='RA', action='pending', round=1, assignee=self.r_user, assignee_name='RA담당',
-            )
+        self._post(self.author, doc, 'submit', {'designated_pl_loginid': self.pl.loginid})
+        self._post(self.pl, doc, 'peer-approve')
         return doc
 
-    def _run(self):
-        from . import num_check_reject
-        return num_check_reject.reject_mismatched_in_progress()
+    def _approve_r(self, doc):
+        self._post(self.r_user, doc, 'assign-step',
+                   {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'R담당'})
+        return self._post(self.r_user, doc, 'approve-step', {'agent': 'R'})
+
+    def _rs(self, doc, round_no=1):
+        return ApprovalStep.objects.get(document=doc, agent='RS', round=round_no)
+
+    def _agents(self, doc, round_no=1):
+        return set(ApprovalStep.objects.filter(document=doc, round=round_no).values_list('agent', flat=True))
+
+    def _judge(self):
+        from . import system_r
+        return system_r.judge_pending()
 
     def _status(self, doc):
         doc.refresh_from_db()
         return doc.status
 
-    # ----- 비교 규칙 -----
+    # ----- 생성 -----
 
-    def test_over_rejects_when_aaa4_below_threshold(self):
-        self._map('12.9')
-        doc = self._doc('13 이상')
-        self.assertEqual(self._run(), [doc.pk])
-        self.assertEqual(self._status(doc), 'rejected')
+    def test_rs_created_with_r_for_normal_purpose(self):
+        doc = self._to_zone2()
+        self.assertEqual(self._agents(doc), {'PL', 'R', 'RS'})
+        rs = self._rs(doc)
+        self.assertEqual((rs.action, rs.assignee_id, rs.is_parallel), ('pending', None, True))
+        self.assertFalse(MailNotification.objects.filter(document=doc, event_type='stage_arrival', subject__contains='System R').exists())
 
-    def test_over_keeps_when_aaa4_equal_or_above(self):
+    def test_rs_created_for_only_map(self):
+        doc = self._to_zone2(request_purpose=RequestDocument.ONLY_MAP_PURPOSE)
+        self.assertEqual(self._agents(doc), {'PL', 'R', 'RS'})
+
+    def test_rs_not_created_for_map_delete_adi_and_overlay_only(self):
+        cases = {
+            'map_delete': {'request_purpose': RequestDocument.MAP_DELETE_EDIT_PURPOSE},
+            'adi_cd': {'request_purpose': RequestDocument.ADI_CD_CHANGE_PURPOSE},
+            'overlay_only': {'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY]},
+        }
+        for name, extra in cases.items():
+            with self.subTest(name):
+                doc = self._to_zone2(**extra)
+                self.assertNotIn('RS', self._agents(doc))
+
+    # ----- 2구역 병렬 완료 -----
+
+    def test_r_first_then_rs_judge_opens_zone3(self):
+        """R 이 먼저 합의하면 RS 대기 동안 3구역이 열리지 않고, RS 합의 시 스케줄러가 3구역을 연다."""
+        doc = self._to_zone2()
+        res = self._approve_r(doc)
+        self.assertEqual(res.data['status'], 'under_review')
+        self.assertFalse({'P', 'J', 'O', 'RA'} & self._agents(doc))
+
+        self._map('13.5')
+        self.assertEqual(self._judge(), {doc.pk: 'approved'})
+        rs = self._rs(doc)
+        self.assertEqual((rs.action, rs.comment, rs.acted_by_name), ('approved', '[System R 합의]', 'System R'))
+        self.assertTrue({'P', 'J', 'O', 'RA'} <= self._agents(doc))
+        self.assertEqual(self._status(doc), 'under_review')
+        self.assertTrue(MailNotification.objects.filter(document=doc, event_type='stage_arrival').exists())
+
+    def test_rs_first_then_r_opens_zone3(self):
+        doc = self._to_zone2()
         self._map('13')
-        doc = self._doc('13 이상')
-        self.assertEqual(self._run(), [])
-        self.assertEqual(self._status(doc), 'under_review')
+        self.assertEqual(self._judge(), {doc.pk: 'approved'})
+        self.assertFalse({'P', 'J', 'O', 'RA'} & self._agents(doc), 'R 이 남아 있으면 3구역을 열지 않는다')
+        self._approve_r(doc)
+        self.assertTrue({'P', 'J', 'O', 'RA'} <= self._agents(doc))
 
-    def test_under_rejects_when_aaa4_above_threshold(self):
-        self._map('9.5')
-        doc = self._doc('9 이하')
-        self._run()
-        self.assertEqual(self._status(doc), 'rejected')
+    def test_rs_waits_for_rv_too(self):
+        """R 검토자(RV)가 지정된 경우 RS 합의만으로는 열리지 않고 RV 합의 때 열린다."""
+        reviewer = UserProfile.objects.create(loginid='sr_rv', mail='sr_rv@c.com', role='TE_R')
+        doc = self._to_zone2()
+        self._post(self.r_user, doc, 'assign-step', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'R담당',
+            'reviewer_loginid': reviewer.loginid,
+        })
+        self._post(self.r_user, doc, 'approve-step', {'agent': 'R'})
+        self._map('20')
+        self._judge()
+        self.assertNotIn('P', self._agents(doc))
+        self._post(reviewer, doc, 'approve-step', {'agent': 'RV'})
+        self.assertIn('P', self._agents(doc))
 
-    def test_under_keeps_when_aaa4_equal_or_below(self):
-        self._map(' 9 ')
-        doc = self._doc('9 이하')
-        self._run()
-        self.assertEqual(self._status(doc), 'under_review')
+    def test_only_map_rs_last_creates_post_approver(self):
+        doc = self._to_zone2(request_purpose=RequestDocument.ONLY_MAP_PURPOSE)
+        self._approve_r(doc)
+        self.assertNotIn('RA', self._agents(doc))
+        self._map('13')
+        self._judge()
+        self.assertEqual(self._agents(doc), {'PL', 'R', 'RS', 'RA'})
+
+    # ----- 판정 규칙 -----
+
+    def test_comparison_rules(self):
+        cases = [
+            ('over_below', '13 이상', '12.9', 'rejected'),
+            ('over_equal', '13 이상', '13', 'approved'),
+            ('under_above', '9 이하', '9.5', 'rejected'),
+            ('under_equal_spaces', '9 이하', ' 9 ', 'approved'),
+        ]
+        for name, value, aaa4, expected in cases:
+            with self.subTest(name):
+                self.MapName.objects.all().delete()
+                self._map(aaa4)
+                doc = self._to_zone2(value=value)
+                self.assertEqual(self._judge(), {doc.pk: expected})
+                self.assertEqual(self._rs(doc).action, expected)
+                RequestDocument.objects.filter(pk=doc.pk).delete()
 
     def test_threshold_is_the_stored_value_not_current_env(self):
-        """기준 숫자는 문서 저장값(선택 당시) — 현재 .env 기준값이 바뀌어도 저장값으로 비교한다."""
         self._map('11')
-        doc = self._doc('10 이상')
+        doc = self._to_zone2(value='10 이상')
         with override_settings(NUM_CHECK_IMAGE_THRESHOLD=13.0):
-            self._run()
-        self.assertEqual(self._status(doc), 'under_review')
+            self._judge()
+        self.assertEqual(self._rs(doc).action, 'approved')
 
-    def test_partid_exact_match_is_used(self):
+    def test_partid_exact_match_and_first_row_by_id(self):
         self._map('1', partid=self.PRODUCT)
-        doc = self._doc('13 이상')
-        self._run()
-        self.assertEqual(self._status(doc), 'rejected')
+        self._map('20', partid=f'{self.PRODUCT}_02')
+        doc = self._to_zone2()
+        self._judge()
+        self.assertEqual(self._rs(doc).action, 'rejected', 'id 순 첫 행(정확히 일치하는 제품)을 쓴다')
 
-    def test_first_row_by_id_is_used(self):
-        """여러 행이 매칭되면 id 순 첫 행 — map-info API 와 같은 기준."""
-        self._map('20', partid=f'{self.PRODUCT}_01')
-        self._map('1', partid=f'{self.PRODUCT}_02')
-        doc = self._doc('13 이상')
-        self._run()
-        self.assertEqual(self._status(doc), 'under_review')
+    def test_num_check_not_applicable_is_approved_once_product_matches(self):
+        """'숫자 확인 해당 없음'은 검증할 것이 없어 합의 — 단 제품 이름 행이 매칭된 뒤에만."""
+        doc = self._to_zone2(num_check='해당 없음', value='')
+        self._judge()
+        self.assertEqual(self._rs(doc).action, 'pending', '제품 이름 행이 없으면 기다린다')
+        self._map('1')
+        self._judge()
+        self.assertEqual(self._rs(doc).action, 'approved')
 
-    # ----- 판정 불가 → 반려하지 않음 -----
-
-    def test_skips_when_undecidable(self):
-        from . import num_check_reject as ncr
+    def test_waits_until_decidable(self):
+        """판정할 수 없으면 RS 는 대기로 남고 문서도 그대로다."""
+        from . import system_r
         cases = [
             ('no_row', lambda: None, {}),
             ('other_line_row_only', lambda: self._map('1', lineid='zzzzz'), {}),
             ('prefix_without_underscore', lambda: self._map('1', partid=f'{self.PRODUCT}9'), {}),
+            ('unknown_line', lambda: self._map('1'), {'line': '없는라인'}),
+            ('no_product', lambda: self._map('1'), {'product': ''}),
             ('empty_aaa4', lambda: self._map('  '), {}),
             ('null_aaa4', lambda: self._map(None), {}),
             ('non_numeric_aaa4', lambda: self._map('N/A'), {}),
             ('nan_aaa4', lambda: self._map('nan'), {}),
             ('bad_value', lambda: self._map('1'), {'value': '13'}),
-            ('unknown_line', lambda: self._map('1'), {'line': '없는라인'}),
-            ('no_product', lambda: self._map('1'), {'product': ''}),
-            ('num_check_none', lambda: self._map('1'), {'num_check': '해당 없음'}),
             ('value_not_selected', lambda: self._map('1'), {'value': ''}),
         ]
         for name, setup, kwargs in cases:
@@ -12996,169 +13103,198 @@ class NumCheckAaa4AutoRejectTest(TestCase):
                 self.MapName.objects.all().delete()
                 RequestDocument.objects.all().delete()
                 setup()
-                doc = self._doc(kwargs.pop('value', '13 이상'), **kwargs)
-                self.assertEqual(ncr.evaluate_document(doc)['result'], ncr.RESULT_SKIP)
-                self.assertEqual(self._run(), [])
+                doc = self._to_zone2(**kwargs)
+                self.assertIsNone(system_r.evaluate_document(doc))
+                self.assertEqual(self._judge(), {})
+                self.assertEqual(self._rs(doc).action, 'pending')
                 self.assertEqual(self._status(doc), 'under_review')
 
-    def test_legacy_document_without_num_check_key_is_skipped(self):
-        """'숫자 확인 필수' 도입 전 문서(detail 에 num_check 키 없음)는 판정하지 않는다."""
-        self._map('1')
-        doc = self._doc('13 이상')
-        doc.additional_notes = json.dumps({'detail': {'line': self.LINE, 'partid_selection': self.PRODUCT}})
-        doc.save()
-        self._run()
+    def test_waiting_rs_is_judged_when_data_arrives(self):
+        doc = self._to_zone2()
+        entry = self._map(None)
+        self._judge()
+        self.assertEqual(self._rs(doc).action, 'pending')
+        entry.AAA4 = '14'
+        entry.save()
+        self.assertEqual(self._judge(), {doc.pk: 'approved'})
+
+    def test_concluded_rs_is_not_judged_again(self):
+        doc = self._to_zone2()
+        entry = self._map('14')
+        self._judge()
+        entry.AAA4 = '1'
+        entry.save()
+        self.assertEqual(self._judge(), {})
+        self.assertEqual(self._rs(doc).action, 'approved')
         self.assertEqual(self._status(doc), 'under_review')
 
-    # ----- 대상 상태·구역 -----
-
-    def test_all_zones_and_in_progress_statuses_are_rejected(self):
-        """구역 무관 — 1·2·3구역 모두, submitted·under_review·pause 모두 반려한다."""
-        for zone in (1, 2, 3):
-            for status in ('submitted', 'under_review', 'pause'):
-                with self.subTest(zone=zone, status=status):
-                    self.MapName.objects.all().delete()
-                    self._map('1')
-                    doc = self._doc('13 이상', status=status, zone=zone)
-                    self._run()
-                    self.assertEqual(self._status(doc), 'rejected')
-
-    def test_not_in_progress_statuses_are_ignored(self):
+    def test_multiple_failed_checks_are_joined(self):
+        from . import system_r
         self._map('1')
-        docs = [self._doc('13 이상', status=s) for s in ('draft', 'approved', 'rejected')]
-        self.assertEqual(self._run(), [])
-        self.assertEqual([self._status(d) for d in docs], ['draft', 'approved', 'rejected'])
+        doc = self._to_zone2()
+        extra = lambda detail, entry: (False, '다른 항목 불일치')  # noqa: E731
+        with patch.object(system_r, 'CHECKS', (system_r.check_num_check_aaa4, extra)):
+            self._judge()
+        self.assertEqual(self._rs(doc).comment, "[System R 반려] 숫자 확인 값 '13 이상' ↔ AAA4 1 / 다른 항목 불일치")
 
-    def test_withdraw_requested_document_is_skipped(self):
-        """철회 확인 대기 중(결재 동결)이면 반려하지 않는다 — 철회가 취소되면 다음 주기에 판정."""
+    def test_check_returning_none_keeps_waiting(self):
+        from . import system_r
         self._map('1')
-        doc = self._doc('13 이상')
-        withdraw = WithdrawRequest.objects.create(document=doc, requester=self.author, state='requested')
-        self._run()
-        self.assertEqual(self._status(doc), 'under_review')
-        withdraw.state = 'cancelled'
-        withdraw.save()
-        self._run()
-        self.assertEqual(self._status(doc), 'rejected')
+        doc = self._to_zone2()
+        with patch.object(system_r, 'CHECKS', (system_r.check_num_check_aaa4, lambda d, e: None)):
+            self._judge()
+        self.assertEqual(self._rs(doc).action, 'pending', '판정 못 한 항목이 하나라도 있으면 기다린다')
 
     # ----- 반려 경로 -----
 
-    def test_reject_path_step_snapshot_pause_and_mail(self):
-        """가장 앞선 대기 단계 반려 + [자동반려] 의견 + 이력(시스템 반려자) + 중단 요청 닫기 + 반려 메일."""
+    def test_reject_path_step_snapshot_and_mail(self):
         self._map('10.5')
-        doc = self._doc('13 이상', status='pause', zone=3)
-        pause = PauseRequest.objects.create(document=doc, requester=self.author, state='confirmed')
-        self._run()
+        doc = self._to_zone2()
+        self.assertEqual(self._judge(), {doc.pk: 'rejected'})
+        self.assertEqual(self._status(doc), 'rejected')
 
-        self.ra_step.refresh_from_db()
-        self.assertEqual(self.ra_step.action, 'rejected')
-        self.assertEqual(self.ra_step.comment, "[자동반려] 숫자 확인 불일치: 선택값 '13 이상', AAA4 10.5")
-        self.assertIsNotNone(self.ra_step.acted_at)
+        rs = self._rs(doc)
+        self.assertEqual(rs.comment, "[System R 반려] 숫자 확인 값 '13 이상' ↔ AAA4 10.5")
+        self.assertEqual(rs.acted_by_name, 'System R')
+        self.assertIsNotNone(rs.acted_at)
 
         snap = RejectionSnapshot.objects.get(document=doc)
-        self.assertEqual(snap.rejected_agent, 'RA')
-        self.assertEqual(snap.rejected_by_loginid, 'system')
-        self.assertEqual(snap.rejected_by_name, '시스템(자동반려)')
-        self.assertFalse(snap.layer_drift_detected)
-
-        pause.refresh_from_db()
-        self.assertEqual(pause.state, 'cancelled')
+        self.assertEqual((snap.rejected_agent, snap.rejected_by_loginid, snap.rejected_by_name), ('RS', 'system', 'System R'))
 
         notis = list(MailNotification.objects.filter(document=doc, event_type='rejected'))
         self.assertTrue(notis)
-        self.assertTrue(all(n.subject.startswith('[반려] [자동반려]') for n in notis))
-        self.assertTrue(all('숫자 확인 값이 AAA4 값과 맞지 않아' in n.contents for n in notis))
+        self.assertTrue(all(n.subject.startswith('[반려] [System R]') for n in notis))
+        self.assertTrue(all('System R 검증에서 MAP 정보가 맞지 않아' in n.contents for n in notis))
         self.assertFalse(any('마스터 DB 변경이 감지되어' in n.contents for n in notis))
-        self.assertIn('nc_a@c.com', {m for n in notis for m in n.recipients})
+        self.assertIn('sr_a@c.com', {m for n in notis for m in n.recipients})
 
-    def test_already_rejected_document_is_not_rejected_twice(self):
+    def test_resubmit_after_rs_reject_recreates_r_and_rs(self):
+        """RS 반려 뒤 재상신은 R 생략(Case T) 대상이 아니다 — 2회차에 R·RS 를 다시 거친다."""
         self._map('1')
-        doc = self._doc('13 이상')
-        self._run()
-        self._run()
-        self.assertEqual(RejectionSnapshot.objects.filter(document=doc).count(), 1)
+        doc = self._to_zone2()
+        self._judge()
+        self._post(self.author, doc, 'resubmit', {'designated_pl_loginid': self.pl.loginid})
+        self._post(self.pl, doc, 'peer-approve')
+        self.assertEqual(self._agents(doc, 2), {'PL', 'R', 'RS'})
+
+    # ----- 대상 상태·동결 -----
+
+    def test_frozen_or_not_in_progress_documents_are_skipped(self):
+        self._map('1')
+        doc = self._to_zone2()
+        withdraw = WithdrawRequest.objects.create(document=doc, requester=self.author, state='requested')
+        self.assertEqual(self._judge(), {})
+        withdraw.state = 'cancelled'
+        withdraw.save()
+
+        pause = PauseRequest.objects.create(document=doc, requester=self.author, state='requested')
+        self.assertEqual(self._judge(), {})
+        pause.state = 'confirmed'
+        pause.save()
+        RequestDocument.objects.filter(pk=doc.pk).update(status='pause')
+        self.assertEqual(self._judge(), {})
+        self.assertEqual(self._rs(doc).action, 'pending')
+
+        pause.state = 'resumed'
+        pause.save()
+        RequestDocument.objects.filter(pk=doc.pk).update(status='under_review')
+        self.assertEqual(self._judge(), {doc.pk: 'rejected'})
 
     def test_one_document_failure_does_not_stop_others(self):
-        from . import num_check_reject
-        self._map('1')
-        first = self._doc('13 이상')
-        second = self._doc('13 이상')
-        original = num_check_reject.auto_reject_document
+        from . import system_r
+        self._map('14')
+        first = self._to_zone2()
+        second = self._to_zone2()
+        original = system_r.judge_document
 
         def flaky(document_id):
             if document_id == first.pk:
                 raise RuntimeError('boom')
             return original(document_id)
 
-        with patch.object(num_check_reject, 'auto_reject_document', side_effect=flaky):
-            self.assertEqual(num_check_reject.reject_mismatched_in_progress(), [second.pk])
-        self.assertEqual(self._status(first), 'under_review')
-        self.assertEqual(self._status(second), 'rejected')
+        with patch.object(system_r, 'judge_document', side_effect=flaky):
+            self.assertEqual(system_r.judge_pending(), {second.pk: 'approved'})
+        self.assertEqual(self._rs(first).action, 'pending')
 
-    # ----- 결재 현황 배지: '숫자 불일치'(num_check_auto_rejected) / '변경 감지'(layer_drift_auto_rejected) 분리 -----
-    # claude 수정 (2026-11-12): 숫자 확인 자동 반려는 '변경 감지' 배지가 아니라 '숫자 불일치' 배지로 판정하는지 검증
+    # ----- 사람의 RS 처리: MASTER 만 -----
 
-    def _rows(self, doc):
-        """(목록 행, 상세 응답) — 작성자 권한으로 조회."""
-        from rest_framework.test import APIClient
-        client = APIClient()
-        client.force_authenticate(user=self.author)
-        res = client.get('/api/documents/')
-        self.assertEqual(res.status_code, 200, res.content)
-        rows = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
-        if isinstance(rows, dict) and 'results' in rows:
-            rows = rows['results']
-        detail = client.get(f'/api/documents/{doc.id}/')
-        self.assertEqual(detail.status_code, 200, detail.content)
-        body = detail.data['data'] if isinstance(detail.data, dict) and 'data' in detail.data else detail.data
-        return next(row for row in rows if row['id'] == doc.id), body
+    def test_non_master_cannot_act_on_rs(self):
+        doc = self._to_zone2()
+        self._post(self.r_user, doc, 'approve-step', {'agent': 'RS'}, expect=403)
+        self._post(self.r_user, doc, 'reject-step', {'agent': 'RS'}, expect=403)
+        self._post(self.r_user, doc, 'assign-step',
+                   {'agent': 'RS', 'assignee_loginid': self.r_user.loginid}, expect=400)
+        self._post(self.r_user, doc, 'claim-step', {'agent': 'RS'}, expect=400)
 
-    def test_badge_flags_for_num_check_reject_while_drift_detected(self):
-        """변경 감지 중이던 문서가 숫자 확인으로 반려되면 '숫자 불일치'만 True, '변경 감지'는 False(목록·상세)."""
+    def test_master_manual_approve_opens_zone3_when_r_done(self):
+        doc = self._to_zone2()
+        self._approve_r(doc)
+        res = self._post(self.master, doc, 'approve-step', {'agent': 'RS', 'comment': '수동 합의'})
+        self.assertEqual(res.data['status'], 'under_review')
+        rs = self._rs(doc)
+        self.assertEqual((rs.action, rs.acted_by_name), ('approved', '마스터'))
+        self.assertIn('P', self._agents(doc))
+
+    def test_master_manual_reject_rejects_document(self):
+        doc = self._to_zone2()
+        self._post(self.master, doc, 'reject-step', {'agent': 'RS', 'comment': '수동 반려'})
+        self.assertEqual(self._status(doc), 'rejected')
+        notis = MailNotification.objects.filter(document=doc, event_type='rejected')
+        self.assertTrue(all('System R 검증에서' in n.contents for n in notis))
+
+    # ----- 중단·철회 확인 대상 -----
+
+    def test_pause_and_withdraw_targets_exclude_rs(self):
+        doc = self._to_zone2()
+        rs = self._rs(doc)
+        self._post(self.author, doc, 'request-pause', {'reason': '중단'})
+        pr = PauseRequest.objects.get(document=doc)
+        self.assertNotIn(rs.id, pr.target_step_ids)
+        self.assertTrue(pr.target_step_ids)
+        self._post(self.author, doc, 'cancel-pause')
+
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertNotIn(rs.id, wr.target_step_ids)
+
+    def test_pause_request_rejected_when_only_rs_is_pending(self):
+        """R 이 끝나고 RS 만 남았으면 사람이 확인할 단계가 없어 중단 요청을 받지 않는다(현재 동작 고정)."""
+        doc = self._to_zone2()
+        self._approve_r(doc)
+        self._post(self.author, doc, 'request-pause', {'reason': '중단'}, expect=400)
+
+    # ----- 메일 결재 경로 카드 -----
+
+    def test_route_card_has_system_r_row(self):
+        doc = self._to_zone2()
+        rows = mailer._route_rows(doc)
+        self.assertIn(('System R', '', 'waiting', ''), rows)
+        self._map('14')
+        self._judge()
+        rows = mailer._route_rows(doc)
+        self.assertIn(('System R', 'System R', 'approved', '[System R 합의]'), rows)
+
+    def test_route_card_marks_rs_na_for_legacy_round_without_rs(self):
+        """System R 도입 전에 R 이 생성된 회차(RS 없음)는 '해당없음'이고, R 합의만으로 3구역이 열린다."""
+        doc = self._to_zone2()
+        ApprovalStep.objects.filter(document=doc, agent='RS').delete()
+        self.assertIn(('System R', '', 'na', ''), mailer._route_rows(doc))
+        self._approve_r(doc)
+        self.assertIn('P', self._agents(doc))
+
+    # ----- 결재 현황 '변경 감지' 배지와 섞이지 않는다 -----
+
+    def test_system_r_reject_does_not_flag_layer_drift_badge(self):
+        from .serializers import is_layer_drift_auto_rejected
         self._map('1')
-        doc = self._doc('13 이상', zone=2)
+        doc = self._to_zone2()
         RequestDocument.objects.filter(pk=doc.pk).update(layer_drift_detected=True, layer_drift_detail='{"jayer": {}}')
-        self._run()
-        for row in self._rows(doc):
-            self.assertTrue(row['num_check_auto_rejected'])
-            self.assertFalse(row['layer_drift_auto_rejected'])
-
-    def test_badge_flags_for_num_check_reject_without_drift(self):
-        self._map('1')
-        doc = self._doc('13 이상')
-        self._run()
-        row, body = self._rows(doc)
-        self.assertTrue(row['num_check_auto_rejected'])
-        self.assertTrue(body['num_check_auto_rejected'])
-        self.assertFalse(row['layer_drift_auto_rejected'])
-
-    def test_badge_flag_false_after_resubmit_and_for_human_reject(self):
-        """재상신(반려 상태 벗어남)하면 False / 사람이 누른 반려도 False."""
-        self._map('1')
-        doc = self._doc('13 이상')
-        self._run()
-        RequestDocument.objects.filter(pk=doc.pk).update(status='submitted')
-        self.assertFalse(self._rows(doc)[0]['num_check_auto_rejected'])
-
-        human = self._doc('13 이하', status='rejected')
-        ApprovalStep.objects.filter(pk=self.pl_step.pk).update(action='rejected', comment='사람 반려')
-        self.assertFalse(self._rows(human)[0]['num_check_auto_rejected'])
-
-    def test_layer_drift_auto_reject_still_flags_drift_badge_only(self):
-        """변경 감지 자동 반려 의견('[자동반려] 마스터 DB 변경 감지: …')은 기존대로 '변경 감지'만 True."""
-        doc = self._doc('13 이상', status='rejected')
-        RequestDocument.objects.filter(pk=doc.pk).update(layer_drift_detected=True, layer_drift_detail='{"jayer": {}}')
-        ApprovalStep.objects.filter(pk=self.pl_step.pk).update(
-            action='rejected', comment='[자동반려] 마스터 DB 변경 감지: J-layer STEP S1 삭제',
-        )
-        row, _ = self._rows(doc)
-        self.assertTrue(row['layer_drift_auto_rejected'])
-        self.assertFalse(row['num_check_auto_rejected'])
-
-    # ----- 파싱 -----
+        self._judge()
+        doc = RequestDocument.objects.prefetch_related('approval_steps').get(pk=doc.pk)
+        self.assertFalse(is_layer_drift_auto_rejected(doc))
 
     def test_parse_num_check_value(self):
-        from .num_check_reject import parse_num_check_value
+        from .system_r import parse_num_check_value
         self.assertEqual(parse_num_check_value('13 이상'), (13.0, '이상'))
         self.assertEqual(parse_num_check_value('12.5 이하'), (12.5, '이하'))
         self.assertEqual(parse_num_check_value('9이하'), (9.0, '이하'))
@@ -13190,8 +13326,9 @@ class MapInfoAaa4ResponseTest(TestCase):
         self.assertIn('AAA4', body)
 
 
-class SyncFormOptionsNumCheckHookTest(TestCase):
-    """sync_form_options(): MAP 이름 쿼리에 AAA4 를 조회하고, 끝에서 숫자 확인 자동 반려 판정을 호출한다."""
+# claude 수정 (2026-11-13): 동기화 끝 호출 대상을 숫자 확인 자동 반려 → System R 판정(system_r.judge_pending)으로 교체
+class SyncFormOptionsSystemRHookTest(TestCase):
+    """sync_form_options(): MAP 이름 쿼리에 AAA4 를 조회하고, 끝에서 System R 판정을 호출한다."""
 
     def _run(self, reject_side_effect=None):
         import contextlib
@@ -13207,7 +13344,7 @@ class SyncFormOptionsNumCheckHookTest(TestCase):
                 patch.object(scheduler, 'ensure_dcq_session', return_value='dcq'), \
                 patch.object(scheduler, 'get_data_from_dcq', side_effect=fake_dcq), \
                 patch.object(scheduler, '_send_sync_failure_alert'), \
-                patch.object(scheduler.num_check_reject, 'reject_mismatched_in_progress',
+                patch.object(scheduler.system_r, 'judge_pending',
                              side_effect=reject_side_effect) as hook:
             scheduler.sync_form_options()
         return queries, hook
@@ -13227,6 +13364,6 @@ class SyncFormOptionsNumCheckHookTest(TestCase):
         with patch.object(scheduler, 'get_django_engine', return_value=MagicMock()), \
                 patch.object(scheduler, 'ensure_dcq_session', return_value=None), \
                 patch.object(scheduler, '_send_sync_failure_alert'), \
-                patch.object(scheduler.num_check_reject, 'reject_mismatched_in_progress') as hook:
+                patch.object(scheduler.system_r, 'judge_pending') as hook:
             scheduler.sync_form_options()
         hook.assert_not_called()

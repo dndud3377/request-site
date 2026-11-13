@@ -116,7 +116,8 @@ REVIEWER_AGENTS = ('RV', 'PV', 'EV')
 # 반려 시 "잔여 결재선" 산출에 사용하는 결재선(라우팅) 단계 목록.
 # PL 은 별도 규칙(미합의 지정 PL 포함)을 따르므로 여기서 제외한다.
 # Only MAP 의뢰서는 P/O/E/J 없이 R 까지만 진행하고 후결자(RA)로 종단한다.
-ROUTE_AGENTS_ONLY_MAP = ('SA', 'R', 'RV', 'RA')
+# claude 수정 (2026-11-13): 2구역 System R(RS) 추가 — 일반·Only MAP 결재선에 R 과 병렬로 들어간다(팀이 없어 수신자는 없다)
+ROUTE_AGENTS_ONLY_MAP = ('SA', 'R', 'RV', 'RS', 'RA')
 # 'MAP 삭제' 의뢰서는 PL 합의 후 2구역(P·J·O)을 병렬로 진행하고, 셋 다 합의하면
 # 3구역(R)이 열려 마지막으로 진행한다(R은 병렬 구성원이 아니라 2구역 다음 단독 관문).
 # E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
@@ -124,12 +125,12 @@ ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA', 'P', 'PV', 'J', 'O', 'R', 'RV')
 # 'ADI CD 변경' 의뢰서는 PL 합의 후 R·O 없이 P·J 만 병렬로 진행한다.
 # E(MASK)·EV 와 후결자(RA)도 생성되지 않으므로 경로에서 빠진다.
 ROUTE_AGENTS_ADI_CD = ('SA', 'P', 'PV', 'J')
-ROUTE_AGENTS_DEFAULT = ('SA', 'R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
+ROUTE_AGENTS_DEFAULT = ('SA', 'R', 'RV', 'RS', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
 # 기타 목적이 'Overlay 변경' 하나뿐인 의뢰서는 일반 경로에서 J 가 빠진다
 # (2구역 R·RV 도 빠지지만, R 이 이미 생성된 진행 중 회차가 있어 회차 기준으로 route_agents_for 가 뺀다).
 ROUTE_AGENTS_NO_J = tuple(a for a in ROUTE_AGENTS_DEFAULT if a != 'J')
-# 2구역(R 담당자·검토자) 단계 — R 없이 진행하는 회차에서 결재선에서 뺀다.
-R_ZONE_AGENTS = ('R', 'RV')
+# 2구역(R 담당자·검토자·System R) 단계 — R 없이 진행하는 회차에서 결재선에서 뺀다.
+R_ZONE_AGENTS = ('R', 'RV', 'RS')
 
 
 # claude 수정 (2026-10-19): R 없이 진행하는 회차('Overlay만 변경' 단독 / 반려 후 재상신 R 생략)는 R·RV 를 결재선에서 뺀다 — TE_R 반려 메일 제외
@@ -171,7 +172,7 @@ def route_agents_for(document):
 # `_route_display_order()`가 이 유니버스를 `pause_zones()` 구역 순서로 재배열해 정한다 —
 # 예전엔 이 상수 순서를 그대로 썼는데, R 이 항상 P/J/O 보다 먼저라고 고정 가정해
 # 'MAP 삭제'(R 이 2구역이 아니라 P·J·O 다음 3구역)에서 R 이 실제보다 앞서 표시됐다(2026-09).
-ROUTE_DISPLAY_ORDER = ('PL', 'SA', 'R', 'RV', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
+ROUTE_DISPLAY_ORDER = ('PL', 'SA', 'R', 'RV', 'RS', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
 
 
 def _route_display_order(document):
@@ -240,6 +241,7 @@ AGENT_LABEL = {
     'EV': '검토자',
     'RA': '후결자',
     'SA': '영업/기술지원 합의자',
+    'RS': 'System R',
 }
 
 # 결재선 제외 메일(route_member_removed)에서 "무엇에서 제외됐는지" 로 쓰는 지정 항목 이름
@@ -527,10 +529,13 @@ def _current_round(document):
 # 머리말. 반려 메일 제목·본문 분기와 수신자 판정이 이 머리말로 '자동 반려 문서'를 알아본다.
 AUTO_REJECT_COMMENT_PREFIX = '[자동반려]'
 
-# claude 수정 (2026-11-12): '숫자 확인 값' ↔ AAA4 불일치 자동 반려(num_check_reject) 머리말 추가 — 반려 메일 안내 문구 분기용
-# 숫자 확인 자동 반려의 단계 의견 머리말. AUTO_REJECT_COMMENT_PREFIX 로 시작하므로 수신자 규칙은 변경 감지
-# 자동 반려와 같고, 안내 문구(headline)만 이 머리말로 구분한다.
-NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX = f'{AUTO_REJECT_COMMENT_PREFIX} 숫자 확인 불일치'
+# claude 수정 (2026-11-13): 숫자 확인 자동 반려 머리말을 System R 머리말로 교체 — 검증 항목이 늘어나도 쓸 수 있는 일반 문구
+# System R(RS) 단계 의견 머리말(system_r.py). 반려는 '[System R 반려] <불일치 항목>', 합의는 '[System R 합의]'.
+# '[자동반려]' 로 시작하지 않으므로 변경 감지 자동 반려 판정(_is_auto_rejected·'변경 감지' 배지)과 섞이지 않는다.
+SYSTEM_R_REJECT_COMMENT_PREFIX = '[System R 반려]'
+SYSTEM_R_APPROVE_COMMENT = '[System R 합의]'
+# System R 반려 메일 제목 태그 — '[반려] [System R] <제목>'
+SYSTEM_R_SUBJECT_TAG = '[System R]'
 
 
 def _is_auto_rejected(document):
@@ -544,15 +549,14 @@ def _is_auto_rejected(document):
     ).exists()
 
 
-# claude 수정 (2026-11-12): 숫자 확인 자동 반려 판별 함수 신설 — 반려 메일 안내 문구를 변경 감지 자동 반려와 구분
-def _is_num_check_auto_rejected(document):
-    """현재(최종) 회차의 반려 단계가 숫자 확인 자동 반려(NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX)인지."""
+# claude 수정 (2026-11-13): 숫자 확인 자동 반려 판별 → System R 반려 판별로 교체 — 반려 메일 안내 문구 분기용
+def _is_system_r_rejected(document):
+    """현재(최종) 회차에서 System R(RS) 단계가 반려됐는지(시스템 판정·MASTER 수동 반려 모두)."""
     max_round = _current_round(document)
     if max_round is None:
         return False
     return ApprovalStep.objects.filter(
-        document=document, round=max_round, action='rejected',
-        comment__startswith=NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX,
+        document=document, round=max_round, agent='RS', action='rejected',
     ).exists()
 
 
@@ -1044,7 +1048,7 @@ def _route_rows(document):
     if not document.has_ppid_plel():
         route -= {'E', 'EV'}
     if document.is_r_skipped(max_round):
-        route -= {'R', 'RV'}
+        route -= set(R_ZONE_AGENTS)
 
     steps = list(
         ApprovalStep.objects.filter(document=document, round=max_round)
@@ -1065,6 +1069,10 @@ def _route_rows(document):
                 rows.append((label, '', 'na', ''))
             continue
         agent_steps = steps_by_agent.get(agent)
+        # claude 수정 (2026-11-13): R 은 있는데 RS 가 없는 회차(System R 도입 전에 R 이 생성된 문서)는 '해당없음'
+        if agent == 'RS' and not agent_steps and 'R' in steps_by_agent:
+            rows.append((label, '', 'na', ''))
+            continue
         if not agent_steps:
             # SA(합의자)는 PL 과 동시에 만들어지므로, 단계가 없다 = 아무도 지정하지 않았다
             # → '예정'이 아니라 '해당없음'이다(웹 결재현황 그리드와 같은 표기).
@@ -1253,13 +1261,13 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
             subject = f'{name_prefix}[결재 요청] {document.title}'
         headline = '후결 요청이 도착했습니다.' if agent == 'RA' else f'{label} 단계 결재가 도착했습니다.'
         stage_value = label
-    # claude 수정 (2026-11-12): 숫자 확인 자동 반려는 '마스터 DB 변경' 대신 숫자 확인 불일치 안내 문구를 쓴다
+    # claude 수정 (2026-11-13): 숫자 확인 자동 반려 문구 → System R 반려 문구(검증 항목과 무관한 일반 문구)로 교체
     elif event_type == 'rejected':
-        if _is_num_check_auto_rejected(document):
-            subject = f'[반려] {AUTO_REJECT_COMMENT_PREFIX} {document.title}'
+        if _is_system_r_rejected(document):
+            subject = f'[반려] {SYSTEM_R_SUBJECT_TAG} {document.title}'
             headline = (
-                '숫자 확인 값이 AAA4 값과 맞지 않아 의뢰서가 자동 반려되었습니다. '
-                '숫자 확인 값을 확인한 뒤 재상신해 주세요.'
+                'System R 검증에서 MAP 정보가 맞지 않아 의뢰서가 반려되었습니다. '
+                '반려 의견을 확인한 뒤 MAP 정보를 수정해 재상신해 주세요.'
             )
         elif _is_auto_rejected(document):
             subject = f'[반려] {AUTO_REJECT_COMMENT_PREFIX} {document.title}'

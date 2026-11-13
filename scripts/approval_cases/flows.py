@@ -8,6 +8,10 @@ from .client import Actor, as_list
 from . import payload as P
 
 
+# claude 수정 (2026-11-13): System R agent 코드
+SYSTEM_R_AGENT = 'RS'
+
+
 class CaseFailure(AssertionError):
     """기대와 다른 결과 — FAIL 로 보고된다."""
 
@@ -239,8 +243,21 @@ def _sa_index(ctx, sa_users, i):
     raise CaseSkip('SA 로 지정한 사용자를 PL 목록에서 찾지 못했다.')
 
 
+# claude 수정 (2026-11-13): 2구역 System R(RS) 추가 — 1시간 주기 판정을 기다릴 수 없어 MASTER 수동 합의로 통과
+def pass_system_r(ctx, doc_id):
+    """현재 회차 System R(RS)이 대기 중이면 MASTER 가 수동 합의한다(RS 가 없거나 이미 끝났으면 아무것도 안 한다).
+
+    실제 판정은 MAP 이름 동기화(1시간 주기)마다 시스템이 하므로 러너가 기다릴 수 없다 — 그래서 MASTER 수동
+    처리(사용자 결정)로 대신한다. 시스템 판정 자체는 백엔드 단위 테스트(api.tests.SystemRStageTest)가 검증한다.
+    """
+    master = ctx.actor('MASTER', 0)
+    if steps(fetch(master, doc_id), agent=SYSTEM_R_AGENT, action='pending'):
+        approve_step(master, doc_id, SYSTEM_R_AGENT, comment='케이스 러너 System R 수동 합의')
+
+
 def pass_r_stage(ctx, doc_id, reviewer=None):
-    """R 담당자 지정 → (검토자 있으면 RV 까지) 합의 → 병렬 단계 진입."""
+    """System R 합의 → R 담당자 지정 → (검토자 있으면 RV 까지) 합의 → 병렬 단계 진입."""
+    pass_system_r(ctx, doc_id)
     te_r = ctx.actor('TE_R', 0)
     assign_step(te_r, doc_id, 'R', ctx.user('TE_R', 0),
                 reviewer_loginid=reviewer['loginid'] if reviewer else None)

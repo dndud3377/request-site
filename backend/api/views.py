@@ -1317,9 +1317,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 )
             accepted_message = '철회 요청이 접수되었습니다. 관여했던 팀의 확인을 기다립니다.'
         else:
+            # claude 수정 (2026-11-13): System R(RS)은 사람이 확인할 수 없는 시스템 단계라 철회 확인 대상에서 뺀다
             pending = list(ApprovalStep.objects.filter(
                 document=document, action='pending', round=max_round
-            ))
+            ).exclude(agent='RS'))
             if not pending:
                 return Response(
                     {'error': '진행 중인 결재 단계가 없습니다.'},
@@ -1522,7 +1523,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
+        # claude 수정 (2026-11-13): System R(RS) 추가 — 담당자가 없어 _can_act_on_step 상 MASTER 만 수동 합의할 수 있다
+        if agent not in ('R', 'RV', 'RS', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 동시 합의 lost-update 방지: 문서 행을 잠가 같은 문서의 상태전이를 직렬화한다.
@@ -1572,7 +1574,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         # claude 수정 (2026-10-27): 후결자 필수 — Only MAP 은 후결자(RA)가 유일한 종단 경로라, 0명이면
         # R 합의 즉시 approved 로 후결 단계가 조용히 사라졌다(B-04). 쓰기 전에 막는다.
-        if (agent in ('R', 'RV') and document.is_only_map()
+        # claude 수정 (2026-11-13): 2구역 마지막 합의자가 System R(RS)일 수도 있어 RS 도 같은 가드를 탄다
+        if (agent in ('R', 'RV', 'RS') and document.is_only_map()
                 and not self._get_post_approver_users(document)):
             logging.getLogger(__name__).error(
                 '[B-04] Only MAP 후결자 0명 — 합의 차단 (document=%s, POST_APPROVER_LOGINID=%r)',
@@ -1673,8 +1676,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     self._create_map_delete_edit_r_stage(document, current_round)
                 new_status = 'under_review'
 
+        # claude 수정 (2026-11-13): 2구역은 R(→RV) ∥ System R(RS) — 둘 다 합의해야 병렬 단계로 전환한다
         elif agent == 'R':
-            # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 병렬 단계로 전환
+            # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 2구역 완료 시 병렬 단계로 전환
             rv_step = ApprovalStep.objects.filter(
                 document=document, agent='RV', action='pending', round=current_round
             ).first()
@@ -1682,11 +1686,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 mailer.enqueue_stage_arrival(document, 'RV', rv_step, recipient_name=rv_step.assignee_name)
                 new_status = 'under_review'
             else:
-                new_status = self._advance_to_parallel(document, step, current_round)
+                new_status = self._advance_if_r_zone_complete(document, step, current_round)
 
-        elif agent == 'RV':
-            # 검토자 합의 → 병렬 단계로 전환
-            new_status = self._advance_to_parallel(document, step, current_round)
+        elif agent in ('RV', 'RS'):
+            # 검토자·System R 합의 → 2구역(R·RV·RS)이 모두 끝났으면 병렬 단계로 전환
+            new_status = self._advance_if_r_zone_complete(document, step, current_round)
 
         elif agent in ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
             # (2026-08) J 가 P 뒤 순차 단계에서 병렬 단계로 분리되면서 P 도 마지막 합의자가 될 수
@@ -1769,7 +1773,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
+        # claude 수정 (2026-11-13): System R(RS) 추가 — 담당자가 없어 _can_act_on_step 상 MASTER 만 수동 반려할 수 있다
+        if agent not in ('R', 'RV', 'RS', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 문서 행을 잠가 합의(approve_step)와 반려가 동시에 같은 문서를 전이시키는 경쟁을 직렬화한다.
@@ -2157,9 +2162,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '중단 요청 권한이 없거나, 이미 진행 중인 중단 요청이 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         max_round = self._max_round(document)
+        # claude 수정 (2026-11-13): System R(RS)은 사람이 확인할 수 없는 시스템 단계라 중단 확인 대상에서 뺀다
         pending = list(ApprovalStep.objects.filter(
             document=document, action='pending', round=max_round
-        ))
+        ).exclude(agent='RS'))
         if not pending:
             return Response({'error': '진행 중인 결재 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2792,7 +2798,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not r_step or r_step.action != 'approved':
             return False
         rv_step = ApprovalStep.objects.filter(document=document, agent='RV', round=round_no).first()
-        return (not rv_step) or rv_step.action == 'approved'
+        if rv_step and rv_step.action != 'approved':
+            return False
+        # claude 수정 (2026-11-13): System R(RS)이 있는 회차는 RS 합의까지 끝나야 2구역 완료다.
+        # RS 가 없는 회차(MAP 삭제·System R 도입 전에 R 이 생성된 문서)는 지금까지처럼 R(+RV)만 본다.
+        rs_step = ApprovalStep.objects.filter(document=document, agent='RS', round=round_no).first()
+        return (not rs_step) or rs_step.action == 'approved'
+
+    # claude 수정 (2026-11-13): 2구역(R·RV·RS) 완료 시에만 병렬 단계로 전환 — approve_step 과 System R 판정(system_r.py)이 함께 쓴다
+    def _advance_if_r_zone_complete(self, document, step, round_no):
+        """일반·Only MAP 경로에서 2구역이 모두 합의됐으면 병렬 단계(3구역)를 열고 새 status 를 반환한다.
+
+        아직 R(+RV) 또는 System R(RS) 중 남은 쪽이 있으면 'under_review' 를 반환한다(단계 생성 없음).
+        `step` 은 방금 합의된 2구역 단계 — 3구역 기한 기준일(acted_at)로 쓴다.
+        """
+        if not self._is_r_zone_complete(document, round_no):
+            return 'under_review'
+        return self._advance_to_parallel(document, step, round_no)
 
     def _notify_after_p_review(self, document, round_no):
         """P 단계가 담당자+검토자(PV) 전원 합의로 완료된 시점에 완료 통보를 보낸다.
@@ -3047,6 +3069,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 document=document, agent='R', action='pending', round=round_no,
             )
             mailer.enqueue_stage_arrival(document, 'R', r_step)
+        # claude 수정 (2026-11-13): R 과 병렬로 System R(RS) 생성 — 담당자 없음·도착 메일 없음.
+        # MAP 이름 동기화마다 system_r.judge_pending() 이 MAP 정보를 검증해 합의/반려한다.
+        if not ApprovalStep.objects.filter(document=document, agent='RS', round=round_no).exists():
+            ApprovalStep.objects.create(
+                document=document, agent='RS', action='pending', is_parallel=True, round=round_no,
+            )
 
     def _advance_after_pl(self, document, step, comment, user=None):
         """PL 검토 단계(PL·SA) 합의 처리 공용: 본인 단계 approved 후 단계 완료 시 다음 단계 생성.

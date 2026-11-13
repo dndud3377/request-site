@@ -30,7 +30,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActiveStageStep, getStagePendingEnteredAt, isMyDocument,
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
-  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible, NUM_CHECK_MISMATCH_FILTER_OPTION, isNumCheckMismatchVisible,
+  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible, SYSTEM_R_AGENT,
 } from '../utils/approvalTable';
 import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
@@ -77,7 +77,7 @@ const MAP_PURPOSE_OPTIONS = ['NEW', MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_
 
 // 요청 목적 필터 선택지 — 실제 목적 + 가상 옵션('변경 감지'·'숫자 불일치')
 // claude 수정 (2026-11-12): 가상 옵션 '숫자 불일치' 추가 — 필터 드롭다운과 나만의 필터가 같은 목록을 쓰도록 상수로 묶음
-const PURPOSE_FILTER_OPTIONS = [...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION, NUM_CHECK_MISMATCH_FILTER_OPTION];
+const PURPOSE_FILTER_OPTIONS = [...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION];
 
 // claude 수정 (2026-11-09): '나만의 필터'가 다루는 3종의 선택지 — 필터 바 드롭다운 선택지와 같다(여기 없는 저장값은 무시)
 const PRESET_FILTER_OPTIONS: PresetFilterOptions = {
@@ -169,6 +169,8 @@ const AGENT_LABEL_KEY: Record<AgentType, `approval.agent_${AgentType}`> = {
   PL: 'approval.agent_PL', SA: 'approval.agent_SA', R: 'approval.agent_R', RV: 'approval.agent_RV',
   P: 'approval.agent_P', PV: 'approval.agent_PV', J: 'approval.agent_J', O: 'approval.agent_O',
   E: 'approval.agent_E', EV: 'approval.agent_EV', RA: 'approval.agent_RA',
+  // claude 수정 (2026-11-13): System R(RS) — MASTER 대신 처리 창의 팀 이름
+  RS: 'approval.agent_RS',
 };
 // 검토자(RV/PV/EV)는 라벨이 모두 '검토자'라 어느 팀 검토자인지 소속 팀 이름을 붙인다.
 const REVIEWER_PARENT_AGENT: Partial<Record<AgentType, AgentType>> = { RV: 'R', PV: 'P', EV: 'E' };
@@ -866,9 +868,7 @@ export default function ApprovalPage(): React.ReactElement {
       if (purposeFilter.size > 0) {
         const matchesPurpose = purposeFilter.has(detail.purpose);
         const matchesDrift = purposeFilter.has(LAYER_DRIFT_FILTER_OPTION) && isLayerDriftVisible(d);
-        // claude 수정 (2026-11-12): 목적 필터 가상 옵션 '숫자 불일치' — 숫자 확인 자동 반려 문서
-        const matchesNumCheck = purposeFilter.has(NUM_CHECK_MISMATCH_FILTER_OPTION) && isNumCheckMismatchVisible(d);
-        if (!matchesPurpose && !matchesDrift && !matchesNumCheck) return false;
+        if (!matchesPurpose && !matchesDrift) return false;
       }
       if (mapFilter.size > 0 && !mapFilter.has(getMapPurposeKey(detail))) return false;
       const submitted = getDocSubmittedDate(d).slice(0, 10);
@@ -1873,10 +1873,13 @@ export default function ApprovalPage(): React.ReactElement {
           >
             <input type="radio" name={name} checked={checked} onChange={() => onSelect(s)} disabled={processing} />
             <span style={{ fontWeight: 700, minWidth: 110 }}>{stepTeamLabel(s)}</span>
+            {/* claude 수정 (2026-11-13): System R 은 사람 팀이 없어 '담당자 미배정 (팀 전체)' 대신 '시스템 판정'으로 표시 */}
             <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              {s.assignee_name
-                ? t('approval.master_confirm_assignee', { name: s.assignee_name })
-                : t('approval.master_confirm_unassigned')}
+              {s.agent === SYSTEM_R_AGENT
+                ? t('approval.master_confirm_system_r')
+                : s.assignee_name
+                  ? t('approval.master_confirm_assignee', { name: s.assignee_name })
+                  : t('approval.master_confirm_unassigned')}
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               {s.zone_index != null && `${t('approval.zone_label', { zone: s.zone_index + 1 })} · `}
@@ -2475,16 +2478,6 @@ export default function ApprovalPage(): React.ReactElement {
                           >
                             {t('approval.layer_drift_badge')}
                           </button>
-                        )}
-                        {/* claude 수정 (2026-11-12): 숫자 확인 자동 반려 '숫자 불일치' 배지 — 누르지 않는 배지, 툴팁으로 사유 안내 */}
-                        {isNumCheckMismatchVisible(doc) && (
-                          <span
-                            className="badge badge-num-check-mismatch"
-                            style={{ alignSelf: 'flex-start' }}
-                            title={t('approval.num_check_mismatch_badge_tooltip')}
-                          >
-                            {t('approval.num_check_mismatch_badge')}
-                          </span>
                         )}
                       </div>
                     </td>

@@ -143,12 +143,12 @@
  + 반려 지점 9 (§2.4)
  + 진행 중 이벤트 9 (§2.5)
  + 권한·인가·동시성 분기 (§3.10, §3.11)
-→ 동작이 갈리는 지점으로 압축한 실행 케이스 134건 (§3)
+→ 동작이 갈리는 지점으로 압축한 실행 케이스 139건 (§3)
 ```
 
 ---
 
-## 3. 검증 케이스 134건 (러너 케이스 ID 와 1:1)
+## 3. 검증 케이스 139건 (러너 케이스 ID 와 1:1)
 
 각 케이스는 `python3 -m scripts.approval_cases.run_cases --case <ID>` 로 **개별 실행**된다.
 표의 "기대 결과"가 러너의 판정 기준이고, "근거"는 코드 대조 지점이다.
@@ -195,7 +195,12 @@
 | L-11 | 수정 후 상신 | `peer-submit/` | 본인 step approved(`[수정 후 상신]` 태그) | `views.py:1837` |
 | L-12 | 의뢰자/MASTER | `change-designee/` | 현재 회차 **첫** pending PL step assignee 교체 ⚠️ 다중 PL 스왑 미지원 | `views.py:1856` |
 
-### 3.3 그룹 R — R 단계와 병렬 전환 (16건)
+### 3.3 그룹 R — R 단계와 병렬 전환 (21건)
+
+> **(2026-11-13) 2구역 System R(RS)**: 일반·Only MAP 은 PL 합의 시 R 과 함께 RS 가 생기고, R(+RV)과 RS 가 모두 합의해야 병렬
+> 단계가 열린다. 실제 판정은 1시간 주기 동기화라 러너는 `flows.pass_system_r` 로 **R 합의 전에 MASTER 가 RS 를 수동 합의**한다
+> (그래서 `pass_r_stage`·`to_parallel` 을 쓰는 모든 케이스가 MASTER 계정 1명을 필요로 한다). 시스템 판정 자체는
+> 백엔드 `SystemRStageTest` 가 검증한다. 아래 R-04·R-07·R-14 의 'R 합의 → 병렬 생성'은 RS 합의 이후 기준이다.
 
 | ID | 전제 | 기대 결과 | 근거 |
 |---|---|---|---|
@@ -214,7 +219,12 @@
 | R-13 | 일반 경로 | J 도착 메일이 R 합의 시점, 미배정이면 TE_J 전원 | `views.py:1661` |
 | R-14 | `Only MAP` + RA 있음 | P/J/O/E 없음, RA 만, `under_review` | `views.py:1642` |
 | R-15 | `Only MAP` + RA 0명 | **R/RV 합의 400**, R step pending 유지(2026-10-27 B-04 수정). 고정 후결자가 필수 설정이라 러너는 SKIP — `OnlyMapPostApproverRequiredTest` 로 검증 | `views.py` `approve_step` |
-| R-16 | `MAP 삭제` | PL 합의 직후 **P·J·O** 병렬(R 은 아직 없음), E·RA 없음 | `views.py:2490` `_create_map_delete_edit_parallel` |
+| R-16 | `MAP 삭제` | PL 합의 직후 **P·J·O** 병렬(R 은 아직 없음), E·RA·**RS** 없음 | `views.py:2490` `_create_map_delete_edit_parallel` |
+| R-17 | 일반 + PL 합의 | R·**RS** 함께 생성, RS 는 담당자 없음 | `views.py` `_open_stage_after_pl` |
+| R-18 | R 합의, RS 대기 | 병렬 단계 미생성 → MASTER RS 합의 시 P·J·O 생성 | `views.py` `_advance_if_r_zone_complete` |
+| R-19 | TE_R 이 RS 합의·반려 | 403 (MASTER 만 수동 처리) | `views.py` `_can_act_on_step` |
+| R-20 | MASTER RS 반려 → 재상신 | rejected, 2회차에 R·RS 다시 생성(R 생략 대상 아님) | `views.py` `_should_skip_r_stage` |
+| R-21 | 2구역 중단 요청 | 확인 대상이 R 뿐(RS 제외) | `views.py` `request_pause` |
 
 ### 3.4 그룹 C — 검토중(claim) 6건
 
@@ -388,7 +398,7 @@ GET  /api/documents/{id}/            ← 결과 검증(status·approval_steps)
 
 ### 4-2. 실행
 ```bash
-python3 -m scripts.approval_cases.run_cases --list                  # 134건 목록
+python3 -m scripts.approval_cases.run_cases --list                  # 139건 목록
 python3 -m scripts.approval_cases.run_cases                         # 전체
 python3 -m scripts.approval_cases.run_cases --group F --group PE    # 그룹만
 python3 -m scripts.approval_cases.run_cases --case F-05 --case X-09 # 개별
@@ -531,7 +541,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 
 ## 9. 보고 형식
 
-### 9-1. 케이스 결과표(134행)
+### 9-1. 케이스 결과표(139행)
 러너의 `--report` 출력을 그대로 붙이고, SKIP 은 사유까지 남긴다.
 
 | ID | 판정 | 근거(실행 출력) | 비고 |

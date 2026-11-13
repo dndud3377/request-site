@@ -35,7 +35,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
 | `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB 단독) 동기화 (`nv` 는 스텝 제외). 실패 시 실패 목록을 모아 **RTDB 동기화 실패** 알림 메일 1통 발송 |
-| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 / MAP 테이블 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송. 끝에서 **'숫자 확인 값' ↔ AAA4 자동 반려 판정**(2026-11-12, `num_check_reject.reject_mismatched_in_progress()` — DCQ 세션 확보 실패로 중단되면 판정하지 않는다) |
+| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 / MAP 테이블 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송. 끝에서 **System R(RS) 판정**(2026-11-13, `system_r.judge_pending()` — 2026-11-12 '숫자 확인 값 ↔ AAA4 자동 반려'를 대체. DCQ 세션 확보 실패로 중단되면 판정하지 않는다) |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장). 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신. 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `sync_map_schedule` | 매일 02:00 | `sync_map_schedule()` | 라인-제품 예정일(DCQ `sd.tg`) 동기화 → `api_mapschedule` 전체 갱신(날짜만 저장). 결재현황 MAP 목적 `MM/DD 예정` 뱃지용. 실패·빈 결과 시 기존 데이터를 지우지 않고 **DCQ 동기화 실패** 알림 메일 발송(구분 `-` / 대상 `MAP 예정일`). `HEAVY_SYNC_JOB_IDS` 포함 → 개발 환경에서는 실행되지 않는다. 상세는 `docs/MAP_COMPLETION_MAIL.md` §10 |
@@ -175,9 +175,10 @@ response.json() → data
 `AAA1`/`AAA2`/`AAA3`/`AAA4` 는 값이 항상 있다는 보장이 없어 `MapName` 모델에서 `null=True, blank=True` 로
 저장한다(`backend/api/models.py`).
 
-`AAA4` 는 화면에 표시하지 않고 '숫자 확인 값' 자동 반려 비교에만 쓴다. `sync_form_options()` 가 끝나면
-`num_check_reject.reject_mismatched_in_progress()` 가 결재 진행 중 문서를 판정해 불일치 문서를 반려한다
-(판정 실패는 로그만 남기고 동기화 결과에는 영향 없음). 규칙은 `docs/APPROVAL.md` "숫자 확인 값 자동 반려 (2026-11-12)".
+`AAA4` 는 화면에 표시하지 않고 System R 의 '숫자 확인 값 ↔ AAA4' 검증 항목에만 쓴다. `sync_form_options()` 가 끝나면
+`system_r.judge_pending()` 이 현재 회차 System R(RS)이 대기 중인 결재 진행 중 문서를 판정해 RS 를 합의/반려한다
+(판정 실패는 로그만 남기고 동기화 결과에는 영향 없음). 규칙은 `docs/APPROVAL.md` "System R (2026-11-13)".
+(2026-11-13 이전에는 `num_check_reject.reject_mismatched_in_progress()` 가 구역 무관으로 불일치 문서를 바로 반려했다.)
 
 ### MAP 테이블 (`api_maptable`, DCQ 단독)
 
