@@ -143,6 +143,11 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 핵심: **PL → R → (P[→검토자 PV]) ∥ (J) ∥ (O, E[→검토자 EV]) ∥ (RA)**. R 합의 후 네 경로가 **병렬** 진행된다.
 
+> **(2026-11-13) 2구역 = R(→RV) ∥ System R(RS)**: 일반·Only MAP 경로는 PL 전원 합의 시 R 과 함께 시스템 검증 단계
+> **System R** 이 생기고, **R(+RV)과 RS 가 모두 합의해야** 3구역(Only MAP 은 RA)이 열린다. RS 는 MAP 이름 동기화(1시간)마다
+> MAP 정보를 검증해 합의/반려한다(MASTER 수동 처리 가능). 위 그림의 `R` 은 일반·Only MAP 에서 `[R ∥ System R]` 로 읽는다.
+> 상세는 아래 **"System R (2026-11-13)"** 절.
+
 > **(2026-08) J 단계 분리**: 예전에는 `P → J` 순차였다(P 담당자+검토자 전원 합의 시점에 J 를 생성).
 > 이제 J 는 R 합의 시점에 P·O·E·RA 와 **함께 생성되는 독립 병렬 단계**이며, 기한도
 > P(4영업일)가 아니라 **O/E 와 동일한 6영업일**이다. 이 변경으로 **P 가 마지막 합의자가 될 수
@@ -262,6 +267,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - **(2026-10-14 삭제)** 단계 진행 전에 돌던 SD-Layer 일치 검사(2026-10-07 추가)는 없어졌다.
 
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
+- ✅ **(2026-11-13) System R(RS)이 있는 회차는 R(+RV) 합의만으로 아래 단계를 만들지 않는다** — RS 도 합의돼야
+  (`_advance_if_r_zone_complete`) 병렬 단계가 생성된다. RS 가 나중에 합의하면 그 시점(스케줄러 판정 또는 MASTER 수동 합의)에 생성된다.
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), J(due: 6영업일, 병렬), O(due: 6영업일, 병렬)** 동시 생성.
   추가로 **E**(due: 6영업일, 병렬)는 `plel` 인 의뢰서에만 생성한다.
 - ✅ **(2026-08) 기타 목적 'Overlay만 변경'(구 값 'Overlay 변경') 단독이면 J 를 생성하지 않는다**(`document.skip_j_stage()`).
@@ -1588,6 +1595,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 철회 요청 취소 | `cancel-withdraw/` | - |
 | 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
 | 반려 | `reject-step/` | `agent`, `comment` · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
+| System R 수동 합의/반려 (2026-11-13) | `approve-step/` · `reject-step/` | `agent='RS'`, `comment` — **MASTER 만**(담당자가 없어 그 외 403). 아래 "System R" 절 |
 | 담당자 지정 (R) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
 | 검토중 선점 (J·O·E·P) | `claim-step/` | `agent` |
 | 검토중 취소 (J·O·E·P, 2026-08) | `unclaim-step/` | `agent` |
@@ -2495,53 +2503,112 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 - 구현: `backend/api/layer_drift.py` `auto_reject_document` / `auto_reject_if_confirmed`,
   `views.py` `cancel_withdraw`. 테스트: `LayerDriftAutoRejectTest`.
 
-## 숫자 확인 값 자동 반려 (2026-11-12)
+## System R (2026-11-13) — 2구역 MAP 정보 시스템 검증 단계
 
-STEP2 '숫자 확인 필수'가 `해당 있음`인 문서는 '숫자 확인 값'(`detail.num_check_value` = `'<N> 이상'` / `'<N> 이하'`,
-N 은 선택 당시 기준값)을 저장한다. 외부 DB 의 MAP 이름 캐시(`api_mapname`) **`AAA4`** 가 그 선택과 맞지 않으면
-시스템이 문서를 **자동 반려**한다.
+> **대체 이력**: 2026-11-12 에 도입한 '숫자 확인 값 자동 반려'(`num_check_reject.py`, 1시간마다 **구역 무관** 결재 중 문서를
+> 즉시 반려)와 결재 현황 **'숫자 불일치' 배지**는 2026-11-13 에 **삭제**하고, 같은 검증을 2구역의 결재 단계 **System R(RS)** 로
+> 옮겼다(사용자 결정). 이제 AAA4 검증 결과는 RS 단계의 합의/반려로만 남고, 3구역에 들어간 문서는 AAA4 로 반려되지 않는다.
+
+**의도(사용자)**: 2구역에 R 과 병렬로 시스템이 검증하는 결재 경로를 하나 두고, MAP 정보가 맞으면 합의·맞지 않으면 반려한다.
+검증 항목은 지금 '숫자 확인 값 ↔ AAA4' 하나이고, **MAP 정보의 다른 내용도 계속 추가할 예정**이라 반려 의견·메일 문구는
+특정 항목이 아니라 'System R 검증' 단위로 쓴다.
+
+### 경로
+
+```
+일반      : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ P/PV ∥ J ∥ O ∥ E/EV ∥ RA
+Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
+```
 
 | 항목 | 규칙 |
 |---|---|
-| 판정 시점 | `scheduler.sync_form_options()`(MAP 이름 동기화, **1시간** 주기) 직후. 불일치가 **1번 확인되면 바로** 반려(변경 감지와 달리 2주기 연속 확인 없음) |
-| 대상 문서 | `submitted` · `under_review` · `pause` 이고 `num_check='해당 있음'` + `num_check_value` 있음. **1·2·3구역 무관**, P·J·O 합의 여부도 보지 않는다 |
-| 제외 | 철회 확인 대기 중(`WithdrawRequest.state='requested'`, 결재 동결) — 철회가 취소·거부되면 다음 주기에 판정. `draft`·`approved`·`rejected` 는 대상 아님. '숫자 확인 필수' 도입 전 문서(`num_check` 키 없음)도 판정하지 않는다 |
-| AAA4 조회 | STEP1 **라인**(`detail.line` → `LINE_TO_LINEID_MAP`) + **제품**(`detail.partid_selection`). `partid` 가 제품과 같거나 `{제품}_` 로 시작하는 행 중 `id` 가 가장 작은 행(map-info API 와 같은 매칭) |
-| 비교 | `'<N> 이상'` → AAA4 **< N** 이면 반려 / `'<N> 이하'` → AAA4 **> N** 이면 반려(같으면 통과). N 은 문서 저장값(현재 `.env` 기준값 아님) |
-| 판정 불가 → 반려 안 함 | 매칭 행 없음 · AAA4 빈값/NULL · AAA4 숫자 아님 · 저장값 형식이 `'<N> 이상|이하'` 가 아님 · 라인/제품 없음 |
+| agent | `RS` (`ApprovalStep.AGENT_CHOICES` `('RS', 'System R')`, 마이그레이션 `0062_alter_approvalstep_agent` — choices 만 변경) |
+| 생성 | PL(+SA) 전원 합의로 R 을 만들 때 **함께** 만든다(`views._open_stage_after_pl`). `is_parallel=True`, **담당자 없음, 도착 메일 없음** |
+| 만들지 않는 경우 | MAP 삭제 · ADI CD 변경(R 이 2구역에 없거나 없음) · 'Overlay만 변경' 단독(R 없음) · **반려 후 재상신 R 생략 회차(Case T) — R 과 함께 생략**(사용자 결정) |
+| 구역 | `RequestDocument.PAUSE_ZONE_2_AGENTS = ('R', 'RV', 'RS')` — 일반·Only MAP 의 2구역 |
+| 2구역 완료 | **R(+RV 지정 시) 와 RS 가 모두 합의**해야 3구역(Only MAP 은 후결자)을 연다 — `views._is_r_zone_complete` / `_advance_if_r_zone_complete`. 누가 마지막이든 마지막 합의 시점이 3구역 기한 기준일이다 |
+| 판정 시점 | `scheduler.sync_form_options()`(MAP 이름 동기화, **1시간**)가 끝난 직후 `system_r.judge_pending()`. **현재 회차 RS 가 pending 인 문서만** 판정하고, 합의·반려로 결론이 난 RS 는 다시 판정하지 않는다 |
+| 판정 동결 | `under_review` 가 아니거나(`pause` 포함) 철회·중단 요청 확인 대기 중이면 건너뛴다(결재 액션 `_blocked_progress_response` 와 같은 규칙). 재개·취소 뒤 다음 주기에 판정 |
+| 사람의 처리 | **MASTER 만** 결재 화면에서 RS 를 수동 합의·반려할 수 있다(일반 `approve-step`/`reject-step`, agent=`RS`). 담당자가 없어 그 외 사용자는 403. 지정·검토중(assign/claim) 대상이 아니다 |
+| 중단·철회 확인 대상 | RS 는 **제외**(사람이 확인할 수 없음). 그래서 R 이 끝나고 RS 만 남은 문서는 확인할 단계가 없어 **중단 요청·진행 중 철회가 400**(`진행 중인 결재 단계가 없습니다`) — 아래 "알려진 한계" |
+| 재개 | 2구역에서 중단 → 재개하면 RS 도 2구역 초기화 대상이라 `pending` 으로 돌아가 다음 주기에 다시 판정한다(중단 중 MAP 정보가 바뀌었을 수 있으므로) |
 
-- 반려 단계: 현재 회차의 **가장 앞선 pending 단계 1개**(변경 감지 자동 반려와 같다). 단계 의견은
-  `[자동반려] 숫자 확인 불일치: 선택값 '13 이상', AAA4 10.5`.
-- 이후는 변경 감지 자동 반려와 같다 — 중단 요청(`requested`·`confirmed`)은 `cancelled`, `status='rejected'`,
-  반려 이력 스냅샷(반려자 `system` / `시스템(자동반려)`, `layer_drift_detected=False`), 반려 메일.
-- 반려 메일: 제목 `[반려] [자동반려] {제목}`(변경 감지와 같음), 안내 문구만 "숫자 확인 값이 AAA4 값과 맞지 않아 의뢰서가
-  자동 반려되었습니다. 숫자 확인 값을 확인한 뒤 재상신해 주세요."(`mailer.NUM_CHECK_AUTO_REJECT_COMMENT_PREFIX` 로 구분).
-  수신자 규칙은 기존 자동 반려와 같다(반려 단계 담당자도 받음).
-- **결재 현황 '숫자 불일치' 배지** (2026-11-12 후속): 숫자 확인 자동 반려 문서는 목록 '목적' 칸에 주황 **'숫자 불일치'**
-  배지를 띄운다(누르지 않는 배지 — 툴팁 "숫자 확인 값이 AAA4 값과 맞지 않아 자동 반려되었습니다. 결재 경로 탭의 반려 의견을
-  확인하세요."). 응답 필드 `num_check_auto_rejected`(목록·상세, `serializers.is_num_check_auto_rejected` — 반려 상태 +
-  최신 회차 반려 의견이 `[자동반려] 숫자 확인 불일치` 로 시작). 재상신하면 사라진다. 목적 필터에 가상 옵션 **'숫자 불일치'**
-  추가(나만의 필터에도 저장 가능). 상세 창·이력 조회에는 표시하지 않는다. 가이드 기능 키는 두지 않는다(사용자 결정).
-  - **'변경 감지' 배지와 분리**: 결재 중 '변경 감지'가 떠 있던 문서가 숫자 확인으로 반려돼도 `layer_drift_auto_rejected` 는
-    False 다(이전에는 `[자동반려]` 머리말만 보고 True 가 돼, 반려 후에도 '변경 감지' 배지가 남아 반려 원인을 변경 감지로
-    오해할 수 있었다). 변경 감지 자동 반려 문서는 기존과 같다.
-- 경합 방지: 반려 직전 문서를 잠그고(`select_for_update`) 상태·철회·판정을 다시 확인한다 — 그 사이 수정·재상신되면 반려하지 않는다.
-  문서마다 별도 트랜잭션이라 한 문서가 실패해도 나머지는 계속된다.
-- 구현: `backend/api/num_check_reject.py`, `scheduler.py` `sync_form_options`, `mailer.py` `_is_num_check_auto_rejected`.
-  배지: `serializers.py` `is_num_check_auto_rejected`, `utils/approvalTable.ts` `isNumCheckMismatchVisible`·`NUM_CHECK_MISMATCH_FILTER_OPTION`,
-  `ApprovalPage.tsx` 목적 칸. 테스트: `NumCheckAaa4AutoRejectTest`, `SyncFormOptionsNumCheckHookTest`, `approvalTable.test.ts`.
-- **수동 검증** (개발환경 — `HEAVY_SYNC_JOB_IDS` 라 dev 스케줄러에서는 `sync_form_options` 가 돌지 않으므로 판정을 직접 실행한다)
-  1. 요청서 작성 → STEP1 라인·제품 선택(J/O pp 에 `PPPP` 가 든 제품) → STEP2 MAP 목적 `NEW` → '숫자 확인 값' `13 이상` + 사진 2장 → 상신.
-  2. DB 에서 그 라인(lineid)·제품의 `api_mapname` 행 `AAA4` 를 `10` 으로 맞춘다(행이 없으면 `lineid`·`partid='{제품}_01'` 로 1행 추가).
-  3. backend 컨테이너에서 `python manage.py shell -c "from api import num_check_reject as n; print(n.reject_mismatched_in_progress())"`
-     → 기대: 출력 목록에 1번 문서 id.
-  4. 결재 현황 → 그 문서 → 상태 `반려`, '결재 경로' 탭의 PL(또는 진행 중이던 단계) 의견이
-     `[자동반려] 숫자 확인 불일치: 선택값 '13 이상', AAA4 10`. 이력 조회 → '반려' 탭에 반려자 `시스템(자동반려)`.
-  5. 메일 큐(`MailNotification`, event `rejected`) 본문에 "숫자 확인 값이 AAA4 값과 맞지 않아" — "마스터 DB 변경" 문구가 아니어야 한다.
-  6. 같은 절차로 AAA4 를 `13`·`15`, 또는 빈값·`N/A` 로 두면 3번 출력이 `[]` 이고 문서는 그대로여야 한다(실패 신호: 반려됨).
-  7. 4번 문서: 결재 현황 목록 '목적' 칸에 주황 **'숫자 불일치'** 배지, 마우스를 올리면 툴팁. 결재 중 '변경 감지'가 떠 있던 문서여도
-     **'변경 감지' 배지는 없어야** 한다(실패 신호: 빨간 '변경 감지' 배지). 목적 필터 → '숫자 불일치'만 체크 → 이 문서만 남는다.
-     '수정·재상신' 후에는 배지가 사라진다.
+### 판정 순서 (`backend/api/system_r.py`)
+
+1. **공통 전제 — 제품 이름 매칭**: STEP1 **라인**(`detail.line` → `LINE_TO_LINEID_MAP`) + **제품**(`detail.partid_selection`)으로
+   `api_mapname` 행을 찾는다(`partid` 가 제품과 같거나 `{제품}_` 로 시작하는 행 중 `id` 가 가장 작은 행 — map-info API 와 같은 매칭).
+   **행이 없으면 판정하지 않고 다음 주기를 기다린다.**
+2. **검증 항목별 준비**: 항목(`CHECKS`)이 판정에 필요한 값이 아직 없으면(`None`) 다음 주기를 기다린다.
+3. **판정**: 모든 항목이 합의/반려 중 하나로 판정되면 — 반려가 하나라도 있으면 **RS 반려**, 모두 합의면 **RS 합의**.
+
+| 검증 항목 | 합의 | 반려 | 대기(다음 주기) |
+|---|---|---|---|
+| `check_num_check_aaa4` — '숫자 확인 값' ↔ AAA4 | `num_check` 가 `해당 있음`이 아님(해당 없음·도입 전 문서) / `'<N> 이상'` 이고 AAA4 ≥ N / `'<N> 이하'` 이고 AAA4 ≤ N | 위 비교 불만족. N 은 문서 저장값(현재 `.env` 기준값 아님) | AAA4 비어 있음·NULL·숫자 아님 / 값 미선택·저장값 형식이 `'<N> 이상\|이하'` 가 아님 |
+
+- 항목 추가: `CHECKS` 에 `check(detail, entry) -> None | (True, '') | (False, '반려 사유')` 함수를 더한다(`entry` = 매칭된 `MapName` 행).
+- 단계 의견: 합의 `[System R 합의]` / 반려 `[System R 반려] 숫자 확인 값 '13 이상' ↔ AAA4 10.5`(불일치 항목이 여럿이면 ` / ` 로 잇는다).
+  처리자 표시 이름(`acted_by_name`)은 `System R`. MASTER 수동 처리는 MASTER 이름·입력 의견이 남는다.
+- 반려 경로: 문서 `rejected` → 반려 이력 스냅샷(`rejected_agent='RS'`, 반려자 `system` / `System R`) → 반려 메일.
+- 합의 경로: RS 합의 저장 → R(+RV)도 끝나 있으면 같은 트랜잭션에서 3구역 단계 생성·도착 메일(`views._advance_if_r_zone_complete` 재사용).
+- 경합 방지: 판정 직전 문서를 잠그고(`select_for_update`) 상태·동결·대기 RS 를 다시 확인한다. 문서마다 별도 트랜잭션이라 한 문서 실패가 나머지를 막지 않는다.
+- RS 반려 뒤 재상신은 Case T(R 생략) 대상이 아니다 — `rejected_agent='RS'` 는 생략 조건(P/J/O/E/추가 RA 반려)에 없어 2회차에 R·RS 를 다시 거친다.
+
+### 메일
+
+- 반려 메일(시스템 판정·MASTER 수동 반려 모두, 현재 회차 RS 가 `rejected` 이면): 제목 `[반려] [System R] {제목}`,
+  안내 문구 "System R 검증에서 MAP 정보가 맞지 않아 의뢰서가 반려되었습니다. 반려 의견을 확인한 뒤 MAP 정보를 수정해 재상신해 주세요."
+  (`mailer._is_system_r_rejected`, 상수 `SYSTEM_R_REJECT_COMMENT_PREFIX`·`SYSTEM_R_APPROVE_COMMENT`·`SYSTEM_R_SUBJECT_TAG`).
+  수신자는 일반 반려 규칙과 같다(RS 는 팀·담당자가 없어 RS 몫의 수신자는 없다).
+- 결재 경로 카드: 2구역에 `System R` 행(대기중/완료/반려 + 의견). RS 가 없는 회차는 `해당없음`
+  (R 생략 회차 · System R 도입 전에 R 이 생성된 회차 · MAP 삭제 · ADI CD 변경).
+- 머리말이 `[자동반려]` 로 시작하지 않으므로 '변경 감지' 배지·변경 감지 자동 반려 메일 분기와 섞이지 않는다
+  (`serializers.is_layer_drift_auto_rejected` 는 2026-11-12 이전처럼 `[자동반려]` 머리말만 본다).
+
+### 화면
+
+- 결재 현황 '현재 단계': 2구역(RS 가 있는 회차)은 PL 단계처럼 **1열 2줄 그리드** — 1줄 `RFG`(R, 담당자 합의 후 RV 이름) /
+  2줄 `System R`(이름 없음, 끝날 때까지 `대기중`). RS 가 없는 회차는 예전 단일 행 그대로(`utils/approvalTable.ts` `buildRStageGrid`).
+  RS 는 담당자 미지정(`unassigned`) 판정에서 뺀다. 반려 문서는 단일 행에 `System R`(이름 없음).
+- 목록 다운로드: R 완료 칸을 두 번 적지 않는다(`approvalListExport.ts`).
+- 상세 '결재 경로' 탭: 2구역 머리글 아래 `RFG` · `System R` 행. MAP 삭제·ADI CD 변경은 '해당없음' 묶음에 `System R`.
+- MASTER: 상세 하단 [합의]/[반려] → 처리할 팀 선택 창에 `System R` 이 후보로 나온다(기존 MASTER 대신 처리 흐름 그대로).
+- i18n: `approval.agent_RS`("System R" / "System R"). 가이드 기능 키는 두지 않는다(사용자 결정).
+
+### 알려진 한계 / 확인하지 못한 것
+
+- **제품 이름 행이 끝내 매칭되지 않거나 AAA4 가 채워지지 않으면 RS 가 계속 대기**하고 3구역이 열리지 않는다 — MASTER 수동 처리로 푼다.
+  라인이 `LINE_TO_LINEID_MAP` 에 없는 경우도 같다.
+- R 이 끝나고 RS 만 남은 동안에는 중단 요청·진행 중 철회를 받을 수 없다(확인할 사람 단계가 없음, 400). 반려 후 철회는 가능.
+- **개발환경 스케줄러는 `sync_form_options` 를 돌리지 않는다**(`HEAVY_SYNC_JOB_IDS`) — 개발환경에서 RS 는 저절로 판정되지 않으므로
+  아래처럼 직접 실행하거나 MASTER 로 처리한다.
+- 배포 시점에 이미 R 이 생성된 진행 중 문서에는 RS 가 없어 R(+RV)만으로 진행되고 AAA4 검증을 받지 않는다(판정은 단계 생성 시점).
+  3구역에 있던 문서도 더 이상 AAA4 로 반려되지 않는다.
+- 소스 `X.Y` 에 `AAA4` 컬럼이 실제로 있는지, `partid_selection` 형식이 `api_mapname.partid` 와 맞는지는 2026-11-12 항목과 같이 **확인하지 못했다**.
+
+### 테스트
+
+- 백엔드: `SystemRStageTest`(32 — 생성/미생성 경로, R·RS 순서별 3구역 개방, RV 포함, Only MAP, 비교 규칙, 대기→판정, 결론 후 재판정 없음,
+  다중 항목 반려 의견, 반려 경로·메일·이력, RS 반려 후 재상신, 동결, 실패 격리, MASTER 수동·비MASTER 403, 중단·철회 대상 제외, 경로 카드,
+  '변경 감지' 배지 비간섭), `SyncFormOptionsSystemRHookTest`(3). 기존 흐름 테스트는 `_approve_pending_system_r` 로 R 합의 전에 RS 를 합의시킨다.
+- 프론트: `approvalTable.test.ts` 2구역 그리드 7건, `approvalListExport.test.ts` 1건, `PagedDetailView.systemRRoute.test.tsx` 5건.
+- 러너: `R-16`(RS 없음 추가), `R-17`~`R-21` 신설. 러너는 `flows.pass_system_r` 로 R 합의 전에 MASTER 가 RS 를 수동 합의한다.
+
+### 수동 검증 (`http://localhost:10011`)
+
+1. **생성** — 요청서 작성(요청 목적 `신규`, STEP2 '숫자 확인 값' `13 이상` + 사진 2장) → 상신 → 지정 PL 로그인 → 결재 현황 → 문서 → [합의].
+   → 결재 현황 '현재 단계' 칸이 두 줄: `RFG 대기중` / `System R 대기중`. 상세 '결재 경로' 탭 2구역에 `RFG`·`System R` 행.
+   (실패 신호: `RFG` 단일 행만 보임 / 3구역이 바로 열림)
+2. **R 먼저 합의** — TE_R 로그인 → 지정하기 → [합의] → 상태 `진행중` 유지, '현재 단계' `RFG 완료` / `System R 대기중`, P·J·O 없음.
+3. **시스템 판정(합의)** — DB 에서 그 라인(lineid)·제품의 `api_mapname` 행 `AAA4` 를 `14` 로(없으면 `partid='{제품}_01'` 로 1행 추가) →
+   backend 컨테이너에서 `python manage.py shell -c "from api import system_r; print(system_r.judge_pending())"` → 출력 `{문서id: 'approved'}`.
+   → 결재 현황에서 3구역 그리드(P·J·O·RA)로 바뀌고 '결재 경로' 탭 `System R` 행이 `합의 System R "[System R 합의]"`.
+4. **시스템 판정(반려)** — 1번처럼 새 문서를 2구역까지 올리고 AAA4 를 `10` 으로 → 같은 명령 → `{문서id: 'rejected'}`.
+   → 상태 `반려`, '현재 단계' `System R`(반려), 결재 경로 탭 의견 `[System R 반려] 숫자 확인 값 '13 이상' ↔ AAA4 10`,
+   이력 조회 '반려' 탭 반려자 `System R`, 메일 큐 제목 `[반려] [System R] …`. 결재 현황 목록에 '숫자 불일치' 배지는 **없어야** 한다.
+5. **대기** — AAA4 를 비우거나 행을 지우고 같은 명령 → `{}` 이고 문서·RS 그대로(실패 신호: 반려/합의됨). 값을 채우고 다시 실행하면 판정된다.
+6. **MASTER 수동** — 2구역 문서를 MASTER 로 열기 → 하단 [합의] → 팀 선택 창에 `System R` → 선택 후 합의 → RS `합의(마스터 이름)`.
+   TE_R 계정 화면에는 System R 합의 버튼이 없어야 한다.
+7. **해당없음** — MAP 삭제·ADI CD 변경 문서의 결재 경로 탭에서 `System R` 이 '해당없음' 묶음에 있다.
 
 ## 요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동 (2026-10-05)
 
