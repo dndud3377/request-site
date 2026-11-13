@@ -2560,7 +2560,7 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 | 만들지 않는 경우 | MAP 삭제 · ADI CD 변경(R 이 2구역에 없거나 없음) · 'Overlay만 변경' 단독(R 없음) · **반려 후 재상신 R 생략 회차(Case T) — R 과 함께 생략**(사용자 결정) |
 | 구역 | `RequestDocument.PAUSE_ZONE_2_AGENTS = ('R', 'RV', 'RS')` — 일반·Only MAP 의 2구역 |
 | 2구역 완료 | **R(+RV 지정 시) 와 RS 가 모두 합의**해야 3구역(Only MAP 은 후결자)을 연다 — `views._is_r_zone_complete` / `_advance_if_r_zone_complete`. 누가 마지막이든 마지막 합의 시점이 3구역 기한 기준일이다 |
-| 판정 시점 | `scheduler.sync_form_options()`(MAP 이름 동기화, **1시간**)가 끝난 직후 `system_r.judge_pending()`. **현재 회차 RS 가 pending 인 문서만** 판정하고, 합의·반려로 결론이 난 RS 는 다시 판정하지 않는다 |
+| 판정 시점 | `scheduler.sync_form_options()`(MAP 이름 동기화, **1시간**)가 끝난 직후 `system_r.judge_pending()`. **현재 회차 RS 가 pending 인 문서만** 판정하고, 합의·반려로 결론이 난 RS 는 다시 판정하지 않는다. **보류(2026-11-13)는 결론이 아니라** RS 가 pending 으로 남아 매 주기 다시 판정한다 |
 | 판정 동결 | `under_review` 가 아니거나(`pause` 포함) 철회·중단 요청 확인 대기 중이면 건너뛴다(결재 액션 `_blocked_progress_response` 와 같은 규칙). 재개·취소 뒤 다음 주기에 판정 |
 | 사람의 처리 | **MASTER 만** 결재 화면에서 RS 를 수동 합의·반려할 수 있다(일반 `approve-step`/`reject-step`, agent=`RS`). 담당자가 없어 그 외 사용자는 403. 지정·검토중(assign/claim) 대상이 아니다 |
 | 중단·철회 확인 대상 | RS 는 **제외**(사람이 확인할 수 없음). 그래서 R 이 끝나고 RS 만 남은 문서는 확인할 단계가 없어 **중단 요청·진행 중 철회가 400**(`진행 중인 결재 단계가 없습니다`) — 아래 "알려진 한계" |
@@ -2571,17 +2571,39 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 1. **공통 전제 — 제품 이름 매칭**: STEP1 **라인**(`detail.line` → `LINE_TO_LINEID_MAP`) + **제품**(`detail.partid_selection`)으로
    `api_mapname` 행을 찾는다(`partid` 가 제품과 같거나 `{제품}_` 로 시작하는 행 중 `id` 가 가장 작은 행 — map-info API 와 같은 매칭).
    **행이 없으면 판정하지 않고 다음 주기를 기다린다.**
-2. **검증 항목별 준비**: 항목(`CHECKS`)이 판정에 필요한 값이 아직 없으면(`None`) 다음 주기를 기다린다.
-3. **판정**: 모든 항목이 합의/반려 중 하나로 판정되면 — 반려가 하나라도 있으면 **RS 반려**, 모두 합의면 **RS 합의**.
+2. **검증 항목별 판정**: 각 항목(`CHECKS`)이 합의 / 반려 / **보류(2026-11-13)** / 대기(`None`, 판정에 필요한 값이 아직 없음) 중 하나를 낸다.
+3. **종합(2026-11-13 변경)**: **반려 > 보류 > 대기 > 합의**.
+   - 반려 항목이 하나라도 있으면 **RS 반려**(다른 항목이 보류·대기여도 결론이 반려로 정해진다). 의견에는 반려 항목만 싣는다.
+   - 반려 없이 보류 항목이 있으면 **RS 보류** — 아래 "보류".
+   - 반려·보류 없이 대기 항목이 있으면 다음 주기를 기다린다.
+   - 모두 합의면 **RS 합의**.
+   - (2026-11-13 이전에는 대기 항목이 하나라도 있으면 반려 항목이 있어도 기다렸다. 실제 항목 중 반려·대기를 내는 것은
+     AAA4 하나뿐이라 운영 동작은 같고, 테스트 `test_reject_wins_over_waiting_check` 가 새 순서를 고정한다.)
 
-| 검증 항목 | 합의 | 반려 | 대기(다음 주기) |
-|---|---|---|---|
-| `check_num_check_aaa4` — '숫자 확인 값' ↔ AAA4 | `num_check` 가 `해당 있음`이 아님(해당 없음·도입 전 문서) / `'<N> 이상'` 이고 AAA4 ≥ N / `'<N> 이하'` 이고 AAA4 ≤ N | 위 비교 불만족. N 은 문서 저장값(현재 `.env` 기준값 아님) | AAA4 비어 있음·NULL·숫자 아님 / 값 미선택·저장값 형식이 `'<N> 이상\|이하'` 가 아님 |
+| 검증 항목 | 합의 | 반려 | 보류(R 확인 요청) | 대기(다음 주기) |
+|---|---|---|---|---|
+| `check_num_check_aaa4` — '숫자 확인 값' ↔ AAA4 | `num_check` 가 `해당 있음`이 아님(해당 없음·도입 전 문서) / `'<N> 이상'` 이고 AAA4 ≥ N / `'<N> 이하'` 이고 AAA4 ≤ N | 위 비교 불만족. N 은 문서 저장값(현재 `.env` 기준값 아님) | — | AAA4 비어 있음·NULL·숫자 아님 / 값 미선택·저장값 형식이 `'<N> 이상\|이하'` 가 아님 |
+| `check_map_options_aaa5` — Map Option ↔ AAA5 (2026-11-13) | 문서에서 적용된 Map Option 번호 집합 = AAA5 번호 집합(**완전 일치**) | — | 위가 다름(문서가 더 많아도·더 적어도). **AAA5 가 비어 있으면 옵션 없음**(빈 집합) — 문서에 옵션이 있으면 보류 | 없음(항상 판정) |
+| `check_clone_aaa6` — MAP 목적 CLONE ↔ AAA6 (2026-11-13) | MAP 목적(`map_type`)이 `CLONE` 이 아님 / `CLONE` 이고 AAA6 에 값이 있음 | — | `CLONE` 인데 AAA6 이 비어 있음(NULL·공백·`nan`) | 없음(항상 판정) |
 
-- 항목 추가: `CHECKS` 에 `check(detail, entry) -> None | (True, '') | (False, '반려 사유')` 함수를 더한다(`entry` = 매칭된 `MapName` 행).
+- **AAA5 ↔ Map Option 비교 규칙** (`system_r.MAP_OPTION_FIELDS`):
+  - AAA5 형식 `1|2|3|4` — `|` 로 나누고 공백·빈 칸은 버린다. 앞자리 0 은 무시(`04` = `4`). 순서는 상관없다.
+  - 문서 번호: 1 `photo_backside` · 2 `eds_backside` · **3 `inter`=`YES`** · 4 `tsv` · 5 `rf` · 6 `fullchip` · 7 `split` · 8 `st` ·
+    9 `ecc` · 10 `labelsideshot` · 11 `hpkglabelheight`(3번 외에는 값이 `적용`일 때). 필드가 없는 구 문서는 미적용으로 본다.
+  - **CLONE·EXISTING 은 4번만 비교한다(사용자 결정 2026-11-13)** — 화면에서 4번(TSV) 외 옵션과 3번 드롭다운이 잠겨
+    (`MAP_OPTIONS_EDITABLE_WHEN_REGISTERED`) 사용자가 맞출 방법이 없기 때문이다. 백엔드 `MAP_OPTIONS_EDITABLE_WHEN_REGISTERED = ('4',)` 는
+    프론트 `RequestPage/constants.ts` 의 `['tsv']` 와 같아야 한다.
+- 항목 추가: `CHECKS` 에 `check(detail, entry) -> None | (True, '') | (False, '반려 사유') | (CHECK_HOLD, '보류 사유')` 함수를 더한다(`entry` = 매칭된 `MapName` 행).
 - 단계 의견: 합의 `[System R 합의]` / 반려 `[System R 반려] 숫자 확인 값 '13 이상' ↔ AAA4 10.5`(불일치 항목이 여럿이면 ` / ` 로 잇는다).
   처리자 표시 이름(`acted_by_name`)은 `System R`. MASTER 수동 처리는 MASTER 이름·입력 의견이 남는다.
 - 반려 경로: 문서 `rejected` → 반려 이력 스냅샷(`rejected_agent='RS'`, 반려자 `system` / `System R`) → 반려 메일.
+- **보류 경로(2026-11-13)**: RS 는 `pending` 그대로(문서 상태·3구역 변화 없음), 단계 의견만
+  `[System R 보류] <불일치 항목 / …>` 로 바꾼다(예: `[System R 보류] Map Option 요청서 1|2|3|4|5 ↔ AAA5 1|2|3|4`,
+  CLONE·EXISTING 은 끝에 `(CLONE: 4번만 비교)`). 결재 경로 탭·메일 결재 경로 카드의 `System R` 행에 이 의견이 보인다.
+  - **R 확인 요청 메일은 RS 단계당 1번만**(사용자 결정) — 같은 RS 에 `system_r_hold` 메일이 이미 적재돼 있으면 사유가 바뀌어도
+    의견만 갱신한다. 재상신으로 새 회차 RS 가 생기면 다시 1번 보낸다. 수신자·문구는 `docs/MAIL.md` "System R 보류 확인 요청 메일".
+  - 다음 주기에 다시 판정해 일치하면 합의(보류 의견은 `[System R 합의]` 로 바뀜), 반려 항목이 생기면 반려.
+  - 보류가 풀렸는데 다른 항목이 대기면 지난 보류 의견을 지우고 대기한다(메일은 다시 보내지 않는다).
 - 합의 경로: RS 합의 저장 → R(+RV)도 끝나 있으면 같은 트랜잭션에서 3구역 단계 생성·도착 메일(`views._advance_if_r_zone_complete` 재사용).
 - 경합 방지: 판정 직전 문서를 잠그고(`select_for_update`) 상태·동결·대기 RS 를 다시 확인한다. 문서마다 별도 트랜잭션이라 한 문서 실패가 나머지를 막지 않는다.
 - RS 반려 뒤 재상신은 Case T(R 생략) 대상이 아니다 — `rejected_agent='RS'` 는 생략 조건(P/J/O/E/추가 RA 반려)에 없어 2회차에 R·RS 를 다시 거친다.
@@ -2611,6 +2633,8 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 ### 알려진 한계 / 확인하지 못한 것
 
 - **제품 이름 행이 끝내 매칭되지 않거나 AAA4 가 채워지지 않으면 RS 가 계속 대기**하고 3구역이 열리지 않는다 — MASTER 수동 처리로 푼다.
+- **보류(AAA5·AAA6 불일치)는 MAP 데이터가 바뀌거나 MASTER 가 수동 처리하기 전까지 계속된다** — 문서를 고치려면 반려 뒤 재상신해야 한다.
+  RS 를 처리할 수 있는 사람은 지금도 MASTER 뿐이다(R 담당자는 메일을 받아도 RS 를 직접 합의할 수 없다).
   라인이 `LINE_TO_LINEID_MAP` 에 없는 경우도 같다.
 - R 이 끝나고 RS 만 남은 동안에는 중단 요청·진행 중 철회를 받을 수 없다(확인할 사람 단계가 없음, 400). 반려 후 철회는 가능.
   **현행 유지(사용자 결정 2026-11-13)** — 테스트 `test_pause_request_rejected_when_only_rs_is_pending` 이 이 동작을 고정한다.
