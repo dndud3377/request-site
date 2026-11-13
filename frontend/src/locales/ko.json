@@ -986,6 +986,7 @@
     "master_confirm_reviewer_of": "{{team}} 검토자",
     "master_confirm_assignee": "담당자: {{name}}",
     "master_confirm_unassigned": "담당자 미배정 (팀 전체)",
+    "master_confirm_system_r": "시스템 판정",
     "master_confirm_round": "{{round}}회차",
     "master_confirm_submit": "선택한 팀 대신 확인",
     "master_confirm_empty": "대신 확인할 수 있는 팀이 없습니다.",
