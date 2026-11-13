@@ -1976,6 +1976,16 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
     `components/PagedDetailView.exportAllCapture.test.tsx`(결재 경로 탭 캡처 후 원래 탭 복귀 1건). 변경 전 코드에서는 이 중 8건이 실패함을 확인했다.
   - **수동 확인**: 결재 현황 → 의뢰서 행 클릭 → 모달 우측 상단 `📊 전체 export` → 마지막 시트 `결재 경로` 에 결재 경로 탭 화면(전 회차)이,
     `JOB` 다음 `agent E` 시트에 Validation System 값이 보이면 정상. 숫자 확인 '해당 있음' 문서는 `MAP 정보 (텍스트)` 에 두 행이 보여야 한다.
+- **(2026-11-13 후속) 전체 export 버튼 — 오류·진행 중 처리(규칙 J) + 일부 캡처 실패 경고**: 결재 현황·이력 두 화면에 똑같이 인라인으로 있던
+  버튼을 공용 `components/ExportAllButton.tsx` 로 바꿨다(props: `doc`, `pagedDetailViewRef`, 결재 현황만 `colorFilters`).
+  - **진행 중**: 클릭하면 끝날 때까지 버튼을 비활성화하고 라벨을 `📊 생성 중…`(`request.export_all_generating`)으로 바꾼다. 같은 틱 안의 연타는 `useRef` 로도 막아 한 번만 실행한다.
+  - **오류**: 캡처·엑셀 생성 중 예외가 나면 오류 토스트 `request.export_all_error` 를 띄우고 버튼을 다시 켠다(파일은 받아지지 않는다).
+  - **일부 캡처 실패**: 캡처 4장(의뢰 상세·MAP 정보·기타·결재 경로) 중 하나라도 `null` 이면 파일은 그대로 받고 경고 토스트
+    `request.export_capture_partial_failed` 를 띄운다(실패한 시트에는 종전대로 `request.export_capture_failed` 문구). 상세 보기 핸들이 없으면 전부 실패로 본다.
+  - **범위 밖(그대로)**: 탭 안 개별 export 버튼 7개(JOB/OVL/XXXXXX/BB/의뢰 상세/MAP 정보/기타)는 아직 오류·진행 중 처리가 없다.
+    `captureAllScreenshots` 에 예외 시 탭·전체화면 복구(try/finally)는 넣지 않았다(`captureNode` 가 오류를 자체 처리해 예외가 나기 어렵다).
+  - **i18n 신규 키(ko/en 동시)**: `request.export_all_generating`, `request.export_all_error`, `request.export_capture_partial_failed`.
+  - **테스트**: `components/ExportAllButton.test.tsx` 5건(정상·일부 캡처 실패 경고·핸들 없음·exportAll 실패 오류 토스트·생성 중 비활성/1회 실행).
 
 ---
 
