@@ -170,10 +170,15 @@ response.json() → data
 
 | 대상 테이블 | DCQ 소스 | 조회 컬럼 |
 |-------------|----------|-----------|
-| `api_mapname` | `X.Y` | `lineid`, `partid`, `AAA1`, `AAA2`, `AAA3`, `AAA4` (2026-09 추가 — `AAA1`~`AAA3` 는 실제 배포 전 이름이 확정되면 쿼리·모델 필드명을 함께 변경할 예정인 임시 컬럼명. `AAA4` 는 2026-11-12 추가 — 마이그레이션 `0061_mapname_aaa4`) |
+| `api_mapname` | `X.Y` | `lineid`, `partid`, `AAA1`, `AAA2`, `AAA3`, `AAA4`, `AAA5`, `AAA6` (2026-09 추가 — `AAA1`~`AAA3` 는 실제 배포 전 이름이 확정되면 쿼리·모델 필드명을 함께 변경할 예정인 임시 컬럼명. `AAA4` 는 2026-11-12 추가 — 마이그레이션 `0061_mapname_aaa4`. `AAA5`·`AAA6` 은 2026-11-13 추가 — 마이그레이션 `0063_mapname_aaa5_aaa6_system_r_hold`, 역시 실제 이름이 확정되면 바꿀 임시 컬럼명) |
 
-`AAA1`/`AAA2`/`AAA3`/`AAA4` 는 값이 항상 있다는 보장이 없어 `MapName` 모델에서 `null=True, blank=True` 로
-저장한다(`backend/api/models.py`).
+`AAA1`~`AAA6` 은 값이 항상 있다는 보장이 없어 `MapName` 모델에서 `null=True, blank=True` 로
+저장한다(`backend/api/models.py`). 쿼리 조건은 `lineid`·`partid` 에만 걸고 AAA 컬럼에는 걸지 않으므로,
+**AAA5·AAA6 이 비어 있는 행도 그대로 불러와 NULL 로 저장**한다(AAA5 가 비어 있는 것은 'Map Option 없음'이라는 뜻이다).
+
+`AAA5`(Map Option 번호 `1|2|3|4`)·`AAA6`(CLONE 검증값)도 화면에 표시하지 않고 System R 검증 항목에만 쓴다 —
+AAA5 ↔ 문서 Map Option, AAA6 ↔ MAP 목적 CLONE. 불일치는 반려가 아니라 **보류**(RS 대기 + R 담당자·검토자 확인 요청 메일)다.
+규칙은 `docs/APPROVAL.md` "System R".
 
 `AAA4` 는 화면에 표시하지 않고 System R 의 '숫자 확인 값 ↔ AAA4' 검증 항목에만 쓴다. `sync_form_options()` 가 끝나면
 `system_r.judge_pending()` 이 현재 회차 System R(RS)이 대기 중인 결재 진행 중 문서를 판정해 RS 를 합의/반려한다

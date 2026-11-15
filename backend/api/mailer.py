@@ -277,6 +277,8 @@ EVENT_STATUS_LABEL = {
     'post_approver_removed': '후결자 제외',
     'route_member_removed': '결재선 제외',
     'notify_rjo_completed': 'R/J/O 완료 통보',
+    # claude 수정 (2026-11-13): System R 보류 확인 요청
+    'system_r_hold': 'System R 보류',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -327,6 +329,8 @@ EVENT_THEME['withdraw_rejected'] = EVENT_THEME['notify_submitted']
 EVENT_THEME['withdraw_cancelled'] = EVENT_THEME['notify_submitted']
 # 중단 요청/확정: 결재가 멈춘다는 경고라 반려와 같은 레드 테마
 EVENT_THEME['pause_requested'] = EVENT_THEME['rejected']
+# claude 수정 (2026-11-13): System R 보류 확인 요청 — 결재가 멈춰 있다는 주의 알림이라 레드 테마
+EVENT_THEME['system_r_hold'] = EVENT_THEME['rejected']
 EVENT_THEME['pause_confirmed'] = EVENT_THEME['rejected']
 # 중단 거부: 결재가 그대로 이어진다는 정보성 통보라 통보 계열(퍼플) 테마
 EVENT_THEME['pause_rejected'] = EVENT_THEME['notify_submitted']
@@ -536,6 +540,9 @@ SYSTEM_R_REJECT_COMMENT_PREFIX = '[System R 반려]'
 SYSTEM_R_APPROVE_COMMENT = '[System R 합의]'
 # System R 반려 메일 제목 태그 — '[반려] [System R] <제목>'
 SYSTEM_R_SUBJECT_TAG = '[System R]'
+# claude 수정 (2026-11-13): System R 보류(AAA5·AAA6 불일치) — RS 대기 중 단계 의견 머리말·확인 요청 메일 이벤트
+SYSTEM_R_HOLD_COMMENT_PREFIX = '[System R 보류]'
+SYSTEM_R_HOLD_EVENT = 'system_r_hold'
 
 
 def _is_auto_rejected(document):
@@ -1347,6 +1354,14 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'{name_prefix}[후결자 제외] {document.title}'
         headline = '후결자 지정에서 제외되었습니다. 더 이상 이 의뢰서의 결재 대상이 아닙니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
+    # claude 수정 (2026-11-13): System R 보류 확인 요청 메일(R 담당자·검토자)
+    elif event_type == SYSTEM_R_HOLD_EVENT:
+        subject = f'[System R 확인 필요] {document.title}'
+        headline = (
+            'System R 검증에서 의뢰서의 MAP 정보가 MAP 데이터와 맞지 않아 System R 합의가 보류되었습니다. '
+            '특이사항의 불일치 항목을 확인해 주세요. 값이 일치하면 System R 이 자동으로 합의합니다.'
+        )
+        stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'route_member_removed':
         label = ROUTE_MEMBER_LABEL.get(agent, agent)
         subject = f'{name_prefix}[결재선 제외] {document.title}'
@@ -1434,6 +1449,31 @@ def enqueue_stage_arrival(document, agent, step=None, recipient_name=None):
         document, 'stage_arrival', recipients,
         agent=agent, recipient_name=recipient_name, is_fixed_post_approver=is_fixed,
     )
+
+
+# claude 수정 (2026-11-13): System R 보류 확인 요청 수신자·적재 함수 신설
+def resolve_system_r_hold_recipients(document):
+    """System R 보류 알림 수신자 — 현재 회차 R 담당자 + RV 검토자.
+
+    R 담당자가 아직 배정되지 않았으면 R 팀(TE_R) 전원. RV 는 지정됐을 때만 포함한다.
+    """
+    max_round = _current_round(document)
+    if max_round is None:
+        return []
+    steps = list(
+        ApprovalStep.objects.filter(document=document, round=max_round, agent__in=('R', 'RV'))
+        .select_related('assignee')
+    )
+    r_emails = [s.assignee.mail for s in steps if s.agent == 'R' and s.assignee and s.assignee.mail]
+    rv_emails = [s.assignee.mail for s in steps if s.agent == 'RV' and s.assignee and s.assignee.mail]
+    recipients = (r_emails or _team_emails('R')) + rv_emails
+    return _apply_redirect(recipients, document)
+
+
+def enqueue_system_r_hold(document, reason):
+    """System R 보류 확인 요청 적재 — 불일치 항목(reason)은 '특이사항' 칸에 싣는다."""
+    recipients = resolve_system_r_hold_recipients(document)
+    return _enqueue(document, SYSTEM_R_HOLD_EVENT, recipients, note_override=reason)
 
 
 def enqueue_rejected(document):
