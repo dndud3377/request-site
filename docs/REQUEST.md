@@ -322,6 +322,41 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-11-16 — J/O-ayer '자동 미진행' 키워드: SD·PP 키워드 행을 ST X·미진행으로 자동 변경·잠금 + 전부 그런 표는 J/O 결재 건너뜀)
+
+- **의도(사용자)**: 작성자가 검토할 필요 없는 행(특정 SD·PP 문구가 든 행)을 X·미진행으로 바꾸지 않고 상신하는 일이 잦다.
+  또 J(또는 O) 표가 전부 그런 행이면 그 팀의 결재를 진행할 이유가 없다.
+- **설정(.env, 쉼표 구분, 비우면 기능 꺼짐 — backend 재시작 필요)**: `JAYER_AUTO_NP_SD_KEYWORDS`·`JAYER_AUTO_NP_PP_KEYWORDS`
+  (Jayer 표) / `OAYER_AUTO_NP_SD_KEYWORDS`·`OAYER_AUTO_NP_PP_KEYWORDS`(Oayer 표). `settings/base.py` `LAYER_NP_KEYWORDS` 로 읽고,
+  화면은 신규 API **`GET /api/form-options/layer-np-keywords/`** → `{jayer: {sd, pp}, oayer: {sd, pp}}` 로 받는다.
+  `.env.example`·`.env.dev.example` 에 항목을 추가했다(`.env`·`.env.dev` 는 직접 값을 넣어야 한다).
+- **판정**: SD 또는 PP 가 그 표의 키워드 중 하나를 **포함**(대소문자 무관·부분 일치) — `helpers.ts` `matchesNpKeyword`
+  (백엔드 `RequestDocument.matches_np_keyword` 와 같은 규칙). SP 는 보지 않는다. **표마다 자기 키워드만** 적용하고 반대편 표로
+  전파하지 않는다(사용자 결정).
+- **자동 변경(`index.tsx` `applyNpKeyword`)**: STEP3(J)·STEP4(O)에서 '다음'을 누를 때, 그리고 '상신'을 누를 때(STEP5 에서 시작한
+  임시저장 문서 대비) 키워드 행 중 아직 X·미진행이 아닌 행을 **ST 'X' + 요청 기준 '미진행'**으로 바꾼다. ST X 로 바꿀 때와 같이
+  제품 이름·STEP(J 는 ID 도)을 비우고 J 는 bb 매핑을 푼다. 바꾼 행이 있으면 경고 토스트(`request.toast_np_keyword_applied`)를
+  띄우고 그 단계에 머문다(상신이면 그 표의 단계로 이동) — 2026-11-12 '차용' 자동 변경과 같은 방식이며, 그보다 **먼저** 확인한다.
+- **잠금**: 키워드 행이면서 이미 X·미진행인 행(`isNpLocked`)은 ST·요청 기준을 바꿀 수 없다 — 칸 비활성 + 이유 툴팁
+  (`request.np_keyword_locked_title`), 직접 입력 시 토스트(`request.np_keyword_locked`), 붙여넣기·Delete(`isJayer/OayerCellLocked`),
+  ST·요청 기준 일괄 버튼(`isBulkTarget`)에서 건너뛴다. 반대편 표 전파는 원래 '미진행' 행을 대상·근거에서 빼므로(`soleStSyncRowByLayerid`·
+  `soleParticipantByLayerid`) 따로 막지 않았다. 필터 적용은 이미 X 인 행을 건너뛴다.
+- **예외**: **MASTER**(사용자 결정 — 'MASTER 가 누를 때만 예외')와 가이드 투어 미리보기는 자동 변경·잠금 대상이 아니다. MASTER 가 바꿔 둔
+  값은 다른 사람이 '다음'·'상신'을 누르면 다시 X·미진행으로 바뀐다. '이력 바로 등록'은 MASTER 전용이라 영향이 없다.
+- **서버**: 상신·재상신·의뢰자 재상신·이력 바로 등록에서 키워드 행이 X·미진행이 아니면 400(`_validate_np_keyword_rows`, MASTER 호출은 통과).
+  키워드 조회가 실패해 화면이 자동 변경을 못 했을 때도 이 검증이 막는다.
+- **J/O 결재 건너뛰기**: 표가 전부 키워드 X·미진행 행이거나 0행이면, 3구역을 열 때 **마스터 DB 와 다시 대조**한 뒤 J(또는 O) 단계를
+  만들지 않는다. 규칙 전체는 `docs/APPROVAL.md` **"Case V"**.
+- **조회 실패를 0건과 구분(같은 작업 — 사용자 결정)**: `form-options/job-file-layer/`·`ovl-layer/` 가 조회 예외 시 200 `{'options': []}`
+  대신 **502** `{'options': [], 'error': ...}` 를 돌려준다(예외 원문은 계속 싣지 않는다). 화면은 기존 `catch` 로
+  `request.toast_job/ovl_auto_fill_error` 토스트를 띄우고 **표를 그대로 둔다**(예전엔 '데이터 없음' 경고 + 표 비움 → 0행 상신 위험).
+  조회 성공 0건은 종전대로 200 빈 목록.
+- **i18n(ko/en 동시 3개)**: `request.toast_np_keyword_applied`, `request.np_keyword_locked_title`, `request.np_keyword_locked`.
+- **가이드 기능 키**: 새 입력 항목이 없어 추가하지 않았다(규칙 L 대상 아님).
+- **테스트**: `RequestPage/npKeywordAutoApply.test.tsx`(4), `components/PagedDetailView.jSkipRoute.test.tsx`(2),
+  `backend/api/tests.py` `LayerNpKeywordModelTest`·`LayerNpSkipIntegrationTest`·`LayerNpKeywordsApiTest`,
+  `FormOptionsAuthTest.test_jo_layer_lookup_failure_is_502_without_exception_detail`·`test_jo_layer_no_data_is_still_200_empty`.
+
 ### 기능 변경 (2026-11-13 — '숫자 확인 값 ↔ AAA4 자동 반려'를 2구역 결재 단계 System R 로 대체, '숫자 불일치' 배지 삭제)
 
 - **의도(사용자)**: 2구역에 R 과 병렬로 시스템이 MAP 정보를 검증하는 결재 경로(System R)를 두고, 맞으면 합의·안 맞으면 반려한다.
