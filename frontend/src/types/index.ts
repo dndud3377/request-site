@@ -1026,6 +1026,19 @@ export interface NumCheckConfig {
   lower_threshold: number;
 }
 
+// claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 응답 타입 추가(.env JAYER_/OAYER_AUTO_NP_SD/PP_KEYWORDS)
+/** 한 표의 '자동 미진행' 키워드 — SD 또는 PP 가 이 문구를 포함하면(대소문자 무관·부분 일치) ST X + 요청 기준 미진행 */
+export interface NpKeywordSet {
+  sd: string[];
+  pp: string[];
+}
+
+/** /api/form-options/layer-np-keywords/ 응답 — 표마다 따로 적용한다(Jayer 키워드는 Oayer 에 적용하지 않는다) */
+export interface LayerNpKeywords {
+  jayer: NpKeywordSet;
+  oayer: NpKeywordSet;
+}
+
 export interface MapInfo {
   AAA1: string | null;
   AAA2: string | null;
