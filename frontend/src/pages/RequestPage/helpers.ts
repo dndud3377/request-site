@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ExtraLayerSnapshotRow, ExtraLayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
+import { FlowChartRow, LayerStepOption, JayerRow, OayerRow, ExtraLayerSnapshotRow, ExtraLayerRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet, NpKeywordSet } from '../../types';
 import {
   VALIDATION_KEYWORD, NUM_CHECK_PP_KEYWORD, NUM_CHECK_OVER, NUM_CHECK_UNDER, MAP_TYPE_NEW, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -364,6 +364,25 @@ export const findAutoBorrowRowIds = (
     })
     .map((r) => r.id);
 };
+
+// claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 판정 — 백엔드 RequestDocument.matches_np_keyword·is_np_row 와 같은 규칙
+/** SD 또는 PP 가 그 표의 '자동 미진행' 키워드 중 하나를 포함하는가(대소문자 무관·부분 일치). 키워드가 없으면 false. */
+export const matchesNpKeyword = (row: { sd: string; pp: string }, words: NpKeywordSet): boolean => {
+  const sd = (row.sd ?? '').toLowerCase();
+  const pp = (row.pp ?? '').toLowerCase();
+  return words.sd.some((w) => !!w && sd.includes(w.toLowerCase()))
+    || words.pp.some((w) => !!w && pp.includes(w.toLowerCase()));
+};
+
+/** 행이 이미 ST 'X' + 요청 기준 '미진행' 인가 */
+export const isNpRow = (row: { st: string; new_or_copy: string }): boolean =>
+  (row.st ?? '').trim() === ST_X && (row.new_or_copy ?? '').trim() === NOC_NOT_PROCEEDING;
+
+/** 키워드에 걸리는데 아직 ST X + 미진행 이 아닌 행 id — '다음'·'상신' 때 자동으로 바꿀 대상 */
+export const findNpKeywordRowIds = (
+  rows: { id: string; sd: string; pp: string; st: string; new_or_copy: string }[],
+  words: NpKeywordSet,
+): string[] => rows.filter((r) => matchesNpKeyword(r, words) && !isNpRow(r)).map((r) => r.id);
 
 // claude 수정 (2026-10-22): pp 에 ID 선택 입력 문구가 든 행은 ID 바코드가 없을 수도 있어 item_id 필수에서 제외.
 /** pp 에 ID 선택 입력 문구(ITEM_ID_OPTIONAL_PP_KEYWORDS)가 포함되는가 — 대소문자 무관·부분 일치 */
