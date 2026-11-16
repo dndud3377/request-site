@@ -452,6 +452,76 @@ class RequestDocument(models.Model):
         steps = self.approval_steps.filter(round=round)
         return steps.filter(agent='P').exists() and not steps.filter(agent='O').exists()
 
+    # claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드(.env)와 그 결과로 J/O 결재를 건너뛰는 판정 추가
+    # 표 키 — 'J' = Jayer(JOB), 'O' = Oayer(OVL). 키워드 목록은 settings.LAYER_NP_KEYWORDS[표].
+    LAYER_ROWS_KEYS = {'J': 'jayerRows', 'O': 'oayerRows'}
+    # 키워드 행에 강제하는 값 — 프론트 `RequestPage/constants.ts` ST_X / NOC_NOT_PROCEEDING 과 같아야 한다.
+    NP_ST = 'X'
+    NP_NEW_OR_COPY = '미진행'
+
+    @staticmethod
+    def matches_np_keyword(table, sd, pp):
+        """SD 또는 PP 가 그 표의 '자동 미진행' 키워드 중 하나를 포함하는가(대소문자 무관·부분 일치).
+
+        키워드가 비어 있으면(기능 꺼짐) 항상 False. 프론트 `helpers.ts` matchesNpKeyword 와 같은 규칙이다.
+        """
+        words = (getattr(settings, 'LAYER_NP_KEYWORDS', {}) or {}).get(table) or {}
+        sd_l = str(sd or '').lower()
+        pp_l = str(pp or '').lower()
+        return (any(w.lower() in sd_l for w in words.get('sd') or [] if w)
+                or any(w.lower() in pp_l for w in words.get('pp') or [] if w))
+
+    @classmethod
+    def is_np_row(cls, row):
+        """행이 이미 ST 'X' + 요청 기준 '미진행' 인가."""
+        return (str(row.get('st') or '').strip() == cls.NP_ST
+                and str(row.get('new_or_copy') or '').strip() == cls.NP_NEW_OR_COPY)
+
+    def np_keyword_violations(self, table):
+        """키워드에 걸리는데 ST 'X' + '미진행' 이 아닌 저장 행 목록(상신 서버 검증용)."""
+        rows = self.get_detail().get(self.LAYER_ROWS_KEYS[table]) or []
+        return [
+            r for r in rows
+            if self.matches_np_keyword(table, r.get('sd'), r.get('pp')) and not self.is_np_row(r)
+        ]
+
+    def layer_rows_allow_skip(self, table, master_rows):
+        """저장된 J/O 표와 지금 마스터 DB 행(`master_rows`, layer_drift._row_dict 형식)으로 그 표의 결재 단계를
+        건너뛸 수 있는지 판정한다(순수 판정 — 조회·경로 확인은 호출부 책임).
+
+        - 0행 표: 마스터 DB 도 0건일 때만 건너뛴다(화면 버그·조회 실패로 행이 사라진 채 상신된 경우를 막는다).
+        - 그 밖: 저장 행과 마스터 행의 stepseq 목록이 **정확히 같고**, 마스터 행이 모두 키워드에 걸리며
+          (마스터의 SD·PP 기준), 저장 행이 모두 ST 'X' + '미진행' 일 때만 건너뛴다.
+          변경 감지(`layer_drift._diff_rows`)는 미진행 행을 비교에서 빼므로 여기서는 쓰지 않는다.
+        """
+        saved_rows = self.get_detail().get(self.LAYER_ROWS_KEYS[table]) or []
+        if not saved_rows:
+            return not master_rows
+        if not master_rows:
+            return False
+        saved_seqs = sorted(str(r.get('sp') or '').strip() for r in saved_rows)
+        master_seqs = sorted(str(r.get('stepseq') or '').strip() for r in master_rows)
+        if saved_seqs != master_seqs:
+            return False
+        if not all(self.matches_np_keyword(table, r.get('descript'), r.get('recipeid')) for r in master_rows):
+            return False
+        return all(self.is_np_row(r) for r in saved_rows)
+
+    def is_j_skipped(self, round=None):
+        """지정(또는 현재) 회차에서 J 를 표 내용으로 건너뛰었는가(키워드 전부 미진행 / 0행).
+
+        일반 경로는 P 와 J 를 항상 같은 시점에 함께 만든다. 그래서 P step 은 있는데 J step 이 없으면
+        건너뛴 회차다(`is_o_skipped` 와 같은 판정 방식 — 별도 플래그·마이그레이션 없음).
+        'Overlay만 변경' 단독(`skip_j_stage`)·Only MAP·MAP 삭제·ADI CD 변경은 각자 규칙이 있어 False.
+        """
+        if (self.is_only_map() or self.is_adi_cd_change() or self.is_map_delete_edit()
+                or self.skip_j_stage()):
+            return False
+        if round is None:
+            round = self.approval_steps.aggregate(models.Max('round'))['round__max'] or 1
+        steps = self.approval_steps.filter(round=round)
+        return steps.filter(agent='P').exists() and not steps.filter(agent='J').exists()
+
     # 중단 요청 메일 수신 범위·MAP 정보 잠금 판정에 쓰는 "구역(zone)" — CLAUDE.md "용어 정리" 표와
     # 같다. 구역은 순서대로 진행되며(2구역이 없는 경로는 건너뛴다), 같은 구역 안은 병렬이다.
     PAUSE_ZONE_1_AGENTS = ('PL', 'SA')
