@@ -353,6 +353,8 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   조회 성공 0건은 종전대로 200 빈 목록.
 - **i18n(ko/en 동시 3개)**: `request.toast_np_keyword_applied`, `request.np_keyword_locked_title`, `request.np_keyword_locked`.
 - **가이드 기능 키**: 새 입력 항목이 없어 추가하지 않았다(규칙 L 대상 아님).
+- **참조 요청서 '없음'과의 충돌(사용자 결정 2026-11-16 — 그대로 둔다)**: 키워드 행을 '변경후' 행으로 적으면 '확정'(ST O) 뒤 '다음'이 다시 X·미진행으로
+  바꿔 상신이 `_validate_ref_doc_st` 에 막힌다. 키워드 행을 layer 추가 대상으로 적는 것 자체가 모순이라 의도와 맞다 — `docs/APPROVAL.md` Case V.
 - **테스트**: `RequestPage/npKeywordAutoApply.test.tsx`(4), `components/PagedDetailView.jSkipRoute.test.tsx`(2),
   `backend/api/tests.py` `LayerNpKeywordModelTest`·`LayerNpSkipIntegrationTest`·`LayerNpKeywordsApiTest`,
   `FormOptionsAuthTest.test_jo_layer_lookup_failure_is_502_without_exception_detail`·`test_jo_layer_no_data_is_still_200_empty`.
