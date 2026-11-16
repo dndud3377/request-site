@@ -1189,10 +1189,14 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
   P 완료 통보(`notify_p_completed`)를 받지 않는다.
 - **상신 서버 검증(`_validate_np_keyword_rows`)**: submit·resubmit·requester_resubmit·direct_approve 에서 키워드 행이 ST 'X' + '미진행'
   이 아니면 400. **호출자가 MASTER 면 검사하지 않는다**(사용자 결정 — 'MASTER 가 누를 때만 예외').
-- 🔎 **기록만 한 사항**: J·O 를 둘 다 건너뛴 회차는 J·O 합의가 없어 R+J+O 완료 P팀 참고 통보(`notify_rjo_completed`)가 발송되지 않는다
-  (그 통보는 J 또는 O 합의 시점에만 판정한다). J 만 건너뛰면 O 합의 시점에 발송된다.
+- 🔎 **기록만 한 사항(사용자 결정 2026-11-16 — 기록만)**: J·O 를 둘 다 건너뛴 회차는 J·O 합의가 없어 R+J+O 완료 P팀 참고 통보
+  (`notify_rjo_completed`)가 발송되지 않는다(그 통보는 J 또는 O 합의 시점에만 판정한다). J 만 건너뛰면 O 합의 시점에 발송된다.
+- ✅ **참조 요청서 '없음'과의 관계(사용자 결정 2026-11-16 — 그대로 둔다)**: 키워드 행을 변경전/변경후 표의 '변경후' 행으로 적으면
+  '확정'이 그 행을 ST 'O' 로 만들고, STEP3/4 '다음'이 다시 ST 'X'·'미진행'으로 바꿔 상신 때 `_validate_ref_doc_st`
+  ("J-ayer/O-ayer 표의 ST 가 참조 요청서 내용과 다릅니다")에 막힌다. 키워드 행을 layer 추가 대상으로 적는 것 자체가 모순이므로
+  막히는 것이 의도와 맞다 — 예외 처리를 두지 않는다.
 - 테스트: `backend/api/tests.py::LayerNpKeywordModelTest`(8)·`LayerNpSkipIntegrationTest`(12)·`LayerNpKeywordsApiTest`(1),
-  `frontend/src/components/PagedDetailView.jSkipRoute.test.tsx`(2). 러너 케이스는 아직 없다(`docs/APPROVAL_CASES_VALIDATION.md` §2.1 보충).
+  `frontend/src/components/PagedDetailView.jSkipRoute.test.tsx`(2). 러너: **`V-01`~`V-09`**(`docs/APPROVAL_CASES_VALIDATION.md` §3.12).
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
