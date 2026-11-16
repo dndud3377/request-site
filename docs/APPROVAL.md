@@ -1158,6 +1158,42 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
 - 테스트: `backend/api/tests.py::ShouldSkipOStageTest`, `OSkipStageIntegrationTest`, `OSkipPauseResumeTest`,
   `frontend/src/components/PagedDetailView.oSkipRoute.test.tsx`. 러너: `X-10`~`X-14`, `M-10`·`M-11`.
 
+### Case V — J/O 표 내용으로 J·O 단계 건너뛰기 ('자동 미진행' 키워드 · 0행, 2026-11-16)
+
+- **의도(사용자)**: 작성자가 검토할 필요 없는 행(특정 SD·PP 문구가 든 행)을 X·미진행으로 바꾸지 않고 상신하는 일이 잦다.
+  또 J(또는 O) 표의 ST 가 모두 X 라면 그 팀의 결재를 진행할 이유가 없다.
+- **키워드**: `.env` `JAYER_AUTO_NP_SD_KEYWORDS`·`JAYER_AUTO_NP_PP_KEYWORDS`·`OAYER_AUTO_NP_SD_KEYWORDS`·`OAYER_AUTO_NP_PP_KEYWORDS`
+  (쉼표 구분, 대소문자 무관·부분 일치, 비우면 기능 꺼짐 → `settings.LAYER_NP_KEYWORDS`). **표마다 자기 키워드만** 본다(사용자 결정).
+  작성 화면의 자동 변경·잠금은 `docs/REQUEST.md` 2026-11-16 항목.
+- **적용 경로**: 일반(J·O) · 'Overlay만 변경' 단독(O — 원래 J 가 없다). 'MAP 삭제'·'Only MAP'·'ADI CD 변경'은 대상 아님(사용자 결정).
+- **판정(`RequestDocumentViewSet._should_skip_layer_stage(document, table)`, `_advance_to_parallel` 에서 J·O 를 만들기 직전)**:
+  저장된 표만 믿지 않고 **그 시점 마스터 DB 를 다시 조회해 대조**한다(`layer_drift.get_job_file_layer_rows`/`get_ovl_layer_rows`,
+  순수 판정은 `RequestDocument.layer_rows_allow_skip`). 화면 버그·조회 실패로 행이 사라진 채 상신돼도 J/O 가 빠지지 않게 하기 위해서다.
+  | 저장된 표 | 건너뛰는 조건 |
+  |---|---|
+  | 0행 | 마스터 DB 도 **조회에 성공했고 0건** |
+  | 1행 이상 | 저장 행·마스터 행의 **stepseq 목록이 정확히 같고**, **마스터 값(SD·PP) 기준으로 모든 행이 키워드에 걸리며**, 저장 행이 모두 ST 'X' + '미진행' |
+  - 마스터 조회가 예외를 던지거나 라인이 모델 맵에 없으면 **건너뛰지 않는다**(단계를 만든다).
+  - 변경 감지 비교(`layer_drift._diff_rows`)는 미진행 행을 비교에서 빼므로 여기서는 쓰지 않는다.
+  - MASTER 가 키워드 행을 X·미진행이 아닌 값으로 바꿔 둔 문서는 조건이 깨져 J/O 를 그대로 거친다.
+  - 판정은 **단계 생성 시점**마다 다시 한다 — 반려 후 재상신·중단 후 재개로 3구역이 다시 열릴 때도 같다.
+- **동작**: 건너뛴 단계는 step·도착 메일을 만들지 않는다. J 를 건너뛰면 검토 항목 채우기(`fill_from_master`)도 하지 않는다.
+  O 는 Case U 와 같은 자리(`skip_o`)에서 함께 판정한다(`_should_skip_o_stage(...) or _should_skip_layer_stage(..., 'O')`).
+- **건너뛴 회차 판정**: P 와 J·O 는 항상 함께 만들어지므로 **"P step 은 있는데 J(O) step 이 없다"**로 판정한다 —
+  J 는 `RequestDocument.is_j_skipped(round)`(신설, 'Overlay만 변경'·Only MAP·MAP 삭제·ADI CD 변경은 False), O 는 기존 `is_o_skipped(round)`.
+  별도 플래그·마이그레이션 없음. 2026-08 이전(J 가 P 뒤 순차 생성) 문서는 없다(사용자 확인 2026-11-16).
+- **완료 판정**: 최종 승인의 `j_approved` 는 `skip_j_stage() or is_j_skipped(round)` 이면 참. O 는 Case U 와 같이 `is_o_skipped`.
+  J·O 를 둘 다 건너뛰어도 P(+PV)·RA 가 남아 있어 문서가 멈추지 않는다(E 는 활성 plel 행이 없어 원래 생기지 않는다).
+- **표시·메일**: 결재 경로 탭(`PagedDetailView` — O 와 같은 "P 있는데 J 없음 → 해당없음" 분기)·메일 경로 카드에서 '해당없음'.
+  목록 그리드는 step 이 없으면 원래 '해당없음'. `mailer.route_agents_for` 가 그 회차의 J 를 결재선에서 빼 TE_J 는 반려 메일·
+  P 완료 통보(`notify_p_completed`)를 받지 않는다.
+- **상신 서버 검증(`_validate_np_keyword_rows`)**: submit·resubmit·requester_resubmit·direct_approve 에서 키워드 행이 ST 'X' + '미진행'
+  이 아니면 400. **호출자가 MASTER 면 검사하지 않는다**(사용자 결정 — 'MASTER 가 누를 때만 예외').
+- 🔎 **기록만 한 사항**: J·O 를 둘 다 건너뛴 회차는 J·O 합의가 없어 R+J+O 완료 P팀 참고 통보(`notify_rjo_completed`)가 발송되지 않는다
+  (그 통보는 J 또는 O 합의 시점에만 판정한다). J 만 건너뛰면 O 합의 시점에 발송된다.
+- 테스트: `backend/api/tests.py::LayerNpKeywordModelTest`(8)·`LayerNpSkipIntegrationTest`(12)·`LayerNpKeywordsApiTest`(1),
+  `frontend/src/components/PagedDetailView.jSkipRoute.test.tsx`(2). 러너 케이스는 아직 없다(`docs/APPROVAL_CASES_VALIDATION.md` §2.1 보충).
+
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
 
