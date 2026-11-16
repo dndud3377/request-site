@@ -607,6 +607,21 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     return 'J-ayer/O-ayer 표의 ST 가 참조 요청서 내용과 다릅니다. STEP1 에서 참조 요청서를 다시 확정하세요.'
         return None
 
+    # claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 행을 서버에서도 검증한다(API 직접 호출·화면 우회 대비)
+    def _validate_np_keyword_rows(self, document, user):
+        """키워드(.env `*_AUTO_NP_*_KEYWORDS`)에 걸리는 J/O 행은 ST 'X' + 요청 기준 '미진행' 이어야 한다.
+
+        문제 있으면 error 문자열, 없으면 None. MASTER 가 상신·재상신하면 검사하지 않는다(사용자 결정
+        2026-11-16 — 'MASTER 가 누를 때만 예외'). 프론트 `RequestPage/index.tsx` applyNpKeyword 와 같은 규칙이다.
+        """
+        if getattr(user, 'role', None) == 'MASTER':
+            return None
+        for table, label in (('J', 'J-ayer'), ('O', 'O-ayer')):
+            if document.np_keyword_violations(table):
+                return (f'{label} 표에 자동 미진행 키워드 행이 ST X·요청 기준 미진행이 아닌 채로 있습니다. '
+                        f'해당 단계에서 다음을 눌러 자동 변경을 적용한 뒤 상신하세요.')
+        return None
+
     def _validate_post_approvers(self, document):
         """C가문(only_prodc=YES) 또는 '연구소 제품' 문서는 상신 시 추가 후결자
         (detail.post_approvers)를 1명 이상 지정해야 한다. 문제 있으면 error 문자열, 없으면 None.
@@ -780,6 +795,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_np_keyword_rows(document, request.user)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -868,6 +887,39 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         compare_fields = RequestDocument.MAP_INFO_FIELDS + RequestDocument.DETAIL_LINE_TO_PROCESS_ID_FIELDS
         return all(prev_detail.get(f) == curr_detail.get(f) for f in compare_fields)
 
+    # claude 수정 (2026-11-16): J/O 표가 전부 '자동 미진행' 키워드 행이거나 0행이면 그 단계를 건너뛰는 판정 신설
+    def _should_skip_layer_stage(self, document, table):
+        """일반 경로·'Overlay만 변경' 단독에서 J(table='J') 또는 O(table='O') 단계를 표 내용으로 건너뛸지.
+
+        저장된 표만 믿지 않고 **지금 마스터 DB 를 다시 조회해 대조**한다(`RequestDocument.layer_rows_allow_skip`) —
+        화면 버그·조회 실패로 행이 사라진 채 상신돼도 J/O 가 빠지지 않게 하기 위해서다(사용자 결정 2026-11-16).
+        마스터 조회가 실패하거나 라인을 알 수 없으면 건너뛰지 않는다(단계를 만든다). 키워드가 하나도 없고
+        행이 있으면 DB 를 조회하지 않고 곧바로 False.
+        """
+        if document.is_only_map() or document.is_map_delete_edit() or document.is_adi_cd_change():
+            return False
+        data = document.get_detail()
+        saved_rows = data.get(RequestDocument.LAYER_ROWS_KEYS[table]) or []
+        if saved_rows and not all(
+            RequestDocument.is_np_row(r) and RequestDocument.matches_np_keyword(table, r.get('sd'), r.get('pp'))
+            for r in saved_rows
+        ):
+            return False
+        detail = data.get('detail', {}) or {}
+        line = detail.get('line') or ''
+        process = detail.get('process_id') or ''
+        model_map = layer_drift.JOB_FILE_MODEL_MAP if table == 'J' else layer_drift.OVL_MODEL_MAP
+        if not line or not process or line not in model_map:
+            return False
+        fetch = layer_drift.get_job_file_layer_rows if table == 'J' else layer_drift.get_ovl_layer_rows
+        try:
+            master_rows = fetch(line, process)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                '[LAYER_SKIP] 마스터 조회 실패 — %s 단계를 건너뛰지 않는다 (document=%s)', table, document.pk)
+            return False
+        return document.layer_rows_allow_skip(table, master_rows)
+
     # claude 수정 (2026-11-04): O 재합의 생략(Case U) 판정 신설 — R 생략과 별개 규칙
     def _should_skip_o_stage(self, document, round_no):
         """새 회차(`round_no`)에서 O 단계를 만들지 않아도 되는가(O 재합의 생략, Case U).
@@ -927,6 +979,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_np_keyword_rows(document, request.user)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1039,6 +1095,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_np_keyword_rows(document, request.user)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -1125,6 +1185,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_ref_doc_st(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_np_keyword_rows(document, request.user)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1722,8 +1786,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 # J 를 뺀 경로('Overlay 변경' 단독)는 J step 이 아예 없다. 아래 기본 판정은
                 # len(j_steps) > 0 을 요구하므로, 이 분기가 없으면 나머지 단계가 모두 합의돼도
                 # 판정이 영원히 False 가 되어 문서가 under_review 에 영구 정지한다.
+                # claude 수정 (2026-11-16): 표 내용으로 J 를 건너뛴 회차(is_j_skipped)도 J step 없이 완료로 본다
                 j_approved = (
-                    True if document.skip_j_stage()
+                    True if document.skip_j_stage() or document.is_j_skipped(current_round)
                     else (len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps))
                 )
                 # claude 수정 (2026-11-04): O 재합의 생략(Case U) 회차는 O step 이 없어도 완료로 본다
@@ -2961,7 +3026,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         else:
             p_due = calculate_business_due_date(base_date, 4)
             o_due = calculate_business_due_date(base_date, 6)
-            skip_o = self._should_skip_o_stage(document, round_no)
+            # claude 수정 (2026-11-16): O 표가 전부 '자동 미진행' 키워드 행이거나 0행(마스터도 0건)이면 O 도 만들지 않는다
+            skip_o = self._should_skip_o_stage(document, round_no) or self._should_skip_layer_stage(document, 'O')
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
@@ -2973,7 +3039,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 )
                 mailer.enqueue_stage_arrival(document, 'O', o_step)
             # 기타 목적이 'Overlay 변경' 하나뿐이면 J 단계 자체를 만들지 않는다(경로에서 제외).
-            if not document.skip_j_stage():
+            # claude 수정 (2026-11-16): J 표가 전부 '자동 미진행' 키워드 행이거나 0행(마스터도 0건)이어도 만들지 않는다
+            if not document.skip_j_stage() and not self._should_skip_layer_stage(document, 'J'):
                 j_step = ApprovalStep.objects.create(
                     document=document, agent='J', action='pending', is_parallel=True, round=round_no, due_date=o_due,
                 )
@@ -4627,8 +4694,10 @@ def form_options_job_file_layer(request):
         return JsonResponse({'options': options})
 
     except Exception as e:
+        # claude 수정 (2026-11-16): 조회 실패를 0건(200 빈 목록)과 구분해 502 로 응답한다 — 화면이 '데이터 없음'으로 보고
+        # 표를 비운 채 상신하면 J/O 결재가 빠질 수 있었다. 예외 원문(접속 정보 등)은 응답에 싣지 않는다.
         logger.error(f"[JOB_FILE_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': []})
+        return JsonResponse({'options': [], 'error': 'layer 정보 조회에 실패했습니다.'}, status=502)
 
 
 # claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용. 조회 실패 시 예외 원문(접속 정보 등)은 응답에 싣지 않고 로그로만 남긴다
@@ -4655,8 +4724,10 @@ def form_options_ovl_layer(request):
         return JsonResponse({'options': options})
 
     except Exception as e:
+        # claude 수정 (2026-11-16): 조회 실패를 0건(200 빈 목록)과 구분해 502 로 응답한다 — 화면이 '데이터 없음'으로 보고
+        # 표를 비운 채 상신하면 J/O 결재가 빠질 수 있었다. 예외 원문(접속 정보 등)은 응답에 싣지 않는다.
         logger.error(f"[OVL_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': []})
+        return JsonResponse({'options': [], 'error': 'layer 정보 조회에 실패했습니다.'}, status=502)
 
 
 # claude 수정 (2026-10-23): 무인증 조회 차단(R-08) — 운영은 로그인 필요, 개발은 다른 API 와 같이 허용. 조회 실패 시 예외 원문(접속 정보 등)은 응답에 싣지 않고 로그로만 남긴다
@@ -5096,6 +5167,23 @@ def form_options_num_check_config(request):
         'image_threshold': _num(settings.NUM_CHECK_IMAGE_THRESHOLD),
         'lower_threshold': _num(settings.NUM_CHECK_LOWER_THRESHOLD),
     })
+
+
+# claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 조회 API 신설 — 화면이 '다음'·'상신' 때 같은 키워드로 행을 바꾼다
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
+def form_options_layer_np_keywords(request):
+    """J/O-ayer 표 '자동 미진행' 키워드 — `{'jayer': {'sd': [...], 'pp': [...]}, 'oayer': {...}}`.
+
+    값은 `settings.LAYER_NP_KEYWORDS`(.env JAYER_/OAYER_AUTO_NP_SD/PP_KEYWORDS, 쉼표 구분). 비어 있으면 기능 꺼짐.
+    """
+    words = getattr(settings, 'LAYER_NP_KEYWORDS', {}) or {}
+
+    def _table(key):
+        table = words.get(key) or {}
+        return {'sd': list(table.get('sd') or []), 'pp': list(table.get('pp') or [])}
+
+    return JsonResponse({'jayer': _table('J'), 'oayer': _table('O')})
 
 
 # claude 수정 (2026-11-12): 응답에 AAA4 추가(화면 표시 없음 — '숫자 확인 값' 자동 반려 비교용 값 제공)
