@@ -699,10 +699,12 @@ export const hasActivePendingStep = (
  * (stageLabel 참고 — RV 도 라벨은 그대로 'RFG') 필터도 담당자 pending 뿐 아니라
  * 검토자 pending 도 같은 단계로 인식해야 한다. J/O 는 검토자 agent 자체가 없다.
  * PL(1구역)은 PL 검토와 영업/기술지원 합의자(SA)가 병렬이라 둘 중 하나라도 pending 이면 같은 단계다.
+ * R(2구역)은 System R(RS)이 R 단계 검증의 일부라 R·RV·RS 중 하나라도 pending 이면 같은 단계다.
  */
+// claude 수정 (2026-11-16): RS 가 R 단계 검증의 일부라 RFG 탭(agent_R)·건수·정렬·다운로드 팀 R 필터에 함께 잡히도록 R 묶음에 추가
 export const STAGE_AGENT_GROUPS: Partial<Record<string, AgentType[]>> = {
   PL: ['PL', 'SA'],
-  R: ['R', 'RV'],
+  R: ['R', 'RV', SYSTEM_R_AGENT],
   P: ['P', 'PV'],
   J: ['J'],
   O: ['O'],
