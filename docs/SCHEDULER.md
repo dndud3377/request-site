@@ -35,7 +35,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
 | `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB 단독) 동기화 (`nv` 는 스텝 제외). 실패 시 실패 목록을 모아 **RTDB 동기화 실패** 알림 메일 1통 발송 |
-| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 / MAP 테이블 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송. 끝에서 **System R(RS) 판정**(2026-11-13, `system_r.judge_pending()` — 2026-11-12 '숫자 확인 값 ↔ AAA4 자동 반려'를 대체. DCQ 세션 확보 실패로 중단되면 판정하지 않는다) |
+| `sync_form_options` | **10분** (2026-11-16, 이전 1시간) | `sync_form_options()` | 바코드-품목 / MAP 이름 / MAP 테이블 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송. 끝에서 **System R(RS) 판정**(2026-11-13, `system_r.judge_pending()` — 2026-11-12 '숫자 확인 값 ↔ AAA4 자동 반려'를 대체. DCQ 세션 확보 실패로 중단되면 판정하지 않는다). **주기 변경(2026-11-16)**: PL 합의 뒤 RS 판정 대기를 최대 1시간 → 최대 10분으로 줄이려고 잡 전체를 10분으로 바꿨다(사용자 결정 — MAP 이름만 분리하지 않고 5종 전체). 상수 `scheduler.SYNC_FORM_OPTIONS_INTERVAL_MINUTES`. DCQ 조회·장애 알림 메일이 그만큼(최대 6배) 늘고, 한 번 도는 시간이 10분을 넘으면 `max_instances=1` 로 다음 회차를 건너뛴다 |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장). 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신. 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `sync_map_schedule` | 매일 02:00 | `sync_map_schedule()` | 라인-제품 예정일(DCQ `sd.tg`) 동기화 → `api_mapschedule` 전체 갱신(날짜만 저장). 결재현황 MAP 목적 `MM/DD 예정` 뱃지용. 실패·빈 결과 시 기존 데이터를 지우지 않고 **DCQ 동기화 실패** 알림 메일 발송(구분 `-` / 대상 `MAP 예정일`). `HEAVY_SYNC_JOB_IDS` 포함 → 개발 환경에서는 실행되지 않는다. 상세는 `docs/MAP_COMPLETION_MAIL.md` §10 |
@@ -198,7 +198,7 @@ AAA5 ↔ 문서 Map Option, AAA6 ↔ MAP 목적 CLONE. 불일치는 반려가 �
 ### 라인2 (DCQ 단독, 폴백 구조 아님)
 
 라인2 는 소스 테이블 구조가 다른 라인들과 달라 **RTDB 를 지원하지 않는다.** 따라서 위 RTDB 조회
-구조를 타지 않고, 1시간 잡 `sync_form_options()` 안에서 **DCQ 단독**으로 동기화한다(RTDB 실패 알림
+구조를 타지 않고, 10분 잡(2026-11-16, 이전 1시간) `sync_form_options()` 안에서 **DCQ 단독**으로 동기화한다(RTDB 실패 알림
 메일 대상도 아니다).
 (스텝 테이블 `api_steps2` 는 존재하지 않으므로 라인2 스텝 동기화는 없다.)
 

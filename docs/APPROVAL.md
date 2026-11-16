@@ -144,7 +144,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 핵심: **PL → R → (P[→검토자 PV]) ∥ (J) ∥ (O, E[→검토자 EV]) ∥ (RA)**. R 합의 후 네 경로가 **병렬** 진행된다.
 
 > **(2026-11-13) 2구역 = R(→RV) ∥ System R(RS)**: 일반·Only MAP 경로는 PL 전원 합의 시 R 과 함께 시스템 검증 단계
-> **System R** 이 생기고, **R(+RV)과 RS 가 모두 합의해야** 3구역(Only MAP 은 RA)이 열린다. RS 는 MAP 이름 동기화(1시간)마다
+> **System R** 이 생기고, **R(+RV)과 RS 가 모두 합의해야** 3구역(Only MAP 은 RA)이 열린다. RS 는 MAP 이름 동기화(10분, 2026-11-16 이전 1시간)마다
 > MAP 정보를 검증해 합의/반려한다(MASTER 수동 처리 가능). 위 그림의 `R` 은 일반·Only MAP 에서 `[R ∥ System R]` 로 읽는다.
 > 상세는 아래 **"System R (2026-11-13)"** 절.
 
@@ -2600,7 +2600,7 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 | 만들지 않는 경우 | MAP 삭제 · ADI CD 변경(R 이 2구역에 없거나 없음) · 'Overlay만 변경' 단독(R 없음) · **반려 후 재상신 R 생략 회차(Case T) — R 과 함께 생략**(사용자 결정) |
 | 구역 | `RequestDocument.PAUSE_ZONE_2_AGENTS = ('R', 'RV', 'RS')` — 일반·Only MAP 의 2구역 |
 | 2구역 완료 | **R(+RV 지정 시) 와 RS 가 모두 합의**해야 3구역(Only MAP 은 후결자)을 연다 — `views._is_r_zone_complete` / `_advance_if_r_zone_complete`. 누가 마지막이든 마지막 합의 시점이 3구역 기한 기준일이다 |
-| 판정 시점 | `scheduler.sync_form_options()`(MAP 이름 동기화, **1시간**)가 끝난 직후 `system_r.judge_pending()`. **현재 회차 RS 가 pending 인 문서만** 판정하고, 합의·반려로 결론이 난 RS 는 다시 판정하지 않는다. **보류(2026-11-13)는 결론이 아니라** RS 가 pending 으로 남아 매 주기 다시 판정한다 |
+| 판정 시점 | `scheduler.sync_form_options()`(MAP 이름 동기화, **10분** — 2026-11-16 1시간에서 변경, PL 합의 뒤 판정 대기 단축)가 끝난 직후 `system_r.judge_pending()`. **현재 회차 RS 가 pending 인 문서만** 판정하고, 합의·반려로 결론이 난 RS 는 다시 판정하지 않는다. **보류(2026-11-13)는 결론이 아니라** RS 가 pending 으로 남아 매 주기 다시 판정한다 |
 | 판정 동결 | `under_review` 가 아니거나(`pause` 포함) 철회·중단 요청 확인 대기 중이면 건너뛴다(결재 액션 `_blocked_progress_response` 와 같은 규칙). 재개·취소 뒤 다음 주기에 판정 |
 | 사람의 처리 | **MASTER 만** 결재 화면에서 RS 를 수동 합의·반려할 수 있다(일반 `approve-step`/`reject-step`, agent=`RS`). 담당자가 없어 그 외 사용자는 403. 지정·검토중(assign/claim) 대상이 아니다 |
 | 중단·철회 확인 대상 | RS 는 **제외**(사람이 확인할 수 없음). 그래서 R 이 끝나고 RS 만 남은 문서는 확인할 단계가 없어 **중단 요청·진행 중 철회가 400**(`진행 중인 결재 단계가 없습니다`) — 아래 "알려진 한계" |

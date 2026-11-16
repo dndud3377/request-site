@@ -85,6 +85,9 @@ FORM_OPTIONS_TARGETS = [
     {'context': LINE2, 'target': '품목-공정ID'},
 ]
 
+# claude 수정 (2026-11-16): sync_form_options 주기 1시간 → 10분 — PL 합의 뒤 System R(RS) 판정 대기를 최대 10분으로 줄인다
+SYNC_FORM_OPTIONS_INTERVAL_MINUTES = 10
+
 # RTDB(MAIN) 조회 파라미터 - table_name 은 소스별로 다르며 {suffix} 는 라인 접미사로 치환된다.
 RTDB_TARGET = "realtimedb"
 RTDB_PP_SELECT = ["partnumber, descript, pkgtype_2"]   # 공정-품목
@@ -946,9 +949,10 @@ def start():
     scheduler.add_jobstore(DjangoJobStore(), 'default')
 
     try:
+        # claude 수정 (2026-11-16): 1시간 → SYNC_FORM_OPTIONS_INTERVAL_MINUTES(10분) — System R 판정 대기 단축
         scheduler.add_job(
             sync_form_options,
-            trigger=IntervalTrigger(hours=1),
+            trigger=IntervalTrigger(minutes=SYNC_FORM_OPTIONS_INTERVAL_MINUTES),
             id='sync_form_options',
             name='DCQ 폼 옵션 동기화',
             replace_existing=True,
@@ -1020,7 +1024,8 @@ def start():
             pass
 
         scheduler.start()
-        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰·MAP 예정일 동기화 등록"))
+        # claude 수정 (2026-11-16): DCQ 동기화 주기 문구 1 시간 → 10 분
+        logger.info(_("[scheduler] APScheduler 시작 - 10 분 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰·MAP 예정일 동기화 등록"))
 
         # claude 수정 (2026-10-29): 기동 시 순차 실행 DCQ 잡에 sync_map_schedule 추가
         def _run_dcq_jobs_sequentially():
