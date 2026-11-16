@@ -1734,3 +1734,162 @@ def n04(ctx):
     if doc.get('status') not in ('rejected', 'under_review'):
         raise CaseFailure(f'예상 밖 상태: {doc.get("status")}')
     return f'doc={doc_id} status={doc.get("status")}'
+
+
+# ============================================================ V. 표 내용으로 J/O 건너뛰기 (Case V, 2026-11-16)
+# claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 · 0행으로 J/O 단계를 건너뛰는 규칙(docs/APPROVAL.md Case V) 케이스 V-01~V-09 추가.
+# 전부 실제 DB 조합으로 돈다 — 조건에 맞는 조합이 없거나 .env.dev 키워드가 없으면 SKIP(사유 출력).
+
+def _need_np(ctx):
+    if not ctx.master.np_configured:
+        raise CaseSkip('.env.dev 에 자동 미진행 키워드(JAYER_/OAYER_AUTO_NP_SD/PP_KEYWORDS)가 설정돼 있지 않다.')
+
+
+def _v_combo(ctx, predicate, what):
+    combo = ctx.master.find_combo(predicate)
+    if combo is None:
+        raise CaseSkip(f'{what} 조합을 개발 DB 에서 찾지 못했다(--scan-limit {ctx.master.scan_limit} 범위).')
+    return combo
+
+
+def _v_to_parallel(ctx, combo, author=None, **kw):
+    """combo 로 문서 생성 → 상신 → PL 합의 → (R 이 열렸으면) R 합의까지 → (doc_id, author, 최신 문서)."""
+    author = author or ctx.actor('PL', 0)
+    pls = [ctx.user('PL', 1)]
+    doc = F.create_document(ctx, author, combo=combo, **kw)
+    F.submit(author, doc['id'], [p['loginid'] for p in pls])
+    F.pass_pl_stage(ctx, doc['id'], pls)
+    if F.steps(F.fetch(author, doc['id']), agent='R', action='pending'):
+        F.pass_r_stage(ctx, doc['id'])
+    return doc['id'], author, F.fetch(author, doc['id'])
+
+
+def _complete_remaining(ctx, doc_id, author):
+    """현재 회차에 남은 P·J·O·E·RA 를 모두 합의시킨다(생성되지 않은 단계는 건너뛴다)."""
+    doc = F.fetch(author, doc_id)
+    if F.steps(doc, agent='P', action='pending'):
+        F.complete_p(ctx, doc_id)
+    if F.steps(doc, agent='J', action='pending'):
+        F.complete_j(ctx, doc_id)
+    if F.steps(doc, agent='O', action='pending'):
+        F.complete_o(ctx, doc_id)
+    if F.steps(doc, agent='E', action='pending'):
+        F.complete_e(ctx, doc_id)
+    F.complete_ra(ctx, doc_id)
+
+
+def _saved_rows(doc, key):
+    import json
+    return (json.loads(doc.get('additional_notes') or '{}') or {}).get(key) or []
+
+
+@case('V-01', 'V', 'J 표 전부 자동 미진행 키워드 행 → J 미생성, 나머지 합의로 approved')
+def v01(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_O=1, MASTER=1)
+    _need_np(ctx)
+    combo = _v_combo(ctx, lambda c: c.all_np('J') and bool(c.ovl_rows) and not c.all_np('O'),
+                     'J-layer 행이 전부 키워드에 걸리고 O-layer 행은 있는')
+    doc_id, author, doc = _v_to_parallel(ctx, combo, all_rows=True)
+    F.expect_no_step(doc, 'J', '(J 표가 전부 키워드 X·미진행인데 J 가 생성됐다)')
+    F.expect_steps(doc, 'P', count=1)
+    F.expect_steps(doc, 'O', count=1)
+    _complete_remaining(ctx, doc_id, author)
+    F.expect_doc_status(author, doc_id, 'approved', '(J 없이 나머지 합의로 승인돼야 한다)')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('V-02', 'V', 'O 표 전부 자동 미진행 키워드 행 → O 미생성, J 는 생성')
+def v02(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, TE_J=1, MASTER=1)
+    _need_np(ctx)
+    combo = _v_combo(ctx, lambda c: c.all_np('O') and not c.all_np('J'),
+                     'O-layer 행이 전부 키워드에 걸리고 J-layer 는 아닌')
+    doc_id, author, doc = _v_to_parallel(ctx, combo, all_rows=True)
+    F.expect_no_step(doc, 'O', '(O 표가 전부 키워드 X·미진행인데 O 가 생성됐다)')
+    F.expect_steps(doc, 'J', count=1)
+    _complete_remaining(ctx, doc_id, author)
+    F.expect_doc_status(author, doc_id, 'approved', '(O 없이 나머지 합의로 승인돼야 한다)')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('V-03', 'V', 'O-layer 마스터 0건 조합 + O 표 0행 → O 미생성')
+def v03(ctx):
+    ctx.need(PL=2, TE_R=1, MASTER=1)
+    combo = _v_combo(ctx, lambda c: not c.ovl_rows and not c.all_np('J'), 'O-layer 마스터 행이 0건인')
+    doc_id, author, doc = _v_to_parallel(ctx, combo)
+    F.expect_no_step(doc, 'O', '(O 마스터·표가 모두 0건인데 O 가 생성됐다)')
+    F.expect_steps(doc, 'J', count=1)
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('V-04', 'V', 'J 표 0행인데 마스터에 행 있음 → J 생성(화면에서 행이 사라진 채 상신돼도 빠지지 않음)')
+def v04(ctx):
+    ctx.need(PL=2, TE_R=1, MASTER=1)
+    doc_id, author, doc = _v_to_parallel(ctx, ctx.combo(), empty_jayer=True)
+    F.expect_steps(doc, 'J', count=1, note='(마스터에 행이 있으면 0행 표라도 J 를 건너뛰면 안 된다)')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('V-05', 'V', 'J 표 일부만 키워드 행 → 그 행만 X·미진행으로 저장, J 생성')
+def v05(ctx):
+    ctx.need(PL=2, TE_R=1, MASTER=1)
+    _need_np(ctx)
+    combo = _v_combo(ctx, lambda c: 0 < c.np_count('J') < len(c.layer_rows) and bool(c.ovl_rows),
+                     'J-layer 에 키워드 행과 아닌 행이 섞인')
+    doc_id, author, doc = _v_to_parallel(ctx, combo, all_rows=True)
+    F.expect_steps(doc, 'J', count=1, note='(키워드가 아닌 행이 있으면 J 를 거쳐야 한다)')
+    words = combo.np_keywords['J']
+    from .masterdata import matches_np_keyword
+    bad = [r.get('sp') for r in _saved_rows(doc, 'jayerRows')
+           if matches_np_keyword(words, r.get('sd'), r.get('pp'))
+           and (r.get('st'), r.get('new_or_copy')) != (P.ST_X, P.NOC_NOT_PROCEEDING)]
+    if bad:
+        raise CaseFailure(f'키워드 행이 X·미진행으로 저장되지 않았다: sp={bad}')
+    return f'doc={doc_id} np_rows={combo.np_count("J")}/{len(combo.layer_rows)}'
+
+
+@case('V-06', 'V', '키워드 행을 X·미진행으로 바꾸지 않고 상신(일반 사용자) → 400')
+def v06(ctx):
+    ctx.need(PL=2)
+    _need_np(ctx)
+    combo = _v_combo(ctx, lambda c: c.np_count('J') > 0 or c.np_count('O') > 0, '키워드 행이 하나라도 있는')
+    author = ctx.actor('PL', 0)
+    doc = F.create_document(ctx, author, combo=combo, all_rows=True, np_apply=False)
+    res = F.submit(author, doc['id'], [ctx.user('PL', 1)['loginid']], expect=400)
+    if '자동 미진행' not in res.error_text():
+        raise CaseFailure(f'400 사유가 자동 미진행 검증이 아니다: {res.error_text()}')
+    return f'doc={doc["id"]}'
+
+
+@case('V-07', 'V', 'MASTER 가 키워드 행을 바꾸지 않고 상신 → 200, J 생성(MASTER 예외)')
+def v07(ctx):
+    ctx.need(PL=2, TE_R=1, MASTER=1)
+    _need_np(ctx)
+    combo = _v_combo(ctx, lambda c: c.np_count('J') > 0 and bool(c.ovl_rows), 'J-layer 에 키워드 행이 있는')
+    doc_id, author, doc = _v_to_parallel(ctx, combo, author=ctx.actor('MASTER', 0), all_rows=True, np_apply=False)
+    F.expect_steps(doc, 'J', count=1, note='(키워드 행이 ST O 로 남은 문서는 J 를 거쳐야 한다)')
+    return f'doc={doc_id}'
+
+
+@case('V-08', 'V', "'Overlay만 변경' + O 표 전부 키워드 행 → R·J·O 미생성, P 합의로 approved")
+def v08(ctx):
+    ctx.need(PL=2, TE_P=1)
+    _need_np(ctx)
+    combo = _v_combo(ctx, lambda c: c.all_np('O'), 'O-layer 행이 전부 키워드에 걸리는')
+    doc_id, author, doc = _v_to_parallel(ctx, combo, other_purpose=[P.OTHER_PURPOSE_OVERLAY], all_rows=True)
+    for agent in ('R', 'J', 'O'):
+        F.expect_no_step(doc, agent)
+    F.expect_steps(doc, 'P', count=1)
+    _complete_remaining(ctx, doc_id, author)
+    F.expect_doc_status(author, doc_id, 'approved')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
+
+
+@case('V-09', 'V', "'MAP 삭제'는 J/O 표가 0행이어도 P·J·O 생성(Case V 대상 아님)")
+def v09(ctx):
+    ctx.need(PL=2)
+    doc_id, author, doc = _v_to_parallel(ctx, ctx.combo(), request_purpose=P.MAP_DELETE_EDIT_PURPOSE,
+                                         empty_jayer=True, empty_oayer=True)
+    for agent in ('P', 'J', 'O'):
+        F.expect_steps(doc, agent, count=1, action='pending')
+    return f'doc={doc_id} agents={F.agents_in_round(doc)}'
