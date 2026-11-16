@@ -69,6 +69,12 @@
 근거: `views.py:1625` `_advance_to_parallel`, `views.py:1582` `_create_map_delete_edit_parallel`,
 `views.py:1715` `_open_stage_after_pl`.
 
+> **보충 (2026-11-16, Case V)**: RT-1~RT-4 에서 J 표(RT-1·2)·O 표(RT-1~4)가 **전부 '자동 미진행' 키워드 X·미진행 행이거나 0행**이면
+> 3구역을 열 때 마스터 DB 와 대조해 그 단계를 만들지 않는다 — 결재선에서 `J` 또는 `O`(둘 다일 수도)가 빠지고 종단 조건에서도 빠진다.
+> RT-5·RT-6(Only MAP·MAP 삭제)과 ADI CD 변경은 대상이 아니다. 규칙은 `docs/APPROVAL.md` "Case V".
+> **러너(`scripts/approval_cases`)에는 아직 케이스가 없다** — 개발 DB 에 키워드에 걸리는 마스터 행이 있어야 하고 `.env.dev` 키워드
+> 설정이 필요해, 케이스 추가 여부를 사용자에게 확인 중이다. 백엔드 자동 테스트 `LayerNpSkipIntegrationTest` 가 같은 흐름을 검증한다.
+
 ### 2.2 상신 시점에 확정되는 조합 24가지 (골격 × SA × 지정 PL 수)
 
 | ID | 골격 | SA | 지정 PL | 상신 직후 만들어지는 step | 러너 |
