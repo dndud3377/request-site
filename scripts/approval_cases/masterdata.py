@@ -30,24 +30,61 @@ REQUIRED_ROLES = {
 }
 
 
+# claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드(Case V) — 서버 `/api/form-options/layer-np-keywords/` 값과 같은 모양
+EMPTY_NP_KEYWORDS = {'J': {'sd': [], 'pp': []}, 'O': {'sd': [], 'pp': []}}
+
+
+def matches_np_keyword(words, sd, pp):
+    """SD 또는 PP 가 키워드를 포함하는가(대소문자 무관·부분 일치) — 백엔드 RequestDocument.matches_np_keyword 와 같은 규칙."""
+    sd_l, pp_l = str(sd or '').lower(), str(pp or '').lower()
+    return (any(w and w.lower() in sd_l for w in words.get('sd') or [])
+            or any(w and w.lower() in pp_l for w in words.get('pp') or []))
+
+
+# claude 수정 (2026-11-16): 조합이 '자동 미진행' 키워드를 알고, 표별 키워드 행 현황을 판정할 수 있게 했다(Case V)
 class Combo:
     """상신 1건에 필요한 마스터 데이터 한 벌 (전부 실제 DB 값)."""
 
-    def __init__(self, line, process, product, process_id, layer_rows, ovl_rows=None):
+    def __init__(self, line, process, product, process_id, layer_rows, ovl_rows=None, np_keywords=None):
         self.line = line
         self.process = process
         self.product = product
         self.process_id = process_id
         self.layer_rows = layer_rows
         self.ovl_rows = ovl_rows or []
+        self.np_keywords = np_keywords or EMPTY_NP_KEYWORDS
+
+    def is_np(self, table, item):
+        """마스터 행(descript=SD, recipeid=PP)이 그 표('J'/'O')의 키워드에 걸리는가."""
+        return matches_np_keyword(self.np_keywords[table], item.get('descript'), item.get('recipeid'))
+
+    def np_count(self, table):
+        rows = self.layer_rows if table == 'J' else self.ovl_rows
+        return sum(1 for r in rows if self.is_np(table, r))
+
+    def all_np(self, table):
+        """표에 행이 있고 전부 키워드 행인가 — 전체 행으로 상신하면 그 단계(J/O)를 건너뛴다."""
+        rows = self.layer_rows if table == 'J' else self.ovl_rows
+        return bool(rows) and self.np_count(table) == len(rows)
 
     @property
     def has_plel(self):
-        return any(VALIDATION_KEYWORD in (r.get('recipeid') or '').lower() for r in self.layer_rows)
+        # 키워드 행은 상신 때 ST X 가 되어 E(MASK) 판정에서 빠지므로 키워드가 아닌 행만 본다.
+        return any(VALIDATION_KEYWORD in (r.get('recipeid') or '').lower()
+                   for r in self.layer_rows if not self.is_np('J', r))
+
+    @property
+    def usable_for_default_cases(self):
+        """기존 케이스(J·O 단계가 있어야 하는 케이스)에 쓸 수 있는가 — O 행이 있고 어느 표도 전부 키워드가 아니다.
+
+        O 행이 0건이면 Case V(0행 + 마스터도 0건)로 O 가 생략되고, 표 전체가 키워드 행이면 그 단계가 생략된다.
+        """
+        return bool(self.ovl_rows) and not self.all_np('J') and not self.all_np('O')
 
     def __repr__(self):
         return (f'<Combo {self.line}/{self.process}/{self.product}/{self.process_id} '
-                f'rows={len(self.layer_rows)} plel={self.has_plel}>')
+                f'rows={len(self.layer_rows)} ovl={len(self.ovl_rows)} plel={self.has_plel} '
+                f'np_j={self.np_count("J")} np_o={self.np_count("O")}>')
 
 
 class MasterData:
@@ -66,6 +103,10 @@ class MasterData:
         self.combos = []          # 발견한 Combo 전부
         self.combo_plel = None    # plel 이 있는 조합(E 단계 생성용)
         self.combo_plain = None   # plel 이 없는 조합(E 단계 제외용)
+        # claude 수정 (2026-11-16): Case V — 키워드(서버 .env)와 조합 스캔 상태(필요할 때 이어서 찾는다)
+        self.np_keywords = EMPTY_NP_KEYWORDS
+        self._combo_iter = None
+        self._scan_done = False
 
     # ----- 사용자 -----
     def load_users(self):
@@ -104,13 +145,43 @@ class MasterData:
         return short
 
     # ----- 마스터 데이터 -----
+    # claude 수정 (2026-11-16): 키워드 조회 추가, 기존 케이스용 조합은 usable_for_default_cases 만 채택,
+    # 스캔을 제너레이터로 바꿔 Case V 조합은 그 케이스가 돌 때 이어서 찾는다(find_combo)
+    def load_np_keywords(self):
+        """서버 `.env` 의 '자동 미진행' 키워드를 읽는다. 조회 실패·구버전 서버면 빈 목록(키워드 없음)."""
+        res = self.api.get('/api/form-options/layer-np-keywords/', token=self.token)
+        body = res.body if res.ok and isinstance(res.body, dict) else {}
+
+        def _table(key):
+            t = body.get(key) or {}
+            return {'sd': list(t.get('sd') or []), 'pp': list(t.get('pp') or [])}
+
+        self.np_keywords = {'J': _table('jayer'), 'O': _table('oayer')}
+        return self.np_keywords
+
+    @property
+    def np_configured(self):
+        return any(self.np_keywords[t][k] for t in ('J', 'O') for k in ('sd', 'pp'))
+
     def load_combos(self):
-        """화면과 같은 순서로 옵션을 좁혀 가며 실제로 존재하는 조합을 찾는다."""
+        """화면과 같은 순서로 옵션을 좁혀 가며 실제로 존재하는 조합을 찾는다(기존 케이스용 2개를 찾으면 멈춘다)."""
+        self.load_np_keywords()
+        for _ in self._iter_new_combos():
+            if self.combo_plel and self.combo_plain:
+                break
+        return self.combos
+
+    def _iter_new_combos(self):
+        """아직 보지 않은 조합을 하나씩 내놓는다 — 스캔 위치를 기억해 다음 호출에서 이어 간다."""
+        if self._combo_iter is None:
+            self._combo_iter = self._scan()
+        for combo in self._combo_iter:
+            yield combo
+        self._scan_done = True
+
+    def _scan(self):
         lines = as_list(self.api.get('/api/lines/', token=self.token).body)
         line_names = [l.get('name') for l in lines if l.get('name')]
-        if not line_names:
-            return []
-
         for line in line_names[:self.scan_limit]:
             processes = self._options('/api/form-options/processes/', {'line': line})
             for process in processes[:self.scan_limit]:
@@ -126,15 +197,26 @@ class MasterData:
                             continue
                         ovl = self._options('/api/form-options/ovl-layer/',
                                             {'line': line, 'process': pid})
-                        combo = Combo(line, process, product, pid, rows, ovl)
+                        combo = Combo(line, process, product, pid, rows, ovl, self.np_keywords)
                         self.combos.append(combo)
-                        if combo.has_plel and self.combo_plel is None:
-                            self.combo_plel = combo
-                        if not combo.has_plel and self.combo_plain is None:
-                            self.combo_plain = combo
-                        if self.combo_plel and self.combo_plain:
-                            return self.combos
-        return self.combos
+                        if combo.usable_for_default_cases:
+                            if combo.has_plel and self.combo_plel is None:
+                                self.combo_plel = combo
+                            if not combo.has_plel and self.combo_plain is None:
+                                self.combo_plain = combo
+                        yield combo
+
+    def find_combo(self, predicate):
+        """predicate 를 만족하는 조합 — 이미 본 조합에서 먼저 찾고, 없으면 스캔을 이어 간다. 끝까지 없으면 None."""
+        for combo in self.combos:
+            if predicate(combo):
+                return combo
+        if self._scan_done:
+            return None
+        for combo in self._iter_new_combos():
+            if predicate(combo):
+                return combo
+        return None
 
     def _options(self, path, params):
         res = self.api.get(path, params=params, token=self.token)
@@ -156,6 +238,11 @@ class MasterData:
         if not self.combo_plel:
             lines.append(f'  ⚠️ pp 에 {VALIDATION_KEYWORD!r} 이 있는 조합을 찾지 못했다 '
                          f'— E(MASK) 단계가 필요한 케이스는 SKIP 된다.')
+        # claude 수정 (2026-11-16): Case V 키워드 설정 상태 출력
+        if self.np_configured:
+            lines.append(f'  자동 미진행 키워드: J={self.np_keywords["J"]} / O={self.np_keywords["O"]}')
+        else:
+            lines.append('  자동 미진행 키워드: 미설정(.env.dev) — 키워드가 필요한 Case V 케이스는 SKIP 된다.')
         scope = ('전체 계정(도메인 필터 해제)' if self.allow_any_account
                  else f'개발용 계정만({self.mail_domain})')
         lines.append(f'[사용자] {scope}')
