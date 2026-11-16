@@ -2481,6 +2481,10 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 | B-77 | 사용자 삭제 실패 시 예외 원문(DB 접속 정보 등)이 응답 → **권한관리 화면 토스트에 그대로 표시**(`PermissionPage.tsx` `err.message`). `get_object()` 까지 `try` 안이라 없는 사용자도 400 | `views.py` `UserViewSet.destroy` | `get_object()` 를 `try` 밖으로(없는 사용자 **404**), `user.delete()` 만 감싸 실패 시 `logger.exception` + 400 `'사용자 삭제 중 오류가 발생했습니다.'`. 권한 검사는 그대로 | 404 / 400 고정 문구 |
 | B-78 | 쿠키 인증 실패 응답에 예외 원문 — 깨진 토큰은 **비로그인 누구나** JWT 라이브러리 사유를, 사용자 조회 중 DB 오류는 DB 접속 정보를 받음 | `authentication.py` `CookieJWTAuthentication` | `'유효하지 않은 토큰입니다.'`·`'인증 오류가 발생했습니다.'` 고정, 사유는 `logger.warning`/`logger.error` | 403 고정 문구 |
 
+> **(2026-11-16 후속 변경)** B-75 의 job-file-layer·ovl-layer 두 API 는 조회 실패 시 **502** `{'options': [], 'error': 'layer 정보 조회에 실패했습니다.'}` 로 바뀌었다
+> (예외 원문은 여전히 싣지 않는다). 200 빈 목록이면 화면이 '데이터 없음'으로 보고 표를 비운 채 상신돼 J/O 결재가 빠질 수 있었기 때문이다.
+> extra-layer·bb-external 은 그대로 200 빈 목록. 상세는 `docs/REQUEST.md` 2026-11-16 항목.
+
 이미 막혀 있던 것(실측 확인): API Key 만으로 내부 API(`/api/documents/` 등) → 403, 외부 API 쓰기 메서드 → 405, `/media/` 비로그인 → 403, 운영 dev-login → 403.
 
 ### 설계 메모
