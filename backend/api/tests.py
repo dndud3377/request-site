@@ -253,6 +253,8 @@ class RecipientResolutionTest(TestCase):
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
         ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='approved', assignee=o_approver)
         ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='rejected', assignee=p_owner)
+        # claude 수정 (2026-11-16): P 와 J 는 함께 생성된다(2026-08~) — J 없이 P 만 있으면 J 를 건너뛴 회차(is_j_skipped)로 본다
+        ApprovalStep.objects.create(document=self.doc, agent='J', round=1, action='pending')
         individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
         self.assertEqual(sorted(individual_emails), ['oapp@company.com', 'req@company.com', 'rown3@company.com'])
         self.assertEqual(team_groups, {
@@ -1052,6 +1054,8 @@ class RouteCardTest(TestCase):
         ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='pending',
                                     assignee=o, assignee_name='오구')
         ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='pending')
+        # claude 수정 (2026-11-16): P 와 J 는 함께 생성된다(2026-08~) — J 없이 P 만 있으면 J 를 건너뛴 회차(is_j_skipped)로 본다
+        ApprovalStep.objects.create(document=self.doc, agent='J', round=1, action='pending')
 
         rows = mailer._route_rows(self.doc)
         by_label = dict(self._statuses(rows))
@@ -1059,7 +1063,7 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_label['R'], 'rejected')
         self.assertEqual(by_label['O'], 'reviewing')      # pending + 담당자 있음
         self.assertEqual(by_label['P'], 'waiting')        # pending + 미배정
-        self.assertEqual(by_label['J'], 'waiting')        # step 미생성(예정)
+        self.assertEqual(by_label['J'], 'waiting')        # pending + 미배정 (step 미생성(예정)은 E 테스트가 검증)
         # (2026-08) plel 이 아니면 E 는 거치지 않지만, 행 자체는 남기고 '해당없음'으로 표시한다
         # — 웹 결재현황 그리드와 같은 규칙. 예전에는 행을 아예 만들지 않아 왜 없는지 알 수 없었다.
         self.assertEqual(by_label['E'], 'na')
@@ -12223,16 +12227,13 @@ class FormOptionsAuthTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.assertEqual(self.client.post('/api/form-options/barcode/').status_code, 405)
 
+    # claude 수정 (2026-11-16): J/O layer 조회 실패는 0건과 구분해 502 로 응답한다 — 그 2건은 아래 별도 테스트로 옮김
     def test_lookup_failure_returns_empty_options_without_exception_detail(self):
         """조회 실패 시 예외 원문(접속 호스트 등)을 응답에 싣지 않는다 — 화면은 options 만 읽는다(client.ts getStepOptions)."""
         from . import layer_drift
         secret = 'impala-secret-host:21050 auth failed'
         self.client.force_authenticate(user=self.user)
         cases = (
-            ('api.views.layer_drift.get_job_file_layer_rows',
-             f'/api/form-options/job-file-layer/?line={next(iter(layer_drift.JOB_FILE_MODEL_MAP))}&process=P'),
-            ('api.views.layer_drift.get_ovl_layer_rows',
-             f'/api/form-options/ovl-layer/?line={next(iter(layer_drift.OVL_MODEL_MAP))}&process=P'),
             ('api.views.layer_drift.get_extra_layer_rows',
              f'/api/form-options/extra-layer/?line={next(iter(layer_drift.EXTRA_MODEL_MAP))}&process=P'),
             ('api.views.PhotoStepS1', '/api/form-options/bb-external/?location=line1&process_id=P'),
@@ -12245,6 +12246,32 @@ class FormOptionsAuthTest(TestCase):
             self.assertEqual(r.status_code, 200, url)
             self.assertEqual(r.json(), {'options': []}, url)
             self.assertNotIn(secret, r.content.decode(), url)
+
+    def test_jo_layer_lookup_failure_is_502_without_exception_detail(self):
+        """J/O layer 조회 실패는 0건(200 빈 목록)과 구분해 502 — 화면이 '데이터 없음'으로 보고 표를 비우지 않게 한다."""
+        from . import layer_drift
+        secret = 'impala-secret-host:21050 auth failed'
+        self.client.force_authenticate(user=self.user)
+        cases = (
+            ('api.views.layer_drift.get_job_file_layer_rows',
+             f'/api/form-options/job-file-layer/?line={next(iter(layer_drift.JOB_FILE_MODEL_MAP))}&process=P'),
+            ('api.views.layer_drift.get_ovl_layer_rows',
+             f'/api/form-options/ovl-layer/?line={next(iter(layer_drift.OVL_MODEL_MAP))}&process=P'),
+        )
+        for target, url in cases:
+            with patch(target, side_effect=Exception(secret)):
+                r = self.client.get(url)
+            self.assertEqual(r.status_code, 502, url)
+            self.assertEqual(r.json()['options'], [], url)
+            self.assertNotIn(secret, r.content.decode(), url)
+
+    def test_jo_layer_no_data_is_still_200_empty(self):
+        """조회는 성공했는데 0건이면 종전대로 200 빈 목록이다(화면 '데이터 없음' 경고)."""
+        from . import layer_drift
+        self.client.force_authenticate(user=self.user)
+        line = next(iter(layer_drift.JOB_FILE_MODEL_MAP))
+        r = self.client.get(f'/api/form-options/job-file-layer/?line={line}&process=NO-SUCH')
+        self.assertEqual((r.status_code, r.json()), (200, {'options': []}))
 
 
 class HealthCheckAccessTest(TestCase):
@@ -13614,3 +13641,264 @@ class SyncFormOptionsSystemRHookTest(TestCase):
                 patch.object(scheduler.system_r, 'judge_pending') as hook:
             scheduler.sync_form_options()
         hook.assert_not_called()
+
+
+# claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드(.env) — 판정·상신 검증·J/O 건너뛰기(마스터 DB 대조) 테스트
+NP_TEST_KEYWORDS = {'J': {'sd': ['DummySD'], 'pp': ['dmyPP']}, 'O': {'sd': ['OVDUM'], 'pp': []}}
+
+
+def _np_row(rid, sp, sd='', pp='', st='X', noc='미진행'):
+    return {'id': rid, 'sp': sp, 'sd': sd, 'pp': pp, 'layerid': '', 'st': st, 'new_or_copy': noc}
+
+
+def _master_row(stepseq, descript='', recipeid=''):
+    return {'stepseq': stepseq, 'descript': descript, 'recipeid': recipeid}
+
+
+@override_settings(LAYER_NP_KEYWORDS=NP_TEST_KEYWORDS)
+class LayerNpKeywordModelTest(TestCase):
+    """RequestDocument 의 키워드 판정·위반 목록·건너뛰기 판정(순수 판정 — 마스터 행을 직접 넘긴다)."""
+
+    def _doc(self, jayer=None, oayer=None):
+        user = UserProfile.objects.create(loginid=f'npm_{UserProfile.objects.count()}', role='NONE')
+        payload = {'detail': {'line': 'line1', 'process_id': 'PID-1'},
+                   'jayerRows': jayer or [], 'oayerRows': oayer or []}
+        return RequestDocument.objects.create(
+            title='np', requester=user, requester_name='u', product_name='P',
+            status='draft', additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def test_match_is_case_insensitive_partial_on_sd_or_pp(self):
+        m = RequestDocument.matches_np_keyword
+        self.assertTrue(m('J', 'xx_dummysd_yy', ''))
+        self.assertTrue(m('J', '', 'A_DMYPP'))
+        self.assertFalse(m('J', 'NORMAL', 'NORMAL'))
+
+    def test_tables_use_their_own_keywords(self):
+        m = RequestDocument.matches_np_keyword
+        self.assertFalse(m('O', 'DUMMYSD', ''), 'J 키워드는 O 표에 적용하지 않는다')
+        self.assertTrue(m('O', 'a_ovdum', ''))
+        self.assertFalse(m('O', '', 'DMYPP'), 'O 는 PP 키워드가 비어 있다')
+
+    @override_settings(LAYER_NP_KEYWORDS={})
+    def test_empty_keywords_disable_feature(self):
+        self.assertFalse(RequestDocument.matches_np_keyword('J', 'DUMMYSD', 'DMYPP'))
+
+    def test_violations_list_keyword_rows_not_np(self):
+        doc = self._doc(jayer=[
+            _np_row('a', 'S1', sd='DUMMYSD', st='', noc=''),
+            _np_row('b', 'S2', sd='DUMMYSD'),
+            _np_row('c', 'S3', sd='NORMAL', st='O', noc='신규'),
+        ])
+        self.assertEqual([r['id'] for r in doc.np_keyword_violations('J')], ['a'])
+        self.assertEqual(doc.np_keyword_violations('O'), [])
+
+    def test_zero_rows_skip_only_when_master_also_empty(self):
+        doc = self._doc()
+        self.assertTrue(doc.layer_rows_allow_skip('J', []))
+        self.assertFalse(doc.layer_rows_allow_skip('J', [_master_row('S1', 'NORMAL')]),
+                         '마스터에 행이 있는데 표가 비었으면(화면 버그·조회 실패) 건너뛰지 않는다')
+
+    def test_all_keyword_rows_matching_master_skip(self):
+        doc = self._doc(jayer=[_np_row('a', 'S1', sd='DUMMYSD'), _np_row('b', 'S2', pp='DMYPP')])
+        master = [_master_row('S1', 'DUMMYSD', 'R1'), _master_row('S2', 'D2', 'DMYPP')]
+        self.assertTrue(doc.layer_rows_allow_skip('J', master))
+
+    def test_missing_saved_row_does_not_skip(self):
+        doc = self._doc(jayer=[_np_row('a', 'S1', sd='DUMMYSD')])
+        master = [_master_row('S1', 'DUMMYSD'), _master_row('S2', 'DUMMYSD')]
+        self.assertFalse(doc.layer_rows_allow_skip('J', master))
+
+    def test_master_row_without_keyword_does_not_skip(self):
+        doc = self._doc(jayer=[_np_row('a', 'S1', sd='DUMMYSD'), _np_row('b', 'S2', sd='DUMMYSD')])
+        master = [_master_row('S1', 'DUMMYSD'), _master_row('S2', 'NORMAL')]
+        self.assertFalse(doc.layer_rows_allow_skip('J', master), '판정은 마스터 값 기준이다')
+
+    def test_unlocked_row_by_master_does_not_skip(self):
+        doc = self._doc(jayer=[_np_row('a', 'S1', sd='DUMMYSD', st='O', noc='신규')])
+        self.assertFalse(doc.layer_rows_allow_skip('J', [_master_row('S1', 'DUMMYSD')]))
+
+
+@override_settings(POST_APPROVER_LOGINID='', LAYER_NP_KEYWORDS=NP_TEST_KEYWORDS)
+class LayerNpSkipIntegrationTest(TestCase):
+    """실제 API 흐름(상신→PL→R→3구역)으로 J/O 건너뛰기·상신 검증을 확인한다.
+
+    jayer pp 에 plel 이 없어 E 는 생기지 않고, 고정 후결자를 비워 RA 도 없다(OSkipStageIntegrationTest 와 같은 구성).
+    마스터 DB 는 line1 의 PhotoStepS1(PMAINF)·PhotoStepS1Ov(POVLAY) 에 직접 넣는다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='np_req', mail='np_req@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='np_master', mail='np_m@c.com', role='MASTER')
+        self.pl_user = UserProfile.objects.create(loginid='np_pl', mail='np_pl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='np_r', mail='np_r@c.com', role='TE_R')
+        self.p_user = UserProfile.objects.create(loginid='np_p', mail='np_p@c.com', role='TE_P')
+        self.j_user = UserProfile.objects.create(loginid='np_j', mail='np_j@c.com', role='TE_J')
+        self.o_user = UserProfile.objects.create(loginid='np_o', mail='np_o@c.com', role='TE_O')
+        self.users = {'P': self.p_user, 'J': self.j_user, 'O': self.o_user}
+
+    def _master_j(self, *rows):
+        from .models import PhotoStepS1
+        for seq, sd, pp in rows:
+            PhotoStepS1.objects.create(processid='PID-1', stepseq=seq, descript=sd, recipeid=pp,
+                                       areaname='A', eqptype='PMAINF')
+
+    def _master_o(self, *rows):
+        from .models import PhotoStepS1Ov
+        for seq, sd, pp in rows:
+            PhotoStepS1Ov.objects.create(processid='PID-1', stepseq=seq, descript=sd, recipeid=pp,
+                                         areaname='A', eqptype='POVLAY')
+
+    def _make_doc(self, jayer, oayer, detail=None):
+        payload = {
+            'detail': {'line': 'line1', 'process_id': 'PID-1', 'map_type': 'NEW', **(detail or {})},
+            'jayerRows': jayer, 'oayerRows': oayer,
+        }
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='np_req@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='draft', additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _post(self, user, doc, path, data=None, expect=200):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{doc.id}/{path}/', data or {}, format='json')
+        self.assertEqual(r.status_code, expect, r.content)
+        return r
+
+    def _submit(self, doc, by=None):
+        self._post(by or self.requester, doc, 'submit', {'designated_pl_loginid': self.pl_user.loginid})
+        self._post(self.pl_user, doc, 'peer-approve')
+
+    def _approve_r(self, doc):
+        self._post(self.r_user, doc, 'assign-step',
+                   {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'r'})
+        _approve_pending_system_r(doc)
+        self._post(self.r_user, doc, 'approve-step', {'agent': 'R'})
+
+    def _act(self, agent, doc, verb):
+        self._post(self.users[agent], doc, 'claim-step', {'agent': agent})
+        return self._post(self.users[agent], doc, f'{verb}-step', {'agent': agent, 'comment': verb})
+
+    def _agents(self, doc, round_no=1):
+        return set(ApprovalStep.objects.filter(document=doc, round=round_no).values_list('agent', flat=True))
+
+    def _normal_o(self):
+        self._master_o(('O1', 'NORMAL', 'R'))
+        return [_np_row('o1', 'O1', sd='NORMAL', st='O', noc='신규')]
+
+    def test_all_keyword_j_rows_skip_j_and_final_approval_works(self):
+        self._master_j(('S1', 'DUMMYSD', 'R1'), ('S2', 'D2', 'X_DMYPP'))
+        doc = self._make_doc([_np_row('a', 'S1', sd='DUMMYSD', pp='R1'), _np_row('b', 'S2', sd='D2', pp='X_DMYPP')],
+                             self._normal_o())
+        self._submit(doc)
+        self._approve_r(doc)
+        self.assertEqual(self._agents(doc), {'PL', 'R', 'RS', 'P', 'O'})
+        self.assertTrue(doc.is_j_skipped(1))
+        self.assertNotIn('J', mailer.route_agents_for(doc))
+        rows = {label: st for label, _n, st, _c in mailer._route_rows(doc)}
+        self.assertEqual(rows.get(mailer.AGENT_LABEL['J']), 'na')
+        self._act('O', doc, 'approve')
+        r = self._act('P', doc, 'approve')
+        self.assertEqual(r.data['status'], 'approved', 'J 없이 나머지가 끝나면 최종 승인돼야 한다')
+
+    def test_both_tables_all_keyword_skip_j_and_o(self):
+        self._master_j(('S1', 'DUMMYSD', 'R1'))
+        self._master_o(('O1', 'A_OVDUM', 'R'))
+        doc = self._make_doc([_np_row('a', 'S1', sd='DUMMYSD', pp='R1')],
+                             [_np_row('o1', 'O1', sd='A_OVDUM', pp='R')])
+        self._submit(doc)
+        self._approve_r(doc)
+        self.assertEqual(self._agents(doc), {'PL', 'R', 'RS', 'P'})
+        self.assertTrue(doc.is_o_skipped(1))
+        r = self._act('P', doc, 'approve')
+        self.assertEqual(r.data['status'], 'approved')
+
+    def test_zero_rows_with_empty_master_skip(self):
+        doc = self._make_doc([], self._normal_o())
+        self._submit(doc)
+        self._approve_r(doc)
+        self.assertNotIn('J', self._agents(doc))
+
+    def test_zero_rows_but_master_has_rows_keeps_j(self):
+        self._master_j(('S1', 'NORMAL', 'R1'))
+        doc = self._make_doc([], self._normal_o())
+        self._submit(doc)
+        self._approve_r(doc)
+        self.assertIn('J', self._agents(doc), '화면에서 행이 사라진 채 상신돼도 J 는 빠지지 않아야 한다')
+
+    def test_master_lookup_failure_keeps_j(self):
+        doc = self._make_doc([], self._normal_o())
+        self._submit(doc)
+        with patch('api.views.layer_drift.get_job_file_layer_rows', side_effect=Exception('db down')):
+            self._approve_r(doc)
+        self.assertIn('J', self._agents(doc), '마스터 조회가 실패하면 건너뛰지 않는다')
+
+    def test_saved_rows_missing_master_row_keeps_j(self):
+        self._master_j(('S1', 'DUMMYSD', 'R1'), ('S2', 'NORMAL', 'R2'))
+        doc = self._make_doc([_np_row('a', 'S1', sd='DUMMYSD', pp='R1')], self._normal_o())
+        self._submit(doc)
+        self._approve_r(doc)
+        self.assertIn('J', self._agents(doc))
+
+    def test_non_master_submit_with_unapplied_keyword_row_is_rejected(self):
+        doc = self._make_doc([_np_row('a', 'S1', sd='DUMMYSD', st='', noc='')], [])
+        r = self._post(self.requester, doc, 'submit', {'designated_pl_loginid': self.pl_user.loginid}, expect=400)
+        self.assertIn('자동 미진행', r.data['error'])
+
+    def test_master_submit_with_unlocked_keyword_row_passes_and_keeps_j(self):
+        self._master_j(('S1', 'DUMMYSD', 'R1'))
+        doc = self._make_doc([_np_row('a', 'S1', sd='DUMMYSD', pp='R1', st='X', noc='기등록')], self._normal_o())
+        self._submit(doc, by=self.master)
+        self._approve_r(doc)
+        self.assertIn('J', self._agents(doc), 'MASTER 가 키워드 행을 바꿔 둔 문서는 J 를 그대로 거친다')
+
+    def test_overlay_only_route_skips_o(self):
+        self._master_o(('O1', 'A_OVDUM', 'R'))
+        doc = self._make_doc([], [_np_row('o1', 'O1', sd='A_OVDUM', pp='R')],
+                             {'other_purpose': [RequestDocument.OTHER_PURPOSE_OVERLAY]})
+        self._submit(doc)
+        self.assertEqual(self._agents(doc), {'PL', 'P'})
+        r = self._act('P', doc, 'approve')
+        self.assertEqual(r.data['status'], 'approved')
+
+    def test_map_delete_route_is_not_affected(self):
+        doc = self._make_doc([], [], {'request_purpose': RequestDocument.MAP_DELETE_EDIT_PURPOSE})
+        self._submit(doc)
+        self.assertEqual(self._agents(doc), {'PL', 'P', 'J', 'O'})
+
+    def test_reject_in_j_skipped_round_excludes_te_j_from_mail(self):
+        self._master_j(('S1', 'DUMMYSD', 'R1'))
+        doc = self._make_doc([_np_row('a', 'S1', sd='DUMMYSD', pp='R1')], self._normal_o())
+        self._submit(doc)
+        self._approve_r(doc)
+        self._act('P', doc, 'reject')
+        doc.refresh_from_db()
+        _individual, teams = mailer.resolve_reject_recipients(doc)
+        self.assertNotIn('J', teams, f'J 가 없던 회차의 반려 메일은 TE_J 에 가지 않아야 한다: {teams}')
+        self.assertIn('O', teams)
+
+    def test_p_completion_notice_skips_te_j_in_j_skipped_round(self):
+        self._master_j(('S1', 'DUMMYSD', 'R1'))
+        doc = self._make_doc([_np_row('a', 'S1', sd='DUMMYSD', pp='R1')], self._normal_o())
+        self._submit(doc)
+        self._approve_r(doc)
+        self._act('P', doc, 'approve')
+        notis = list(MailNotification.objects.filter(document=doc, event_type='notify_p_completed'))
+        self.assertEqual([n.recipients for n in notis], [[self.o_user.mail]], 'J 를 건너뛴 회차는 TE_O 1통만')
+
+
+@override_settings(LAYER_NP_KEYWORDS=NP_TEST_KEYWORDS)
+class LayerNpKeywordsApiTest(TestCase):
+    """/api/form-options/layer-np-keywords/ — 화면이 쓰는 키워드 목록."""
+
+    def test_returns_keywords_per_table(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=UserProfile.objects.create(loginid='npk', role='NONE'))
+        r = client.get('/api/form-options/layer-np-keywords/')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {'jayer': {'sd': ['DummySD'], 'pp': ['dmyPP']},
+                                    'oayer': {'sd': ['OVDUM'], 'pp': []}})
