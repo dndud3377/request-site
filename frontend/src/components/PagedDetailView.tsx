@@ -3833,6 +3833,12 @@ type Page = { label: string; content: React.ReactNode; key?: string };
         && allSteps.some((s) => s.agent === 'P' && (s.round ?? 1) === round)) {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
+    // claude 수정 (2026-11-16): J 표가 전부 '자동 미진행' 키워드 행(또는 0행)이라 J 를 건너뛴 회차도 '해당없음'(백엔드 is_j_skipped 와 동일)
+    // J 가 있는 모든 경로는 P 와 J 를 함께 만든다 — P step 이 있는데 J step 이 없으면 건너뛴 회차다.
+    if (agent === 'J' && steps.length === 0
+        && allSteps.some((s) => s.agent === 'P' && (s.round ?? 1) === round)) {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
     if (steps.length === 0) return [{ status: 'waiting', label: t('approval.step_pending') }];
     return steps.map(stepToInfo);
   };
