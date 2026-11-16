@@ -146,6 +146,7 @@ def route_agents_for(document):
     - 반려 후 재상신 R 생략(`is_r_skipped`): R 없이 3구역이 열린 회차면 뺀다.
 
     O 재합의가 생략된 회차(`is_o_skipped`, Case U)는 O 가 있는 모든 경로에서 O 를 뺀다.
+    J/O 표가 전부 '자동 미진행' 키워드 행(또는 0행)이라 그 단계를 건너뛴 회차(`is_j_skipped` / `is_o_skipped`)도 같다.
     """
     if document.is_only_map():
         return ROUTE_AGENTS_ONLY_MAP
@@ -158,6 +159,9 @@ def route_agents_for(document):
         route = ROUTE_AGENTS_MAP_DELETE_EDIT
         return tuple(a for a in route if a != 'O') if o_skipped else route
     route = ROUTE_AGENTS_NO_J if document.skip_j_stage() else ROUTE_AGENTS_DEFAULT
+    # claude 수정 (2026-11-16): J 표가 전부 '자동 미진행' 키워드 행(또는 0행)이라 J 를 건너뛴 회차는 J 를 결재선에서 뺀다
+    if max_round is not None and document.is_j_skipped(max_round):
+        route = tuple(a for a in route if a != 'J')
     if o_skipped:
         route = tuple(a for a in route if a != 'O')
     has_r = max_round is not None and ApprovalStep.objects.filter(
