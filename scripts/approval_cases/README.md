@@ -85,7 +85,7 @@ python3 -m scripts.approval_cases.run_cases --report /tmp/result.md
 ## 2구역 System R(RS) 통과 방식 (2026-11-13)
 
 일반·Only MAP 문서는 PL 합의 시 R 과 함께 **System R(RS)** 이 생기고, R(+RV)과 RS 가 모두 합의해야 병렬 단계가 열린다.
-RS 의 실제 판정은 MAP 이름 동기화(1시간 주기, 개발환경 스케줄러에서는 돌지 않는다) 뒤에 일어나 러너가 기다릴 수 없으므로,
+RS 의 실제 판정은 MAP 이름 동기화(10분 주기 — 2026-11-16 이전 1시간, 개발환경 스케줄러에서는 돌지 않는다) 뒤에 일어나 러너가 기다릴 수 없으므로,
 `flows.pass_system_r` 이 **R 합의 전에 MASTER 계정으로 RS 를 수동 합의**한다(사용자 결정 — MASTER 수동 처리). 시스템 판정은
 백엔드 `api.tests.SystemRStageTest` 가 검증한다. MASTER 계정이 없으면 R 단계를 지나는 케이스는 SKIP 된다.
 
