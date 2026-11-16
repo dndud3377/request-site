@@ -4,6 +4,7 @@ import {
   FlowChartRow,
   JayerRow,
   OayerRow,
+  LayerNpKeywords,
   BbTableRow,
   AdiCdStep,
   AdiCdTarget,
@@ -281,6 +282,8 @@ export const NOC_BORROW = '차용';
 export const NOC_REGISTERED = '기등록';
 export const NOC_LAYER_DELETE = 'layer삭제';
 export const NOC_NOT_PROCEEDING = '미진행';
+// claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 기본값 — 조회 전·조회 실패 시 자동 변경 없음(서버 상신 검증은 그대로 적용)
+export const EMPTY_NP_KEYWORDS: LayerNpKeywords = { jayer: { sd: [], pp: [] }, oayer: { sd: [], pp: [] } };
 // claude 수정 (2026-11-12): '다음'·'상신' 때 요청 기준이 '차용'으로 자동 변경된 칸의 강조 테두리 색 (J/O-ayer 표 공용)
 export const AUTO_BORROW_HIGHLIGHT_COLOR = '#ea580c';
 export const ST_O = 'O';

@@ -12,7 +12,7 @@
 import datetime
 import json
 
-from .masterdata import DEV_MAIL_DOMAIN
+from .masterdata import DEV_MAIL_DOMAIN, matches_np_keyword
 
 # 프론트 constants.ts 와 같은 값 (백엔드 RequestDocument 상수와도 일치해야 한다)
 PURPOSE_NEW = '신규'
@@ -28,6 +28,9 @@ EA_DEFAULT_PRODC = '500'
 
 NOC_NEW = '신규'          # bb 매핑 검증 대상이 되는 일반 행
 NOC_REGISTERED = '기등록'  # 매핑 검증에서 제외되는 특수 행
+# claude 수정 (2026-11-16): '자동 미진행' 키워드 행에 화면이 넣는 값(프론트 constants.ts ST_X / NOC_NOT_PROCEEDING)
+ST_X = 'X'
+NOC_NOT_PROCEEDING = '미진행'
 
 MAP_TYPE_NEW = 'NEW'
 
@@ -113,10 +116,23 @@ def _oayer_rows(combo, row_limit=3):
     return rows
 
 
+# claude 수정 (2026-11-16): 화면 '다음'·'상신'과 같이 키워드 행을 ST X + 미진행으로 바꾼다(제품 이름·STEP·ID 비움)
+def _apply_np_keywords(rows, words, has_item_id):
+    """SD·PP 가 키워드를 포함한 행을 ST 'X' + 요청 기준 '미진행'으로 바꾼다 — 프론트 index.tsx applyNpKeyword 와 같다."""
+    for row in rows:
+        if matches_np_keyword(words, row.get('sd'), row.get('pp')):
+            row.update({'st': ST_X, 'new_or_copy': NOC_NOT_PROCEEDING, 'product_name': '', 'step': ''})
+            if has_item_id:
+                row['item_id'] = ''
+    return rows
+
+
+# claude 수정 (2026-11-16): ST X 행은 화면처럼 bb 매핑 대상에서 뺀다(키워드 행 포함)
 def _bb_rows(jayer_rows, mapped=True):
     """J-layer 행마다 대응하는 Bb 행. mapped=False 면 매핑을 비워 상신 차단(S-06)을 유도한다."""
     if not mapped:
         return []
+    jayer_rows = [r for r in jayer_rows if r.get('st') != ST_X]
     return [{
         'id': f'B_{i}',
         'sourceJayerRowId': row['id'],
@@ -144,16 +160,30 @@ def build_document(combo, requester, *,
                    bb_mapped=True,
                    broken_json=False,
                    map_type=MAP_TYPE_NEW,
-                   extra_detail=None):
+                   extra_detail=None,
+                   all_rows=False,
+                   np_apply=True,
+                   empty_jayer=False,
+                   empty_oayer=False):
     """POST /api/documents/ 에 보낼 payload 를 만든다.
 
     combo: masterdata.Combo (실제 DB 값), requester: {'loginid','name','mail'}
+    (2026-11-16 Case V) all_rows: 마스터 행 전부를 그대로 싣는다(표 전체가 키워드 행이면 J/O 생략 조건이 된다) /
+    np_apply: 키워드 행을 화면처럼 X·미진행으로 바꾼다(False 면 서버 검증 400 을 유도) /
+    empty_jayer·empty_oayer: 그 표를 빈 채로 상신한다.
     반환: dict payload
     """
-    jayer = _jayer_rows(combo, plel_required=plel)
-    if not plel:
-        # plel 키워드가 든 행을 빼서 E(MASK) 단계가 생기지 않게 한다.
+    # claude 수정 (2026-11-16): Case V 옵션(all_rows·np_apply·empty_jayer·empty_oayer) 추가
+    j_limit = len(combo.layer_rows) if all_rows else 5
+    o_limit = len(combo.ovl_rows) if all_rows else 3
+    jayer = [] if empty_jayer else _jayer_rows(combo, plel_required=plel, row_limit=j_limit)
+    if not plel and not all_rows:
+        # plel 키워드가 든 행을 빼서 E(MASK) 단계가 생기지 않게 한다(전체 행 모드는 마스터와 같아야 하므로 빼지 않는다).
         jayer = [r for r in jayer if 'plel' not in (r.get('pp') or '').lower()] or jayer
+    oayer = [] if empty_oayer else _oayer_rows(combo, row_limit=o_limit)
+    if np_apply:
+        _apply_np_keywords(jayer, combo.np_keywords['J'], has_item_id=True)
+        _apply_np_keywords(oayer, combo.np_keywords['O'], has_item_id=False)
 
     detail = {
         'request_purpose': request_purpose,
@@ -180,7 +210,7 @@ def build_document(combo, requester, *,
 
     notes = {
         'jayerRows': jayer,
-        'oayerRows': _oayer_rows(combo),
+        'oayerRows': oayer,
         'bbRows': _bb_rows(jayer, mapped=bb_mapped),
         'detail': detail,
     }

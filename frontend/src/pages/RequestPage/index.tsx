@@ -39,6 +39,7 @@ import {
   AdiCdStep,
   MapInfo,
   NumCheckConfig,
+  LayerNpKeywords,
   DuplicateDocument,
   plRoleFor,
 } from '../../types';
@@ -124,6 +125,8 @@ import {
   NUM_CHECK_LOWER_THRESHOLD_DEFAULT,
   NUM_CHECK_MIN_IMAGES,
   NOC_BORROW,
+  NOC_NOT_PROCEEDING,
+  EMPTY_NP_KEYWORDS,
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
@@ -139,6 +142,7 @@ import {
   stPastePatches, stPasteReactivatedIds,
   isInterAutoYesProcess, isNumericValue, sortRowsBySp, isNumCheckRequired, isNumCheckImageRequired,
   findAutoBorrowRowIds,
+  matchesNpKeyword, isNpRow, findNpKeywordRowIds,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -540,6 +544,29 @@ export default function RequestPage(): React.ReactElement {
     })();
     return () => { cancelled = true; };
   }, []);
+  // claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드(.env) — SD·PP 가 키워드를 포함한 행은 '다음'·'상신' 때
+  // ST X + 요청 기준 미진행으로 바꾸고 ST·요청 기준을 잠근다. MASTER(사용자 결정)·가이드 투어 미리보기는 예외다.
+  const [npKeywords, setNpKeywords] = useState<LayerNpKeywords>(EMPTY_NP_KEYWORDS);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const words = await formOptionsAPI.getLayerNpKeywords();
+        if (cancelled) return;
+        setNpKeywords({
+          jayer: { sd: words.jayer?.sd ?? [], pp: words.jayer?.pp ?? [] },
+          oayer: { sd: words.oayer?.sd ?? [], pp: words.oayer?.pp ?? [] },
+        });
+      } catch {
+        // 조회 실패 시 자동 변경을 하지 않는다 — 서버 상신 검증이 키워드 행을 그대로 막는다
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const npKeywordExempt = currentUser.role === 'MASTER' || isTourMode;
+  /** 키워드로 X·미진행이 된 행인가 — 참이면 ST·요청 기준 칸을 바꿀 수 없다(MASTER·투어 제외) */
+  const isNpLocked = (table: 'jayer' | 'oayer', row: { sd: string; pp: string; st: string; new_or_copy: string }): boolean =>
+    !npKeywordExempt && isNpRow(row) && matchesNpKeyword(row, npKeywords[table]);
   // 직전 판정 결과 — 기준에 해당하다가 해당하지 않게 된 순간에만 NO 로 되돌리기 위해 쓴다.
   const interAutoMatchedRef = useRef(false);
   // 자동 MAP 매칭이 source_line 을 세팅한 직후 1틱 — "원본 위치 변경 → 원본 제품 초기화" 효과가
@@ -2882,6 +2909,11 @@ export default function RequestPage(): React.ReactElement {
 
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     const changedRow = jayerRows.find(r => r.id === id);
+    // claude 수정 (2026-11-16): '자동 미진행' 키워드로 잠긴 행의 ST·요청 기준은 바꿀 수 없다(MASTER 제외)
+    if ((field === 'st' || field === 'new_or_copy') && changedRow && isNpLocked('jayer', changedRow)) {
+      addToast(t('request.np_keyword_locked'), 'error');
+      return;
+    }
     if (blockRefDocStChange(field, value, changedRow?.st)) return;
     // bb 행이 J-ayer 에서 복사해 가는 값이 실제로 바뀐 경우에만 매핑을 해제한다.
     // (예전엔 컬럼을 가리지 않고 해제해, st 하나만 바꿔도 bb 재선택을 다시 해야 했다.)
@@ -3176,8 +3208,12 @@ export default function RequestPage(): React.ReactElement {
     clearNocOfStCleared(setJayerRows, changes);
   };
   const handleOayerAfterClear = (changes: { rowId: string; values: Record<string, string> }[]) => clearNocOfStCleared(setOayerRows, changes);
-  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, isLayerCellLocked, handleJayerAfterPaste, handleJayerAfterClear);
-  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, isLayerCellLocked, handleOayerAfterPaste, handleOayerAfterClear);
+  // claude 수정 (2026-11-16): '자동 미진행' 키워드로 잠긴 행의 ST·요청 기준은 붙여넣기·Delete 로도 바꿀 수 없다
+  const isNpCol = (col: string) => col === 'st' || col === 'new_or_copy';
+  const isJayerCellLocked = (row: JayerRow, col: string) => isLayerCellLocked(row, col) || (isNpCol(col) && isNpLocked('jayer', row));
+  const isOayerCellLocked = (row: OayerRow, col: string) => isLayerCellLocked(row, col) || (isNpCol(col) && isNpLocked('oayer', row));
+  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, isJayerCellLocked, handleJayerAfterPaste, handleJayerAfterClear);
+  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, isOayerCellLocked, handleOayerAfterPaste, handleOayerAfterClear);
 
   // 일괄 버튼이 값을 적용할 대상 행인가. st 필드 자체를 바꾸는 버튼은 st==='X'(비활성) 행도 대상이어야 한다 — 그렇지 않으면
   // '모두 X' 적용 직후 모든 행이 비활성이 되어 '모두 O'/'초기화'가 걸러낼 행이 없어 조용히 무동작하는 버그가 난다.
@@ -3190,6 +3226,10 @@ export default function RequestPage(): React.ReactElement {
     if (value === '') return (r.new_or_copy ?? '').trim() !== '';
     return nocOptionsForSt(r.st).includes(value);
   };
+  // claude 수정 (2026-11-16): 일괄 버튼(ST·요청 기준 '전체 …'·'초기화')은 '자동 미진행' 키워드로 잠긴 행을 건너뛴다
+  const isBulkTarget = (
+    table: 'jayer' | 'oayer', r: { sd: string; pp: string; st: string; new_or_copy: string }, field: 'st' | 'new_or_copy', value: string,
+  ): boolean => !isNpLocked(table, r) && isBulkStOrNocTarget(r, field, value);
   /** claude 수정 (2026-11-06): 일괄 버튼 값을 한 행에 적용 — ST 는 직접 바꿀 때와 같이 요청 기준 등을 정리한다(stChangeExtra). */
   const applyBulkValue = <Row extends { st: string; new_or_copy: string }>(
     r: Row, field: 'st' | 'new_or_copy', value: string, hasItemId: boolean,
@@ -3226,8 +3266,8 @@ export default function RequestPage(): React.ReactElement {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP·ITEM_ID 를
     // 비우고 bb 매핑을 푼다(ST X 에는 신규/차용을 쓸 수 없으므로 X 용 요청 기준을 다시 고르게 한다).
-    const clearedIds = jayerRows.filter((r) => isBulkStOrNocTarget(r, field, value) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
-    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field, value) ? applyBulkValue(r, field, value, true) : r));
+    const clearedIds = jayerRows.filter((r) => isBulkTarget('jayer', r, field, value) && field === 'st' && value === ST_X && !isRowInactive(r.st)).map((r) => r.id);
+    const updatedRows = jayerRows.map((r) => (isBulkTarget('jayer', r, field, value) ? applyBulkValue(r, field, value, true) : r));
     setJayerRows(updatedRows);
     unmapIfMapped(clearedIds);
     // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않는다.
@@ -3241,7 +3281,7 @@ export default function RequestPage(): React.ReactElement {
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-11-06): ST '초기화' 로 ST 가 비는 행은 요청 기준도 비운다(applyBulkValue)
-    const updatedRows = jayerRows.map((r) => (isBulkStOrNocTarget(r, field, '') ? applyBulkValue(r, field, '', true) : r));
+    const updatedRows = jayerRows.map((r) => (isBulkTarget('jayer', r, field, '') ? applyBulkValue(r, field, '', true) : r));
     setJayerRows(updatedRows);
     const targetIds = bulkCrossTargetIds(field, updatedRows, oayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setOayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, '', false) : r)));
@@ -3266,6 +3306,11 @@ export default function RequestPage(): React.ReactElement {
   // ===== Oayer Handlers =====
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
     const changedRow = oayerRows.find(r => r.id === id);
+    // claude 수정 (2026-11-16): '자동 미진행' 키워드로 잠긴 행의 ST·요청 기준은 바꿀 수 없다(MASTER 제외)
+    if ((field === 'st' || field === 'new_or_copy') && changedRow && isNpLocked('oayer', changedRow)) {
+      addToast(t('request.np_keyword_locked'), 'error');
+      return;
+    }
     if (blockRefDocStChange(field, value, changedRow?.st)) return;
     // 교차 동기화(O→J) 여부: 소스 행이 참여행이고, 전파할 값이 특수값(기등록/layer삭제/미진행)이 아닐 때만
     // J-layer로 전파를 검토한다(같은 O-layer 안에서는 더 이상 전파하지 않는다).
@@ -3340,7 +3385,7 @@ export default function RequestPage(): React.ReactElement {
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-10-20): '전체 X' 도 한 행씩 X 로 바꿀 때와 같이, 활성이던 행의 요청 기준·제품 이름·STEP 를 비운다
-    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field, value) ? applyBulkValue(r, field, value, false) : r));
+    const updatedRows = oayerRows.map((r) => (isBulkTarget('oayer', r, field, value) ? applyBulkValue(r, field, value, false) : r));
     setOayerRows(updatedRows);
     // claude 수정 (2026-10-27): 반대편 전파 대상은 bulkCrossTargetIds 로 고른다(ST 일괄 버튼은 ST X 행도 대상). 이미 X 였던 행은 값을 비우지 않고,
     // 전파로 X 가 된 J 행은 J 에서 직접 X 로 바꿀 때와 같이 bb 매핑을 푼다.
@@ -3355,7 +3400,7 @@ export default function RequestPage(): React.ReactElement {
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
     if (refDocStLocked && field === 'st') return; // claude 수정 (2026-10-20): 참조 요청서 표가 st 를 정한다
     // claude 수정 (2026-11-06): ST '초기화' 로 ST 가 비는 행은 요청 기준도 비운다(applyBulkValue)
-    const updatedRows = oayerRows.map((r) => (isBulkStOrNocTarget(r, field, '') ? applyBulkValue(r, field, '', false) : r));
+    const updatedRows = oayerRows.map((r) => (isBulkTarget('oayer', r, field, '') ? applyBulkValue(r, field, '', false) : r));
     setOayerRows(updatedRows);
     const targetIds = bulkCrossTargetIds(field, updatedRows, jayerRows); // claude 수정 (2026-10-27): ST '초기화' 도 반대편 ST X 행까지 전파
     if (targetIds.size > 0) setJayerRows(rows => rows.map(r => (targetIds.has(r.id) ? applyBulkValue(r, field, '', true) : r)));
@@ -5115,6 +5160,28 @@ export default function RequestPage(): React.ReactElement {
     return ids.length;
   };
 
+  // claude 수정 (2026-11-16): SD·PP 가 '자동 미진행' 키워드를 포함한 J/O 행을 ST X + 요청 기준 미진행으로 바꾸고(잠금) 이유를 토스트로 알린다.
+  // ST X 로 바꿀 때와 같이 제품 이름·STEP(·ID)을 비우고 J 는 bb 매핑을 푼다. 반대편 표로는 전파하지 않는다(표마다 자기 키워드만 — 사용자 결정).
+  // 바꾼 행 수를 돌려준다(0 이면 아무것도 하지 않음). MASTER·가이드 투어 미리보기는 제외.
+  const applyNpKeyword = (table: 'jayer' | 'oayer'): number => {
+    if (npKeywordExempt) return 0;
+    const ids = findNpKeywordRowIds(table === 'jayer' ? jayerRows : oayerRows, npKeywords[table]);
+    if (ids.length === 0) return 0;
+    const idSet = new Set(ids);
+    if (table === 'jayer') {
+      setJayerRows((rows) => rows.map((r) => (idSet.has(r.id)
+        ? { ...r, st: ST_X, new_or_copy: NOC_NOT_PROCEEDING, product_name: '', step: '', item_id: '' }
+        : r)));
+      unmapIfMapped(ids);
+    } else {
+      setOayerRows((rows) => rows.map((r) => (idSet.has(r.id)
+        ? { ...r, st: ST_X, new_or_copy: NOC_NOT_PROCEEDING, product_name: '', step: '' }
+        : r)));
+    }
+    addToast(t('request.toast_np_keyword_applied', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
+    return ids.length;
+  };
+
   const clearAutoBorrowHighlight = () => {
     setAutoBorrowJayerIds(new Set());
     setAutoBorrowOayerIds(new Set());
@@ -5131,6 +5198,12 @@ export default function RequestPage(): React.ReactElement {
     }
 
     for (let s = step; s < target; s++) {
+      // claude 수정 (2026-11-16): '자동 미진행' 키워드 행 변경을 '차용' 자동 변경보다 먼저 확인한다 — 바꾼 행이 있으면 그 단계에 머문다.
+      if ((s === STEP_JAYER || s === STEP_OAYER) && applyNpKeyword(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
+        if (s !== step) setStep(s);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
       // claude 수정 (2026-11-12): J-ayer·O-ayer 단계를 지날 때마다 요청 기준 '차용' 자동 변경을 먼저 확인한다 —
       // 바꾼 행이 있으면 강조된 그 단계에 머문다(다시 '다음'을 누르면 기존 검증·요청 목적 확인 관문으로 진행).
       if ((s === STEP_JAYER || s === STEP_OAYER) && applyAutoBorrow(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
@@ -5249,6 +5322,14 @@ export default function RequestPage(): React.ReactElement {
     // claude 수정 (2026-11-12): STEP5 에서 시작한 임시저장 문서 등 STEP3·4 '다음'을 거치지 않은 경우를 위해 상신 때도
     // 요청 기준 '차용' 자동 변경을 확인한다. 바꾼 행이 있으면 상신을 멈추고 먼저 바뀐 표의 단계로 이동한다.
     if (lastStep === STEP_LAST) {
+      // claude 수정 (2026-11-16): 상신 때도 '자동 미진행' 키워드 행 변경을 먼저 확인한다 — 바꾼 행이 있으면 그 표의 단계로 이동해 멈춘다.
+      const npJ = applyNpKeyword('jayer');
+      const npO = applyNpKeyword('oayer');
+      if (npJ + npO > 0) {
+        setStep(npJ > 0 ? STEP_JAYER : STEP_OAYER);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
       const changedJ = applyAutoBorrow('jayer');
       const changedO = applyAutoBorrow('oayer');
       if (changedJ + changedO > 0) {
@@ -5719,6 +5800,7 @@ export default function RequestPage(): React.ReactElement {
           handleJayerChange={handleJayerChange}
           cellSel={jayerCellSel}
           autoBorrowRowIds={autoBorrowJayerIds}
+          npLockedRowIds={new Set(jayerRows.filter((r) => isNpLocked('jayer', r)).map((r) => r.id))}
           GuideTourBadge={<StepTourBadge step={3} />}
           GuideBadge={GuideBadge}
           validationSystem={detail.validation_system}
@@ -5753,6 +5835,7 @@ export default function RequestPage(): React.ReactElement {
           handleOayerChange={handleOayerChange}
           cellSel={oayerCellSel}
           autoBorrowRowIds={autoBorrowOayerIds}
+          npLockedRowIds={new Set(oayerRows.filter((r) => isNpLocked('oayer', r)).map((r) => r.id))}
           GuideTourBadge={<StepTourBadge step={4} />}
           GuideBadge={GuideBadge}
         />

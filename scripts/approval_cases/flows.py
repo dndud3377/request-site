@@ -47,10 +47,14 @@ class Ctx:
             raise CaseSkip(f'{role} 계정이 {index + 1}명 이상 필요하다(현재 {len(users)}명).')
         return users[index]
 
+    # claude 수정 (2026-11-16): 기존 케이스용 조합은 O 행이 있고 전부 키워드 행이 아닌 조합만 쓴다 — 없을 때의 SKIP 사유를 구분
     def combo(self, plel=False):
         c = self.master.pick(plel=plel)
         if c is None:
-            raise CaseSkip("pp 에 'plel' 이 든 마스터 데이터가 없어 E(MASK) 경로를 만들 수 없다.")
+            if plel:
+                raise CaseSkip("pp 에 'plel' 이 든 마스터 데이터가 없어 E(MASK) 경로를 만들 수 없다.")
+            raise CaseSkip('O-layer 행이 있고 J/O 표가 전부 자동 미진행 키워드 행이 아닌 조합을 찾지 못했다 '
+                           '(그런 조합은 Case V 로 J/O 단계가 생략돼 기존 케이스 전제가 깨진다).')
         return c
 
     def need(self, **roles):

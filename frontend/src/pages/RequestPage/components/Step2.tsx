@@ -22,6 +22,8 @@ interface Step2Props {
   cellSel: CellSelectionApi;
   /** claude 수정 (2026-11-12): '다음'·'상신' 때 요청 기준이 '차용'으로 자동 변경된 행 id — 그 요청 기준 칸을 강조한다 */
   autoBorrowRowIds?: ReadonlySet<string>;
+  /** claude 수정 (2026-11-16): '자동 미진행' 키워드로 ST X·미진행이 돼 잠긴 행 id — ST·요청 기준 칸을 비활성으로 두고 이유를 툴팁으로 보여 준다 */
+  npLockedRowIds?: ReadonlySet<string>;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
@@ -49,6 +51,7 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerChange,
   cellSel,
   autoBorrowRowIds = EMPTY_ID_SET,
+  npLockedRowIds = EMPTY_ID_SET,
   GuideTourBadge,
   GuideBadge,
   validationSystem,
@@ -169,6 +172,9 @@ const Step2: React.FC<Step2Props> = ({
               const nocError = errors[`jayer_stnoc_${row.id}_new_or_copy`];
               // claude 수정 (2026-11-12): 자동 '차용' 변경 강조 — 사용자가 값을 다시 바꾸면 강조도 사라진다
               const autoBorrowed = autoBorrowRowIds.has(row.id) && row.new_or_copy === NOC_BORROW;
+              // claude 수정 (2026-11-16): '자동 미진행' 키워드 잠금 — ST·요청 기준 칸 비활성 + 이유 툴팁(마우스 이벤트를 칸이 받도록 입력은 pointer-events 끔)
+              const npLocked = npLockedRowIds.has(row.id);
+              const npLockTitle = npLocked ? t('request.np_keyword_locked_title') : undefined;
               const itemIdError = errors[`jayer_noc_${row.id}_item_id`];
               const regBg = '#e5e7eb';
               // 편집 셀 공통 props: 셀 선택(드래그/Ctrl) + 선택 하이라이트
@@ -193,16 +199,16 @@ const Step2: React.FC<Step2Props> = ({
                   <td {...cellProps('sd', greyBg ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                   <td {...cellProps('layerid', greyBg ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                   <td {...cellProps('pp', greyBg ? regBg : undefined)}><input value={row.pp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                  <td {...cellProps('st', greyBg ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined} title={stLockTitle}>
+                  <td {...cellProps('st', greyBg ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined} title={npLockTitle ?? stLockTitle}>
                     <AutocompleteInput
                       value={row.st}
                       onChange={(v) => handleJayerChange(row.id, 'st', v)}
                       options={ST_OPTIONS}
                       // claude 수정 (2026-11-06): ST 를 먼저 고르도록 순서를 강제해, 요청 기준(기등록/layer삭제/미진행)으로 ST 를 'X' 에 잠그지 않는다.
-                      disabled={stLocked}
+                      disabled={stLocked || npLocked}
                       inputStyle={{
                         backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
-                        ...(stLocked ? { pointerEvents: 'none' as const } : {}),
+                        ...(stLocked || npLocked ? { pointerEvents: 'none' as const } : {}),
                         ...(stError ? { border: '1px solid var(--danger)' } : {}),
                       }}
                       dropdownFontSize="0.7rem"
@@ -210,14 +216,15 @@ const Step2: React.FC<Step2Props> = ({
                       disableFilter
                     />
                   </td>
-                  <td {...cellProps('new_or_copy')} data-tour="jayer-sync-cols" className={nocError ? 'field-error-target' : undefined} title={autoBorrowed ? t('request.auto_borrow_cell_title') : undefined} data-auto-borrow={autoBorrowed ? 'true' : undefined}>
+                  <td {...cellProps('new_or_copy')} data-tour="jayer-sync-cols" className={nocError ? 'field-error-target' : undefined} title={npLockTitle ?? (autoBorrowed ? t('request.auto_borrow_cell_title') : undefined)} data-auto-borrow={autoBorrowed ? 'true' : undefined}>
                     <AutocompleteInput
                       value={row.new_or_copy}
                       onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
                       // claude 수정 (2026-11-06): ST 를 고른 뒤에만 입력 — ST 공란이면 비활성. ST 가 O 계열이면 신규/차용, X 면 기등록/layer삭제/미진행
                       options={nocOptionsForSt(row.st)}
-                      disabled={!isNocEditable(row.st)}
+                      disabled={!isNocEditable(row.st) || npLocked}
                       inputStyle={{
+                        ...(npLocked ? { pointerEvents: 'none' as const } : {}),
                         backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
                         ...(autoBorrowed ? { outline: `2px solid ${AUTO_BORROW_HIGHLIGHT_COLOR}`, outlineOffset: '-2px', fontWeight: 700 } : {}),
                         ...(nocError ? { border: '1px solid var(--danger)' } : {}),

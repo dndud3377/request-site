@@ -1,6 +1,6 @@
 # 결재 경우의 수 케이스 러너 (개발환경 전용)
 
-`docs/APPROVAL_CASES_VALIDATION.md` 에 열거한 **139개 케이스를 개발환경에서 실제로 실행**한다.
+`docs/APPROVAL_CASES_VALIDATION.md` 에 열거한 **148개 케이스를 개발환경에서 실제로 실행**한다.
 
 - **개발용 사이트의 Django REST API 를 직접 호출**해 케이스마다 의뢰서를 **실제로 상신**하고
   결재를 끝까지 진행한다. 화면 조작이나 모의 객체 없이
@@ -89,6 +89,23 @@ RS 의 실제 판정은 MAP 이름 동기화(1시간 주기, 개발환경 스케
 `flows.pass_system_r` 이 **R 합의 전에 MASTER 계정으로 RS 를 수동 합의**한다(사용자 결정 — MASTER 수동 처리). 시스템 판정은
 백엔드 `api.tests.SystemRStageTest` 가 검증한다. MASTER 계정이 없으면 R 단계를 지나는 케이스는 SKIP 된다.
 
+## J/O-ayer '자동 미진행' 키워드 (Case V, 2026-11-16)
+
+- 러너는 시작할 때 `GET /api/form-options/layer-np-keywords/` 로 서버(`.env.dev`)의 키워드를 읽는다.
+- **상신 payload 의 키워드 행은 화면과 같이 ST 'X' + 요청 기준 '미진행'**으로 만든다(제품 이름·STEP·ID 비움, bb 매핑 제외) —
+  그대로 ST 'O' 로 보내면 서버 상신 검증이 400 으로 막는다.
+- **기존 케이스용 조합은 O-layer 행이 있고 J/O 표가 전부 키워드 행이 아닌 조합만** 고른다. O 행이 0건이거나 표 전체가 키워드
+  행인 조합은 Case V 로 J/O 단계가 생략돼 기존 케이스 전제(J·O 존재)가 깨지기 때문이다.
+- 그룹 **V** 케이스(V-01~V-09)는 필요한 조합(J 전부 키워드, O 전부 키워드, O 0건, 키워드 혼재)을 그 케이스가 돌 때
+  이어서 찾는다(`MasterData.find_combo`). 없거나 키워드가 미설정이면 SKIP 하고 사유를 출력한다.
+
+```bash
+# .env.dev 예 — 키워드가 실제 마스터 행 SD/PP 에 있어야 V 케이스가 돈다
+JAYER_AUTO_NP_SD_KEYWORDS=DUMMY
+OAYER_AUTO_NP_PP_KEYWORDS=DUMMY
+python3 -m scripts.approval_cases.run_cases --group V
+```
+
 ## 상신에 쓰는 값은 전부 실제 DB 값이다
 
 화면(RequestPage)이 쓰는 것과 **같은 form-options API 를 같은 순서로** 호출해 조합을 찾는다.
@@ -119,7 +136,7 @@ GET /api/form-options/ovl-layer/         → O-layer 행
 | 파일 | 역할 |
 |---|---|
 | `run_cases.py` | CLI 진입점 · 결과 표/보고서 출력 |
-| `cases.py` | 케이스 139건 정의(문서의 ID 와 1:1) |
+| `cases.py` | 케이스 148건 정의(문서의 ID 와 1:1) |
 | `flows.py` | 상신·합의·반려·중단·철회 조작 + 검증 헬퍼 |
 | `payload.py` | 화면과 같은 모양의 의뢰서 payload 빌더 |
 | `masterdata.py` | 실제 DB 마스터 데이터·역할 계정 탐색 |

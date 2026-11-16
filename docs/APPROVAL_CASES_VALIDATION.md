@@ -69,6 +69,10 @@
 근거: `views.py:1625` `_advance_to_parallel`, `views.py:1582` `_create_map_delete_edit_parallel`,
 `views.py:1715` `_open_stage_after_pl`.
 
+> **보충 (2026-11-16, Case V)**: RT-1~RT-4 에서 J 표(RT-1·2)·O 표(RT-1~4)가 **전부 '자동 미진행' 키워드 X·미진행 행이거나 0행**이면
+> 3구역을 열 때 마스터 DB 와 대조해 그 단계를 만들지 않는다 — 결재선에서 `J` 또는 `O`(둘 다일 수도)가 빠지고 종단 조건에서도 빠진다.
+> RT-5·RT-6(Only MAP·MAP 삭제)과 ADI CD 변경은 대상이 아니다. 규칙은 `docs/APPROVAL.md` "Case V", 러너 케이스는 §3.12 그룹 V.
+
 ### 2.2 상신 시점에 확정되는 조합 24가지 (골격 × SA × 지정 PL 수)
 
 | ID | 골격 | SA | 지정 PL | 상신 직후 만들어지는 step | 러너 |
@@ -143,12 +147,12 @@
  + 반려 지점 9 (§2.4)
  + 진행 중 이벤트 9 (§2.5)
  + 권한·인가·동시성 분기 (§3.10, §3.11)
-→ 동작이 갈리는 지점으로 압축한 실행 케이스 139건 (§3)
+→ 동작이 갈리는 지점으로 압축한 실행 케이스 148건 (§3 — 2026-11-16 그룹 V 9건 추가)
 ```
 
 ---
 
-## 3. 검증 케이스 139건 (러너 케이스 ID 와 1:1)
+## 3. 검증 케이스 148건 (러너 케이스 ID 와 1:1)
 
 각 케이스는 `python3 -m scripts.approval_cases.run_cases --case <ID>` 로 **개별 실행**된다.
 표의 "기대 결과"가 러너의 판정 기준이고, "근거"는 코드 대조 지점이다.
@@ -355,6 +359,30 @@
 
 ---
 
+
+### 3.12 그룹 V — 표 내용으로 J/O 건너뛰기 9건 (Case V, 2026-11-16)
+
+`.env.dev` 의 `JAYER_/OAYER_AUTO_NP_SD/PP_KEYWORDS` 와 **실제 DB 조합**으로 돈다. 키워드가 없거나 조건에 맞는 조합이 없으면 SKIP(사유 출력).
+러너는 기존 케이스용 조합을 **O 행이 있고 J/O 표가 전부 키워드 행이 아닌 조합**에서만 고르고, 상신 payload 의 키워드 행은 화면과 같이
+ST 'X'·'미진행'으로 만든다 — 키워드를 켜도 기존 139건의 전제가 바뀌지 않게 하기 위해서다(2026-11-16 발견 (a)·(b)).
+
+| ID | 케이스 | 기대 결과 | 필요한 조합 | 근거 |
+|---|---|---|---|---|
+| V-01 | J 표 전부 키워드 행(전체 행 상신) | J 미생성, 나머지 합의로 approved | J 행 전부 키워드 + O 행 있음 | `_should_skip_layer_stage`, `is_j_skipped` |
+| V-02 | O 표 전부 키워드 행 | O 미생성, J 생성, approved | O 행 전부 키워드 | 〃, `is_o_skipped` |
+| V-03 | O-layer 마스터 0건 + O 표 0행 | O 미생성 | O 마스터 0건 | `layer_rows_allow_skip` (0행) |
+| V-04 | J 표 0행인데 마스터에 행 있음 | **J 생성**(안전장치) | 기본 조합 | 〃 |
+| V-05 | J 표 일부만 키워드 행 | 그 행만 X·미진행 저장, J 생성 | 키워드 행·아닌 행 혼재 | 〃 |
+| V-06 | 키워드 행 미적용 상신(일반 사용자) | 400 '자동 미진행' | 키워드 행 1개 이상 | `_validate_np_keyword_rows` |
+| V-07 | MASTER 가 키워드 행 미적용 상신 | 200, J 생성 | J 에 키워드 행 | 〃 (MASTER 예외) |
+| V-08 | 'Overlay만 변경' + O 표 전부 키워드 행 | R·J·O 미생성, P 합의로 approved | O 행 전부 키워드 | `_advance_to_parallel` |
+| V-09 | 'MAP 삭제' + J/O 0행 | P·J·O 생성(대상 아님) | 기본 조합 | `_create_map_delete_edit_parallel` |
+
+- **실행 기록(2026-11-16, 로컬 sqlite 개발 서버 — 시드 조합 5개, 키워드 J SD=`DUMMYSD` / O PP=`OVDUM`)**: 전체
+  `PASS 138 / FAIL 0 / SKIP 10 / ERROR 0 (총 148건)`. SKIP 10건은 §4-4 의 구조적 SKIP(R-13·R-15·PE-11·PE-12·PE-14·F-15·X-03·X-04·X-08·M-07)이다.
+  같은 서버에서 **수정 전 러너**로 F 그룹을 돌리면 `PASS 6 / FAIL 8` — 키워드 행이 ST O 로 상신돼 400 이 났다(발견 (a) 재현).
+  발견 (b)(O 마스터 0건 조합이 기존 케이스에 잡힘)는 이 시드에서는 O 행 있는 조합이 먼저 잡혀 재현되지 않았다(코드 대조로 판단).
+  **실제 개발 DB(MySQL)에서는 아직 돌리지 않았다.**
 ## 4. 개발환경에서 실행하기 (러너)
 
 ### 4-0. 실행 방식 — **개발용 사이트의 Django REST API 직접 호출**
@@ -398,7 +426,7 @@ GET  /api/documents/{id}/            ← 결과 검증(status·approval_steps)
 
 ### 4-2. 실행
 ```bash
-python3 -m scripts.approval_cases.run_cases --list                  # 139건 목록
+python3 -m scripts.approval_cases.run_cases --list                  # 148건 목록
 python3 -m scripts.approval_cases.run_cases                         # 전체
 python3 -m scripts.approval_cases.run_cases --group F --group PE    # 그룹만
 python3 -m scripts.approval_cases.run_cases --case F-05 --case X-09 # 개별
@@ -541,7 +569,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 
 ## 9. 보고 형식
 
-### 9-1. 케이스 결과표(139행)
+### 9-1. 케이스 결과표(148행)
 러너의 `--report` 출력을 그대로 붙이고, SKIP 은 사유까지 남긴다.
 
 | ID | 판정 | 근거(실행 출력) | 비고 |

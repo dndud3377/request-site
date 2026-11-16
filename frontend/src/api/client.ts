@@ -45,6 +45,7 @@ import {
   LayerFilterSet,
   MapInfo,
   NumCheckConfig,
+  LayerNpKeywords,
   PersonalMarkCategory,
   PersonalFilterPreset,
   PersonalFilterPresetInput,
@@ -1173,6 +1174,10 @@ export const formOptionsAPI = {
   // claude 수정 (2026-11-10): '숫자 확인 필수' 사진 첨부 기준값 조회 신설
   getNumCheckConfig: (): Promise<NumCheckConfig> =>
     get<NumCheckConfig>('/form-options/num-check-config/'),
+
+  // claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 조회 추가
+  getLayerNpKeywords: (): Promise<LayerNpKeywords> =>
+    get<LayerNpKeywords>('/form-options/layer-np-keywords/'),
 
   getBarcodeOptions: (product_name: string): Promise<{ label: string; spec: string }[]> =>
     get<{ options: { label: string; spec: string }[] }>(

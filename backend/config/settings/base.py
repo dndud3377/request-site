@@ -165,6 +165,20 @@ try:
 except ValueError:
     NUM_CHECK_LOWER_THRESHOLD = NUM_CHECK_LOWER_THRESHOLD_DEFAULT
 
+# claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 — SD 또는 PP 가 이 문구를 포함하면(대소문자 무관·부분 일치)
+# '다음'·'상신' 때 그 행을 ST 'X' + 요청 기준 '미진행'으로 바꾸고 잠근다(MASTER 제외). 표의 모든 행이 이 키워드로
+# X·미진행이면(또는 마스터 DB 도 0건인 0행 표면) 그 표의 결재 단계(J/O)를 만들지 않는다. 쉼표 구분, 비우면 기능 꺼짐.
+# 바꾼 뒤 backend 재시작이 필요하다(화면은 /api/form-options/layer-np-keywords/ 로 읽는다). 상세는 docs/REQUEST.md.
+def _keyword_list(env_name):
+    """쉼표로 구분된 환경변수를 앞뒤 공백을 지운 비지 않은 문구 목록으로 돌려준다."""
+    return [w.strip() for w in os.environ.get(env_name, '').split(',') if w.strip()]
+
+
+LAYER_NP_KEYWORDS = {
+    'J': {'sd': _keyword_list('JAYER_AUTO_NP_SD_KEYWORDS'), 'pp': _keyword_list('JAYER_AUTO_NP_PP_KEYWORDS')},
+    'O': {'sd': _keyword_list('OAYER_AUTO_NP_SD_KEYWORDS'), 'pp': _keyword_list('OAYER_AUTO_NP_PP_KEYWORDS')},
+}
+
 # DXHUB 메일 API (결재 알림 발송)
 DXHUB_MAIL_URL = os.environ.get('DXHUB_MAIL_URL', '')
 DXHUB_API_KEY = os.environ.get('DXHUB_API_KEY', '')
