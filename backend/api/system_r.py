@@ -7,7 +7,7 @@ System R 단계 판정으로 대체했다. 판정 결과는 RS 단계의 합의/
 - 생성: 일반·Only MAP 경로에서 PL(+SA) 전원 합의로 R 을 만들 때 함께 만든다(`views._open_stage_after_pl`).
   담당자 없음·도착 메일 없음. 2구역(R)이 없는 회차(Case T 재상신 R 생략·'Overlay만 변경' 단독)와
   MAP 삭제·ADI CD 변경에는 만들지 않는다.
-- 판정 시점: `scheduler.sync_form_options()`(MAP 이름 동기화, 1시간 주기)가 끝난 직후, 현재 회차의 RS 가
+- 판정 시점: `scheduler.sync_form_options()`(MAP 이름 동기화, 10분 주기 — claude 수정 (2026-11-16): 1시간 → 10분)가 끝난 직후, 현재 회차의 RS 가
   pending 인 진행 중 문서만 판정한다. 합의·반려로 결론이 난 RS 는 다시 판정하지 않는다.
 - 판정 동결: 결재 액션과 같이 under_review 가 아니거나 철회·중단 요청 확인 대기 중이면 건너뛴다.
 - 판정 순서:
