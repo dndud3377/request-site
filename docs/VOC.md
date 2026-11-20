@@ -182,18 +182,20 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 상세 규격은 `docs/MAIL.md` 를 함께 본다.
 
 ### 5.1 VOC 등록 (`voc_created`)
-- 수신자: **`role='MASTER'` 사용자 중 VOC 메일을 켜둔 사람**(`UserProfile.receive_voc_mail`, 기본값 `True`)의 `mail`.
-  MASTER 계정이 늘어나도 설정 변경 없이 반영된다.
-- 개별 MASTER 는 권한 관리 화면 MASTER 탭의 '이메일 설정' 컬럼에서 `VOC` 토글로 수신 여부를
-  켜고 끌 수 있다(`PATCH /api/users/{id}/voc-mail/`, 본인 또는 다른 MASTER 만 변경 가능).
-  라인별 메일 설정(`mail_lines`/`receive_all_mail`)과는 별개 설정이다.
+- 수신자: **`role='MASTER'` 사용자 중 VOC 메일을 켜둔 사람**(`UserProfile.receive_voc_mail`, 기본값 `True`)
+  \+ **작성자 팀원 전원**(작성자가 AGENT R·P·J·O·E팀일 때, VOC 메일 켬) − 작성자 본인 (2026-11-20, `_resolve_voc_created_recipients`).
+  MASTER·팀원이 늘어나도 설정 변경 없이 반영된다.
+- MASTER 와 AGENT 팀원은 권한 관리 화면 해당 탭의 '이메일 설정' 컬럼에서 `VOC` 토글로 수신 여부를
+  켜고 끌 수 있다(`PATCH /api/users/{id}/voc-mail/`, 본인 또는 MASTER 만 변경 가능, 대상 역할은 MASTER·TE_R/P/J/O/E).
+  팀원 토글은 팀 발송(등록·답글)에만 적용된다. 라인별 메일 설정(`mail_lines`/`receive_all_mail`)과는 별개 설정이다.
 - 제목: `[VOC 등록] {제목}`
 
 ### 5.2 답글 등록 (`voc_comment`)
 - 메일 본문(`_latest_comment_text`)은 최신 답글의 HTML 을 `_html_to_text` 로 평문화한 뒤 싣는다
   (VOC 등록 메일이 `voc.content` 를 평문화하는 것과 동일한 방식, 2026-08-18부터 —
   답글 입력이 RichTextEditor 로 바뀌어 `content` 가 HTML 이 됐기 때문이다).
-- 수신자: **제출자 + 기존 답글 작성자 전원 − 이번 작성자 본인**
+- 수신자: **제출자 + 기존 답글 작성자 전원 + 작성자 팀원 전원(AGENT 팀, VOC 메일 켬) − 이번 작성자 본인**
+  (작성자 팀 = 등록 시점 `submitter_role`. **답글 작성자의 팀은 보지 않는다** — J팀 VOC 에 R팀이 답글을 달아도 R팀 전원에게는 가지 않는다)
 - **두 통으로 나눠 발송한다.** 제출자에게 가는 메일에만
   "답변이 만족스러우셨다면 답변 완료 처리 해주세요." 안내가 들어가기 때문이다
   (한 통에 여러 수신자를 담으면 본문을 개인화할 수 없다).
@@ -206,6 +208,9 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 | A 등록 | — | MASTER 전원 (`voc_created`) |
 | B 답글 | A (완료 안내 **포함**) | 없음 |
 | C 답글 | A (완료 안내 **포함**) | B (안내 없음) |
+
+A 가 AGENT 팀원이면 각 행의 '그 외 참여자용'(등록 행은 `voc_created`)에 A 의 팀원 전원(A 제외, 토글 켬)이 더해진다.
+상세 규칙은 `docs/MAIL.md` §2.1.
 
 ### 5.3 본문 디자인
 결재 알림과 같은 **히어로 헤더 + 카드형** 템플릿을 쓴다(`mailer._render_voc_email`).
