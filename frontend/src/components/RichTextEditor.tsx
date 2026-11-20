@@ -1,41 +1,13 @@
 import React, { useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
-import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
-import { TextStyle, Color, FontSize, BackgroundColor, FontFamily } from '@tiptap/extension-text-style';
-import TextAlign from '@tiptap/extension-text-align';
-import { TableKit } from '@tiptap/extension-table';
 import Placeholder from '@tiptap/extension-placeholder';
+import { RICH_TEXT_SCHEMA_EXTENSIONS } from './richTextExtensions';
 import { uploadImageAPI, uploadVideoAPI } from '../api/client';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 // 동영상 업로드 최대 크기 (50MB)
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
-
-// 가이드 동영상용 커스텀 노드 — <video controls> 로 렌더링
-const Video = TiptapNode.create({
-  name: 'video',
-  group: 'block',
-  atom: true,
-  draggable: true,
-  addAttributes() {
-    return { src: { default: null } };
-  },
-  parseHTML() {
-    return [{ tag: 'video' }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return [
-      'video',
-      mergeAttributes(HTMLAttributes, {
-        controls: 'controls',
-        style: 'max-width:100%;border-radius:8px;',
-      }),
-    ];
-  },
-});
 
 // claude 수정 (2026-10-23): 저장 형식과 에디터 내부 형식을 분리해 왕복을 안정화한다.
 // getHTML()은 빈 문단을 <p></p>로 직렬화해 <br>이 빠지므로, 표시 시 라인박스가 생기지 않아
@@ -253,18 +225,10 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
   // claude 수정 (2026-10-23): 엑셀·워드 표 붙여넣기 보존용 TableKit 추가, StarterKit 에 이미 있는
   // Underline 중복 등록 제거, Enter=새 문단(Shift+Enter=줄바꿈, TipTap 기본)으로 되돌림
   // — Enter 를 <br>로 바꾸던 확장 때문에 글 전체가 한 문단이 되어 H1·정렬이 전체에 적용됐다.
+  // claude 수정 (2026-11-20): 스키마 extension 목록을 richTextExtensions 로 분리(렌더 정화와 공유, B-26)
   const editor = useEditor({
     extensions: [
-      StarterKit,
-      TableKit.configure({ table: { resizable: false } }),
-      Image.configure({ inline: false, allowBase64: false }),
-      Video,
-      TextStyle,
-      Color,
-      FontSize,
-      BackgroundColor,
-      FontFamily,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      ...RICH_TEXT_SCHEMA_EXTENSIONS,
       Placeholder.configure({ placeholder: placeholder || t('guide.editor_placeholder') }),
     ],
     content: toEditorHtml(value),

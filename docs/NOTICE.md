@@ -18,7 +18,7 @@
 | `template` | `notice` / `release_note` | 공지 유형 |
 | `date` | DateField | 공지 날짜 |
 | `title` | CharField | 제목 |
-| `content` | TextField | 본문 (notice 유형 전용, Rich Text HTML) |
+| `content` | TextField | 본문 (notice 유형 전용, Rich Text HTML). 화면 표시는 `sanitizeRichHtml` 로 에디터 스키마 밖 태그·속성을 제거한 뒤 렌더한다(B-26, 2026-11-20) |
 | `items` | JSONField | 항목 목록 (release_note 유형 전용) |
 | `is_pinned` | BooleanField | 상단 고정 여부 (기본 `False`) |
 | `created_at` | DateTimeField | 작성 시각 |

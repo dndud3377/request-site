@@ -24,7 +24,7 @@ from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
     UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
-    RoundSubmission, PersonalFilterPreset,
+    RoundSubmission, PersonalFilterPreset, VOC,
 )
 
 
@@ -13902,3 +13902,74 @@ class LayerNpKeywordsApiTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json(), {'jayer': {'sd': ['DummySD'], 'pp': ['dmyPP']},
                                     'oayer': {'sd': ['OVDUM'], 'pp': []}})
+
+
+# claude 수정 (2026-11-20): VOC 수정(PUT/PATCH) MASTER 전용 제한 회귀 고정 — 상태 변경·답글 경로는 영향이 없어야 한다
+class VocUpdatePermissionTest(TestCase):
+    """PUT/PATCH /api/voc/{id}/ 는 MASTER 만, update-status/ 와 comment/ 는 기존 권한 그대로."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.submitter = UserProfile.objects.create(loginid='voc_sub', mail='voc_sub@c.com', role='NONE')
+        self.other = UserProfile.objects.create(loginid='voc_other', mail='voc_other@c.com', role='PL')
+        self.master = UserProfile.objects.create(loginid='voc_master', mail='voc_master@c.com', role='MASTER')
+        self.voc = VOC.objects.create(
+            title='원래 제목', category='inquiry', submitter=self.submitter,
+            submitter_name='제출자', submitter_email='voc_sub@c.com', page='request', content='<p>원문</p>',
+        )
+
+    def _patch(self, user, data):
+        self.client.force_authenticate(user=user)
+        return self.client.patch(f'/api/voc/{self.voc.id}/', data, format='json')
+
+    def test_other_user_cannot_patch(self):
+        r = self._patch(self.other, {'title': '변조', 'content': '<p>변조</p>'})
+        self.assertEqual(r.status_code, 403)
+        self.voc.refresh_from_db()
+        self.assertEqual((self.voc.title, self.voc.content), ('원래 제목', '<p>원문</p>'))
+
+    def test_submitter_cannot_patch(self):
+        """작성자 본인도 수정 API 는 쓸 수 없다(MASTER 전용)."""
+        r = self._patch(self.submitter, {'title': '본인 수정'})
+        self.assertEqual(r.status_code, 403)
+        self.voc.refresh_from_db()
+        self.assertEqual(self.voc.title, '원래 제목')
+
+    def test_other_user_cannot_put(self):
+        self.client.force_authenticate(user=self.other)
+        r = self.client.put(f'/api/voc/{self.voc.id}/', {
+            'title': '변조', 'category': 'inquiry', 'submitter_name': 'x',
+            'submitter_email': 'x@c.com', 'page': 'request', 'content': '<p>x</p>',
+        }, format='json')
+        self.assertEqual(r.status_code, 403)
+        self.voc.refresh_from_db()
+        self.assertEqual(self.voc.title, '원래 제목')
+
+    def test_master_can_patch(self):
+        r = self._patch(self.master, {'title': '관리자 수정'})
+        self.assertEqual(r.status_code, 200)
+        self.voc.refresh_from_db()
+        self.assertEqual(self.voc.title, '관리자 수정')
+
+    def test_master_patch_cannot_change_read_only_status(self):
+        """MASTER 수정이라도 status 는 읽기 전용이라 update-status 로만 바뀐다."""
+        r = self._patch(self.master, {'status': 'completed'})
+        self.assertEqual(r.status_code, 200)
+        self.voc.refresh_from_db()
+        self.assertEqual(self.voc.status, 'checking')
+
+    def test_submitter_update_status_still_works(self):
+        self.client.force_authenticate(user=self.submitter)
+        r = self.client.patch(f'/api/voc/{self.voc.id}/update-status/', {'status': 'completed'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.voc.refresh_from_db()
+        self.assertEqual(self.voc.status, 'completed')
+
+    def test_other_user_comment_still_works(self):
+        self.client.force_authenticate(user=self.other)
+        r = self.client.post(f'/api/voc/{self.voc.id}/comment/', {
+            'author_name': '타인', 'author_role': 'PL', 'is_submitter': False, 'content': '<p>답글</p>',
+        }, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.voc.comments.count(), 1)

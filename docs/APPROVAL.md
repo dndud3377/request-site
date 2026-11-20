@@ -1827,7 +1827,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **(2026-08) 'MAP 삭제' 이유 카드 + RA 행 '해당없음' 처리**: '결재 경로' 탭 위쪽에
   MAP 정보 섹션(`section_map`)의 STEP1 페이지에 수정/삭제 이유 카드를 추가했다(본문은
   `RichTextEditor` 가 만든 HTML — 공지·가이드·VOC 와 동일하게 `dangerouslySetInnerHTML` 로
-  렌더, 변경 시 빨간 테두리). '결재 경로' 탭의 후결자(RA) 행은 이 경로에서 항상 없으므로
+  렌더, 변경 시 빨간 테두리). (2026-11-20) 렌더 전에 `sanitizeRichHtml` 로 에디터 스키마 밖 태그·속성을
+  제거한다(저장형 XSS B-26 — `docs/E2E_TEST_AND_BUGS.md` §5-2). '결재 경로' 탭의 후결자(RA) 행은 이 경로에서 항상 없으므로
   `isMapDeleteEdit` 판정으로 '해당없음'(na) 표시한다(§6-9, Case O 참조).
 - **(2026-08) 합성 값 항목의 '이력 확인' 비교 불가 버그 수정**: `FieldHistoryModal` 은 과거 회차 값을 `snap.detail[fieldKey]` **단일 필드**로만 만들고 현재 행만 칩의 **합성 문자열**을 그대로 썼다. 그래서 지도 편차처럼 여러 필드를 합쳐 보여주는 항목은 `초기: 변경있음` / `현재: 변경있음 / X: 555um / Y: 444um` 처럼 **형식이 달라 값 비교가 불가능**했다.
   - `FieldHistoryModal` · `Chip` 에 `buildValue?: (d: Partial<DetailFormState>) => string` 을 추가했다. 넘기면 **회차 스냅샷과 현재 값을 모두 같은 함수**로 만들어 형식이 일치한다(`fieldKey` 는 단일 필드 항목 전용으로 선택 인자화).

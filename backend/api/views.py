@@ -4480,6 +4480,18 @@ class VOCViewSet(viewsets.ModelViewSet):
         voc = serializer.save(submitter=submitter)
         mailer.enqueue_voc_created(voc)
 
+    # claude 수정 (2026-11-20): PUT/PATCH /api/voc/{id}/ 를 MASTER 전용으로 제한 — 권한 클래스가 DELETE 만 막아
+    # 로그인 사용자 누구나 남의 VOC 제목·내용을 고칠 수 있었다. 공용 IsAuthenticatedOrMasterDelete 는 다른
+    # ViewSet 도 쓰므로 여기서만 막는다. partial_update 도 이 메서드를 거친다.
+    def update(self, request, *args, **kwargs):
+        """VOC 수정(PUT/PATCH) — MASTER 만 허용한다. 상태 변경은 update-status 액션을 쓴다."""
+        if getattr(request.user, 'role', '') != 'MASTER':
+            return Response(
+                {'error': '관리자만 VOC 를 수정할 수 있습니다.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().update(request, *args, **kwargs)
+
     @action(detail=True, methods=['patch'], url_path='update-status')
     def update_status(self, request, pk=None):
         """VOC 상태 변경 — completed 로만 바꿀 수 있다(작성자 본인 또는 MASTER).

@@ -15,6 +15,7 @@ import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseI
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 import { formatDate, formatDateTime } from '../utils/date';
+import { sanitizeRichHtml } from '../utils/sanitizeRichHtml';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey,
   getDocDetailFields, getDocSubmittedDate, isSubmittedByMe, isApprovalTargetForMe,
@@ -282,10 +283,11 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
 
                   {selected.template === 'notice' && selected.content && (
                     // claude 수정 (2026-10-23): 에디터로 넣은 표가 보이도록 공통 표 스타일 클래스 추가
+                    // claude 수정 (2026-11-20): 저장형 XSS(B-26) 방어 — 에디터 스키마로 정화한 HTML 만 렌더
                     <div
                       className="notice-detail-content rich-table-render"
                       style={{ whiteSpace: 'pre-wrap' }}
-                      dangerouslySetInnerHTML={{ __html: selected.content }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(selected.content) }}
                     />
                   )}
 
