@@ -185,9 +185,10 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 - 수신자: **`role='MASTER'` 사용자 중 VOC 메일을 켜둔 사람**(`UserProfile.receive_voc_mail`, 기본값 `True`)
   \+ **작성자 팀원 전원**(작성자가 AGENT R·P·J·O·E팀일 때, VOC 메일 켬) − 작성자 본인 (2026-11-20, `_resolve_voc_created_recipients`).
   MASTER·팀원이 늘어나도 설정 변경 없이 반영된다.
-- MASTER 와 AGENT 팀원은 권한 관리 화면 해당 탭의 '이메일 설정' 컬럼에서 `VOC` 토글로 수신 여부를
-  켜고 끌 수 있다(`PATCH /api/users/{id}/voc-mail/`, 본인 또는 MASTER 만 변경 가능, 대상 역할은 MASTER·TE_R/P/J/O/E).
-  팀원 토글은 팀 발송(등록·답글)에만 적용된다. 라인별 메일 설정(`mail_lines`/`receive_all_mail`)과는 별개 설정이다.
+- MASTER 는 권한 관리 화면 MASTER 탭의 '이메일 설정' 컬럼에서 `VOC` 토글로 수신 여부를 켜고 끌 수 있다
+  (`PATCH /api/users/{id}/voc-mail/`, 본인 또는 MASTER 만 변경 가능). 라인별 메일 설정(`mail_lines`/`receive_all_mail`)과는 별개 설정이다.
+- AGENT 팀원도 서버에서는 같은 토글(`receive_voc_mail`)로 팀 발송(등록·답글)에서 빠질 수 있지만(API 허용 역할 MASTER·TE_R/P/J/O/E),
+  ⚠️ **팀원용 토글 화면은 숨겨 두었다**(2026-11-20, 추후 재도입 가능). 팀원 값은 기본값(켜짐)이라 팀원 전원이 받는다.
 - 제목: `[VOC 등록] {제목}`
 
 ### 5.2 답글 등록 (`voc_comment`)
