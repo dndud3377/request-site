@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { guidesAPI } from '../api/client';
 import { Guide, GuideFeatureKey } from '../types';
+import { sanitizeRichHtml } from '../utils/sanitizeRichHtml';
 import { GUIDE_DEMOS } from './guideDemos';
 
 interface Props {
@@ -125,6 +126,7 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
                 {t('common.loading')}
               </div>
             ) : guide ? (
+              /* claude 수정 (2026-11-20): 저장형 XSS(B-26) 방어 — 에디터 스키마로 정화한 HTML 만 렌더 */
               <div
                 className="guide-content-render"
                 style={{
@@ -133,7 +135,7 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
                   color: '#333',
                   ...(DemoComponent ? { marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8ecf2' } : {}),
                 }}
-                dangerouslySetInnerHTML={{ __html: guide.content }}
+                dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(guide.content) }}
               />
             ) : !DemoComponent ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb' }}>
