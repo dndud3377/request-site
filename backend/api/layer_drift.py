@@ -57,6 +57,9 @@ AUTO_REJECT_STATUSES = ('under_review', 'pause')
 AUTO_REJECT_COMMENT_PREFIX = mailer.AUTO_REJECT_COMMENT_PREFIX
 # 반려 이력(RejectionSnapshot)에 남기는 반려자 — (loginid, 이름). 사람이 누른 반려가 아니다.
 SYSTEM_REJECTER = ('system', '시스템(자동반려)')
+# claude 수정 (2026-11-20): 자동 반려 단계의 처리자 이름 — 결재 경로 탭 등에서 담당자가 반려한 것처럼 보이지 않게 한다
+# 반려 단계 ApprovalStep.acted_by_name 에 저장한다(System R 의 SYSTEM_R_ACTOR_NAME 과 같은 방식).
+AUTO_REJECT_ACTOR_NAME = '변경 감지'
 
 # 이 단계들이 현재 회차에서 전부 합의(approved)했으면 자동 반려하지 않고 배지만 띄운다.
 # 문서에 없는 단계(예: ADI CD 변경의 O)는 비교 대상에서 빠진다.
@@ -430,9 +433,12 @@ def auto_reject_document(document_id, changes):
             logger.warning(f"[layer_drift] 문서 {document_id} 자동 반려 불가 — 현재 회차에 대기 단계가 없다")
             return False
 
+        # claude 수정 (2026-11-20): 처리자를 '변경 감지'로 기록 — 화면·메일 본문에 담당자 대신 표시(수신자 판정은 그대로)
         step.action = 'rejected'
         step.acted_at = timezone.now()
         step.comment = _auto_reject_comment(changes)
+        step.acted_by = None
+        step.acted_by_name = AUTO_REJECT_ACTOR_NAME
         step.save()
 
         # 반려로 회차가 종료되면 진행 중이던 중단 요청은 무효 처리한다. 중단(pause) 문서는 확정된
