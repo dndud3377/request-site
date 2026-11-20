@@ -1214,8 +1214,19 @@ class VOC(models.Model):
         ('completed', '완료'),
     ]
 
+    # claude 수정 (2026-11-20): VOC 팀 필터 — 작성자 팀(역할)으로 나눠 보는 탭 구성. 이 6개 외 역할
+    # (MASTER·NONE·PL_GL)과 빈 값은 '기타'(TEAM_FILTER_ETC)로 묶는다(VOCViewSet.get_queryset).
+    TEAM_FILTER_ROLES = ('PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E')
+    TEAM_FILTER_ETC = 'etc'
+
     title = models.CharField(max_length=200, verbose_name='제목')
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, verbose_name='유형')
+    # claude 수정 (2026-11-20): 유형 선택 폐지 — 화면·API·메일에서 쓰지 않는다. 기존 값 보존을 위해 컬럼만 남긴다.
+    category = models.CharField(
+        max_length=20, choices=CATEGORY_CHOICES, blank=True, default='', verbose_name='유형(미사용)'
+    )
+    # claude 수정 (2026-11-20): 등록 시점 작성자 팀(역할). 등록 시 서버가 request.user.role 로 확정하며
+    # 이후 작성자 역할이 바뀌어도 그대로 둔다(팀 필터·표시 기준).
+    submitter_role = models.CharField(max_length=10, blank=True, default='', verbose_name='작성자 팀(등록 시점 역할)')
     # 제출자 식별은 의뢰서(RequestDocument.requester)와 동일한 방식을 따른다 —
     # FK 를 진실의 원천으로 두고 등록 시 서버가 request.user 로 확정하며(views.VOCViewSet),
     # 본인 판정은 id 가 아니라 loginid 로 한다(doc_permissions.is_voc_submitter).
@@ -1225,7 +1236,8 @@ class VOC(models.Model):
     )
     submitter_name = models.CharField(max_length=100, verbose_name='제출자')
     submitter_email = models.EmailField(verbose_name='이메일')
-    page = models.CharField(max_length=20, blank=True, default='', verbose_name='관련 페이지')
+    # claude 수정 (2026-11-20): 페이지 선택 폐지 — 화면·API·메일에서 쓰지 않는다. 기존 값 보존을 위해 컬럼만 남긴다.
+    page = models.CharField(max_length=20, blank=True, default='', verbose_name='관련 페이지(미사용)')
     content = models.TextField(verbose_name='내용')
     response = models.TextField(blank=True, verbose_name='답변')
     status = models.CharField(
