@@ -13,6 +13,7 @@ import {
   isPlRole,
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { sanitizeRichHtml } from '../utils/sanitizeRichHtml';
 
 // ===== Helpers =====
 
@@ -272,10 +273,11 @@ export default function GuidePage(): React.ReactElement {
                     {t(guide.guide_type === 'feature' ? 'guide.type_feature' : 'guide.type_info')}
                   </span>
                   <div className="guide-card-title">{guide.title}</div>
+                  {/* claude 수정 (2026-11-20): 저장형 XSS(B-26) 방어 — 정규식 태그 제거만으로는 미완성 태그 등 우회 여지가 있어 정화 후 태그를 걷어낸다 */}
                   <div
                     className="guide-card-preview"
                     dangerouslySetInnerHTML={{
-                      __html: guide.content.replace(/<[^>]+>/g, ' ').slice(0, 80),
+                      __html: sanitizeRichHtml(guide.content).replace(/<[^>]+>/g, ' ').slice(0, 80),
                     }}
                   />
                   <div className="guide-card-meta">
@@ -331,10 +333,11 @@ export default function GuidePage(): React.ReactElement {
                 </span>
               )}
             </div>
+            {/* claude 수정 (2026-11-20): 저장형 XSS(B-26) 방어 — 에디터 스키마로 정화한 HTML 만 렌더 */}
             <div
               className="guide-content-render"
               style={{ fontSize: 14, lineHeight: 1.85, color: '#333' }}
-              dangerouslySetInnerHTML={{ __html: selected.content }}
+              dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(selected.content) }}
             />
           </div>
         )}
