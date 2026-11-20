@@ -422,17 +422,42 @@ class RequestDocument(models.Model):
     # 그대로일 때만 O 가 이전에 마친 합의를 유지한다(R 생략의 비교 구간과는 별개 규칙).
     O_REVIEW_ROW_KEYS = ('jayerRows', 'oayerRows')
 
+    # claude 수정 (2026-11-20): R·O 생략 판정이 표 "내용"만 비교하도록 내용과 무관한 행 키를 정의
+    # 화면 전용 키 — sortOrder 는 표시 순서(2026-10-28 상신 시 SP 자동 정렬이 0,1,2… 로 다시 매긴다),
+    # loaded 는 편집 잠금 표시(편집 화면 로드 시 옛 행에 채워 넣는다). 둘 다 R·O 가 검토하는 내용이 아니다.
+    LAYER_ROW_NON_CONTENT_KEYS = ('sortOrder', 'loaded')
+
+    # claude 수정 (2026-11-20): sortOrder 재부여·행 순서 변경만으로 R/O 가 다시 생성되던 문제 수정용 공용 비교
+    @classmethod
+    def layer_rows_content_same(cls, prev_rows, curr_rows):
+        """두 J/O 표(행 dict 리스트)의 내용이 같은가 — R 생략·O 생략 판정 공용.
+
+        `LAYER_ROW_NON_CONTENT_KEYS`(sortOrder·loaded)는 빼고 비교하며, 행 순서는 무시한다
+        (사용자 결정 2026-11-20 — 행 순서는 상신 시 SP 자동 정렬이 정하므로 내용 변경이 아니다).
+        같은 행이 여러 번 있으면 개수까지 같아야 한다.
+        """
+        def canonical(rows):
+            out = []
+            for row in rows or []:
+                if isinstance(row, dict):
+                    row = {k: v for k, v in row.items() if k not in cls.LAYER_ROW_NON_CONTENT_KEYS}
+                out.append(json.dumps(row, sort_keys=True, ensure_ascii=False, default=str))
+            return sorted(out)
+        return canonical(prev_rows) == canonical(curr_rows)
+
+    # claude 수정 (2026-11-20): 표 비교를 layer_rows_content_same 으로 교체(sortOrder·loaded·행 순서 무시)
     @classmethod
     def o_review_content_same(cls, prev_data, curr_data):
         """두 additional_notes(파싱된 dict)의 O 검토 대상 구간이 같은가.
 
         비교 구간 = `jayerRows` + `oayerRows` + 상세의 `MAP_INFO_FIELDS`. 그 외 필드(의뢰 상세
-        line~process_id, Backbone 등)는 O 생략 판정에 영향을 주지 않는다.
+        line~process_id, Backbone 등)는 O 생략 판정에 영향을 주지 않는다. 표는
+        `layer_rows_content_same` 으로 내용만 비교한다(sortOrder·loaded·행 순서 무시).
         """
         prev_data = prev_data or {}
         curr_data = curr_data or {}
         for key in cls.O_REVIEW_ROW_KEYS:
-            if (prev_data.get(key) or []) != (curr_data.get(key) or []):
+            if not cls.layer_rows_content_same(prev_data.get(key), curr_data.get(key)):
                 return False
         prev_detail = prev_data.get('detail') or {}
         curr_detail = curr_data.get('detail') or {}

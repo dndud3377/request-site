@@ -714,7 +714,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
       - **범위**: MAP 정보에 더해 의뢰 상세의 **요청 목적·라인·조합법·제품 이름·조리법**도 잠근다(`RequestDocument.MAP_LOCK_STEP1_FIELDS`). 라인/제품이 바뀌면 StepMap 이 초기화되고 EXISTING 이 자동 재매칭되며, 조합법·조리법을 바꾸면 제품 이름이 지워지기 때문이다. 프론트는 `Step1` 의 해당 입력·버튼을 disabled + 안내 문구(`request.step1_locked_notice`), 백엔드 `update` 는 값이 달라지면 400.
       - ✅ **(2026-11-09) 요청 기준에 따른 요청 목적 변경 예외**: 요청 목적은 STEP1 에서 직접 고를 수 없지만, J·O 표 요청 기준이 바뀌어 STEP4→5 '요청 목적 확인'(취소 없이 '확인'만)으로 **신규·차용·신규+차용 사이**에서 바뀌는 것은 허용한다. 서버는 변경 전·후가 모두 이 셋 중 하나이고 변경 후 값이 같은 요청의 J·O 표로 계산한 값(`RequestDocument.expected_request_purpose`)과 같을 때만 통과시킨다(`changed_map_info_fields(new_detail, new_notes)`). 그 외는 기존대로 400. 상세는 `docs/REQUEST.md` "기능 변경 (2026-11-09 — 잠긴 문서도 요청 기준에 따른 요청 목적 변경 허용 …)".
       - ✅ **(2026-11-10) 옛 문서 편집 로드 백필 오판 수정**: 필드 도입 전 문서(`prodc_scope` 2026-08-03, `map_change_reason` 2026-08-06 이전 저장)는 편집 화면이 로드 시 값을 채워(`prodc_scope` = 저장값 || 리전 역추론, `map_change_reason` = 저장값 ?? '') 보내는데, 서버가 키 없음(None)과 비교해 잠금 위반으로 판정해 수정·재상신이 전부 400 으로 막혔다. 이제 `changed_map_info_fields` 가 저장본·요청본을 같은 백필 규칙으로 채운 뒤 비교한다(`RequestDocument._with_edit_load_backfill`). 실제 변경은 계속 400. main 병합 후 '숫자 확인 필수'(`num_check`·`num_check_value`·`num_check_images`, 로드 시 `'해당 없음'`·`''`·`[]`)도 같은 규칙으로 보정한다. NEW+PPPP 옛 문서가 화면에서 '해당 있음'으로 자동 전환돼 400 이 나던 문제는, '숫자 확인 필수' 도입 전 문서(저장본에 `num_check` 키 없음)를 판정·검증하지 않고 저장 시 키도 보내지 않도록 해 해결했다(`docs/REQUEST.md` 같은 항목). 같은 날 잠금 영역의 키보드(Tab) 입력도 `<fieldset disabled>` 로 막았다. 상세는 `docs/REQUEST.md` "버그 수정 (2026-11-10 — MAP 정보 잠금: 옛 문서의 편집 로드 백필 …)".
-      - **R 이 나중 회차에 다시 열리는 경우(검토 결과)**: 일반 경로는 고정 후결자 반려, 또는 P/J/O/E·비고정 RA 반려 후 Jayer·조합법·조리법이 바뀐 재상신이면 R 이 다시 생성돼 R 이 반려할 수 있다(`_should_skip_r_stage`). Only MAP·MAP 삭제의 재상신과 PL 단계 중 작성자 재상신(`requester_resubmit`)은 항상 R 이 다시 생성된다. 이때도 MAP 정보는 잠겨 있으므로 R 반려 사유가 MAP 변경이면 MAP 삭제 후 새 요청서로 처리한다.
+      - **R 이 나중 회차에 다시 열리는 경우(검토 결과)**: 일반 경로는 고정 후결자 반려, 또는 P/J/O/E·비고정 RA 반려 후 Jayer·조합법·조리법이 바뀐 재상신이면 R 이 다시 생성돼 R 이 반려할 수 있다(`_should_skip_r_stage`). Only MAP·MAP 삭제의 재상신은 항상 R 이 다시 생성된다. PL 단계 중 작성자 재상신(`requester_resubmit`)은 (2026-11-20부터) `resubmit` 과 같은 R 생략 판정을 따른다 — 반려 이력이 없거나 내용이 바뀌었으면 R 이 다시 생성된다(Case R·Case T). 이때도 MAP 정보는 잠겨 있으므로 R 반려 사유가 MAP 변경이면 MAP 삭제 후 새 요청서로 처리한다.
       - 판정 함수 `is_r_stage_completed`(현재 회차 기준)는 더 이상 잠금 판정에 쓰이지 않는다(남겨 둠).
       - 상세·검증·알려진 한계는 `docs/REQUEST.md` "기능 변경 (2026-10-19 — MAP 정보 잠금 확대)" 참조.
   - ✅ **마감 기한 연장(2026-07)**: 재개 시 **멈춘 기간(중단 확정 `confirmed_at` ~ 재개일, 달력일)만큼** 현재 회차 pending 단계의 `due_date` 를 뒤로 민다. 중단 동안 남은 기한이 깎이지 않는다.
@@ -1059,6 +1059,10 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   step은 이력으로 남고, 새 회차가 조회 대상이 되면서 자동으로 무효화**된다(round 승격 자체가
   "초기화" 효과). `review_items_sync.reset_confirmations`로 검토 항목 확인 상태도 초기화한다.
   새로 지정된 PL·SA에게 상신 메일(`enqueue_stage_arrival`)이 발송된다.
+- ✅ **(2026-11-20) 2구역(R) 생략 판정도 `resubmit` 과 동일**: `_should_skip_r_stage` 로 판정해
+  `r_skip_round = 새 회차 또는 None` 을 기록한다 — 반려(P/J/O/E·비고정 RA) 후 재상신으로 R 이 생략된 회차에서
+  작성자가 내용(MAP 정보·Jayer·line~process_id)을 바꾸지 않고 다시 재상신하면 새 회차에서도 R 을 생략한다.
+  예전엔 갱신하지 않아 R 이 항상 다시 생성됐다(Case T 참조).
 - ✅ **(2026-09) `submitted_at` 갱신**: `resubmit`(Case I)과 동일하게 `document.submitted_at =
   timezone.now()`로 새 회차 시각을 덮어쓴다. 영향 범위는 Case I 항목 참조.
 - **차단**: R 등 다음 단계가 이미 생성된 뒤에는 403(`can_requester_resubmit` 이 False) — 그
@@ -1093,6 +1097,20 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   `source_partid`/`change_purpose_note`/`flow_chart` 등)와 O-layer(`oayerRows`)·Backbone
   (`bb_zone`/`bb_entries`)은 R의 관심사가 아니므로 비교 대상이 아니다 — 바뀌어도 위 4개 필드와
   MAP정보·jayerRows가 그대로면 R은 생략된다.
+- 🐛→✅ **(2026-11-20) `jayerRows` 는 "내용"만 비교한다**: 예전엔 행 객체를 통째로 비교해, 표 내용이 그대로여도
+  **`sortOrder` 만 바뀐 재상신에 R 이 다시 생성**됐다. 2026-10-28 부터 상신 시 SP 자동 정렬(`sortRowsBySp`)이
+  sortOrder 를 0,1,2… 로 다시 매기므로, 그 전에 저장된 문서(sortOrder = 행 생성 시각 `Date.now()`)는 그 뒤 첫 저장에서
+  반드시 이 오판이 났다(실제 사례: J 반려 후 변경 사유 오타만 고쳐 재상신 → 4회차 R 재생성).
+  이제 `RequestDocument.layer_rows_content_same` 으로 비교한다 — `LAYER_ROW_NON_CONTENT_KEYS`(`sortOrder`·`loaded`)를
+  빼고, **행 순서는 무시**한다(사용자 결정 — 순서는 SP 자동 정렬이 정하므로 내용 변경이 아니다). `loaded` 는 편집 화면이
+  옛 행을 불러올 때 채워 넣는 잠금 표시라 같은 종류의 오판을 내므로 함께 뺐다. 행 추가·삭제·값 변경은 그대로 "변경"이다.
+  Case U(O 생략)도 같은 함수로 비교한다.
+- 🐛→✅ **(2026-11-20) 작성자 재상신(`requester_resubmit`, Case R)도 같은 규칙으로 판정**: 예전엔 `requester_resubmit` 이
+  `r_skip_round` 를 갱신하지 않아, "반려 → 재상신(R 생략 표시) → 그 회차 PL 단계에서 작성자 재상신" 이면 이전 회차 값이
+  남은 채 새 회차와 어긋나 **R 이 항상 다시 생성**됐다(실제 사례: 3회차 R 재생성). 이제 `requester_resubmit` 도
+  `_should_skip_r_stage` 로 판정해 `r_skip_round = 새 회차 또는 None` 을 기록한다(사용자 결정 2026-11-20).
+  비교 기준은 똑같이 **가장 최근 반려 스냅샷**(= R 이 이미 합의한 내용)이라, 반려 이력이 없는 1회차 중 재상신·R 반려 뒤
+  재상신은 지금처럼 R 을 다시 거친다.
 - **동작**: 조건이 성립하면 새 회차 번호를 `document.r_skip_round`에 1회용으로 기록해 두고,
   PL 전원 합의 시점(`_open_stage_after_pl`)에 그 회차와 일치하면 R을 만들지 않고 바로
   `_advance_to_parallel`을 호출한다(플래그는 즉시 소진). 3구역 단계들의 기한(due_date)
@@ -1115,7 +1133,8 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   `POST_APPROVER_LOGINID` 미설정 + 추가 후결자 없음) 진행 중 후결자 추가가 "R 합의 이후에만…" 400 으로 막히고,
   결재 경로 변경도 RA step 을 만들지 않는다(`_post_approver_due_date` 가 R 합의일만 기준으로 쓴다).
   운영은 고정 후결자가 항상 있어 실제로 발생하지 않는다. 'Overlay만 변경' 단독 문서도 같다.
-- 테스트: `backend/api/tests.py::ShouldSkipRStageTest`, `RSkipStageIntegrationTest`
+- 테스트: `backend/api/tests.py::ShouldSkipRStageTest`, `RSkipStageIntegrationTest`,
+  (2026-11-20) `LayerRowsContentSameTest`, `RSkipNonContentChangeIntegrationTest`
 
 ### Case U — O 재합의 생략 (반려 후 재상신 · 중단 후 재개, 2026-11-04)
 
@@ -1128,7 +1147,7 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
 | 적용 경로 | 일반만 | **O 가 있는 모든 경로** — 일반 · 'Overlay만 변경' 단독 · 'MAP 삭제' |
 | 비교 구간 | Jayer + MAP 정보 + 의뢰 상세 line~process_id | **Jayer + Oayer + MAP 정보** (line~process_id·Backbone 등은 보지 않음) |
 | 항상 다시 거치는 반려 | R 본인 · 고정 후결자 · PL/SA | **O 본인만** (고정 후결자 반려도 생략 가능) |
-| 판정 시점 | 재상신(`resubmit`) 시점 | **O 가 생성될 시점**(일반: 3구역, MAP 삭제: 2구역) — PL 이 고친 내용도 반영 |
+| 판정 시점 | 재상신(`resubmit`·`requester_resubmit`) 시점 | **O 가 생성될 시점**(일반: 3구역, MAP 삭제: 2구역) — PL 이 고친 내용도 반영 |
 | 중단 → 재개 | 해당 없음 | 적용(아래) |
 
 - **반려 후 재상신 판정(`RequestDocumentViewSet._should_skip_o_stage(document, round_no)`)**: 이전 회차를 최근부터
@@ -1137,6 +1156,9 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
   - 그 회차의 O 가 `approved` 가 아니면(O 본인 반려, 다른 단계가 먼저 반려해 O 는 대기 중) → 생략하지 않는다.
   - `approved` 였으면 그 회차의 `RejectionSnapshot` 과 지금 내용을 비교해 세 구간이 모두 같을 때만 생략한다.
     스냅샷이 없으면 생략하지 않는다. 'Only MAP'·'ADI CD 변경'은 O 가 원래 없어 항상 거짓이다.
+  - 🐛→✅ **(2026-11-20)** Jayer·Oayer 는 `RequestDocument.layer_rows_content_same` 으로 **내용만** 비교한다
+    (`sortOrder`·`loaded`·행 순서 무시) — 상신 시 SP 자동 정렬의 sortOrder 재부여만으로 O 가 다시 생성되던 문제. Case T 참조.
+    테스트: `ShouldSkipOStageTest.test_sort_order_loaded_and_row_order_only_still_skips`·`test_oayer_content_change_does_not_skip`.
 - **동작**: 생략 회차는 O step 과 O팀 도착 메일을 만들지 않는다(`_advance_to_parallel`, `_create_map_delete_edit_parallel`).
   P 와 O 는 항상 같은 시점에 함께 만들어지므로 "P step 은 있는데 O step 이 없다"로 생략 회차를 판정한다
   (`RequestDocument.is_o_skipped(round)`) — 별도 플래그·마이그레이션 없음.

@@ -858,6 +858,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
           승인한 뒤라 — MAP 정보(`MAP_INFO_FIELDS`)·Jayer 정보(`jayerRows`)·의뢰 상세
           line~process_id 구간(`DETAIL_LINE_TO_PROCESS_ID_FIELDS`)이 반려 시점과 지금
           재상신하려는 내용 사이에 **하나도 바뀌지 않았을 때만** R을 생략한다.
+        - (2026-11-20) `jayerRows` 는 내용만 비교한다(`RequestDocument.layer_rows_content_same` —
+          sortOrder·loaded·행 순서 무시). `resubmit` 과 `requester_resubmit` 이 함께 쓴다.
         """
         if document.is_only_map() or document.is_map_delete_edit() or document.is_adi_cd_change():
             return False
@@ -879,7 +881,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         prev = rejection.get_detail()
         curr = document.get_detail()
-        if (prev.get('jayerRows') or []) != (curr.get('jayerRows') or []):
+        # claude 수정 (2026-11-20): 통째 비교 → 내용만 비교(sortOrder 재부여·행 순서만 바뀐 재상신에 R 이 다시 생기던 문제)
+        if not RequestDocument.layer_rows_content_same(prev.get('jayerRows'), curr.get('jayerRows')):
             return False
 
         prev_detail = prev.get('detail') or {}
@@ -1114,10 +1117,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        # claude 수정 (2026-11-20): resubmit 과 같은 R 생략 판정 적용 — 예전엔 r_skip_round 를 갱신하지 않아
+        # 이전 회차 값이 남은 채 새 회차와 어긋나 R 이 항상 다시 생성됐다(사용자 결정: 생략 규칙을 똑같이 따른다).
+        skip_r = self._should_skip_r_stage(document)
+        new_round = self._max_round(document, default=0) + 1
+
         rep = pl_users[0]
         document.designated_pl = rep
         document.designated_pl_name = rep.username or rep.loginid
         document.submitted_at = timezone.now()
+        document.r_skip_round = new_round if skip_r else None
         document.save()
         layer_drift.reset_document_drift(document)
 
@@ -1125,7 +1134,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         review_items_sync.reset_confirmations(document)
 
         # 새 회차에 지정 PL·SA 전원의 pending 단계를 생성 — 이전 회차 합의는 이력으로 남아 무효화된다.
-        new_round = self._max_round(document, default=0) + 1
         # claude 수정 (2026-10-27): 새 회차 실제 상신자 기록(공유 그룹 멤버가 재상신할 수 있음)
         self._record_round_submission(document, new_round, request.user, document.submitted_at)
         for u in pl_users:
