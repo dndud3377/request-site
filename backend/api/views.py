@@ -4454,12 +4454,17 @@ class VOCViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrMasterDelete]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['category', 'status']
+    # claude 수정 (2026-11-20): 유형(category) 필터 폐지 — 팀 필터(?team=)로 대체
+    filterset_fields = ['status']
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
 
+    # claude 수정 (2026-11-20): ?team= 작성자 팀 필터 추가(PL/TE_R/TE_P/TE_J/TE_O/TE_E, 그 외는 etc)
     def get_queryset(self):
         """`?mine=true` 면 로그인 사용자가 등록한 VOC 만 반환한다.
+
+        `?team=` 은 등록 시점 작성자 팀(submitter_role)으로 거른다. `VOC.TEAM_FILTER_ROLES` 중 하나면
+        그 팀만, `etc` 면 그 외 전부(MASTER·NONE·PL_GL·빈 값). 알 수 없는 값은 빈 목록.
 
         프론트가 사용자 id 를 쿼리로 보내던 방식을 대체한다 — 개발 모드의 목 사용자
         id 는 DB 의 실제 user.id 와 어긋날 수 있어 '내 VOC' 가 오동작했다.
@@ -4471,13 +4476,23 @@ class VOCViewSet(viewsets.ModelViewSet):
             if not loginid:
                 return queryset.none()
             queryset = queryset.filter(submitter__loginid=loginid)
+        team = self.request.query_params.get('team')
+        if team:
+            if team in VOC.TEAM_FILTER_ROLES:
+                queryset = queryset.filter(submitter_role=team)
+            elif team == VOC.TEAM_FILTER_ETC:
+                queryset = queryset.exclude(submitter_role__in=VOC.TEAM_FILTER_ROLES)
+            else:
+                queryset = queryset.none()
         return queryset
 
+    # claude 수정 (2026-11-20): 작성자 팀(submitter_role)도 등록 시점 역할로 서버가 확정
     def perform_create(self, serializer):
-        """제출자 FK 는 프론트가 보낸 값이 아니라 인증된 사용자로 서버가 확정한다."""
+        """제출자 FK·작성자 팀은 프론트가 보낸 값이 아니라 인증된 사용자로 서버가 확정한다."""
         user = self.request.user
         submitter = user if getattr(user, 'is_authenticated', False) else None
-        voc = serializer.save(submitter=submitter)
+        submitter_role = (getattr(submitter, 'role', '') or '') if submitter else ''
+        voc = serializer.save(submitter=submitter, submitter_role=submitter_role)
         mailer.enqueue_voc_created(voc)
 
     # claude 수정 (2026-11-20): PUT/PATCH /api/voc/{id}/ 를 MASTER 전용으로 제한 — 권한 클래스가 DELETE 만 막아
