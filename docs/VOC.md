@@ -70,6 +70,7 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 | GET | `/api/voc/` | 목록. 페이지네이션 없음(전체 반환), 정렬 `-created_at` |
 | POST | `/api/voc/` | 등록. `submitter` 는 서버가 확정하므로 보내지 않는다 |
 | GET | `/api/voc/{id}/` | 단건 |
+| PUT / PATCH | `/api/voc/{id}/` | 수정. **MASTER 전용**(`VOCViewSet.update` — 그 외 403 `관리자만 VOC 를 수정할 수 있습니다.`, 2026-11-20). 화면에는 수정 기능이 없다. `status`·`submitter` 등 읽기 전용 필드는 MASTER 도 바꿀 수 없다 |
 | DELETE | `/api/voc/{id}/` | 삭제. **MASTER 전용** (`IsAuthenticatedOrMasterDelete`) |
 | PATCH | `/api/voc/{id}/update-status/` | 상태 변경. `completed` 로만 가능 |
 | POST | `/api/voc/{id}/comment/` | 답글 등록. 응답은 VOC 전체(댓글 포함) |
@@ -120,6 +121,7 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 | 등록 | 위와 동일. `submitter` 는 인증된 사용자로 확정(비인증이면 `null`) |
 | 답글 | **누구나.** 제한 없음 |
 | 답변 완료 | **작성자 본인 또는 MASTER** |
+| 수정(PUT/PATCH `/api/voc/{id}/`) | **MASTER 전용** — 작성자 본인도 불가(2026-11-20). 이전에는 권한 클래스가 DELETE 만 막아 로그인 사용자 누구나 남의 VOC 제목·내용을 고칠 수 있었다. 공용 `IsAuthenticatedOrMasterDelete` 는 다른 ViewSet 도 쓰므로 `VOCViewSet.update` 에서만 막는다 |
 | 삭제 | **MASTER 전용** |
 
 > 답변 완료를 시도한 사람이 작성자도 MASTER 도 아니면 403
@@ -152,9 +154,14 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 ### 4.3 상세 모달
 메타 정보(유형 / 페이지 / 상태 / 접수일·제출자) → 원본 내용(HTML 렌더) → 답글 목록 → 답글 입력
 
+- **렌더 정화(2026-11-20, B-26)**: 본문·답글 HTML 은 `sanitizeRichHtml`(`frontend/src/utils/sanitizeRichHtml.ts`)로
+  에디터와 같은 Tiptap 스키마(`components/richTextExtensions.ts`)에 재파싱한 결과만 렌더한다. API 를 직접 호출해 넣은
+  `<script>`·`onerror` 등 이벤트 핸들러·`iframe`·`javascript:` 링크는 제거되고 에디터 서식은 유지된다. 렌더 시점 정화라
+  기존 저장분에도 적용된다. DB 에는 원문이 그대로 저장된다.
+
 - 답글 입력도 등록 모달과 동일한 `RichTextEditor` 를 쓴다(2026-08-18부터). 사진 첨부(붙여넣기/업로드
   버튼), 동영상 업로드, 이모티콘, 서식(굵게/색상 등)을 등록 내용과 똑같이 쓸 수 있다.
-  답글 목록도 저장된 HTML 을 그대로 렌더링한다(`dangerouslySetInnerHTML`).
+  답글 목록도 저장된 HTML 을 정화한 뒤 렌더링한다(`dangerouslySetInnerHTML` + `sanitizeRichHtml`).
 - 빈 내용(태그를 걷어낸 평문이 빈 문자열) 판정은 등록 모달의 `content_required` 검증과 동일한
   방식으로 한다.
 - 답글 입력창은 `checking` 상태에서만 보인다. 완료되면 사라진다.
