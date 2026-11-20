@@ -13973,3 +13973,86 @@ class VocUpdatePermissionTest(TestCase):
         }, format='json')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.voc.comments.count(), 1)
+
+
+# claude 수정 (2026-11-20): VOC 유형·페이지 폐지 + 작성자 팀(submitter_role) 자동 저장·팀 필터·메일 타일 회귀 고정
+class VocTeamTest(TestCase):
+    """등록 시 서버가 작성자 팀을 확정하고, ?team= 필터와 메일 타일이 그 값을 쓴다."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.users = {
+            role: UserProfile.objects.create(loginid=f'vt_{role.lower()}', mail=f'vt_{role.lower()}@c.com', role=role)
+            for role in ('PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE')
+        }
+
+    def _create(self, role, extra=None):
+        self.client.force_authenticate(user=self.users[role])
+        data = {'title': f'{role} 글', 'content': '<p>x</p>', 'submitter_name': role, 'submitter_email': 'x@c.com'}
+        data.update(extra or {})
+        with patch('api.mailer._send_now_async'):
+            r = self.client.post('/api/voc/', data, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        return r.json()
+
+    def test_create_without_category_and_page(self):
+        """유형·페이지 없이 등록된다(필수 아님)."""
+        body = self._create('TE_R')
+        voc = VOC.objects.get(id=body['id'])
+        self.assertEqual((voc.category, voc.page), ('', ''))
+
+    def test_submitter_role_is_set_by_server(self):
+        """프론트가 다른 팀을 보내도 무시하고 로그인 사용자 역할로 저장한다."""
+        body = self._create('TE_J', {'submitter_role': 'TE_R'})
+        self.assertEqual(body['submitter_role'], 'TE_J')
+        self.assertEqual(VOC.objects.get(id=body['id']).submitter_role, 'TE_J')
+
+    def test_submitter_role_kept_when_user_role_changes(self):
+        """등록 시점 팀을 유지한다 — 작성자 역할이 바뀌어도 VOC 의 팀은 그대로."""
+        body = self._create('TE_R')
+        self.users['TE_R'].role = 'TE_J'
+        self.users['TE_R'].save(update_fields=['role'])
+        self.assertEqual(VOC.objects.get(id=body['id']).submitter_role, 'TE_R')
+
+    def _team_titles(self, team):
+        self.client.force_authenticate(user=self.users['MASTER'])
+        r = self.client.get('/api/voc/', {'team': team})
+        self.assertEqual(r.status_code, 200)
+        return sorted(v['title'] for v in r.json())
+
+    def test_team_filter(self):
+        for role in self.users:
+            self._create(role)
+        VOC.objects.create(title='계정 없음 글', submitter=None, submitter_name='x', submitter_email='x@c.com', content='x')
+        for role in VOC.TEAM_FILTER_ROLES:
+            self.assertEqual(self._team_titles(role), [f'{role} 글'])
+        self.assertEqual(self._team_titles('etc'), sorted(['MASTER 글', 'NONE 글', 'PL_GL 글', '계정 없음 글']))
+        self.assertEqual(self._team_titles('UNKNOWN'), [])
+        self.client.force_authenticate(user=self.users['MASTER'])
+        self.assertEqual(len(self.client.get('/api/voc/').json()), len(self.users) + 1)
+
+    def test_backfill_migration_uses_current_role(self):
+        """0064 백필: 기존 VOC 는 작성자 계정의 현재 역할로, 계정이 없으면 빈 값(기타)으로 채운다."""
+        import importlib
+        from django.apps import apps as django_apps
+        migration = importlib.import_module('api.migrations.0064_voc_submitter_role')
+        with_user = VOC.objects.create(title='a', submitter=self.users['TE_O'], submitter_name='a',
+                                       submitter_email='a@c.com', content='x')
+        no_user = VOC.objects.create(title='b', submitter=None, submitter_name='b',
+                                     submitter_email='b@c.com', content='x')
+        migration.backfill_submitter_role(django_apps, None)
+        with_user.refresh_from_db()
+        no_user.refresh_from_db()
+        self.assertEqual((with_user.submitter_role, no_user.submitter_role), ('TE_O', ''))
+
+    def test_mail_tiles_show_team_and_date(self):
+        """메일 정보 타일: 유형·관련 페이지 대신 작성자 팀·접수일."""
+        voc = VOC.objects.get(id=self._create('TE_R')['id'])
+        _subject, contents = mailer._build_voc_message('voc_created', voc)
+        self.assertIn('작성자 팀', contents)
+        self.assertIn('AGENT R팀', contents)
+        self.assertIn('접수일', contents)
+        self.assertIn(timezone.localtime(voc.created_at).strftime('%Y-%m-%d'), contents)
+        self.assertNotIn('관련 페이지', contents)
+        self.assertNotIn('>유형<', contents)
