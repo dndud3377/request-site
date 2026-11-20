@@ -113,8 +113,6 @@ export interface DuplicateCheckParams {
 // VOC 는 결재가 아니므로 반려 개념이 없다 — 잘못 올린 글도 답변 완료로 마무리한다.
 export type VocStatus = 'checking' | 'completed';
 
-export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
-
 // SA = 영업/기술지원 합의자(PL 검토와 병렬, 상신 시 지정했을 때만 존재)
 // claude 수정 (2026-11-13): System R(RS) 추가 — 2구역에서 R 과 병렬로 MAP 정보를 시스템이 검증(담당자 없음, MASTER 만 수동 처리)
 export type AgentType = 'PL' | 'R' | 'RV' | 'P' | 'PV' | 'J' | 'O' | 'E' | 'EV' | 'RA' | 'SA' | 'RS';
@@ -408,8 +406,6 @@ export type CreateDocumentInput = Omit<
 
 export type UpdateDocumentInput = Partial<CreateDocumentInput>;
 
-export type VocPage = 'request' | 'approval' | 'history' | 'other';
-
 export interface VocComment {
   id: number;
   author_name: string;
@@ -419,10 +415,12 @@ export interface VocComment {
   created_at: string;
 }
 
+// claude 수정 (2026-11-20): 유형(category)·페이지(page) 폐지 → 등록 시점 작성자 팀(submitter_role)
 export interface VOC {
   id: number;
   title: string;
-  category: VocCategory;
+  /** 등록 시점 작성자 팀(역할). 서버가 확정하므로 응답 전용. 작성자 계정이 없던 옛 VOC 는 빈 문자열. */
+  submitter_role: UserRole | '';
   submitter_name: string;
   submitter_email: string;
   /** 제출자 계정 PK. 등록 시 서버가 확정하므로 응답 전용이다. */
@@ -433,15 +431,17 @@ export interface VOC {
    */
   submitter_loginid: string;
   content: string;
-  page?: VocPage;
   comments: VocComment[];
   status: VocStatus;
   created_at: string;
 }
 
 export type CreateVocInput = Omit<
-  VOC, 'id' | 'comments' | 'status' | 'created_at' | 'submitter' | 'submitter_loginid'
+  VOC, 'id' | 'comments' | 'status' | 'created_at' | 'submitter' | 'submitter_loginid' | 'submitter_role'
 >;
+
+/** VOC 목록 팀 필터(?team=). 이 6개 외 역할(MASTER·NONE·PL_GL)은 'etc'(기타)로 묶인다 — 서버 VOC.TEAM_FILTER_ROLES 와 동일. */
+export type VocTeamFilter = 'PL' | 'TE_R' | 'TE_P' | 'TE_J' | 'TE_O' | 'TE_E' | 'etc';
 
 export type AddVocCommentInput = {
   content: string;
