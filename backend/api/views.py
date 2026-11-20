@@ -5454,11 +5454,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['patch'], url_path='voc-mail')
     def voc_mail(self, request, pk=None):
-        """VOC 등록 알림 메일 수신 설정 변경 (권한 관리 '이메일 설정' 컬럼의 VOC 토글).
+        """VOC 알림 메일 수신 설정 변경 (권한 관리 '이메일 설정' 컬럼의 VOC 토글).
 
         - 본인 행은 본인이, 그 외에는 MASTER 만 바꿀 수 있다(mail-lines 와 동일 규칙).
-        - 대상 역할은 MASTER 뿐이다 — VOC 등록 메일은 role='MASTER' 전원에게만 발송되므로
-          그 외 역할은 이 설정을 쓰지 않는다.
+        - 대상 역할은 MASTER(VOC 등록 알림)와 AGENT 팀원 TE_R/P/J/O/E(같은 팀원이 쓴 VOC 의
+          등록·답글 팀 발송)뿐이다 — 그 외 역할은 이 설정을 쓰지 않는다.
         - 요청 본문: {"receive_voc_mail": true/false}
         """
         user = self.get_object()
@@ -5467,9 +5467,10 @@ class UserViewSet(viewsets.ModelViewSet):
         if not (is_master or (caller.is_authenticated and caller.pk == user.pk)):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
-        if user.role != 'MASTER':
+        # claude 수정 (2026-11-20): AGENT 팀원도 VOC 팀 발송 수신 설정을 쓴다(VOC.TEAM_MAIL_ROLES)
+        if user.role != 'MASTER' and user.role not in VOC.TEAM_MAIL_ROLES:
             return Response(
-                {'error': 'MASTER 역할만 VOC 메일 수신 설정을 사용합니다.'},
+                {'error': 'MASTER 또는 AGENT 팀(R·P·J·O·E) 역할만 VOC 메일 수신 설정을 사용합니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
