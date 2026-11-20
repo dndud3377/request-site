@@ -614,7 +614,8 @@ class VOCSerializer(serializers.ModelSerializer):
         model = VOC
         fields = '__all__'
         # submitter 는 등록 시 서버가 request.user 로 확정한다(VOCViewSet.perform_create).
-        read_only_fields = ['created_at', 'responded_at', 'status', 'submitter']
+        # claude 수정 (2026-11-20): submitter_role(작성자 팀)도 서버 확정값이라 읽기 전용
+        read_only_fields = ['created_at', 'responded_at', 'status', 'submitter', 'submitter_role']
 
     def get_submitter_loginid(self, obj):
         return obj.submitter.loginid if obj.submitter_id else ''
