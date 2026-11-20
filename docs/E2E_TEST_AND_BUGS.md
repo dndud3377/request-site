@@ -40,8 +40,8 @@
 > **2건이 유령값**(B-60·64), 1건이 blob 덮어쓰기(B-62), 1건이 크래시(B-63)다.
 
 **즉시 조치 권고 TOP 5** (전부 재현✅)
-1. **[B-26] 저장형 XSS → MASTER 권한 탈취** — 역할 `NONE` 사용자가 VOC 내용에 임의 HTML/스크립트를 저장할 수 있고,
-   그것을 열람한 MASTER의 세션으로 `assign-role` 이 호출되면 **공격자가 MASTER로 승격**된다. sanitizer 의존성 자체가 없다.
+1. ~~**[B-26] 저장형 XSS → MASTER 권한 탈취**~~ → 🟡 **렌더 정화 수정**(2026-11-20) — RichText 렌더 7곳을 에디터 스키마로 재파싱해 정화(§5-2 B-26).
+   2차 방어선 CSP(B-42)는 미적용이다.
 2. ~~**[B-27] OIDC id_token 만료 검증이 꺼져 있다**~~ → ✅ **수정 완료**(2026-10-11) — exp·iss·aud·nonce·state 검증 적용(§5-6).
 3. ~~**[B-01] 의뢰서 삭제 인가 전무**~~ → ✅ **수정 완료**(2026-07-28, `03b2240`) — 인가 적용 + REST DELETE 405 차단.
 4. **[B-06] PAUSE 동결 우회** — 중단(pause) 문서에서 PL 합의/반려가 그대로 동작해 결재가 되살아난다.
@@ -1595,7 +1595,17 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 > 1차에서 다루지 않았던 **OIDC 인증 / 업로드·미디어 / 메일 렌더 / 사용자 삭제 파급 / 인프라 설정** 영역.
 
-### 🔴 B-26 저장형 XSS → MASTER 권한 탈취 체인 **재현✅**
+### 🟡 B-26 저장형 XSS → MASTER 권한 탈취 체인 **재현✅** — **렌더 정화 수정(2026-11-20)**
+> **수정**: 신규 의존성 없이, 이미 설치된 Tiptap(ProseMirror) 스키마로 렌더 직전에 재파싱한다
+> (`frontend/src/utils/sanitizeRichHtml.ts` — `generateJSON` → `generateHTML`). 화이트리스트는 에디터와 같은
+> extension 목록(`components/richTextExtensions.ts`, RichTextEditor 도 이것을 쓴다)이라 **에디터가 만들 수 있는 것만** 남는다.
+> `script`·`on*`·`iframe`·`svg`·`form`·`javascript:` 링크·스키마 밖 style 속성은 제거되고, 파싱 실패 시 빈 문자열(fail-closed).
+> 적용: VOC 본문·답글(`VOCPage`), 공지 본문(`HomePage`), 가이드 상세·카드 미리보기(`GuidePage`), 가이드 패널(`GuideSlidePanel`),
+> MAP 변경 사유(`PagedDetailView`) — 7곳. 렌더 시점 정화라 **기존 저장분에도 그대로 적용**된다(마이그레이션 없음 —
+> 실제 DB 에 잠복 페이로드가 없음을 사용자가 확인).
+> 회귀 고정: `sanitizeRichHtml.test.ts` 16건. jest(CRA5)가 Tiptap 을 못 읽어 `package.json` `jest.moduleNameMapper` 2줄 추가.
+> **남은 것**: 서버 DB 에는 원문이 남는다(메일 본문은 평문화+escape 로 안전). CSP(B-42) 미적용. img/video `src` 프로토콜은 검사하지 않는다
+> (img/video 의 `javascript:` 는 최신 브라우저에서 실행되지 않음). 아래는 1차 기록(원문 보존).
 - 위치
   - 저장: `views.py:1827`(`VOCViewSet.perform_create` — sanitize 없음), `serializers.VOCSerializer(fields='__all__')`
   - 렌더: `pages/VOCPage.tsx:446`, `pages/GuidePage.tsx:268,328`, `components/GuideSlidePanel.tsx:132`, `pages/HomePage.tsx:257`
@@ -2711,7 +2721,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 버그 수정 후 재확인:
 
 *보안 (한 묶음으로)*
-- [ ] B-26 `NONE` 사용자가 VOC에 `<img onerror>` 저장 → 렌더 시 **실행되지 않음**(sanitize) + 기존 저장분도 정화됨
+- [x] B-26 `NONE` 사용자가 VOC에 `<img onerror>` 저장 → 렌더 시 **실행되지 않음**(sanitize) + 기존 저장분도 정화됨 ✅ 렌더 정화(2026-11-20, 자동 테스트)
 - [ ] B-42 `curl -sI` 로 **CSP / X-Frame-Options(SAMEORIGIN) / nosniff / Referrer-Policy** 4종 확인
 - [x] B-27 만료된 `id_token` 재전송 → **401** ✅ 수정완료(2026-10-11, 자동 테스트)
 - [x] B-28 state 쿠키 없이 콜백 → **400** / `state` 불일치 → **400** / nonce 불일치 → **400** ✅ 수정완료(2026-10-11, 자동 테스트)
