@@ -7,6 +7,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Part
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
+import { sanitizeRichHtml } from '../utils/sanitizeRichHtml';
 import { buildAdiCdTargets } from '../utils/approvalTable';
 import AdiCdTargetsCell from './AdiCdTargetsCell';
 import {
@@ -2786,6 +2787,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                 />
               )}
               {/* claude 수정 (2026-10-23): 에디터로 넣은 표가 보이도록 공통 표 스타일 클래스 추가 */}
+              {/* claude 수정 (2026-11-20): 저장형 XSS(B-26) 방어 — 에디터 스키마로 정화한 HTML 만 렌더 */}
               {detail.map_change_reason ? (
                 <div
                   className="rich-table-render"
@@ -2794,7 +2796,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                     borderRadius: 6, padding: '10px 12px', maxHeight: 840, overflowY: 'auto',
                     background: 'var(--bg-secondary)', fontSize: '0.86rem', lineHeight: 1.6,
                   }}
-                  dangerouslySetInnerHTML={{ __html: detail.map_change_reason }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(detail.map_change_reason) }}
                 />
               ) : (
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>
