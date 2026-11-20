@@ -180,8 +180,20 @@ APScheduler 1분 주기 ─ process_mail_queue() ─ DXHUB API 발송  ← 안�
 
 | 이벤트 | 트리거 | 수신자 |
 |--------|--------|--------|
-| `voc_created` | POST /api/voc/ (신규 등록) | **`role='MASTER'` 사용자 전원**의 `mail` |
-| `voc_comment` | POST /api/voc/{id}/comment/ | VOC 제출자 + 기존 답글 작성자(`author_email`) - 본인 제외 |
+| `voc_created` | POST /api/voc/ (신규 등록) | **`role='MASTER'` 사용자 전원**(VOC 토글 켬) + **작성자 팀원 전원**(AGENT 팀, VOC 토글 켬) − 작성자 본인 |
+| `voc_comment` | POST /api/voc/{id}/comment/ | VOC 제출자 + 기존 답글 작성자(`author_email`) + **작성자 팀원 전원**(AGENT 팀, VOC 토글 켬) − 답글 본인 |
+
+> **2026-11-20 변경 — 작성자 팀원 전원 발송**: 작성자가 AGENT 팀(`TE_R`/`TE_P`/`TE_J`/`TE_O`/`TE_E`,
+> `VOC.TEAM_MAIL_ROLES`)이면 그 팀원 전원(VOC 토글을 켠 사람)에게도 등록·답글 메일이 간다(`mailer._voc_team_emails`).
+> - 팀은 VOC 에 저장된 **등록 시점 작성자 팀**(`VOC.submitter_role`) 기준이다. **답글 작성자의 팀은 보지 않는다** —
+>   J팀 B 의 VOC 에 R팀 A 가 답글을 달면 J팀 전원에게 가고, R팀 전원에게는 가지 않는다(A 는 이후 '기존 답글 작성자'로서 개인 수신).
+> - 등록 메일은 작성자 본인을 뺀다(작성자가 MASTER 여도 본인은 받지 않는다).
+> - 제품 담당자·해외 제품 담당자·관리자·미지정이 쓴 VOC 는 팀 발송이 없다(기존 규칙 그대로).
+> - VOC 토글(`receive_voc_mail`)은 **팀 발송에서만** 빼 준다. 토글을 끈 팀원이라도 그 VOC 에 직접 답글을 달았다면
+>   답글 작성자로서 계속 받는다. ⚠️ 팀원 토글 **화면은 숨겨 두었다**(2026-11-20, 추후 재도입 가능) — 권한 관리에서는
+>   MASTER 탭에만 VOC 버튼이 있다. 서버(`voc-mail` API 허용 역할·팀 발송의 토글 확인)는 그대로라 팀원 값은 기본값(켜짐)으로
+>   유지되고, 다시 쓰려면 `PermissionPage` 의 `showVocMail` 조건만 AGENT 탭까지 넓히면 된다.
+> - 수신자를 한 통에 모두 담으므로 발송 건수는 그대로다(등록 1통, 답글 2통).
 
 > **2026-08 변경**: 등록 알림 수신자를 `VOC_MASTER_EMAIL` 고정 주소에서 MASTER 계정
 > 전원으로 바꿨다. MASTER 가 늘어나도 설정 변경 없이 반영된다.
@@ -202,6 +214,8 @@ A 가 등록 → B 가 답글 → C 가 답글:
 | A 등록 | — | MASTER 전원 (`voc_created`) |
 | B 답글 | A (완료 안내 **포함**) | 없음 |
 | C 답글 | A (완료 안내 **포함**) | B (안내 없음) |
+
+(위 표는 A 가 팀 발송 대상이 아닌 경우다. A 가 R팀이면 각 행의 '그 외 참여자용'에 R팀원 전원(A 제외)이 더해진다.)
 
 ### 2.2 환경 변수
 
@@ -444,7 +458,8 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
   의뢰서와 결재 경로 카드를 필수로 요구해 재사용할 수 없어, VOC 전용
   `_render_voc_email` 을 따로 두고 `EVENT_THEME` 색상 테마만 공유한다
   (`voc_created`=블루, `voc_comment`=퍼플). 카드 구성은 VOC 제목 → 2×2 정보 타일
-  (유형/관련 페이지/작성자/상태) → 내용 → (제출자에게만) 완료 처리 안내 → 상세 버튼.
+  (작성자 팀/접수일/작성자/상태 — 2026-11-20 유형·관련 페이지에서 교체, `mailer.VOC_TEAM_LABEL`) → 내용 →
+  (제출자에게만) 완료 처리 안내 → 상세 버튼.
   VOC 내용은 RichTextEditor 가 만든 HTML 이라 `_html_to_text` 로 평문화한 뒤 escape 한다.
 
 ### 결재 경로 카드 (2026-07 추가)

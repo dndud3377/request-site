@@ -34,8 +34,9 @@ class ApprovalStepAdmin(admin.ModelAdmin):
 
 @admin.register(VOC)
 class VOCAdmin(admin.ModelAdmin):
-    list_display = ['title', 'category', 'submitter_name', 'status', 'created_at']
-    list_filter = ['category', 'status']
+    # claude 수정 (2026-11-20): 유형(category) 폐지 — 작성자 팀(submitter_role)으로 대체
+    list_display = ['title', 'submitter_role', 'submitter_name', 'status', 'created_at']
+    list_filter = ['submitter_role', 'status']
     search_fields = ['title', 'submitter_name']
 
 

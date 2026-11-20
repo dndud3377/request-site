@@ -6,26 +6,23 @@ import RichTextEditor from '../components/RichTextEditor';
 import StatusBadge from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
 import Modal, { ConfirmModal } from '../components/Modal';
-import { VOC, VocCategory, VocStatus, VocPage, CreateVocInput } from '../types';
-import { useAuth } from '../contexts/AuthContext';
+import { VOC, VocStatus, VocTeamFilter, CreateVocInput, UserRole } from '../types';
+import { useAuth, ROLE_LABEL } from '../contexts/AuthContext';
 import { sanitizeRichHtml } from '../utils/sanitizeRichHtml';
 
-interface CategoryOption { value: VocCategory; labelKey: string; }
-interface PageOption      { value: VocPage;    labelKey: string; }
+interface TeamOption     { value: VocTeamFilter; labelKey: string; }
 interface StatusOption   { value: VocStatus;   labelKey: string; }
 
-const CATEGORIES: CategoryOption[] = [
-  { value: 'inquiry',         labelKey: 'voc.category_inquiry' },
-  { value: 'error_report',    labelKey: 'voc.category_error_report' },
-  { value: 'feature_request', labelKey: 'voc.category_feature_request' },
-  { value: 'task_request',    labelKey: 'voc.category_task_request' },
-];
-
-const PAGES: PageOption[] = [
-  { value: 'request',  labelKey: 'voc.page_request' },
-  { value: 'approval', labelKey: 'voc.page_approval' },
-  { value: 'history',  labelKey: 'voc.page_history' },
-  { value: 'other',    labelKey: 'voc.page_other' },
+// claude 수정 (2026-11-20): 유형·페이지 선택 폐지 → 작성자 팀 필터 탭. 관리자·미지정·해외 제품 담당자는 '기타'(etc)로 묶는다
+// (서버 VOCViewSet ?team= 와 같은 규칙).
+const TEAMS: TeamOption[] = [
+  { value: 'PL',   labelKey: ROLE_LABEL.PL },
+  { value: 'TE_R', labelKey: ROLE_LABEL.TE_R },
+  { value: 'TE_P', labelKey: ROLE_LABEL.TE_P },
+  { value: 'TE_J', labelKey: ROLE_LABEL.TE_J },
+  { value: 'TE_O', labelKey: ROLE_LABEL.TE_O },
+  { value: 'TE_E', labelKey: ROLE_LABEL.TE_E },
+  { value: 'etc',  labelKey: 'voc.team_etc' },
 ];
 
 // 필터 탭 '확인중' / '답변완료' — 유형 탭과 마찬가지로 서버의 status 파라미터로 위임한다.
@@ -79,7 +76,8 @@ export default function VOCPage(): React.ReactElement {
 
   // ── register form ──
   const [formOpen, setFormOpen]   = useState(false);
-  const [form, setForm]           = useState({ title: '', category: 'inquiry' as VocCategory, page: 'request' as VocPage, content: '' });
+  // claude 수정 (2026-11-20): 유형·페이지 입력 제거 — 작성자 팀은 서버가 로그인 사용자 역할로 확정한다
+  const [form, setForm]           = useState({ title: '', content: '' });
   const [submitting, setSubmitting] = useState(false);
 
   // ── detail modal ──
@@ -97,9 +95,10 @@ export default function VOCPage(): React.ReactElement {
     const params: Record<string, string> = {};
     // '내 VOC' 는 사용자 id 를 보내지 않고 서버가 로그인 사용자로 판단한다
     // (개발 모드의 목 사용자 id 는 DB 의 실제 user.id 와 어긋날 수 있다).
+    // claude 수정 (2026-11-20): 유형(category) 필터 → 작성자 팀(team) 필터
     if (filter === 'my')                                        params.mine = 'true';
     else if (filter === 'checking' || filter === 'completed')    params.status = filter;
-    else if (filter)                                             params.category = filter;
+    else if (filter)                                             params.team = filter;
     if (searchQuery)           params.search = searchQuery;
 
     vocAPI.list(params)
@@ -132,7 +131,7 @@ export default function VOCPage(): React.ReactElement {
   }, [selected?.comments?.length]);
 
   // ─────────────── register ───────────────
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
@@ -150,15 +149,13 @@ export default function VOCPage(): React.ReactElement {
       // 제출자 계정(submitter)은 서버가 로그인 사용자로 확정하므로 보내지 않는다.
       const input: CreateVocInput = {
         title: form.title,
-        category: form.category,
-        page: form.page,
         content: contentHtml,
         submitter_name: currentUser.name,
         submitter_email: currentUser.email,
       };
       await vocAPI.create(input);
       addToast(t('voc.submit_success'), 'success');
-      setForm({ title: '', category: 'inquiry', page: 'request', content: '' });
+      setForm({ title: '', content: '' });
       setFormOpen(false);
       fetchVocs();
     } catch {
@@ -223,16 +220,13 @@ export default function VOCPage(): React.ReactElement {
   };
 
   // ─────────────── helpers ───────────────
-  const getCategoryLabel = (cat: VocCategory) =>
-    t((CATEGORIES.find((c) => c.value === cat)?.labelKey ?? 'voc.category_inquiry') as any);
-
-  const getPageLabel = (page?: VocPage) =>
-    page ? t((PAGES.find((p) => p.value === page)?.labelKey ?? 'voc.page_request') as any) : '-';
+  // claude 수정 (2026-11-20): 작성자 팀 라벨(권한 라벨 재사용). 작성자 계정이 없던 옛 VOC 는 '-'
+  const getTeamLabel = (role: UserRole | '' | null) => (role ? t(ROLE_LABEL[role] as any) : '-');
 
   const filterTabs = [
     { key: '',    label: t('approval.filter_all') },
     { key: 'my',  label: t('voc.my_voc') },
-    ...CATEGORIES.map((c) => ({ key: c.value, label: t(c.labelKey as any) })),
+    ...TEAMS.map((tm) => ({ key: tm.value, label: t(tm.labelKey as any) })),
     ...STATUSES.map((s) => ({ key: s.value, label: t(s.labelKey as any) })),
   ];
 
@@ -299,8 +293,8 @@ export default function VOCPage(): React.ReactElement {
               <tr>
                 <th>No.</th>
                 <th>{t('approval.col_title')}</th>
-                <th>{t('voc.category')}</th>
-                <th>{t('voc.page')}</th>
+                {/* claude 수정 (2026-11-20): 유형·페이지 컬럼 → 작성자 팀 */}
+                <th>{t('voc.team')}</th>
                 <th>{t('voc.submitter_name')}</th>
                 <th>{t('voc.status')}</th>
                 <th>{t('voc.col_created_at')}</th>
@@ -324,11 +318,8 @@ export default function VOCPage(): React.ReactElement {
                   </td>
                   <td>
                     <span style={{ fontSize: '0.8rem', color: 'var(--accent)' }}>
-                      {getCategoryLabel(v.category)}
+                      {getTeamLabel(v.submitter_role)}
                     </span>
-                  </td>
-                  <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    {getPageLabel(v.page)}
                   </td>
                   <td>{v.submitter_name}</td>
                   <td><StatusBadge status={v.status} /></td>
@@ -384,6 +375,12 @@ export default function VOCPage(): React.ReactElement {
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
         title={t('voc.new_voc')}
+        // claude 수정 (2026-11-20): 'VOC 등록' 옆에 작성자 팀(현재 로그인 사용자 권한)을 표시. 저장값은 서버가 확정한다
+        titleExtra={
+          <span style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600, background: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: 4 }}>
+            {t('voc.team')}: {getTeamLabel(currentUser.role)}
+          </span>
+        }
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setFormOpen(false)}>{t('common.cancel')}</button>
@@ -397,24 +394,6 @@ export default function VOCPage(): React.ReactElement {
           <div className="form-group">
             <label className="form-label">{t('approval.col_title')} <span className="required">*</span></label>
             <input className="form-control" name="title" value={form.title} onChange={handleFormChange} required />
-          </div>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">{t('voc.category')}</label>
-              <select className="form-control" name="category" value={form.category} onChange={handleFormChange}>
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{t(c.labelKey as any)}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">{t('voc.page')} <span className="required">*</span></label>
-              <select className="form-control" name="page" value={form.page} onChange={handleFormChange} required>
-                {PAGES.map((p) => (
-                  <option key={p.value} value={p.value}>{t(p.labelKey as any)}</option>
-                ))}
-              </select>
-            </div>
           </div>
           <div className="form-group">
             <label className="form-label">{t('voc.content')} <span className="required">*</span></label>
@@ -459,16 +438,11 @@ export default function VOCPage(): React.ReactElement {
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* 메타 정보 */}
+            {/* 메타 정보 — claude 수정 (2026-11-20): 유형·페이지 배지 → 작성자 팀 배지 */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>
-                {getCategoryLabel(selected.category)}
+              <span style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600, background: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: 4 }}>
+                {getTeamLabel(selected.submitter_role)}
               </span>
-              {selected.page && (
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: 4 }}>
-                  {getPageLabel(selected.page)}
-                </span>
-              )}
               <StatusBadge status={selected.status} />
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
                 {formatDate(selected.created_at)} · {selected.submitter_name}

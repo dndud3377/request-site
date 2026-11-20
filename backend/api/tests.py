@@ -14192,3 +14192,173 @@ class VocUpdatePermissionTest(TestCase):
         }, format='json')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.voc.comments.count(), 1)
+
+
+# claude 수정 (2026-11-20): VOC 유형·페이지 폐지 + 작성자 팀(submitter_role) 자동 저장·팀 필터·메일 타일 회귀 고정
+class VocTeamTest(TestCase):
+    """등록 시 서버가 작성자 팀을 확정하고, ?team= 필터와 메일 타일이 그 값을 쓴다."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.users = {
+            role: UserProfile.objects.create(loginid=f'vt_{role.lower()}', mail=f'vt_{role.lower()}@c.com', role=role)
+            for role in ('PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE')
+        }
+
+    def _create(self, role, extra=None):
+        self.client.force_authenticate(user=self.users[role])
+        data = {'title': f'{role} 글', 'content': '<p>x</p>', 'submitter_name': role, 'submitter_email': 'x@c.com'}
+        data.update(extra or {})
+        with patch('api.mailer._send_now_async'):
+            r = self.client.post('/api/voc/', data, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        return r.json()
+
+    def test_create_without_category_and_page(self):
+        """유형·페이지 없이 등록된다(필수 아님)."""
+        body = self._create('TE_R')
+        voc = VOC.objects.get(id=body['id'])
+        self.assertEqual((voc.category, voc.page), ('', ''))
+
+    def test_submitter_role_is_set_by_server(self):
+        """프론트가 다른 팀을 보내도 무시하고 로그인 사용자 역할로 저장한다."""
+        body = self._create('TE_J', {'submitter_role': 'TE_R'})
+        self.assertEqual(body['submitter_role'], 'TE_J')
+        self.assertEqual(VOC.objects.get(id=body['id']).submitter_role, 'TE_J')
+
+    def test_submitter_role_kept_when_user_role_changes(self):
+        """등록 시점 팀을 유지한다 — 작성자 역할이 바뀌어도 VOC 의 팀은 그대로."""
+        body = self._create('TE_R')
+        self.users['TE_R'].role = 'TE_J'
+        self.users['TE_R'].save(update_fields=['role'])
+        self.assertEqual(VOC.objects.get(id=body['id']).submitter_role, 'TE_R')
+
+    def _team_titles(self, team):
+        self.client.force_authenticate(user=self.users['MASTER'])
+        r = self.client.get('/api/voc/', {'team': team})
+        self.assertEqual(r.status_code, 200)
+        return sorted(v['title'] for v in r.json())
+
+    def test_team_filter(self):
+        for role in self.users:
+            self._create(role)
+        VOC.objects.create(title='계정 없음 글', submitter=None, submitter_name='x', submitter_email='x@c.com', content='x')
+        for role in VOC.TEAM_FILTER_ROLES:
+            self.assertEqual(self._team_titles(role), [f'{role} 글'])
+        self.assertEqual(self._team_titles('etc'), sorted(['MASTER 글', 'NONE 글', 'PL_GL 글', '계정 없음 글']))
+        self.assertEqual(self._team_titles('UNKNOWN'), [])
+        self.client.force_authenticate(user=self.users['MASTER'])
+        self.assertEqual(len(self.client.get('/api/voc/').json()), len(self.users) + 1)
+
+    def test_backfill_migration_uses_current_role(self):
+        """0064 백필: 기존 VOC 는 작성자 계정의 현재 역할로, 계정이 없으면 빈 값(기타)으로 채운다."""
+        import importlib
+        from django.apps import apps as django_apps
+        migration = importlib.import_module('api.migrations.0064_voc_submitter_role')
+        with_user = VOC.objects.create(title='a', submitter=self.users['TE_O'], submitter_name='a',
+                                       submitter_email='a@c.com', content='x')
+        no_user = VOC.objects.create(title='b', submitter=None, submitter_name='b',
+                                     submitter_email='b@c.com', content='x')
+        migration.backfill_submitter_role(django_apps, None)
+        with_user.refresh_from_db()
+        no_user.refresh_from_db()
+        self.assertEqual((with_user.submitter_role, no_user.submitter_role), ('TE_O', ''))
+
+    def test_mail_tiles_show_team_and_date(self):
+        """메일 정보 타일: 유형·관련 페이지 대신 작성자 팀·접수일."""
+        voc = VOC.objects.get(id=self._create('TE_R')['id'])
+        _subject, contents = mailer._build_voc_message('voc_created', voc)
+        self.assertIn('작성자 팀', contents)
+        self.assertIn('AGENT R팀', contents)
+        self.assertIn('접수일', contents)
+        self.assertIn(timezone.localtime(voc.created_at).strftime('%Y-%m-%d'), contents)
+        self.assertNotIn('관련 페이지', contents)
+        self.assertNotIn('>유형<', contents)
+
+
+# claude 수정 (2026-11-20): VOC 메일 작성자 팀원 전원 발송 회귀 고정 — 작성자 팀 기준, 답글 작성자 팀은 보지 않는다
+class VocTeamMailTest(TestCase):
+    """등록: MASTER + 작성자 팀원(토글 켬) − 본인 / 답글: [제출자] + [기존 답글 작성자 + 작성자 팀원] − 제출자 − 답글 본인."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        mk = lambda lid, role, on=True: UserProfile.objects.create(
+            loginid=lid, mail=f'{lid}@c.com', role=role, receive_voc_mail=on)
+        self.a, self.r2, self.r3_off = mk('ra', 'TE_R'), mk('r2', 'TE_R'), mk('r3', 'TE_R', on=False)
+        self.b, self.j2 = mk('jb', 'TE_J'), mk('j2', 'TE_J')
+        self.p1, self.p2 = mk('p1', 'TE_P'), mk('p2', 'TE_P')
+        self.e1, self.e2 = mk('e1', 'TE_E'), mk('e2', 'TE_E')
+        self.o1 = mk('o1', 'TE_O')
+        self.m, self.m_off = mk('ma', 'MASTER'), mk('mb', 'MASTER', on=False)
+        self.pl, self.pl2 = mk('pl', 'PL'), mk('pl2', 'PL')
+
+    def _post(self, user, url, data, method='post'):
+        self.client.force_authenticate(user=user)
+        before = MailNotification.objects.count()
+        with patch('api.mailer._send_now_async'):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = getattr(self.client, method)(url, data, format='json')
+        self.assertIn(r.status_code, (200, 201), r.content)
+        notis = list(MailNotification.objects.order_by('id')[before:])
+        return r.json(), [sorted(n.recipients) for n in notis]
+
+    def _create(self, user):
+        body, mails = self._post(user, '/api/voc/', {
+            'title': 't', 'content': '<p>x</p>', 'submitter_name': 'n', 'submitter_email': user.mail})
+        return body['id'], mails
+
+    def _comment(self, user, voc_id):
+        return self._post(user, f'/api/voc/{voc_id}/comment/', {
+            'author_name': 'n', 'author_role': user.role, 'is_submitter': False, 'content': '<p>c</p>'})[1]
+
+    def test_r_member_creates_r_team_and_master_receive(self):
+        """예시 1: R팀 A 등록 → R팀 전원(토글 끈 r3 제외) + MASTER(토글 켬), A 본인 제외."""
+        _id, mails = self._create(self.a)
+        self.assertEqual(mails, [sorted(['ma@c.com', 'r2@c.com'])])
+
+    def test_comment_goes_to_submitter_team_not_commenter_team(self):
+        """예시 2: J팀 B 등록, R팀 A 답글 → J팀 전원에게 가고 R팀 전원에게는 가지 않는다."""
+        voc_id, created = self._create(self.b)
+        self.assertEqual(created, [sorted(['ma@c.com', 'j2@c.com'])])
+        self.assertEqual(self._comment(self.a, voc_id), [['jb@c.com'], ['j2@c.com']])
+        # MASTER 답글 → 제출자 B / 그 외: 기존 답글 작성자 A + J팀(j2). R팀(r2) 은 없다.
+        self.assertEqual(self._comment(self.m, voc_id), [['jb@c.com'], sorted(['ra@c.com', 'j2@c.com'])])
+
+    def test_team_member_comment_excludes_self(self):
+        """작성자 팀원이 답글을 달면 그 사람은 '그 외' 메일에서 빠진다."""
+        voc_id, _ = self._create(self.a)
+        self.assertEqual(self._comment(self.r2, voc_id), [['ra@c.com']])
+
+    def test_toggle_off_member_still_gets_mail_as_commenter(self):
+        """토글은 팀 발송에만 적용 — 직접 답글을 단 VOC 의 답글 알림은 계속 받는다."""
+        voc_id, _ = self._create(self.a)
+        self._comment(self.r3_off, voc_id)
+        self.assertEqual(self._comment(self.m, voc_id), [['ra@c.com'], sorted(['r2@c.com', 'r3@c.com'])])
+
+    def test_p_e_o_teams_also_broadcast(self):
+        for author, mate in ((self.p1, 'p2@c.com'), (self.e1, 'e2@c.com')):
+            _id, mails = self._create(author)
+            self.assertEqual(mails, [sorted(['ma@c.com', mate])])
+        _id, mails = self._create(self.o1)
+        self.assertEqual(mails, [['ma@c.com']])  # O팀은 o1 혼자라 팀원 없음
+
+    def test_non_agent_authors_keep_old_rule(self):
+        """제품 담당자가 쓴 VOC 는 팀 발송이 없다(MASTER 만). MASTER 작성자는 본인 제외."""
+        _id, mails = self._create(self.pl)
+        self.assertEqual(mails, [['ma@c.com']])
+        voc_id, mails = self._create(self.m)
+        self.assertEqual(mails, [])  # 받을 사람이 없어 적재하지 않는다
+        self.assertEqual(self._comment(self.pl, voc_id), [['ma@c.com']])
+
+    def test_voc_mail_toggle_allowed_roles(self):
+        def patch_toggle(caller, target):
+            self.client.force_authenticate(user=caller)
+            return self.client.patch(f'/api/users/{target.id}/voc-mail/', {'receive_voc_mail': False}, format='json')
+        self.assertEqual(patch_toggle(self.a, self.a).status_code, 200)
+        self.a.refresh_from_db()
+        self.assertFalse(self.a.receive_voc_mail)
+        self.assertEqual(patch_toggle(self.m, self.e1).status_code, 200)
+        self.assertEqual(patch_toggle(self.pl, self.pl).status_code, 400)
+        self.assertEqual(patch_toggle(self.a, self.r2).status_code, 403)
