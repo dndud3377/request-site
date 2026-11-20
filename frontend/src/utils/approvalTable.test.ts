@@ -720,6 +720,42 @@ describe('hasActiveStageStep — 단계별 필터(agent_R/P/J/O/E)는 검토자 
   });
 });
 
+// claude 수정 (2026-11-16): System R(RS)도 RFG(agent_R) 탭에 잡히는지 고정
+describe('hasActiveStageStep — RFG(agent_R) 탭은 System R(RS)도 R 단계로 본다', () => {
+  it('R 합의 후 RS 만 pending 이어도 R 단계로 잡힌다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'RS', action: 'pending' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'R')).toBe(true);
+  });
+
+  it('R·RS 모두 합의하고 3구역으로 넘어가면 잡히지 않는다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'RS', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'pending' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'R')).toBe(false);
+  });
+
+  it('이전 회차에 남은 RS pending 으로는 잡히지 않는다(현재 회차만 본다)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'RS', action: 'pending', round: 1 }),
+      makeStep({ agent: 'PL', action: 'pending', round: 2 }),
+    ]);
+    expect(hasActiveStageStep(doc, 'R')).toBe(false);
+  });
+
+  it('정렬 키: R 합의 후 RS 만 pending 이면 RS 진입 시각을 쓴다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', created_at: '2026-11-01T00:00:00Z' }),
+      makeStep({ agent: 'RS', action: 'pending', created_at: '2026-11-02T00:00:00Z' }),
+    ]);
+    expect(getStagePendingEnteredAt(doc, 'R')).toBe('2026-11-02T00:00:00Z');
+  });
+});
+
 describe('hasActiveStageStep — PL(1구역) 탭은 PL·SA 중 하나라도 pending 이면 잡는다', () => {
   it('PL 만 pending 이면 잡힌다', () => {
     const doc = makeDoc([makeStep({ agent: 'PL', action: 'pending' })]);

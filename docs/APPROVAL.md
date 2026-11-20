@@ -1442,6 +1442,10 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
   정렬(§3.2.1)이 모두 담당자·검토자를 같은 단계로 인식하도록 통일했다(`ApprovalPage.tsx`의
   `applyClientFilter`/`getTabCount`/`sortedDocs`). 테스트: `approvalTable.test.ts`
   `hasActiveStageStep`/`getStagePendingEnteredAt` describe 블록.
+- ✅ **(2026-11-16) RFG 탭(`agent_R`)이 System R(RS)도 R 단계로 본다** — RS 는 R 단계 검증의 일부라(사용자 결정)
+  `STAGE_AGENT_GROUPS.R` 에 `RS` 를 더했다(`['R','RV','RS']`). R(+RV) 합의 후 RS 만 pending 인(2구역에 머문) 문서가 RFG 탭·건수·
+  정렬과 목록 다운로드 창의 팀 R 필터에서 빠지던 문제를 없앤다. 서버 변경 없음. 테스트: `approvalTable.test.ts`
+  `hasActiveStageStep — RFG(agent_R) 탭은 System R(RS)도 R 단계로 본다`. System R 절 참조.
 - ✅ **(2026-08) '내 차례'에 검토 항목 조건 OR 추가**: `hasMyPendingReviewItem` — 진행 중 + 현재 회차
   J 단계가 pending + **내가 검토자인 미확인 검토 항목이 1건 이상**이면 담당자가 아니어도 MY 에 뜬다.
   판정값은 목록 응답의 `my_pending_review_items`(개수)다. §10 참조.
@@ -2666,6 +2670,9 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
   2줄 `System R`(이름 없음, 끝날 때까지 `대기중`). RS 가 없는 회차는 예전 단일 행 그대로(`utils/approvalTable.ts` `buildRStageGrid`).
   RS 는 담당자 미지정(`unassigned`) 판정에서 뺀다. 반려 문서는 단일 행에 `System R`(이름 없음).
 - 목록 다운로드: R 완료 칸을 두 번 적지 않는다(`approvalListExport.ts`).
+- ✅ **(2026-11-16) RFG 탭(`agent_R`)에 RS 포함** — RS 는 R 단계 검증의 일부라(사용자 결정) `STAGE_AGENT_GROUPS.R = ['R','RV','RS']`.
+  **R 합의 후 RS 만 pending 인 문서도 RFG 탭에 뜬다**(이전엔 빠졌다). 같은 판정(`hasActiveStageStep`)을 쓰는 RFG 탭 건수·정렬
+  (`getStagePendingEnteredAt`, 그 단계 pending 중 가장 이른 진입 시각)과 목록 다운로드 창 팀 R 필터에도 함께 적용된다. 탭 이름은 `RFG` 그대로. §3.2 참조.
 - 상세 '결재 경로' 탭: 2구역 머리글 아래 `RFG` · `System R` 행. MAP 삭제·ADI CD 변경은 '해당없음' 묶음에 `System R`.
 - MASTER: 상세 하단 [합의]/[반려] → 처리할 팀 선택 창에 `System R` 이 후보로 나온다(기존 MASTER 대신 처리 흐름 그대로).
   담당자 칸은 '담당자 미배정 (팀 전체)' 대신 **'시스템 판정'**(`approval.master_confirm_system_r`, en "System check")으로 표시한다(사용자 결정 2026-11-13).
@@ -2699,7 +2706,7 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
   다중 항목 반려 의견, 반려 경로·메일·이력, RS 반려 후 재상신, 동결, 실패 격리, MASTER 수동·비MASTER 403, 중단·철회 대상 제외, 경로 카드,
   '변경 감지' 배지 비간섭 + 2026-11-13 AAA5·AAA6 보류: 완전 일치·더 많음/적음·빈 AAA5·CLONE/EXISTING 4번만·AAA6·사유 결합·
   반려>보류·반려>대기·보류 중 AAA4 대기·메일 1회/회차별·R 미배정 시 TE_R → 총 45), `SyncFormOptionsSystemRHookTest`(4 — AAA5·AAA6 빈 값 행 저장 포함). 기존 흐름 테스트는 `_approve_pending_system_r` 로 R 합의 전에 RS 를 합의시킨다.
-- 프론트: `approvalTable.test.ts` 2구역 그리드 7건, `approvalListExport.test.ts` 1건, `PagedDetailView.systemRRoute.test.tsx` 5건.
+- 프론트: `approvalTable.test.ts` 2구역 그리드 7건 + RFG 탭 RS 포함 4건(2026-11-16), `approvalListExport.test.ts` 1건, `PagedDetailView.systemRRoute.test.tsx` 5건.
 - 러너: `R-16`(RS 없음 추가), `R-17`~`R-21` 신설. 러너는 `flows.pass_system_r` 로 R 합의 전에 MASTER 가 RS 를 수동 합의한다.
 
 ### 수동 검증 (`http://localhost:10011`)
@@ -2718,6 +2725,9 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 6. **MASTER 수동** — 2구역 문서를 MASTER 로 열기 → 하단 [합의] → 팀 선택 창에 `System R` → 선택 후 합의 → RS `합의(마스터 이름)`.
    TE_R 계정 화면에는 System R 합의 버튼이 없어야 한다.
 7. **해당없음** — MAP 삭제·ADI CD 변경 문서의 결재 경로 탭에서 `System R` 이 '해당없음' 묶음에 있다.
+8. **RFG 탭 RS 포함(2026-11-16)** — 2번 상태(R 합의, RS 대기) 문서에서 결재 현황 → `RFG` 탭 → 그 문서가 목록에 있고 탭 건수에 포함된다.
+   3번처럼 RS 합의 후 다시 `RFG` 탭 → 문서가 빠지고 `PHPSI`(P) 등 3구역 탭으로 옮겨간다. '⬇ 목록 다운로드' 창에서 팀을 R 만 체크해도 2번 상태 문서가 포함된다.
+   (실패 신호: R 합의 직후 문서가 RFG 탭에서 사라짐)
 
 ## 요청서 상세 모달 — 검토중 시각 표시 + CC 적용 여부 이동 (2026-10-05)
 
