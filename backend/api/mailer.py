@@ -86,7 +86,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import escape
 
-from .models import ApprovalStep, MailNotification, UserProfile, ADDRESS_BOOK_MAIL_DOMAIN
+from .models import VOC, ApprovalStep, MailNotification, UserProfile, ADDRESS_BOOK_MAIL_DOMAIN
 
 logger = logging.getLogger(__name__)
 
@@ -1777,21 +1777,43 @@ def _html_to_text(html):
     return text.strip()
 
 
+# claude 수정 (2026-11-20): 작성자 팀원 전원 발송 — 등록 시점 작성자 팀(voc.submitter_role) 기준.
+# 답글 작성자의 팀은 보지 않는다(예: J팀 VOC 에 R팀이 답글 → J팀 전원, R팀 전원 X).
+def _voc_team_emails(voc):
+    """VOC 작성자 팀(AGENT R/P/J/O/E)원 중 VOC 메일을 켜둔 사람의 메일 주소(정렬, 미리다이렉트).
+
+    팀 발송 대상이 아닌 역할(VOC.TEAM_MAIL_ROLES 외)이 쓴 VOC 는 빈 목록.
+    """
+    if voc.submitter_role not in VOC.TEAM_MAIL_ROLES:
+        return []
+    return sorted(
+        UserProfile.objects.filter(role=voc.submitter_role, receive_voc_mail=True)
+        .exclude(mail='')
+        .exclude(mail__isnull=True)
+        .values_list('mail', flat=True)
+    )
+
+
+# claude 수정 (2026-11-20): MASTER 조회를 _voc_master_emails 로 분리 — 등록 수신자 산출(_resolve_voc_created_recipients)과 공유
+def _voc_master_emails():
+    """role='MASTER' 사용자 중 VOC 메일을 켜둔 사람의 메일 주소(미리다이렉트)."""
+    return list(
+        UserProfile.objects.filter(role='MASTER', receive_voc_mail=True)
+        .exclude(mail='')
+        .exclude(mail__isnull=True)
+        .values_list('mail', flat=True)
+    )
+
+
 def _resolve_voc_master_recipients():
-    """VOC 등록 알림 수신자: role='MASTER' 사용자 중 VOC 메일을 켜둔 사람의 메일 주소.
+    """VOC 등록 알림의 MASTER 수신자: role='MASTER' 사용자 중 VOC 메일을 켜둔 사람의 메일 주소.
 
     MASTER 계정이 늘어나도 설정 변경 없이 자동 반영된다. 라인 수신 설정 필터는
     VOC 에 라인 개념이 없어 타지 않는다(_apply_redirect 에 document 를 넘기지 않음).
     개별 MASTER 가 권한 관리 '이메일 설정'의 VOC 토글을 끄면(receive_voc_mail=False)
     제외한다(mail-lines 와 별개 설정).
     """
-    emails = list(
-        UserProfile.objects.filter(role='MASTER', receive_voc_mail=True)
-        .exclude(mail='')
-        .exclude(mail__isnull=True)
-        .values_list('mail', flat=True)
-    )
-    return _apply_redirect(emails)
+    return _apply_redirect(_voc_master_emails())
 
 
 def _voc_submitter_email(voc):
@@ -1810,7 +1832,7 @@ def _resolve_voc_comment_recipients(voc, commenter_email):
 
     제출자에게 가는 메일에만 '답변 완료 처리' 안내를 넣어야 해서, 한 통에 모든
     수신자를 담지 않고 본문이 다른 두 통으로 나눈다.
-    그 외 참여자 = 기존 댓글 작성자 전원 - 제출자 - 이번 댓글 작성자 본인.
+    그 외 참여자 = (기존 댓글 작성자 전원 + 작성자 팀원 전원) - 제출자 - 이번 댓글 작성자 본인.
     """
     me = (commenter_email or '').strip()
     submitter_email = _voc_submitter_email(voc)
@@ -1819,6 +1841,8 @@ def _resolve_voc_comment_recipients(voc, commenter_email):
     for comment in voc.comments.all():
         if comment.author_email:
             others.add(comment.author_email.strip())
+    # claude 수정 (2026-11-20): 작성자 팀원 전원(VOC 메일 켬)도 '그 외 참여자' 메일로 받는다
+    others.update(addr.strip() for addr in _voc_team_emails(voc) if addr)
     others.discard(submitter_email)
     others.discard(me)
 
@@ -1968,9 +1992,17 @@ def _enqueue_voc(voc, event_type, recipients, commenter_name=None, for_submitter
     return noti
 
 
+# claude 수정 (2026-11-20): 등록 알림 수신자에 작성자 팀원 전원 추가(작성자 본인 제외)
+def _resolve_voc_created_recipients(voc):
+    """VOC 등록 알림 수신자 = MASTER(VOC 메일 켬) + 작성자 팀원(VOC 메일 켬) − 작성자 본인."""
+    submitter_email = _voc_submitter_email(voc)
+    emails = [addr.strip() for addr in _voc_master_emails() + _voc_team_emails(voc)]
+    return _apply_redirect([addr for addr in emails if addr and addr != submitter_email])
+
+
 def enqueue_voc_created(voc):
-    """VOC 신규 등록 알림 적재 — MASTER 전원 수신."""
-    recipients = _resolve_voc_master_recipients()
+    """VOC 신규 등록 알림 적재 — MASTER 전원 + 작성자 팀원 전원(작성자 본인 제외)."""
+    recipients = _resolve_voc_created_recipients(voc)
     return _enqueue_voc(voc, 'voc_created', recipients)
 
 
