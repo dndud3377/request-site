@@ -9654,6 +9654,208 @@ class RSkipStageIntegrationTest(TestCase):
         )
 
 
+# claude 수정 (2026-11-20): sortOrder 재부여·작성자 재상신으로 R 이 다시 생성되던 문제 회귀 테스트
+class LayerRowsContentSameTest(TestCase):
+    """RequestDocument.layer_rows_content_same — R·O 생략 판정의 표 비교(내용만, 순서 무시)."""
+
+    ROWS = [
+        {'id': 'j1', 'sp': 'A0010.00', 'sd': 'SD1', 'pp': 'NORMAL', 'st': 'O', 'sortOrder': 1792540800000},
+        {'id': 'j2', 'sp': 'A0020.00', 'sd': 'SD2', 'pp': 'NORMAL', 'st': 'O', 'sortOrder': 1792540800001},
+    ]
+
+    def _same(self, prev, curr):
+        return RequestDocument.layer_rows_content_same(prev, curr)
+
+    def test_sort_order_renumber_only_is_same(self):
+        renumbered = [{**r, 'sortOrder': i} for i, r in enumerate(self.ROWS)]
+        self.assertTrue(self._same(self.ROWS, renumbered))
+
+    def test_loaded_flag_only_is_same(self):
+        with_loaded = [{**r, 'loaded': True} for r in self.ROWS]
+        self.assertTrue(self._same(self.ROWS, with_loaded))
+
+    def test_row_order_only_is_same(self):
+        self.assertTrue(self._same(self.ROWS, list(reversed(self.ROWS))))
+
+    def test_content_change_is_different(self):
+        changed = [dict(self.ROWS[0], sd='SD9'), self.ROWS[1]]
+        self.assertFalse(self._same(self.ROWS, changed))
+
+    def test_added_or_removed_row_is_different(self):
+        self.assertFalse(self._same(self.ROWS, self.ROWS[:1]))
+        self.assertFalse(self._same(self.ROWS, self.ROWS + [dict(self.ROWS[0], id='j3')]))
+
+    def test_duplicate_count_matters(self):
+        self.assertFalse(self._same(self.ROWS, self.ROWS + [self.ROWS[0]]))
+
+    def test_empty_and_none_are_same(self):
+        self.assertTrue(self._same(None, []))
+
+
+@override_settings(POST_APPROVER_LOGINID='')
+class RSkipNonContentChangeIntegrationTest(TestCase):
+    """R 생략 판정이 내용과 무관한 변경(sortOrder·loaded·행 순서)에 흔들리지 않는지,
+    작성자 재상신(requester_resubmit)도 같은 R 생략 규칙을 따르는지 — 실제 API 흐름.
+
+    재현 근거: J 반려 후 변경 사유 오타만 고쳐 재상신했는데 ① 상신 시 SP 자동 정렬이 sortOrder 를
+    0,1,2… 로 다시 매겨 R 이 재생성됐고 ② requester_resubmit 이 r_skip_round 를 갱신하지 않아
+    새 회차에 R 이 재생성됐다(2026-11-20 분석).
+    """
+
+    OLD_TS = 1792540800000
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='rnc_req', mail='rnc_req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='rnc_pl', mail='rnc_pl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='rnc_r', mail='rnc_r@c.com', role='TE_R')
+        self.j_user = UserProfile.objects.create(loginid='rnc_j', mail='rnc_j@c.com', role='TE_J')
+
+    def _jayer(self):
+        return [
+            {'id': f'j{i}', 'sp': f'A00{i}0.00', 'sd': f'SD{i}', 'pp': 'NORMAL', 'st': 'O',
+             'sortOrder': self.OLD_TS + i}
+            for i in (1, 2, 3)
+        ]
+
+    def _make_doc(self):
+        payload = {
+            'detail': {'line': 'L1', 'process_id': 'PID-1', 'change_purpose_note': '오탙자 사유'},
+            'jayerRows': self._jayer(),
+            'oayerRows': [{'id': 'o1', 'sp': 'A0010.00', 'st': 'O', 'sortOrder': self.OLD_TS + 9}],
+        }
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='rnc_req@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='draft',
+            additional_notes=json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _post(self, user, url, body=None):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(url, body or {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _pl_approve(self, doc):
+        self._post(self.pl_user, f'/api/documents/{doc.id}/peer-approve/')
+
+    def _r_approve(self, doc):
+        self._post(self.r_user, f'/api/documents/{doc.id}/assign-step/',
+                   {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'rnc_r'})
+        _approve_pending_system_r(doc)
+        self._post(self.r_user, f'/api/documents/{doc.id}/approve-step/', {'agent': 'R'})
+
+    def _j_reject(self, doc):
+        self._post(self.j_user, f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'})
+        self._post(self.j_user, f'/api/documents/{doc.id}/reject-step/', {'agent': 'J', 'comment': '반려'})
+
+    def _round1_j_reject(self):
+        doc = self._make_doc()
+        self._post(self.requester, f'/api/documents/{doc.id}/submit/',
+                   {'designated_pl_loginid': self.pl_user.loginid})
+        self._pl_approve(doc)
+        self._r_approve(doc)
+        self._j_reject(doc)
+        return doc
+
+    def _save(self, doc, mutate):
+        """편집 화면 저장과 같은 경로(PATCH update)로 additional_notes 를 바꾼다."""
+        notes = json.loads(RequestDocument.objects.get(pk=doc.pk).additional_notes)
+        mutate(notes)
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.patch(f'/api/documents/{doc.id}/',
+                              {'additional_notes': json.dumps(notes, ensure_ascii=False)}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _resubmit(self, doc):
+        self._post(self.requester, f'/api/documents/{doc.id}/resubmit/',
+                   {'designated_pl_loginid': self.pl_user.loginid})
+
+    def _requester_resubmit(self, doc):
+        self._post(self.requester, f'/api/documents/{doc.id}/requester-resubmit/',
+                   {'designated_pl_loginid': self.pl_user.loginid})
+
+    def _has(self, doc, agent, round_no):
+        return ApprovalStep.objects.filter(document=doc, agent=agent, round=round_no).exists()
+
+    @staticmethod
+    def _renumber_and_fix_note(notes):
+        # 상신 시 SP 자동 정렬 결과와 같다 — 행·내용 그대로, sortOrder 만 0,1,2…
+        notes['jayerRows'] = [{**r, 'sortOrder': i} for i, r in enumerate(notes['jayerRows'])]
+        notes['oayerRows'] = [{**r, 'sortOrder': i} for i, r in enumerate(notes['oayerRows'])]
+        notes['detail']['change_purpose_note'] = '오타 고친 사유'
+
+    def test_resubmit_skips_r_when_only_sort_order_renumbered(self):
+        doc = self._round1_j_reject()
+        self._save(doc, self._renumber_and_fix_note)
+        self._resubmit(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.r_skip_round, 2, 'sortOrder 만 바뀌었으면 R 생략으로 표시돼야 한다')
+        self._pl_approve(doc)
+        self.assertFalse(self._has(doc, 'R', 2))
+        self.assertFalse(self._has(doc, 'RS', 2))
+        self.assertTrue(self._has(doc, 'J', 2))
+
+    def test_resubmit_skips_r_when_loaded_added_and_rows_reordered(self):
+        def mutate(notes):
+            notes['jayerRows'] = [{**r, 'loaded': True} for r in reversed(notes['jayerRows'])]
+        doc = self._round1_j_reject()
+        self._save(doc, mutate)
+        self._resubmit(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.r_skip_round, 2)
+
+    def test_resubmit_creates_r_when_jayer_content_changed(self):
+        def mutate(notes):
+            self._renumber_and_fix_note(notes)
+            notes['jayerRows'][0]['sd'] = 'SD-CHANGED'
+        doc = self._round1_j_reject()
+        self._save(doc, mutate)
+        self._resubmit(doc)
+        doc.refresh_from_db()
+        self.assertIsNone(doc.r_skip_round, '표 내용이 바뀌면 R 을 다시 거쳐야 한다')
+        self._pl_approve(doc)
+        self.assertTrue(self._has(doc, 'R', 2))
+
+    def test_requester_resubmit_keeps_r_skip_when_unchanged(self):
+        """A 요청서 3회차 재현: J 반려 → 재상신(R 생략) → PL 단계 작성자 재상신 → R 생략 유지."""
+        doc = self._round1_j_reject()
+        self._resubmit(doc)
+        self._requester_resubmit(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.r_skip_round, 3, '새 회차 번호로 다시 기록돼야 한다(이전 회차 값이 남으면 안 된다)')
+        self._pl_approve(doc)
+        doc.refresh_from_db()
+        self.assertFalse(self._has(doc, 'R', 3))
+        self.assertFalse(self._has(doc, 'RS', 3))
+        self.assertTrue(self._has(doc, 'J', 3))
+        self.assertIsNone(doc.r_skip_round, '소진된 플래그는 null 이어야 한다')
+
+    def test_requester_resubmit_creates_r_when_jayer_content_changed(self):
+        def mutate(notes):
+            notes['jayerRows'][0]['sd'] = 'SD-CHANGED'
+        doc = self._round1_j_reject()
+        self._resubmit(doc)
+        self._save(doc, mutate)
+        self._requester_resubmit(doc)
+        doc.refresh_from_db()
+        self.assertIsNone(doc.r_skip_round, '내용이 바뀌었으면 이전 회차 생략 표시도 지워져야 한다')
+        self._pl_approve(doc)
+        self.assertTrue(self._has(doc, 'R', 3))
+
+    def test_requester_resubmit_without_rejection_creates_r(self):
+        """반려 이력이 없으면(R 이 합의한 적 없음) 작성자 재상신 뒤에도 R 을 거친다."""
+        doc = self._make_doc()
+        self._post(self.requester, f'/api/documents/{doc.id}/submit/',
+                   {'designated_pl_loginid': self.pl_user.loginid})
+        self._requester_resubmit(doc)
+        doc.refresh_from_db()
+        self.assertIsNone(doc.r_skip_round)
+        self._pl_approve(doc)
+        self.assertTrue(self._has(doc, 'R', 2))
+
+
 # claude 수정 (2026-11-04): O 재합의 생략(Case U) 회귀 테스트 — 판정 단위·재상신 통합·중단→재개
 @override_settings(POST_APPROVER_LOGINID='fixed_ra_o')
 class ShouldSkipOStageTest(TestCase):
@@ -9708,6 +9910,23 @@ class ShouldSkipOStageTest(TestCase):
         doc = self._round1_o_approved_rejected_by('P', snap_kw={'oayer': [{'id': 'o1'}]},
                                                   doc_kw={'oayer': [{'id': 'o1'}]})
         self.assertTrue(self.viewset._should_skip_o_stage(doc, 2))
+
+    # claude 수정 (2026-11-20): sortOrder·loaded·행 순서만 바뀐 경우도 O 생략 유지(내용 비교로 변경)
+    def test_sort_order_loaded_and_row_order_only_still_skips(self):
+        snap_rows = [{'id': 'o1', 'sd': 'A', 'sortOrder': 1792540800000},
+                     {'id': 'o2', 'sd': 'B', 'sortOrder': 1792540800001}]
+        doc_rows = [{'id': 'o2', 'sd': 'B', 'sortOrder': 0, 'loaded': True},
+                    {'id': 'o1', 'sd': 'A', 'sortOrder': 1, 'loaded': True}]
+        doc = self._round1_o_approved_rejected_by(
+            'P', snap_kw={'oayer': snap_rows, 'jayer': snap_rows},
+            doc_kw={'oayer': doc_rows, 'jayer': doc_rows})
+        self.assertTrue(self.viewset._should_skip_o_stage(doc, 2))
+
+    def test_oayer_content_change_does_not_skip(self):
+        doc = self._round1_o_approved_rejected_by(
+            'P', snap_kw={'oayer': [{'id': 'o1', 'sd': 'A', 'sortOrder': 5}]},
+            doc_kw={'oayer': [{'id': 'o1', 'sd': 'Z', 'sortOrder': 0}]})
+        self.assertFalse(self.viewset._should_skip_o_stage(doc, 2))
 
     def test_fixed_post_approver_reject_still_skips(self):
         """R 과 다른 규칙 — 고정 후결자 반려여도 O 는 생략할 수 있다."""
