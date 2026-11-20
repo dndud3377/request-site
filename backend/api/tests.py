@@ -11152,6 +11152,45 @@ class LayerDriftAutoRejectTest(TestCase):
         self.assertIn('ar_a@c.com', recipients)  # 작성자
         self.assertIn('ar_r@c.com', recipients)  # 반려 표시된 단계의 담당자도 사람이 반려한 게 아니므로 수신
 
+    # claude 수정 (2026-11-20): 자동 반려 단계의 처리자 이름이 '변경 감지'로 남는지 검증(담당자가 반려한 것처럼 보이지 않게)
+    def test_auto_reject_records_actor_name_not_assignee(self):
+        """반려 단계 처리자 = '변경 감지'(acted_by 없음). 결재 경로 API·메일 본문 경로 표에 담당자 대신 보이고,
+        담당자(assignee)와 반려 메일 수신자는 그대로다."""
+        from . import layer_drift
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle(2)
+
+        self.zone3_step.refresh_from_db()
+        self.assertEqual(self.zone3_step.action, 'rejected')
+        self.assertEqual(self.zone3_step.acted_by_name, layer_drift.AUTO_REJECT_ACTOR_NAME)
+        self.assertEqual(self.zone3_step.acted_by_name, '변경 감지')
+        self.assertIsNone(self.zone3_step.acted_by)
+        self.assertEqual(self.zone3_step.assignee, self.r_user)  # 담당자는 바꾸지 않는다
+
+        # 결재 경로 탭이 읽는 API — 처리자 이름만 있고 처리자 메일은 없다(화면에 담당자 메일도 안 뜬다).
+        self.client.force_authenticate(user=self.author)
+        res = self.client.get(f'/api/documents/{doc.id}/')
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        step = next(s for s in body['approval_steps'] if s['action'] == 'rejected')
+        self.assertEqual(step['acted_by_name'], '변경 감지')
+        self.assertIsNone(step['acted_by_mail'])
+        self.assertEqual(step['assignee_name'], 'RA담당')
+
+        # 반려 메일 본문 '결재 경로' 표 — 반려 행 이름이 '변경 감지'.
+        rejected_rows = [name for _label, name, status, _c in mailer._route_rows(doc) if status == 'rejected']
+        self.assertEqual(rejected_rows, ['변경 감지'])
+
+        # 수신자 판정은 그대로 — 반려 표시된 단계의 담당자도 받는다.
+        recipients = {m for n in MailNotification.objects.filter(document=doc, event_type='rejected')
+                      for m in n.recipients}
+        self.assertIn('ar_r@c.com', recipients)
+
+        # 반려 이력 반려자 표시는 기존 그대로('시스템(자동반려)').
+        snap = RejectionSnapshot.objects.get(document=doc)
+        self.assertEqual(snap.rejected_by_name, '시스템(자동반려)')
+
     def test_descript_only_change_never_rejects(self):
         self._master(descript='설명변경')
         doc = self._doc([self._saved(sd='설명원본')])
