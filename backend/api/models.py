@@ -68,8 +68,9 @@ class UserProfile(AbstractBaseUser):
     mail_lines = models.ManyToManyField(
         'Line', blank=True, related_name='subscribers', verbose_name='메일 수신 라인'
     )
-    # VOC 등록 알림(role='MASTER' 전원 발송) 수신 여부. MASTER 만 의미가 있으며
-    # 라인 설정(mail_lines)과 별개로 켜고 끈다(권한 관리 '이메일 설정' 컬럼의 VOC 토글).
+    # claude 수정 (2026-11-20): VOC 메일 수신 여부 — MASTER 는 VOC 등록 알림, AGENT 팀원(TE_R/P/J/O/E)은
+    # 같은 팀원이 쓴 VOC 의 등록·답글 '팀 발송'에 적용된다(mailer._voc_team_emails). 본인이 답글을 단 VOC 의
+    # 답글 알림은 이 값과 무관하게 받는다. 라인 설정(mail_lines)과 별개(권한 관리 '이메일 설정' 컬럼의 VOC 토글).
     receive_voc_mail = models.BooleanField(default=True, verbose_name='VOC 메일 수신')
     # 의뢰서 상신·재상신 시 통보처와 동일한 메일(notify_submitted)을 받을지 여부. TE_P 만
     # 의미가 있으며, 전체 받기/라인 설정(mail_lines)과 별개로 켜고 끈다(권한 관리 '이메일
@@ -1218,6 +1219,9 @@ class VOC(models.Model):
     # (MASTER·NONE·PL_GL)과 빈 값은 '기타'(TEAM_FILTER_ETC)로 묶는다(VOCViewSet.get_queryset).
     TEAM_FILTER_ROLES = ('PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E')
     TEAM_FILTER_ETC = 'etc'
+    # claude 수정 (2026-11-20): 작성자 팀원 전원에게 등록·답글 메일을 보내는 팀(mailer._voc_team_emails).
+    # 이 외 역할(PL·PL_GL·MASTER·NONE)이 쓴 VOC 는 팀 발송이 없다.
+    TEAM_MAIL_ROLES = ('TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E')
 
     title = models.CharField(max_length=200, verbose_name='제목')
     # claude 수정 (2026-11-20): 유형 선택 폐지 — 화면·API·메일에서 쓰지 않는다. 기존 값 보존을 위해 컬럼만 남긴다.
