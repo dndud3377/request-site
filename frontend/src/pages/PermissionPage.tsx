@@ -18,10 +18,6 @@ const ALL_ROLES: UserRole[] = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'T
 // 백엔드 UserProfile.MAIL_LINE_FILTER_ROLES 와 같아야 한다 — PL·PL_GL·NONE 은 이 설정을 쓰지 않는다.
 const MAIL_LINE_ROLES: UserRole[] = ['TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
 
-// claude 수정 (2026-11-20): VOC 토글 표시 역할 — MASTER(VOC 등록 알림) + AGENT 팀원(같은 팀원이 쓴 VOC 의
-// 등록·답글 팀 발송). 서버 voc-mail API 의 허용 역할(MASTER + VOC.TEAM_MAIL_ROLES)과 같다.
-const VOC_MAIL_ROLES: UserRole[] = ['TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
-
 // 사용자 추가 시 배정 가능한 실제 역할(NONE 제외) — MASTER 역할 선택 드롭다운에 사용
 const ADD_ROLES: UserRole[] = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
 
@@ -73,7 +69,7 @@ interface UserTableProps {
   /** '전체 받기' 버튼 클릭 — 이미 켜져 있으면 아무 일도 하지 않는다 */
   onReceiveAll: (user: UserWithRole) => void;
   savingMailLinesId: number | null;
-  /** VOC 토글 표시 여부 — MASTER·AGENT 팀 탭에서 true(VOC_MAIL_ROLES) */
+  /** VOC 토글 표시 여부 — MASTER 탭에서만 true(VOC 등록 메일은 MASTER 전원 발송 대상이라) */
   showVocMail: boolean;
   onToggleVocMail: (user: UserWithRole) => void;
   savingVocMailId: number | null;
@@ -1443,7 +1439,7 @@ export default function PermissionPage(): React.ReactElement {
                 onToggleMailLine={handleToggleMailLine}
                 onReceiveAll={handleReceiveAll}
                 savingMailLinesId={savingMailLinesId}
-                showVocMail={VOC_MAIL_ROLES.includes(activeTab)}
+                showVocMail={activeTab === 'MASTER'}
                 onToggleVocMail={handleToggleVocMail}
                 savingVocMailId={savingVocMailId}
                 showSubmitMail={activeTab === 'TE_P'}
