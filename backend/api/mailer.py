@@ -86,7 +86,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import escape
 
-from .models import VOC, ApprovalStep, MailNotification, UserProfile, ADDRESS_BOOK_MAIL_DOMAIN
+from .models import ApprovalStep, MailNotification, UserProfile, ADDRESS_BOOK_MAIL_DOMAIN
 
 logger = logging.getLogger(__name__)
 
@@ -1740,14 +1740,21 @@ def enqueue_route_member_removed(document, agent, removed_mail, removed_name=Non
 # --------------------------------------------------------------------------- #
 # VOC 카테고리/상태 코드 → 메일에 실을 한글 라벨. 모델 choices 와 같은 값을 쓰되
 # 메일 문구는 화면 라벨과 어휘를 맞춘다("완료" → "답변완료").
-VOC_CATEGORY_LABEL = dict(VOC.CATEGORY_CHOICES)
 VOC_STATUS_LABEL = {'checking': '확인중', 'completed': '답변완료'}
-VOC_PAGE_LABEL = {
-    'request': '의뢰서 작성',
-    'approval': '결재 현황',
-    'history': '이력 조회',
-    'other': '기타',
+# claude 수정 (2026-11-20): 유형·관련 페이지 타일 폐지 → 작성자 팀(등록 시점 역할) 라벨.
+# 화면 라벨(locales/ko.json common.role_label_*)과 같은 어휘를 쓴다.
+VOC_TEAM_LABEL = {
+    'PL': '제품 담당자',
+    'PL_GL': '해외 제품 담당자',
+    'TE_R': 'AGENT R팀',
+    'TE_P': 'AGENT P팀',
+    'TE_J': 'AGENT J팀',
+    'TE_O': 'AGENT O팀',
+    'TE_E': 'AGENT E팀',
+    'MASTER': '관리자',
+    'NONE': '미지정',
 }
+VOC_DATE_FORMAT = '%Y-%m-%d'
 
 # 제출자에게만 덧붙이는 안내 — 답변 완료 처리는 작성자 본인(또는 MASTER)만 할 수 있다.
 VOC_COMPLETE_GUIDE = '답변이 만족스러우셨다면 답변 완료 처리 해주세요.'
@@ -1819,11 +1826,13 @@ def _resolve_voc_comment_recipients(voc, commenter_email):
     return _apply_redirect(submitter), _apply_redirect(sorted(others))
 
 
+# claude 수정 (2026-11-20): 유형·관련 페이지 타일을 작성자 팀·접수일로 교체(2x2 유지)
 def _voc_info_grid(voc, theme):
     """VOC 메일 본문의 2x2 정보 타일. 결재 메일의 KPI 그리드와 같은 형식을 쓴다."""
+    created = timezone.localtime(voc.created_at).strftime(VOC_DATE_FORMAT) if voc.created_at else '-'
     tiles = [
-        ('유형', VOC_CATEGORY_LABEL.get(voc.category, voc.category)),
-        ('관련 페이지', VOC_PAGE_LABEL.get(voc.page, voc.page or '-')),
+        ('작성자 팀', VOC_TEAM_LABEL.get(voc.submitter_role, voc.submitter_role or '-')),
+        ('접수일', created),
         ('작성자', voc.submitter_name or '-'),
         ('상태', VOC_STATUS_LABEL.get(voc.status, voc.status)),
     ]
