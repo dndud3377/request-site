@@ -1232,6 +1232,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # claude 수정 (2026-11-09): 반려 문서도 철회 가능 — 관여했던 팀 전원 확인 후 삭제(2026-08 '반려 철회 불가' 폐지)
     # 반려 문서는 진행 중 단계가 없으므로, 이 문서에 관여했던 팀 전원의 확인을 받아야 철회된다.
     _WITHDRAW_REJECTED_STATUS = 'rejected'
+    # claude 수정 (2026-11-22): 철회·중단 요청이 서로 겹치지 않게 막을 때의 안내
+    _PAUSE_BLOCKED_BY_WITHDRAW_ERROR = '철회 요청 확인 대기 중인 의뢰서는 중단을 요청할 수 없습니다. 철회가 거부·취소된 뒤 요청해 주세요.'
+    _WITHDRAW_BLOCKED_BY_PAUSE_ERROR = '중단 요청 확인 대기 중인 의뢰서는 철회할 수 없습니다. 중단 요청이 확정·거부·취소된 뒤 철회해 주세요.'
     _WITHDRAW_PENDING_EDIT_ERROR = '철회 요청 확인 대기 중인 의뢰서는 수정·재상신할 수 없습니다. 철회가 거부·취소된 뒤 진행해 주세요.'
 
     def _zone_index(self, document, agent):
@@ -1422,6 +1425,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 request, document, reason, WithdrawSnapshot.PATH_MASTER, send_mail=False,
             )
             return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
+
+        # claude 수정 (2026-11-22): 중단 요청 확인 대기 중에는 철회 불가(MASTER 는 위에서 즉시 삭제) — 두 요청이 겹치지 않게 한다
+        if PauseRequest.objects.filter(document=document, state='requested').exists():
+            return Response({'error': self._WITHDRAW_BLOCKED_BY_PAUSE_ERROR}, status=status.HTTP_400_BAD_REQUEST)
 
         if document.status in self._WITHDRAW_IMMEDIATE_STATUSES:
             # 결재 완료본은 이력이므로 임의 삭제를 막는다(delete 액션의 can_delete 와 동일 규칙).
@@ -2130,6 +2137,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 검토자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 검토자 추가도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_ev_reviewers(request.user):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -2182,6 +2193,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 검토자를 제거할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 검토자 제거도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_ev_reviewers(request.user):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -2314,6 +2329,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         reason = (request.data.get('reason') or '').strip()
         if not reason:
             return Response({'error': '중단 사유를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # claude 수정 (2026-11-22): 철회 요청 확인 대기 중에는 중단 요청 불가 — 두 요청이 겹치면 PAUSE 문서가 철회로 삭제됐다
+        if self._active_withdraw_request(document):
+            return Response({'error': self._PAUSE_BLOCKED_BY_WITHDRAW_ERROR}, status=status.HTTP_400_BAD_REQUEST)
 
         if not doc_permissions.can_request_pause(request.user, document):
             return Response({'error': '중단 요청 권한이 없거나, 이미 진행 중인 중단 요청이 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
@@ -3882,6 +3901,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 후결자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 후결자 추가도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_post_approver(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -3941,6 +3964,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 후결자를 제거할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 후결자 제거도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_post_approver(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
