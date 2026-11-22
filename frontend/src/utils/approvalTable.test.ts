@@ -1119,8 +1119,14 @@ describe('hasInvolvedConfirmTarget', () => {
       makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'pl', round: 3, zone_index: 0 }),
       makeStep({ agent: 'SA', action: 'pending', round: 3, zone_index: 0 }),
     ];
-    // 현재 회차(3) 1구역 SA 는 대기중(미배정), R 은 2구역(더 깊음)인데 최신 대표 단계(2회차)가 대기중 → 관여 아님
-    expect(hasInvolvedConfirmTarget(steps, true)).toBe(false);
+    // 현재 회차(3) 1구역 SA 는 대기중(미배정). R 은 2회차엔 대기중이었지만 1회차에 반려(관여)했으므로 대상(2026-11-22)
+    expect(hasInvolvedConfirmTarget(steps, true)).toBe(true);
+    const neverInvolvedR = [
+      makeStep({ agent: 'R', round: 1, zone_index: 1 }),
+      makeStep({ agent: 'R', round: 2, zone_index: 1 }),
+      makeStep({ agent: 'SA', action: 'pending', round: 3, zone_index: 0 }),
+    ];
+    expect(hasInvolvedConfirmTarget(neverInvolvedR, true)).toBe(false);
     const withInvolvedR = [
       makeStep({ agent: 'R', action: 'rejected', assignee_loginid: 'r1', round: 1, zone_index: 1 }),
       makeStep({ agent: 'SA', action: 'pending', round: 2, zone_index: 0 }),
