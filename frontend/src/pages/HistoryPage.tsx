@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
-import { documentsAPI, linesAPI, rejectionSnapshotsAPI } from '../api/client';
+import { documentsAPI, linesAPI, rejectionSnapshotsAPI, withdrawSnapshotsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
 import LayerDriftModal from '../components/LayerDriftModal';
@@ -10,7 +10,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { OPTION_LINE } from './RequestPage/constants';
 import { getDocDetailFields } from '../utils/approvalTable';
-import { RejectionSnapshot, RequestDocument } from '../types';
+import { AgentType, RejectionSnapshot, RequestDocument, WithdrawDeletePath, WithdrawSnapshot } from '../types';
 import { formatDate, formatDateTime } from '../utils/date';
 import ExportAllButton from '../components/ExportAllButton';
 
@@ -19,6 +19,8 @@ import ExportAllButton from '../components/ExportAllButton';
 const FILTER_ALL = '';
 const FILTER_MY = 'my';
 const FILTER_REJECTED = 'rejected';
+// claude 수정 (2026-11-22): 철회·삭제된 의뢰서 이력 탭(MASTER 전용)
+const FILTER_WITHDRAWN = 'withdrawn';
 const LINE_FILTER_PREFIX = 'line_';
 
 // 이력 조회 목록 페이지네이션 — 결재 현황(ApprovalPage)과 동일한 구성(페이지당 표시 건수)
@@ -116,6 +118,41 @@ const snapshotToDocument = (snap: RejectionSnapshot): RequestDocument => ({
   requester_loginid: snap.requester_loginid,
 });
 
+// claude 수정 (2026-11-22): 철회 이력 → 상세 모달 문서 모양. 삭제 직전 내용·결재 경로 그대로다.
+const withdrawSnapshotToDocument = (snap: WithdrawSnapshot): RequestDocument => ({
+  id: snap.source_document_id,
+  title: snap.title,
+  requester_name: snap.requester_name,
+  requester_email: '',
+  requester_department: snap.requester_department,
+  product_name: snap.product_name,
+  reference_materials: '',
+  additional_notes: snap.additional_notes,
+  status: snap.status_at_delete,
+  production_date: null,
+  created_at: snap.deleted_at,
+  updated_at: snap.deleted_at,
+  submitted_at: snap.submitted_at,
+  approval_steps: snap.approval_steps,
+  requester_loginid: snap.requester_loginid,
+});
+
+/** 철회 이력 삭제 경로 라벨 키 */
+const WITHDRAW_PATH_LABEL_KEY: Record<WithdrawDeletePath, `history.withdraw_path_${WithdrawDeletePath}`> = {
+  draft: 'history.withdraw_path_draft',
+  no_target: 'history.withdraw_path_no_target',
+  confirmed: 'history.withdraw_path_confirmed',
+  master: 'history.withdraw_path_master',
+  delete_api: 'history.withdraw_path_delete_api',
+};
+
+/** 철회 확인 기록의 팀 이름 키 */
+const AGENT_LABEL_KEY: Record<AgentType, `approval.agent_${AgentType}`> = {
+  PL: 'approval.agent_PL', SA: 'approval.agent_SA', R: 'approval.agent_R', RV: 'approval.agent_RV',
+  P: 'approval.agent_P', PV: 'approval.agent_PV', J: 'approval.agent_J', O: 'approval.agent_O',
+  E: 'approval.agent_E', EV: 'approval.agent_EV', RA: 'approval.agent_RA', RS: 'approval.agent_RS',
+};
+
 /** 삭제 확인 대상 — 문서와 반려 이력은 지우는 API 가 다르다. */
 type DeleteTarget =
   | { kind: 'doc'; doc: RequestDocument }
@@ -130,6 +167,9 @@ export default function HistoryPage(): React.ReactElement {
   const isNone = currentUser.role === 'NONE';
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [snapshots, setSnapshots] = useState<RejectionSnapshot[]>([]);
+  // claude 수정 (2026-11-22): 철회 이력(MASTER 만 조회 — 서버도 403 으로 막는다)
+  const [withdrawSnaps, setWithdrawSnaps] = useState<WithdrawSnapshot[]>([]);
+  const [selectedWithdraw, setSelectedWithdraw] = useState<WithdrawSnapshot | null>(null);
   // 라인 탭 목록. 의뢰서 작성 화면과 같은 마스터를 쓰고, 조회 전·실패 시에는 기본 선택지로 둔다.
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [loading, setLoading] = useState(true);
@@ -152,6 +192,7 @@ export default function HistoryPage(): React.ReactElement {
   const [layerDriftSnap, setLayerDriftSnap] = useState<RejectionSnapshot | null>(null);
 
   const isRejectedTab = filter === FILTER_REJECTED;
+  const isWithdrawnTab = filter === FILTER_WITHDRAWN;
 
   // fetchDocs 는 search 가 바뀔 때마다 재실행되는데, 응답이 요청 순서와 다르게
   // 도착할 수 있다. 시퀀스 토큰으로 "가장 최근에 보낸 요청"의 응답만 반영한다.
@@ -168,22 +209,27 @@ export default function HistoryPage(): React.ReactElement {
       docParams.search = search;
       snapParams.search = search;
     }
-    Promise.all([documentsAPI.list(docParams), rejectionSnapshotsAPI.list(snapParams)])
-      .then(([docRes, snapRes]) => {
+    // claude 수정 (2026-11-22): MASTER 는 철회 이력도 함께 받는다(그 외 역할은 호출하지 않는다)
+    const withdrawReq = isMaster
+      ? withdrawSnapshotsAPI.list(snapParams)
+      : Promise.resolve({ data: [] as WithdrawSnapshot[] });
+    Promise.all([documentsAPI.list(docParams), rejectionSnapshotsAPI.list(snapParams), withdrawReq])
+      .then(([docRes, snapRes, withdrawRes]) => {
         if (seq !== fetchSeqRef.current) return; // 이미 더 최신 요청이 나간 뒤 도착한 응답 — 무시
         const data = docRes.data;
         setDocs(Array.isArray(data) ? data : (data as { results?: RequestDocument[] }).results ?? []);
         setSnapshots(snapRes.data);
+        setWithdrawSnaps(withdrawRes.data);
       })
       .catch(() => {
         if (seq !== fetchSeqRef.current) return;
-        setError(true); setDocs([]); setSnapshots([]);
+        setError(true); setDocs([]); setSnapshots([]); setWithdrawSnaps([]);
       })
       .finally(() => {
         if (seq !== fetchSeqRef.current) return;
         setLoading(false);
       });
-  }, [search]);
+  }, [search, isMaster]);
 
   useEffect(() => {
     fetchDocs();
@@ -238,18 +284,26 @@ export default function HistoryPage(): React.ReactElement {
         label: lineLabel(line),
       })),
       { key: FILTER_REJECTED, label: t('history.filter_rejected') },
+      ...(isMaster ? [{ key: FILTER_WITHDRAWN, label: t('history.filter_withdrawn') }] : []),
     ];
+    const countOf = (key: string): number => {
+      if (key === FILTER_REJECTED) return snapshots.length;
+      if (key === FILTER_WITHDRAWN) return withdrawSnaps.length;
+      return filterDocs(docs, key).length;
+    };
     return base.map(({ key, label }) => {
-      const count = key === FILTER_REJECTED ? snapshots.length : filterDocs(docs, key).length;
+      const count = countOf(key);
       return { key, label: count > 0 ? `${label}(${count})` : label };
     });
-  }, [t, docs, snapshots, filterDocs, lineOptions, lineLabel]);
+  }, [t, docs, snapshots, withdrawSnaps, isMaster, filterDocs, lineOptions, lineLabel]);
 
   const visibleDocs = useMemo(
-    () => (isRejectedTab ? [] : filterDocs(docs, filter)),
-    [isRejectedTab, filterDocs, docs, filter]
+    () => (isRejectedTab || isWithdrawnTab ? [] : filterDocs(docs, filter)),
+    [isRejectedTab, isWithdrawnTab, filterDocs, docs, filter]
   );
-  const isEmpty = isRejectedTab ? snapshots.length === 0 : visibleDocs.length === 0;
+  const isEmpty = isRejectedTab
+    ? snapshots.length === 0
+    : isWithdrawnTab ? withdrawSnaps.length === 0 : visibleDocs.length === 0;
 
   // claude 수정 (2026-10-20): 필터 → 정렬 → 페이지 자르기 순서. 정렬 해제 시 서버가 내려준 순서 그대로.
   const sortedDocs = useMemo(() => {
@@ -266,6 +320,13 @@ export default function HistoryPage(): React.ReactElement {
       : (s: RejectionSnapshot) => s.rejected_at;
     return sortByDate(snapshots, getDate, colSort.dir);
   }, [snapshots, colSort]);
+  const sortedWithdrawSnaps = useMemo(() => {
+    if (!colSort) return withdrawSnaps;
+    const getDate = colSort.key === 'submitted'
+      ? (s: WithdrawSnapshot) => s.submitted_at
+      : (s: WithdrawSnapshot) => s.deleted_at;
+    return sortByDate(withdrawSnaps, getDate, colSort.dir);
+  }, [withdrawSnaps, colSort]);
 
   // 오름차순 → 내림차순 → 해제 3단 순환(결재 현황 컬럼 헤더 정렬과 동일).
   const toggleColSort = (key: HistorySortKey) => {
@@ -282,11 +343,17 @@ export default function HistoryPage(): React.ReactElement {
   };
 
   // 현재 탭의 대상 건수만큼 10건 단위로 잘라 보여준다(ApprovalPage 와 동일한 클라이언트 측 페이지네이션).
-  const totalRows = isRejectedTab ? snapshots.length : visibleDocs.length;
+  const totalRows = isRejectedTab
+    ? snapshots.length
+    : isWithdrawnTab ? withdrawSnaps.length : visibleDocs.length;
   const totalListPages = Math.max(1, Math.ceil(totalRows / HISTORY_LIST_PAGE_SIZE));
   const pagedSnapshots = useMemo(
     () => sortedSnapshots.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
     [sortedSnapshots, listPage]
+  );
+  const pagedWithdrawSnaps = useMemo(
+    () => sortedWithdrawSnaps.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
+    [sortedWithdrawSnaps, listPage]
   );
   const pagedDocs = useMemo(
     () => sortedDocs.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
@@ -330,6 +397,7 @@ export default function HistoryPage(): React.ReactElement {
     } catch {
       setSelected(doc);
     }
+    setSelectedWithdraw(null);
     setPageIdx(0);
     setModalOpen(true);
   };
@@ -337,6 +405,15 @@ export default function HistoryPage(): React.ReactElement {
   // 반려 이력은 이미 받아둔 스냅샷만으로 연다 — 원본 문서를 다시 읽으면 반려 당시가 아니게 된다.
   const openSnapshotDetail = (snap: RejectionSnapshot) => {
     setSelected(snapshotToDocument(snap));
+    setSelectedWithdraw(null);
+    setPageIdx(0);
+    setModalOpen(true);
+  };
+
+  // claude 수정 (2026-11-22): 철회 이력은 원본이 지워졌으므로 스냅샷만으로 열고, 철회 정보를 함께 보여준다
+  const openWithdrawDetail = (snap: WithdrawSnapshot) => {
+    setSelected(withdrawSnapshotToDocument(snap));
+    setSelectedWithdraw(snap);
     setPageIdx(0);
     setModalOpen(true);
   };
@@ -438,7 +515,9 @@ export default function HistoryPage(): React.ReactElement {
       ) : isEmpty ? (
         <div className="empty-state">
           <div className="empty-state-icon">📂</div>
-          <p>{isRejectedTab ? t('history.no_data_rejected') : t('history.no_data')}</p>
+          <p>{isRejectedTab
+            ? t('history.no_data_rejected')
+            : isWithdrawnTab ? t('history.no_data_withdrawn') : t('history.no_data')}</p>
         </div>
       ) : (
         <div className="table-wrapper">
@@ -463,13 +542,38 @@ export default function HistoryPage(): React.ReactElement {
                   onClick={() => toggleColSort('completed')}
                   title={t('history.col_sort_hint')}
                 >
-                  {isRejectedTab ? t('history.col_rejected') : t('history.col_approved')}{colSortIndicator('completed')}
+                  {isRejectedTab
+                    ? t('history.col_rejected')
+                    : isWithdrawnTab ? t('history.col_deleted') : t('history.col_approved')}{colSortIndicator('completed')}
                 </th>
-                {isMaster && <th></th>}
+                {isWithdrawnTab && <th>{t('history.col_delete_path')}</th>}
+                {isWithdrawnTab && <th>{t('history.col_withdraw_reason')}</th>}
+                {isMaster && !isWithdrawnTab && <th></th>}
               </tr>
             </thead>
             <tbody>
-              {isRejectedTab
+              {/* claude 수정 (2026-11-22): 철회 탭 — 삭제 당시 상태·삭제일·삭제 경로·사유(이력 자체는 지우지 않는다) */}
+              {isWithdrawnTab && pagedWithdrawSnaps.map((snap, index) => (
+                <tr key={snap.id}>
+                  <td style={{ color: 'var(--text-muted)' }}>{(listPage - 1) * HISTORY_LIST_PAGE_SIZE + index + 1}</td>
+                  <td>{titleCell(snap.title, () => openWithdrawDetail(snap))}</td>
+                  <td>{snap.product_name}</td>
+                  <td>
+                    <div>{snap.requester_name}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {snap.requester_department}
+                    </div>
+                  </td>
+                  <td>
+                    <StatusBadge status={snap.status_at_delete} />
+                  </td>
+                  <td>{formatDateTime(snap.submitted_at)}</td>
+                  <td>{formatDateTime(snap.deleted_at)}</td>
+                  <td>{t(WITHDRAW_PATH_LABEL_KEY[snap.delete_path])}</td>
+                  <td style={{ maxWidth: 260, whiteSpace: 'pre-wrap' }}>{snap.reason || '-'}</td>
+                </tr>
+              ))}
+              {!isWithdrawnTab && (isRejectedTab
                 ? pagedSnapshots.map((snap, index) => (
                   <tr key={snap.id}>
                     <td style={{ color: 'var(--text-muted)' }}>{(listPage - 1) * HISTORY_LIST_PAGE_SIZE + index + 1}</td>
@@ -538,7 +642,7 @@ export default function HistoryPage(): React.ReactElement {
                       </td>
                     )}
                   </tr>
-                ))}
+                )))}
             </tbody>
           </table>
         </div>
@@ -600,6 +704,39 @@ export default function HistoryPage(): React.ReactElement {
             </button>
           }
         >
+          {/* claude 수정 (2026-11-22): 철회 이력 — 사유·요청자·확인한 팀·삭제 처리자 */}
+          {selectedWithdraw && (
+            <div className="pause-banner withdraw-banner" style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: '1.2rem', lineHeight: 1.2 }} aria-hidden="true">🗑️</div>
+              <div style={{ flex: 1, fontSize: '0.85rem' }}>
+                <p className="pause-banner-title">
+                  {t('history.withdraw_info_title')} · {t(WITHDRAW_PATH_LABEL_KEY[selectedWithdraw.delete_path])}
+                </p>
+                {selectedWithdraw.reason && (
+                  <p className="pause-banner-reason">“{selectedWithdraw.reason}”</p>
+                )}
+                <div>
+                  {t('history.withdraw_info_requested_by')}: {selectedWithdraw.requested_by_name || '-'}
+                  {' '}({formatDateTime(selectedWithdraw.requested_at)})
+                </div>
+                <div>
+                  {t('history.withdraw_info_deleted_by')}: {selectedWithdraw.deleted_by_name || '-'}
+                  {' '}({formatDateTime(selectedWithdraw.deleted_at)})
+                </div>
+                <div>
+                  {t('history.withdraw_info_status_at_delete')}: <StatusBadge status={selectedWithdraw.status_at_delete} />
+                </div>
+                <div>
+                  {t('history.withdraw_info_confirmations')}:{' '}
+                  {selectedWithdraw.confirmations.length === 0
+                    ? t('history.withdraw_info_no_confirmations')
+                    : selectedWithdraw.confirmations
+                      .map((c) => `${t(AGENT_LABEL_KEY[c.agent])} ${c.name} (${formatDateTime(c.at)})`)
+                      .join(', ')}
+                </div>
+              </div>
+            </div>
+          )}
           <PagedDetailView
             ref={pagedDetailViewRef}
             doc={selected}
