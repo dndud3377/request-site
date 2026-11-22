@@ -3,6 +3,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument,
   hasActiveStageStep, getStagePendingEnteredAt, getDocDetailFields, StageCell, StageCellSlot,
   buildAdiCdTargets, groupAdiTargetsByProcessId, isLayerDriftVisible, getDisplayStatus,
+  hasInvolvedConfirmTarget,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -1073,3 +1074,58 @@ describe('isLayerDriftVisible — 변경 감지 자동 반려 문서는 반려 �
   });
 });
 
+// claude 수정 (2026-11-22): 철회·중단 확인 대상 = 관여한 팀만 — 서버 _involved_pending_steps/_extra_zone_target_steps 미러
+describe('hasInvolvedConfirmTarget', () => {
+  it('대기중(미배정) 팀만 남아 있으면 확인 대상이 없다', () => {
+    const steps = [
+      makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'pl', zone_index: 0 }),
+      makeStep({ agent: 'R', zone_index: 1 }),
+      makeStep({ agent: 'RS', zone_index: 1 }),
+    ];
+    expect(hasInvolvedConfirmTarget(steps, true)).toBe(false);
+    expect(hasInvolvedConfirmTarget(steps, false)).toBe(false);
+  });
+
+  it('검토중(담당자 있음) 단계가 있으면 대상이 있다', () => {
+    const steps = [makeStep({ agent: 'P', assignee_loginid: 'p1', zone_index: 2 }), makeStep({ agent: 'J', zone_index: 2 })];
+    expect(hasInvolvedConfirmTarget(steps, false)).toBe(true);
+  });
+
+  it('후결자(RA)는 항상 대상이다', () => {
+    const steps = [makeStep({ agent: 'J', zone_index: 2 }), makeStep({ agent: 'RA', zone_index: 2 })];
+    expect(hasInvolvedConfirmTarget(steps, false)).toBe(true);
+  });
+
+  it('이전 회차에 관여한 팀이면 지금 대기중이어도 대상이다', () => {
+    const steps = [
+      makeStep({ agent: 'J', action: 'approved', assignee_loginid: 'j1', round: 1, zone_index: 2 }),
+      makeStep({ agent: 'J', round: 2, zone_index: 2 }),
+    ];
+    expect(hasInvolvedConfirmTarget(steps, false)).toBe(true);
+  });
+
+  it('이전 회차에도 대기중이었던 팀은 대상이 아니다', () => {
+    const steps = [
+      makeStep({ agent: 'O', round: 1, zone_index: 2 }),
+      makeStep({ agent: 'O', round: 2, zone_index: 2 }),
+    ];
+    expect(hasInvolvedConfirmTarget(steps, false)).toBe(false);
+  });
+
+  it('철회는 이전 회차에서 더 깊이 도달해 관여한 구역 팀도 대상으로 본다(중단은 아니다)', () => {
+    const steps = [
+      makeStep({ agent: 'R', action: 'rejected', assignee_loginid: 'r1', round: 1, zone_index: 1 }),
+      makeStep({ agent: 'R', round: 2, zone_index: 1 }),
+      makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'pl', round: 3, zone_index: 0 }),
+      makeStep({ agent: 'SA', action: 'pending', round: 3, zone_index: 0 }),
+    ];
+    // 현재 회차(3) 1구역 SA 는 대기중(미배정), R 은 2구역(더 깊음)인데 최신 대표 단계(2회차)가 대기중 → 관여 아님
+    expect(hasInvolvedConfirmTarget(steps, true)).toBe(false);
+    const withInvolvedR = [
+      makeStep({ agent: 'R', action: 'rejected', assignee_loginid: 'r1', round: 1, zone_index: 1 }),
+      makeStep({ agent: 'SA', action: 'pending', round: 2, zone_index: 0 }),
+    ];
+    expect(hasInvolvedConfirmTarget(withInvolvedR, true)).toBe(true);
+    expect(hasInvolvedConfirmTarget(withInvolvedR, false)).toBe(false);
+  });
+});
