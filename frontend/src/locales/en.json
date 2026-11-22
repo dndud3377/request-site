@@ -322,6 +322,8 @@
     "messenger_sent_to_manager": "An email notification has been sent to the reviewer.",
     "save_success": "Saved as draft.",
     "auto_save_success": "Auto-saved as draft after 20 minutes of inactivity.",
+    "auto_save_notice_title": "Draft auto-saved",
+    "draft_retention_notice": "Drafts are deleted automatically 2 months (60 days) after they were last saved.",
     "edit_load_failed": "Failed to load the request. Please go back to the list and try again. (Saving and submitting are disabled to prevent overwriting.)",
     "required": "This field is required.",
     "invalid_number": "Please enter a number.",

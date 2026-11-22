@@ -14401,3 +14401,83 @@ class VocTeamMailTest(TestCase):
         self.assertEqual(patch_toggle(self.m, self.e1).status_code, 200)
         self.assertEqual(patch_toggle(self.pl, self.pl).status_code, 400)
         self.assertEqual(patch_toggle(self.a, self.r2).status_code, 403)
+
+
+# claude 수정 (2026-11-22): 오래된 임시저장 자동 삭제 잡(scheduler.delete_stale_drafts) 테스트
+class StaleDraftCleanupTest(TestCase):
+    """마지막 임시저장(updated_at) 후 60일이 지난 임시저장(draft) 문서만 자동 삭제한다."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(
+            loginid='stale_author', username='작성자', mail='stale@c.com', deptname='개발팀', role='PL',
+        )
+        self.group = UserGroup.objects.create(name='정리팀', creator=self.author)
+        self.group.members.add(self.author)
+
+    def _doc(self, status='draft', days_ago=0):
+        doc = RequestDocument.objects.create(
+            title=f'{status}-{days_ago}', requester=self.author, requester_name='작성자',
+            requester_email='stale@c.com', requester_department='개발팀', product_name='PROD-1',
+            status=status,
+        )
+        # updated_at 은 auto_now 라 save() 로는 과거 값을 넣을 수 없다 → queryset.update 로 직접 맞춘다.
+        RequestDocument.objects.filter(pk=doc.pk).update(updated_at=timezone.now() - timedelta(days=days_ago))
+        return doc
+
+    def _run(self):
+        from . import scheduler
+        return scheduler.delete_stale_drafts()
+
+    def test_draft_older_than_60_days_is_deleted(self):
+        old = self._doc(days_ago=61)
+        self.assertEqual(self._run(), 1)
+        self.assertFalse(RequestDocument.objects.filter(pk=old.pk).exists())
+
+    def test_draft_within_60_days_is_kept(self):
+        recent = self._doc(days_ago=59)
+        self.assertEqual(self._run(), 0)
+        self.assertTrue(RequestDocument.objects.filter(pk=recent.pk).exists())
+
+    def test_non_draft_statuses_are_kept_even_if_old(self):
+        kept = [self._doc(status=st, days_ago=200) for st in ('rejected', 'pause', 'under_review', 'approved')]
+        self.assertEqual(self._run(), 0)
+        for doc in kept:
+            self.assertTrue(RequestDocument.objects.filter(pk=doc.pk).exists(), doc.status)
+
+    def test_retention_is_60_days(self):
+        from . import scheduler
+        self.assertEqual(scheduler.DRAFT_RETENTION_DAYS, 60)
+
+    def test_set_shared_group_does_not_refresh_last_saved(self):
+        """'그룹 지정'만 바꾸는 것은 임시저장이 아니므로 삭제 기한(updated_at)을 늘리지 않는다."""
+        old = self._doc(days_ago=61)
+        self.client.force_authenticate(user=self.author)
+        r = self.client.post(f'/api/documents/{old.id}/set-shared-group/',
+                             {'group_id': self.group.id}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._run(), 1)
+
+    def test_draft_save_refreshes_last_saved(self):
+        """임시저장(PATCH)하면 updated_at 이 갱신돼 삭제 대상에서 빠진다."""
+        old = self._doc(days_ago=61)
+        self.client.force_authenticate(user=self.author)
+        r = self.client.patch(f'/api/documents/{old.id}/', {'title': '다시 저장'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._run(), 0)
+        self.assertTrue(RequestDocument.objects.filter(pk=old.pk).exists())
+
+    def test_job_registered_in_full_and_mail_only_schedulers(self):
+        """전체 스케줄러(start)와 개발용 메일 전용 스케줄러(start_mail_only) 모두 매일 03:00 잡을 등록한다."""
+        from . import scheduler
+        for starter in (scheduler.start, scheduler.start_mail_only):
+            with patch('apscheduler.schedulers.background.BackgroundScheduler.start'), \
+                 patch('threading.Thread'), \
+                 patch('apscheduler.schedulers.background.BackgroundScheduler.add_job') as add_job:
+                starter()
+            ids = {c.kwargs.get('id'): c for c in add_job.call_args_list}
+            self.assertIn(scheduler.DELETE_STALE_DRAFTS_JOB_ID, ids, starter.__name__)
+            trigger = ids[scheduler.DELETE_STALE_DRAFTS_JOB_ID].kwargs['trigger']
+            self.assertEqual(str(trigger.fields[5]), '3', starter.__name__)  # hour
+            self.assertEqual(str(trigger.fields[6]), '0', starter.__name__)  # minute
