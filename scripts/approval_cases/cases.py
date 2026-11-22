@@ -1372,13 +1372,17 @@ def _confirm_all_targets(ctx, doc_id, author, kind):
     doc = F.fetch(author, doc_id)
     req = doc.get('withdraw_request' if kind == 'withdraw' else 'pause_request') or {}
     ids = set(req.get('target_step_ids') or [])
-    agents = sorted({s['agent'] for s in (doc.get('approval_steps') or []) if s['id'] in ids})
-    for agent in agents:
-        actor = _team_actor(ctx, agent, doc)
+    targets = [s for s in (doc.get('approval_steps') or []) if s['id'] in ids]
+    # claude 수정 (2026-11-22): 철회 대상에 이미 합의한 단계(PL·R 등)도 들어가므로, 담당자가 있으면 그 사람으로 확인한다
+    for step in targets:
+        if step.get('assignee_loginid'):
+            actor = F._actor_for_loginid(ctx, step['assignee_loginid'])
+        else:
+            actor = _team_actor(ctx, step['agent'], doc)
         if actor is None:
-            raise CaseSkip(f'{agent} 단계를 확인할 계정을 찾지 못했다.')
-        (F.confirm_withdraw if kind == 'withdraw' else F.confirm_pause)(actor, doc_id, agent)
-    return agents
+            raise CaseSkip(f"{step['agent']} 단계를 확인할 계정을 찾지 못했다.")
+        (F.confirm_withdraw if kind == 'withdraw' else F.confirm_pause)(actor, doc_id, step['agent'])
+    return sorted({s['agent'] for s in targets})
 
 
 def _target_agents(doc, kind):
@@ -1598,15 +1602,16 @@ def w15(ctx):
 
 
 # claude 수정 (2026-11-22): 철회·중단 확인 대상 = 관여한 팀만, 대상 0팀이면 즉시 처리(사용자 결정)
-@case('W-17', 'W', '진행 중 철회 → 대기중 팀 제외(검토중 P + 후결자만 확인 대상)')
+# claude 수정 (2026-11-22): 진행 중 철회 대상 = 이 문서에 한 번이라도 관여한 팀 전부(이미 합의한 PL·R 포함, 대기중 제외)
+@case('W-17', 'W', '3구역 철회 → 합의한 PL·R + 검토중 P + 후결자가 대상, 대기중 J·O 제외')
 def w17(ctx):
     ctx.need(PL=2, TE_R=1, TE_P=1)
     doc_id, author, pls = F.to_parallel(ctx, plel=False)
     F.claim_step(ctx.actor('TE_P', 0), doc_id, 'P')
     F.withdraw(author, doc_id)
     targets = _target_agents(F.fetch(author, doc_id), 'withdraw')
-    if targets != ['P', 'RA']:
-        raise CaseFailure(f'확인 대상이 P·RA 가 아니다(대기중 J·O 는 빠져야 한다): {targets}')
+    if targets != ['P', 'PL', 'R', 'RA']:
+        raise CaseFailure(f'확인 대상이 PL·R·P·RA 가 아니다(대기중 J·O 는 빠져야 한다): {targets}')
     return f'doc={doc_id} 대상={targets}'
 
 
@@ -1632,16 +1637,21 @@ def w19(ctx):
     return f'doc={doc_id} 대상={targets}'
 
 
-@case('W-18', 'W', '확인할 관여 팀 0팀(2구역 R 담당자 지정 전) → 즉시 삭제')
+# claude 수정 (2026-11-22): 합의한 PL 도 관여 팀이라 2구역 R 지정 전 철회는 즉시 삭제가 아니라 PL 확인 후 삭제
+@case('W-18', 'W', '2구역 R 담당자 지정 전 철회 → 합의한 PL 만 확인 대상(즉시 삭제 아님)')
 def w18(ctx):
     ctx.need(PL=2)
     doc_id, author, pls = F.submitted_doc(ctx)
     F.pass_pl_stage(ctx, doc_id, pls)
     res = F.withdraw(author, doc_id)
-    if not (res.body or {}).get('deleted'):
-        raise CaseFailure('관여 팀이 없는데 즉시 삭제되지 않았다.')
+    if (res.body or {}).get('deleted'):
+        raise CaseFailure('합의한 PL 이 있는데 즉시 삭제됐다.')
+    targets = _target_agents(F.fetch(author, doc_id), 'withdraw')
+    if targets != ['PL']:
+        raise CaseFailure(f'확인 대상이 PL 만이 아니다(대기중 R·System R 제외): {targets}')
+    _confirm_all_targets(ctx, doc_id, author, 'withdraw')
     F.expect_gone(author, doc_id)
-    return f'doc={doc_id} 즉시 삭제됨'
+    return f'doc={doc_id} 대상={targets} → PL 확인 후 삭제'
 
 
 @case('M-12', 'M', '확인할 관여 팀 0팀(2구역 R 담당자 지정 전) → 즉시 pause')
