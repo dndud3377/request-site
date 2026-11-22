@@ -4338,6 +4338,40 @@ class WithdrawFlowTest(TestCase):
         )
         self.assertNotIn(o_step.id, wr.target_step_ids)
 
+    # claude 수정 (2026-11-22): 이전 회차 도달 구역도 '어느 회차든 한 번이라도 관여'면 대상(최근 회차가 대기중이어도)
+    def test_extra_zone_includes_team_involved_in_any_earlier_round(self):
+        """1회차 R 반려 → 2회차 R 대기중(미지정) 상태에서 PL 반려 → 3회차 1구역 철회: R 은 1회차에 관여했으므로 대상.
+
+        대표 단계는 관여했던 단계 중 가장 최근 회차(1회차 R)이고, 지금 R 팀 누구나 확인할 수 있다.
+        """
+        doc = self._doc()
+        r1 = self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        r2 = self._step(doc, 'R', action='pending', assignee=None, round=2)
+        o1 = self._step(doc, 'O', action='pending', assignee=None, round=1)  # 한 번도 관여 안 함
+        pl_step = self._step(doc, 'PL', assignee=self.pl, round=3)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [pl_step.id, r1.id])
+        self.assertNotIn(r2.id, wr.target_step_ids)
+        self.assertNotIn(o1.id, wr.target_step_ids)
+
+        res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_rejected_withdraw_includes_team_involved_in_any_earlier_round(self):
+        """반려 문서 철회도 같은 규칙 — 1회차 R 반려, 2회차 R 대기중에서 PL 반려된 문서는 PL·R 확인 대상."""
+        doc = self._doc('rejected')
+        r1 = self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'R', action='pending', assignee=None, round=2)
+        pl2 = self._step(doc, 'PL', action='rejected', assignee=self.pl, round=2)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [pl2.id, r1.id])
+
     def test_reject_withdraw_by_extra_zone_team_member(self):
         """이전 회차 도달 구역 팀도 철회 요청을 거부할 수 있다 — 요청 전체가 무효화된다."""
         doc = self._doc()
