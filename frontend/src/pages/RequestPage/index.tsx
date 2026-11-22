@@ -4947,7 +4947,8 @@ export default function RequestPage(): React.ReactElement {
       : `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_${flowStepPart}_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
-    let history: HistorySnapshot[] = [];
+    // claude 수정 (2026-11-22): 임시저장·자동저장 때 history 를 빈 배열로 보내 반려·중단·진행 중 문서의 변경 이력이 지워지던 문제 — 불러온 이력을 그대로 유지
+    let history: HistorySnapshot[] = prevParsedRef.current?.history ?? [];
     if (shouldAddHistory && prevParsedRef.current) {
       const prev = prevParsedRef.current;
       history = [
