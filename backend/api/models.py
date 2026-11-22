@@ -1033,8 +1033,8 @@ class WithdrawRequest(models.Model):
     target_step_ids(요청 시점 pending 단계 id) 대비 confirmed_step_ids 로 추적한다.
 
     ⚠️ 철회가 확정되면 문서가 삭제되므로 이 레코드도 CASCADE 로 함께 사라진다 —
-    'confirmed' 상태는 저장되지 않으며, 철회 이력은 서버 로그(`[WITHDRAW_DOCUMENT]`)에만
-    남는다(2026-08 결정: 이력 보존 불필요).
+    'confirmed' 상태는 저장되지 않는다. 철회 이력은 삭제 직전에 `WithdrawSnapshot` 으로
+    복사해 남긴다(2026-11-22 변경 — 그 전에는 서버 로그 `[WITHDRAW_DOCUMENT]` 에만 남았다).
     """
 
     STATE_CHOICES = [
@@ -1061,6 +1061,9 @@ class WithdrawRequest(models.Model):
     target_step_ids = models.JSONField(default=list, verbose_name='대상 단계 id')
     # '철회 확인'을 누른 단계 id 목록
     confirmed_step_ids = models.JSONField(default=list, verbose_name='확인된 단계 id')
+    # claude 수정 (2026-11-22): 철회 이력(WithdrawSnapshot)에 '누가 어느 팀으로 확인했는지'를 남기기 위한 확인 기록
+    # [{step_id, agent, round, loginid, name, at}] — confirmed_step_ids 와 같은 순서로 쌓인다.
+    confirmed_by = models.JSONField(default=list, blank=True, verbose_name='확인자 기록')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='요청일시')
     resolved_at = models.DateTimeField(null=True, blank=True, verbose_name='거부·취소일시')
 
@@ -2124,6 +2127,73 @@ class RejectionSnapshot(models.Model):
             return json.loads(self.additional_notes or '{}')
         except (json.JSONDecodeError, TypeError):
             return {}
+
+
+# claude 수정 (2026-11-22): 철회·삭제로 지워진 의뢰서의 이력 — 그 전에는 서버 로그에만 남아 화면에서 확인할 수 없었다
+class WithdrawSnapshot(models.Model):
+    """철회(삭제) 이력 — 의뢰서가 지워지기 직전의 내용과 철회 경위를 복사해 둔다.
+
+    철회가 확정되면 의뢰서와 결재 단계·철회 요청이 CASCADE 로 함께 사라지므로, 삭제 직전에
+    이 테이블로 복사한다(반려 이력 `RejectionSnapshot` 과 같은 방식). 이력 조회 '철회' 탭
+    (MASTER 전용)의 데이터 원본이다.
+
+    삭제 경로(`delete_path`)마다 1행씩 쌓인다 — 임시저장 즉시 삭제, 관여 팀이 없어 즉시 삭제,
+    관여 팀 전원 확인 후 삭제, MASTER 즉시 삭제, 삭제 기능(`delete/` API).
+    """
+
+    PATH_DRAFT = 'draft'
+    PATH_NO_TARGET = 'no_target'
+    PATH_CONFIRMED = 'confirmed'
+    PATH_MASTER = 'master'
+    PATH_DELETE_API = 'delete_api'
+    PATH_CHOICES = [
+        (PATH_DRAFT, '임시저장 즉시 삭제'),
+        (PATH_NO_TARGET, '확인할 관여 팀 없음 — 즉시 삭제'),
+        (PATH_CONFIRMED, '관여 팀 전원 확인 후 삭제'),
+        (PATH_MASTER, 'MASTER 즉시 삭제'),
+        (PATH_DELETE_API, '삭제 기능으로 삭제'),
+    ]
+
+    # 원본 문서는 지워지므로 FK 를 두지 않고 id 만 남긴다.
+    source_document_id = models.IntegerField(verbose_name='원본 의뢰서 ID')
+
+    # ===== 목록 표시용 복사본 =====
+    title = models.CharField(max_length=600, verbose_name='의뢰서 제목')
+    product_name = models.CharField(max_length=200, blank=True, verbose_name='{{request.partid_selection}}')
+    requester_name = models.CharField(max_length=100, blank=True, verbose_name='의뢰자 이름')
+    requester_department = models.CharField(max_length=100, blank=True, verbose_name='부서')
+    requester_loginid = models.CharField(max_length=150, blank=True, verbose_name='의뢰자 로그인 ID')
+    submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
+    status_at_delete = models.CharField(max_length=20, blank=True, verbose_name='삭제 당시 상태')
+
+    # ===== 상세 재현용 스냅샷 =====
+    additional_notes = models.TextField(blank=True, verbose_name='상세 정보(JSON)')
+    approval_steps = models.TextField(blank=True, verbose_name='결재 단계(JSON)')
+    round = models.PositiveSmallIntegerField(default=1, verbose_name='삭제 당시 회차')
+
+    # ===== 철회 경위 =====
+    delete_path = models.CharField(max_length=20, choices=PATH_CHOICES, verbose_name='삭제 경로')
+    reason = models.TextField(blank=True, verbose_name='철회 사유')
+    requested_by_name = models.CharField(max_length=100, blank=True, verbose_name='철회 요청자 이름')
+    requested_by_loginid = models.CharField(max_length=150, blank=True, verbose_name='철회 요청자 로그인 ID')
+    requested_at = models.DateTimeField(null=True, blank=True, verbose_name='철회 요청일시')
+    # 철회 확인 기록 [{step_id, agent, round, loginid, name, at}] — 팀 확인을 거친 경로에만 채워진다.
+    confirmations = models.JSONField(default=list, blank=True, verbose_name='확인 기록')
+    deleted_by_name = models.CharField(max_length=100, blank=True, verbose_name='삭제 처리자 이름')
+    deleted_by_loginid = models.CharField(max_length=150, blank=True, verbose_name='삭제 처리자 로그인 ID')
+    deleted_at = models.DateTimeField(verbose_name='삭제일시')
+
+    class Meta:
+        verbose_name = '철회 이력'
+        verbose_name_plural = '철회 이력 목록'
+        ordering = ['-deleted_at', '-id']
+        indexes = [
+            models.Index(fields=['-deleted_at']),
+            models.Index(fields=['source_document_id']),
+        ]
+
+    def __str__(self):
+        return f"[철회 {self.get_delete_path_display()}] {self.title}"
 
 
 class PersonalMarkCategory(models.Model):
