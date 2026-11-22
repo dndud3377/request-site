@@ -230,11 +230,14 @@ def can_edit(user, document, my_group_ids=None):
 def can_request_pause(user, document, my_group_ids=None):
     """중단 요청 인가: 진행 중(under_review) 문서의 작성자 본인·공유 그룹 멤버 또는 MASTER.
 
-    이미 활성(요청/확정) 중단 요청이 있으면 불가.
+    이미 활성(요청/확정) 중단 요청이 있거나, 철회 요청이 확인 대기 중이면(2026-11-22) 불가.
     """
     if document.status != 'under_review':
         return False
     if any(pr.is_active() for pr in document.pause_requests.all()):
+        return False
+    # claude 수정 (2026-11-22): 철회 요청 확인 대기 중에는 중단 요청 불가(MASTER 포함) — 두 요청이 겹쳐 PAUSE 문서가 철회로 삭제되던 문제
+    if any(wr.state == 'requested' for wr in document.withdraw_requests.all()):
         return False
     if getattr(user, 'role', '') == 'MASTER':
         return True
