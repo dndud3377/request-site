@@ -1292,6 +1292,36 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if s.assignee_id or s.agent == 'RA' or s.agent in prior_involved_agents
         ]
 
+    # claude 수정 (2026-11-22): 진행 중 문서 철회 확인 대상 = 이 문서에 한 번이라도 관여한 팀 전부(사용자 결정)
+    def _in_progress_withdraw_target_steps(self, document, pending, max_round):
+        """진행 중 문서 철회 시 확인을 받아야 하는 단계 목록 — 이 문서에 한 번이라도 관여한 팀 전부.
+
+        - 지금 진행 중인 단계: `_involved_pending_steps`(검토중·지정·RA, 이전 회차에 관여한 대기 팀) — 그 단계의
+          담당자(없으면 그 팀 누구나)가 확인한다. 검토자(RV·PV·EV)도 진행 중이면 여기 포함된다.
+        - 1구역(PL·SA): **최신 회차**에 지정된 PL·SA 단계 전부(이미 합의한 PL 포함, 반려 문서 철회와 같은 기준).
+        - 2·3구역(R·P·J·O·E·RA): 어느 회차든 한 번이라도 관여한 팀(`_extra_zone_target_steps`, 지금 구역보다 앞
+          구역·같은 구역 포함). 이미 진행 중 단계로 들어간 팀(검토자는 소속 팀으로 환산)은 중복으로 넣지 않는다.
+        - 아무도 잡지 않은 대기중 팀(어느 회차에서도 관여 안 함)과 System R 은 제외한다.
+
+        이전 규칙(지금 진행 중 단계 + 더 깊은 구역만)에서는 이번 회차에 이미 합의한 팀(예: 3구역 OVL 합의, 앞 구역
+        PL·R)이 빠져, 예전 회차 합의 팀은 묻고 이번 회차 합의 팀은 묻지 않는 비대칭이 있었다.
+        """
+        current = self._involved_pending_steps(document, pending, max_round)
+        current_ids = {s.id for s in current}
+        current_teams = {mailer.REVIEWER_TO_MAIN_AGENT.get(s.agent, s.agent) for s in current}
+
+        zone_1 = [
+            step for step in ApprovalStep.objects.filter(
+                document=document, round=max_round, agent__in=RequestDocument.PAUSE_ZONE_1_AGENTS,
+            )
+            if step.id not in current_ids and not (step.action == 'pending' and not step.assignee_id)
+        ]
+        other_zones = [
+            step for step in self._extra_zone_target_steps(document, 0)
+            if step.agent not in current_teams
+        ]
+        return current + zone_1 + other_zones
+
     # claude 수정 (2026-11-09): 반려 문서 철회 확인 대상 = 1구역(최신 회차 PL·SA) + 2·3구역 관여 팀
     def _rejected_withdraw_target_steps(self, document, max_round):
         """반려 문서 철회 시 확인을 받아야 하는 단계 목록 — 이 문서에 관여했던 팀 전원.
@@ -1371,8 +1401,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
           (2026-08 확장). 완료 메일은 보내지 않고 서버 로그만 남긴다.
         - draft            : 확인할 진행 중 단계가 없다 → 즉시 삭제(사유 선택)
         - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
-        - under_review / submitted : 철회 요청 생성 → 현재 단계 중 **관여한 팀** 전원 확인 시 삭제
-          (2026-11-22, `_involved_pending_steps` — 대기중 팀 제외). 관여한 팀이 하나도 없으면
+        - under_review / submitted : 철회 요청 생성 → 이 문서에 **한 번이라도 관여한 팀** 전원 확인 시 삭제
+          (2026-11-22, `_in_progress_withdraw_target_steps` — 대기중 팀 제외). 관여한 팀이 하나도 없으면
           확인 없이 **즉시 삭제**한다. 사유(reason) 필수, 확인 대기 동안 결재가 동결된다.
         - rejected         : 철회 요청 생성 → 이 문서에 관여했던 팀 전원 확인 시 삭제
           (2026-11, `_rejected_withdraw_target_steps`). 사유 필수, 확인 대기 동안 수정·재상신 차단.
@@ -1439,18 +1469,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # 반려 후 재상신으로 회차가 바뀐 경우, 과거 회차에서 현재 구역보다 더 깊이
-            # 도달했던 구역의 팀들도 함께 확인 대상에 넣는다(2026-09, Case J 참고).
-            current_zone_idx = max(
-                (self._zone_index(document, s.agent) for s in pending if self._zone_index(document, s.agent) is not None),
-                default=None,
-            )
-            extra_steps = (
-                self._extra_zone_target_steps(document, current_zone_idx)
-                if current_zone_idx is not None else []
-            )
-            # claude 수정 (2026-11-22): 현재 단계 중 관여한 팀만 확인 대상, 확인할 팀이 없으면 즉시 삭제(사용자 결정)
-            target_steps = self._involved_pending_steps(document, pending, max_round) + extra_steps
+            # claude 수정 (2026-11-22): 이 문서에 한 번이라도 관여한 팀 전부가 확인 대상, 확인할 팀이 없으면 즉시 삭제(사용자 결정)
+            target_steps = self._in_progress_withdraw_target_steps(document, pending, max_round)
             if not target_steps:
                 self._delete_withdrawn_document(request, document, reason, WithdrawSnapshot.PATH_NO_TARGET)
                 return Response({
