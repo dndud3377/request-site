@@ -31,6 +31,7 @@
 | 인증 | ADFS OIDC SSO | 없음 — Navbar 드롭다운으로 유저 전환 |
 | Django 설정 | `config.settings.production` | `config.settings.development` |
 | HTTPS | 강제 | 없음 (HTTP) |
+| 접근 제한 | SSO 로그인 | 허용 IP만 (`.env.dev` 의 `DEV_ALLOWED_IPS`, 그 외 403) |
 | Scheduler | 활성 | 비활성 (`SKIP_SCHEDULER=true`) |
 
 ---
@@ -81,6 +82,38 @@ docker compose -f docker-compose.dev.yml up --build
 접속: `http://localhost:10011`
 
 인증 불필요 — Navbar 상단 DEV 드롭다운에서 역할별 테스트 유저 전환
+
+### 개발 서버 접근 제한 (허용 IP)
+
+개발 DB 는 운영 복사본이므로 **`.env.dev` 의 `DEV_ALLOWED_IPS` 에 있는 PC 만** 개발 서버에 들어올 수 있다.
+
+```
+DEV_ALLOWED_IPS=10.1.2.3,10.1.2.4      # 단일 IPv4, 쉼표 구분
+```
+
+- 판정은 nginx 가 **실제 접속 주소(`$remote_addr`)** 로 한다. `X-Forwarded-For` 등 헤더는 보지 않는다.
+- 목록에 없는 주소는 화면(`/`)·API(`/api/`)·첨부(`/media/`)·관리자(`/admin/`) **모든 경로에서 403** — backend 까지 가지 않는다.
+- 외부에 열린 포트는 nginx `10011` 하나뿐이다. backend `8001` 공개는 제거했다(nginx 우회 경로).
+- **fail-closed**: 값이 비었거나 형식이 틀리면(대역 `/`, `0.0.0.0`, 중복, 빈 항목) nginx 가 기동하지 않는다.
+  이유는 `docker logs request_nginx_dev` 에 `[dev-allowlist] 기동 거부: …` 로 남는다.
+- 서버 자신(`localhost:10011`)에서의 접속은 Docker 게이트웨이 주소로 보이므로 차단된다(의도된 동작).
+- 구현: `nginx/dev-allowlist.sh`(목록 생성 후 nginx 실행) → `/etc/nginx/dev_allowed_ips.conf` → `nginx/nginx.dev.conf` 에서 include.
+
+사람 추가·삭제:
+
+```bash
+# 1) .env.dev 의 DEV_ALLOWED_IPS 수정
+# 2) nginx 만 재생성 (restart 로는 .env.dev 를 다시 읽지 않는다)
+docker compose -f docker-compose.dev.yml up -d nginx
+# 3) 반영 확인 — 허용 IP 목록이 출력된다
+docker logs --tail 20 request_nginx_dev
+# 거부된 접속 확인
+docker logs request_nginx_dev 2>&1 | grep '" 403 '
+```
+
+목록에서 지운 PC 는 재생성 즉시 차단된다(브라우저에 로그인 토큰이 남아 있어도 nginx 에서 막힌다).
+IP 는 사람이 아니라 PC 단위이므로, 인원이 빠지거나 PC 를 교체하면 바로 목록을 고친다.
+앱 쪽 본인 확인(dev SSO)은 추후 과제다.
 
 ### DB 자동 동기화
 
