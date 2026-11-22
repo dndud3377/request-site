@@ -1610,6 +1610,28 @@ def w17(ctx):
     return f'doc={doc_id} 대상={targets}'
 
 
+# claude 수정 (2026-11-22): 이전 회차 도달 구역도 '어느 회차든 한 번이라도 관여'면 대상
+@case('W-19', 'W', '1회차 R 반려 → 2회차 R 대기중에 반려 → 3회차 철회 시 R 도 확인 대상')
+def w19(ctx):
+    ctx.need(PL=2, TE_R=1, MASTER=1)
+    doc_id, author, pls = F.submitted_doc(ctx)
+    F.pass_pl_stage(ctx, doc_id, pls)
+    te_r = ctx.actor('TE_R', 0)
+    F.assign_step(te_r, doc_id, 'R', ctx.user('TE_R', 0))
+    F.reject_step(te_r, doc_id, 'R')                       # 1회차: R 이 직접 반려(관여)
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls])
+    F.pass_pl_stage(ctx, doc_id, pls)                      # 2회차: R 은 대기중(미지정)
+    F.reject_step(ctx.actor('MASTER', 0), doc_id, F.SYSTEM_R_AGENT, comment='케이스 러너 System R 반려')
+    F.expect_doc_status(author, doc_id, 'rejected')
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls])  # 3회차: 1구역(PL) 진행 중
+    F.withdraw(author, doc_id)
+    targets = _target_agents(F.fetch(author, doc_id), 'withdraw')
+    if 'R' not in targets:
+        raise CaseFailure(f'1회차에 관여한 R 이 확인 대상이 아니다: {targets}')
+    F.confirm_withdraw(ctx.actor('TE_R', 0), doc_id, 'R')
+    return f'doc={doc_id} 대상={targets}'
+
+
 @case('W-18', 'W', '확인할 관여 팀 0팀(2구역 R 담당자 지정 전) → 즉시 삭제')
 def w18(ctx):
     ctx.need(PL=2)
