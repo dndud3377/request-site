@@ -1668,6 +1668,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 ### 🔴 B-29 `AUTH_MODE=dev` 로 배포되면 전 API가 비인증 개방 **재현✅**
 - 위치: `views.py:44`(`_is_dev`), `IsMasterOrReadOnly`(`:48`) / `IsAuthenticatedInProd`(`:57`) / `IsAuthenticatedOrMasterDelete`(`:64`) — **2026-08-04 미수정 확인**
+- 2026-11-22: dev 서버는 nginx IP 허용 목록(`DEV_ALLOWED_IPS`)으로 허용 PC 외 접근 자체를 차단했다. 앱 코드의 우회는 미수정 — §5-7 "보류·후속" 참조.
 - 내용: 세 permission 클래스 모두 `_is_dev() or request.user.is_authenticated` 형태라, dev 모드에서는 **인증 자체를 건너뛴다.**
 - 재현 결과
   ```
@@ -2531,6 +2532,9 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 ### 보류·후속 (이번 범위 밖)
 - ~~SSE 연결 수 상한·스트림 수명 제한(R-09 후반) — 사용자 결정으로 보류.~~ → 2026-10-26 SSE 자체를 제거해 해소(§5-8).
 - 개발 모드(`AUTH_MODE=dev`) 개방 범위(B-29) — 개발 서버 접근 범위 확인 후 결정.
+  → 2026-11-22 **외부 차단으로 대응**(사용자 결정): dev 는 nginx 가 `.env.dev` 의 `DEV_ALLOWED_IPS`(단일 IPv4)에 없는
+  출발 주소를 모든 경로에서 403, backend `8001` 공개 제거(README "개발 서버 접근 제한"). 앱 쪽 `_is_dev()` 우회는
+  그대로이며, dev SSO 도입 시 함께 다룬다 — 허용 IP 안에서는 비밀번호 없는 dev-login 이 있어 앱 쪽만 막아도 효과가 없기 때문.
 - compose 의 backend `8000`·MySQL `3306` 포트가 호스트 전체 인터페이스에 공개(`docker-compose.yml:11,37`) — nginx·API 를 우회하는 경로. 방화벽 상태 미확인.
 
 ---
