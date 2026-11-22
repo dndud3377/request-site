@@ -43,14 +43,18 @@ const POST_APPROVER_AGENT: AgentType = 'RA';
 /** 그 단계에 팀이 관여했는가 — 담당자 없는 대기중(pending)만 관여하지 않은 것으로 본다 */
 const wasStepInvolved = (s: ApprovalStepFrontend): boolean => !(s.action === 'pending' && !s.assignee_loginid);
 
+/** 1구역 agent — 백엔드 `RequestDocument.PAUSE_ZONE_1_AGENTS` 와 같다 */
+const ZONE_1_AGENTS: AgentType[] = ['PL', 'SA'];
+
 /**
- * 진행 중 문서의 철회(`includeExtraZones=true`)·중단(`false`) 요청 시 확인할 관여 팀이 하나라도 있는가.
- * 백엔드 `_involved_pending_steps`(+ 철회는 `_extra_zone_target_steps`)와 같은 규칙이다.
- * - 현재 회차 pending 단계(System R 제외) 중 담당자가 있거나 RA 이거나, 같은 팀이 이전 회차에 관여한 단계
- * - (철회만) 이전 회차에서 현재 구역보다 깊이 도달했던 구역의 팀(어느 회차든 한 번이라도 관여한 팀)
+ * 진행 중 문서의 철회(`forWithdraw=true`)·중단(`false`) 요청 시 확인할 관여 팀이 하나라도 있는가.
+ * - 공통(중단은 이것만, 백엔드 `_involved_pending_steps`): 현재 회차 pending 단계(System R 제외) 중
+ *   담당자가 있거나 RA 이거나, 같은 팀이 이전 회차에 관여한 단계
+ * - 철회는 추가로(백엔드 `_in_progress_withdraw_target_steps`, 2026-11-22 — 이 문서에 한 번이라도 관여한 팀 전부):
+ *   최신 회차 PL·SA 중 담당자 있는 단계, 2·3구역 팀(R·P·J·O·E·RA) 중 어느 회차든 관여한 단계
  * 화면 안내용 판정이며, 실제 처리는 서버가 최종 판단한다.
  */
-export const hasInvolvedConfirmTarget = (steps: ApprovalStepFrontend[], includeExtraZones: boolean): boolean => {
+export const hasInvolvedConfirmTarget = (steps: ApprovalStepFrontend[], forWithdraw: boolean): boolean => {
   const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0);
   const pending = steps.filter(
     (s) => (s.round ?? 1) === maxRound && s.action === 'pending' && s.agent !== SYSTEM_R_AGENT
@@ -61,17 +65,12 @@ export const hasInvolvedConfirmTarget = (steps: ApprovalStepFrontend[], includeE
   const hasCurrent = pending.some(
     (s) => !!s.assignee_loginid || s.agent === POST_APPROVER_AGENT || priorInvolvedAgents.has(s.agent)
   );
-  if (hasCurrent || !includeExtraZones) return hasCurrent;
+  if (hasCurrent || !forWithdraw) return hasCurrent;
 
-  const zones = pending.map((s) => s.zone_index).filter((z): z is number => typeof z === 'number');
-  if (zones.length === 0) return false;
-  const currentZone = Math.max(...zones);
-  // 더 깊은 구역 팀은 어느 회차든 한 번이라도 관여했으면 대상(서버 `_extra_zone_target_steps`, 2026-11-22)
-  return steps.some(
-    (s) => ZONE_MAIN_AGENTS.includes(s.agent)
-      && typeof s.zone_index === 'number' && s.zone_index > currentZone
-      && wasStepInvolved(s)
-  );
+  return steps.some((s) => wasStepInvolved(s) && (
+    ZONE_MAIN_AGENTS.includes(s.agent)
+    || (ZONE_1_AGENTS.includes(s.agent) && (s.round ?? 1) === maxRound)
+  ));
 };
 
 export interface DocDetailFields {
