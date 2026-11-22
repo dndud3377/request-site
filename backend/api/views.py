@@ -1244,24 +1244,28 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """반려 후 재상신으로 회차가 바뀐 뒤 철회할 때, 과거 회차에서 현재 구역보다 더
         깊이 도달했던 구역의 팀들을 대표하는 ApprovalStep 목록을 반환한다(2026-09).
 
-        팀(agent)당 그 구역에 가장 최근에 있었던 회차의 단계 하나만 대표로 삼는다 — 몇 회차
-        전 반려자였는지는 따지지 않고, "지금 그 팀"의 합의만 받으면 되기 때문이다. 그 회차에
-        **대기중(미선점, action='pending'이고 담당자 없음)** 이었던 팀은 실제로 관여한 적이
-        없으므로 대상에서 제외한다(검토중·합의완료·반려는 관여로 본다).
+        팀(agent)당 단계 하나만 대표로 삼는다 — 몇 회차 전 반려자였는지는 따지지 않고, "지금 그
+        팀"의 확인만 받으면 되기 때문이다. **대기중(미선점, action='pending'이고 담당자 없음)** 은
+        관여가 아니고, 검토중·합의완료·반려는 관여로 본다.
+
+        claude 수정 (2026-11-22): 관여 판정을 '가장 최근 회차' 기준에서 '어느 회차든 한 번이라도
+        관여' 기준으로 바꿨다(사용자 결정 — 진행 중 문서의 `_involved_pending_steps` 와 같은 원칙).
+        예전엔 1회차 R 반려 → 2회차 R 대기중 상태에서 반려된 문서를 철회하면 R 이 빠져, 직접
+        반려했던 팀이 모르는 사이 문서가 삭제될 수 있었다. 이제 팀마다 **관여했던 단계 중 가장
+        최근 회차**의 단계를 대표로 삼고, 한 번도 관여하지 않은 팀만 뺀다.
         """
-        latest_by_agent = {}
+        latest_involved_by_agent = {}
         for step in ApprovalStep.objects.filter(document=document, agent__in=self._ZONE_MAIN_AGENTS):
             zone_idx = self._zone_index(document, step.agent)
             if zone_idx is None or zone_idx <= current_zone_idx:
                 continue
-            prev = latest_by_agent.get(step.agent)
+            if step.action == 'pending' and not step.assignee_id:
+                continue
+            prev = latest_involved_by_agent.get(step.agent)
             if prev is None or step.round > prev.round:
-                latest_by_agent[step.agent] = step
+                latest_involved_by_agent[step.agent] = step
 
-        return [
-            step for step in latest_by_agent.values()
-            if not (step.action == 'pending' and not step.assignee_id)
-        ]
+        return list(latest_involved_by_agent.values())
 
     # claude 수정 (2026-11-22): 진행 중 문서 철회·중단 확인 대상을 '관여한 팀'으로 좁힌다(대기중 팀 제외, 사용자 결정)
     def _involved_pending_steps(self, document, pending, max_round):
@@ -1294,9 +1298,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         - 1구역(PL·SA): 최신 회차의 단계 전부(담당자가 지정돼 있으면 관여로 본다 — 다중 PL 중
           아직 결정하지 않은 PL 도 포함, 2026-11 결정). 담당자 없는 대기 단계만 뺀다.
-        - 2·3구역(R·P·J·O·E·RA): `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 가장 최근
-          회차의 단계 1건을 대표로, 대기중(미선점)이었던 팀은 제외. 반려 문서에는 '현재 구역'이
-          없으므로 1구역(인덱스 0)보다 깊은 구역 전부가 대상이다.
+        - 2·3구역(R·P·J·O·E·RA): `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 관여했던 단계 중
+          가장 최근 회차 1건을 대표로, 어느 회차에서도 관여하지 않은 팀만 제외(2026-11-22). 반려 문서에는
+          '현재 구역'이 없으므로 1구역(인덱스 0)보다 깊은 구역 전부가 대상이다.
         """
         zone_1_steps = [
             step for step in ApprovalStep.objects.filter(
