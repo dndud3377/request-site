@@ -1076,9 +1076,8 @@ describe('isLayerDriftVisible — 변경 감지 자동 반려 문서는 반려 �
 
 // claude 수정 (2026-11-22): 철회·중단 확인 대상 = 관여한 팀만 — 서버 _involved_pending_steps/_extra_zone_target_steps 미러
 describe('hasInvolvedConfirmTarget', () => {
-  it('대기중(미배정) 팀만 남아 있으면 확인 대상이 없다', () => {
+  it('대기중(미배정) 팀만 있고 관여한 팀이 없으면 확인 대상이 없다', () => {
     const steps = [
-      makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'pl', zone_index: 0 }),
       makeStep({ agent: 'R', zone_index: 1 }),
       makeStep({ agent: 'RS', zone_index: 1 }),
     ];
@@ -1112,26 +1111,30 @@ describe('hasInvolvedConfirmTarget', () => {
     expect(hasInvolvedConfirmTarget(steps, false)).toBe(false);
   });
 
-  it('철회는 이전 회차에서 더 깊이 도달해 관여한 구역 팀도 대상으로 본다(중단은 아니다)', () => {
+  // claude 수정 (2026-11-22): 철회는 이 문서에 한 번이라도 관여한 팀 전부(이미 합의한 PL·R 포함), 중단은 진행 중 단계만
+  it('철회는 이미 합의한 PL·R 도 관여 팀으로 본다(중단은 아니다)', () => {
+    const steps = [
+      makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'pl', zone_index: 0 }),
+      makeStep({ agent: 'R', zone_index: 1 }),
+      makeStep({ agent: 'RS', zone_index: 1 }),
+    ];
+    expect(hasInvolvedConfirmTarget(steps, true)).toBe(true);
+    expect(hasInvolvedConfirmTarget(steps, false)).toBe(false);
+  });
+
+  it('철회: 이전 회차 PL 만 관여했으면(최신 회차 PL 없음) 1구역은 대상이 아니다', () => {
+    const steps = [
+      makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'pl', round: 1, zone_index: 0 }),
+      makeStep({ agent: 'R', round: 2, zone_index: 1 }),
+    ];
+    expect(hasInvolvedConfirmTarget(steps, true)).toBe(false);
+  });
+
+  it('철회: 어느 회차든 관여한 2·3구역 팀이 있으면 대상이 있다', () => {
     const steps = [
       makeStep({ agent: 'R', action: 'rejected', assignee_loginid: 'r1', round: 1, zone_index: 1 }),
       makeStep({ agent: 'R', round: 2, zone_index: 1 }),
-      makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'pl', round: 3, zone_index: 0 }),
-      makeStep({ agent: 'SA', action: 'pending', round: 3, zone_index: 0 }),
     ];
-    // 현재 회차(3) 1구역 SA 는 대기중(미배정). R 은 2회차엔 대기중이었지만 1회차에 반려(관여)했으므로 대상(2026-11-22)
     expect(hasInvolvedConfirmTarget(steps, true)).toBe(true);
-    const neverInvolvedR = [
-      makeStep({ agent: 'R', round: 1, zone_index: 1 }),
-      makeStep({ agent: 'R', round: 2, zone_index: 1 }),
-      makeStep({ agent: 'SA', action: 'pending', round: 3, zone_index: 0 }),
-    ];
-    expect(hasInvolvedConfirmTarget(neverInvolvedR, true)).toBe(false);
-    const withInvolvedR = [
-      makeStep({ agent: 'R', action: 'rejected', assignee_loginid: 'r1', round: 1, zone_index: 1 }),
-      makeStep({ agent: 'SA', action: 'pending', round: 2, zone_index: 0 }),
-    ];
-    expect(hasInvolvedConfirmTarget(withInvolvedR, true)).toBe(true);
-    expect(hasInvolvedConfirmTarget(withInvolvedR, false)).toBe(false);
   });
 });
