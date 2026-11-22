@@ -1666,6 +1666,42 @@ def m12(ctx):
     return f'doc={doc_id} 즉시 pause'
 
 
+# claude 수정 (2026-11-22): 철회·중단 요청이 겹치지 않게, 확인 대기 중 후결자 변경 금지(발견 ①②, 사용자 결정)
+@case('W-20', 'W', '철회 확인 대기 중 중단 요청 → 400')
+def w20(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1)
+    doc_id, author, pls = F.to_parallel(ctx)
+    F.claim_step(ctx.actor('TE_P', 0), doc_id, 'P')
+    F.withdraw(author, doc_id)
+    F.request_pause(author, doc_id, expect=400)
+    return f'doc={doc_id}'
+
+
+@case('W-21', 'W', '중단 요청 확인 대기 중 철회 → 400 (MASTER 는 즉시 삭제)')
+def w21(ctx):
+    ctx.need(PL=2, TE_R=1, TE_P=1, MASTER=1)
+    doc_id, author, pls = F.to_parallel(ctx)
+    F.claim_step(ctx.actor('TE_P', 0), doc_id, 'P')
+    F.request_pause(author, doc_id)
+    F.withdraw(author, doc_id, expect=400)
+    res = F.withdraw(ctx.actor('MASTER', 0), doc_id)
+    if not (res.body or {}).get('deleted'):
+        raise CaseFailure('MASTER 철회가 즉시 삭제되지 않았다.')
+    return f'doc={doc_id}'
+
+
+@case('W-22', 'W', '철회 확인 대기 중 후결자 추가·제거 → 400')
+def w22(ctx):
+    ctx.need(PL=3, TE_R=1, TE_P=1)
+    doc_id, author, pls = F.to_parallel(ctx)
+    extra = ctx.user('PL', 2)['loginid']
+    F.add_post_approver(author, doc_id, extra)
+    F.withdraw(author, doc_id)
+    F.remove_post_approver(author, doc_id, extra, expect=400)
+    F.add_post_approver(author, doc_id, ctx.user('TE_P', 0)['loginid'], expect=400)
+    return f'doc={doc_id}'
+
+
 # ============================================================ A. 인가
 
 @case('A-01', 'A', '담당자가 아닌 사용자의 합의 → 403')
