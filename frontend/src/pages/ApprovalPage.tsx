@@ -2595,7 +2595,9 @@ export default function ApprovalPage(): React.ReactElement {
                           </button>
                         )}
                         {/* claude 수정 (2026-11-09): 철회 요청중이면 [철회] 대신 요청자 본인/MASTER 에게 [철회 요청 취소] (상세 모달과 동일 기준) */}
-                        {doc.can_withdraw && !doc.withdraw_request && (doc.status === 'under_review' || doc.status === 'draft' || doc.status === 'rejected' || currentUser.role === 'MASTER') && (
+                        {/* claude 수정 (2026-11-22): 중단 요청 확인 대기 중에는 철회 버튼을 숨긴다(MASTER 제외, 서버도 400) */}
+                        {doc.can_withdraw && !doc.withdraw_request && (doc.status === 'under_review' || doc.status === 'draft' || doc.status === 'rejected' || currentUser.role === 'MASTER')
+                          && (currentUser.role === 'MASTER' || doc.pause_request?.state !== 'requested') && (
                           <button
                             className="btn btn-secondary btn-sm"
                             data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
@@ -3117,7 +3119,8 @@ export default function ApprovalPage(): React.ReactElement {
           const parallelReached = (selected?.approval_steps ?? []).some(
             (s) => (s.round ?? 1) === currentRound && ['P', 'O', 'E', 'RA'].includes(s.agent)
           );
-          const canManagePa = !!selected && (isMaster || isPauseRequester) && selected.status === 'under_review' && parallelReached;
+          // claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 후결자 추가·제거도 숨긴다(서버도 400) — 확인 대상 단계가 사라지지 않게
+          const canManagePa = !!selected && !progressFrozen && (isMaster || isPauseRequester) && selected.status === 'under_review' && parallelReached;
 
           // MASK 검토자(EV) 관리: TE_E 팀원 전원 또는 MASTER + under_review + E 담당자 합의 후 항상 노출.
           // 후결자 관리와 같은 자리·같은 형태(칩 + × 제거 + '+ 검토자 추가')이되, 결재 경로 탭이 아니라
@@ -3125,7 +3128,8 @@ export default function ApprovalPage(): React.ReactElement {
           const evSteps = (selected?.approval_steps ?? []).filter(
             (s) => s.agent === 'EV' && (s.round ?? 1) === currentRound
           );
-          const canManageEv = !!selected && (isMaster || userAgent === 'E')
+          // claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 검토자 추가·제거도 숨긴다(서버도 400)
+          const canManageEv = !!selected && !progressFrozen && (isMaster || userAgent === 'E')
             && selected.status === 'under_review' && mainStepApproved('E');
 
           return (
@@ -3402,7 +3406,9 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 요청 중에는 중복 요청을 막기 위해 철회 버튼을 감춘다 */}
-              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft' || selected.status === 'rejected' || isMaster) && (
+              {/* claude 수정 (2026-11-22): 중단 요청 확인 대기 중에는 철회 버튼을 숨긴다(MASTER 제외, 서버도 400) */}
+              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft' || selected.status === 'rejected' || isMaster)
+                && (isMaster || selected.pause_request?.state !== 'requested') && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
