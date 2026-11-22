@@ -14610,6 +14610,62 @@ class InvolvedTeamWithdrawPauseTest(TestCase):
         pr = PauseRequest.objects.get(document=doc)
         self.assertCountEqual(pr.target_step_ids, [steps['P'].id, steps['RA'].id])
 
+    # claude 수정 (2026-11-22): 철회·중단 요청이 서로 겹치지 않게 막는다(발견 ①, 사용자 결정 1)
+    def test_pause_request_blocked_while_withdraw_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        self.client.force_authenticate(user=self.author)
+        self.assertFalse(self.client.get(f'/api/documents/{doc.id}/').data['can_request_pause'])
+        for user in (self.author, self.master):
+            res = self._post(user, doc, 'request-pause', {'reason': '중단'})
+            self.assertEqual(res.status_code, 400, res.content)
+            self.assertIn('철회 요청 확인 대기', res.data['error'])
+        self.assertFalse(PauseRequest.objects.filter(document=doc).exists())
+        # 철회가 취소되면 다시 중단을 요청할 수 있다
+        self._post(self.author, doc, 'cancel-withdraw')
+        self.assertEqual(self._post(self.author, doc, 'request-pause', {'reason': '중단'}).status_code, 200)
+
+    def test_withdraw_blocked_while_pause_request_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'request-pause', {'reason': '중단'})
+        res = self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn('중단 요청 확인 대기', res.data['error'])
+        self.assertFalse(WithdrawRequest.objects.filter(document=doc).exists())
+        # MASTER 는 종전대로 즉시 삭제
+        self.assertTrue(self._post(self.master, doc, 'withdraw', {}).data['deleted'])
+
+    def test_paused_document_cannot_be_deleted_via_overlapping_requests(self):
+        """재현했던 순서(철회 요청 → 중단 요청 → 중단 확인 → 철회 확인)가 더는 성립하지 않는다."""
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        self.assertEqual(self._post(self.author, doc, 'request-pause', {'reason': '중단'}).status_code, 400)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+    # claude 수정 (2026-11-22): 철회·중단 확인 대기 중에는 후결자·EV 추가·제거도 막는다(발견 ②, 사용자 결정 1)
+    def test_post_approver_and_ev_changes_blocked_while_withdraw_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        for path, user in (('add-post-approver', self.author), ('remove-post-approver', self.author),
+                           ('add-ev-reviewer', self.master), ('remove-ev-reviewer', self.master)):
+            res = self._post(user, doc, path, {'loginid': 'it_ra'})
+            self.assertEqual(res.status_code, 400, f'{path}: {res.content}')
+            self.assertIn('철회 요청 확인 대기', res.data['error'])
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='RA').exists())
+
+    def test_post_approver_change_blocked_while_pause_request_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'request-pause', {'reason': '중단'})
+        res = self._post(self.author, doc, 'remove-post-approver', {'loginid': 'it_ra'})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn('중단 요청 확인 대기', res.data['error'])
+
     def test_withdraw_without_involved_team_still_requires_reason(self):
         doc = self._doc()
         self._step(doc, 'R')
