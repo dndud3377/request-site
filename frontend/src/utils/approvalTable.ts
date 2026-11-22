@@ -47,7 +47,7 @@ const wasStepInvolved = (s: ApprovalStepFrontend): boolean => !(s.action === 'pe
  * 진행 중 문서의 철회(`includeExtraZones=true`)·중단(`false`) 요청 시 확인할 관여 팀이 하나라도 있는가.
  * 백엔드 `_involved_pending_steps`(+ 철회는 `_extra_zone_target_steps`)와 같은 규칙이다.
  * - 현재 회차 pending 단계(System R 제외) 중 담당자가 있거나 RA 이거나, 같은 팀이 이전 회차에 관여한 단계
- * - (철회만) 이전 회차에서 현재 구역보다 깊이 도달했던 구역의 팀(팀별 최신 단계가 관여 상태인 것)
+ * - (철회만) 이전 회차에서 현재 구역보다 깊이 도달했던 구역의 팀(어느 회차든 한 번이라도 관여한 팀)
  * 화면 안내용 판정이며, 실제 처리는 서버가 최종 판단한다.
  */
 export const hasInvolvedConfirmTarget = (steps: ApprovalStepFrontend[], includeExtraZones: boolean): boolean => {
@@ -66,13 +66,12 @@ export const hasInvolvedConfirmTarget = (steps: ApprovalStepFrontend[], includeE
   const zones = pending.map((s) => s.zone_index).filter((z): z is number => typeof z === 'number');
   if (zones.length === 0) return false;
   const currentZone = Math.max(...zones);
-  const latestByAgent = new Map<AgentType, ApprovalStepFrontend>();
-  steps.forEach((s) => {
-    if (!ZONE_MAIN_AGENTS.includes(s.agent) || typeof s.zone_index !== 'number' || s.zone_index <= currentZone) return;
-    const prev = latestByAgent.get(s.agent);
-    if (!prev || (s.round ?? 1) > (prev.round ?? 1)) latestByAgent.set(s.agent, s);
-  });
-  return Array.from(latestByAgent.values()).some(wasStepInvolved);
+  // 더 깊은 구역 팀은 어느 회차든 한 번이라도 관여했으면 대상(서버 `_extra_zone_target_steps`, 2026-11-22)
+  return steps.some(
+    (s) => ZONE_MAIN_AGENTS.includes(s.agent)
+      && typeof s.zone_index === 'number' && s.zone_index > currentZone
+      && wasStepInvolved(s)
+  );
 };
 
 export interface DocDetailFields {
