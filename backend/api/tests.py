@@ -14717,9 +14717,8 @@ class InvolvedTeamWithdrawPauseTest(TestCase):
         self.assertEqual([(c['agent'], c['loginid']) for c in snap.confirmations], [('RA', 'it_ra'), ('P', 'it_p')])
         self.assertEqual(len(json.loads(snap.approval_steps)), 4)
 
-    def test_draft_and_master_and_delete_api_leave_snapshots(self):
-        draft = self._doc('draft')
-        self._post(self.author, draft, 'withdraw', {'reason': ''})
+    # claude 수정 (2026-11-23): 임시저장은 어떤 경로로 지워져도 철회 이력을 남기지 않는다(사용자 결정)
+    def test_master_and_delete_api_leave_snapshots(self):
         mastered = self._doc()
         self._zone3(mastered)
         self._post(self.master, mastered, 'withdraw', {'reason': ''})
@@ -14728,10 +14727,18 @@ class InvolvedTeamWithdrawPauseTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         paths = dict(WithdrawSnapshot.objects.values_list('source_document_id', 'delete_path'))
         self.assertEqual(paths, {
-            draft.id: WithdrawSnapshot.PATH_DRAFT,
             mastered.id: WithdrawSnapshot.PATH_MASTER,
             deleted.id: WithdrawSnapshot.PATH_DELETE_API,
         })
+
+    def test_draft_deletions_leave_no_snapshot(self):
+        """임시저장 철회(작성자·MASTER)·삭제 기능 모두 문서는 지워지지만 이력은 남지 않는다."""
+        drafts = [self._doc('draft') for _ in range(3)]
+        self.assertTrue(self._post(self.author, drafts[0], 'withdraw', {'reason': ''}).data['deleted'])
+        self.assertTrue(self._post(self.master, drafts[1], 'withdraw', {'reason': ''}).data['deleted'])
+        self.assertEqual(self._post(self.author, drafts[2], 'delete').status_code, 200)
+        self.assertFalse(RequestDocument.objects.filter(pk__in=[d.pk for d in drafts]).exists())
+        self.assertFalse(WithdrawSnapshot.objects.exists())
 
     def test_rejected_or_cancelled_withdraw_leaves_no_snapshot(self):
         doc = self._doc()
