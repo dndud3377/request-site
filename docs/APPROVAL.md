@@ -519,9 +519,14 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - 모델 `WithdrawSnapshot`(`models.py`), 마이그레이션 `0065_withdraw_snapshot`(+`WithdrawRequest.confirmed_by`),
   적재 `withdraw_snapshots.create_before_delete` — 반려 이력(`RejectionSnapshot`)과 같이 삭제 **직전** 제목·제품·의뢰자·
   상세 JSON·결재 단계 JSON 을 복사한다(원본 문서는 지워지므로 FK 없이 `source_document_id` 만 둔다).
-- **모든 삭제 경로**에서 남긴다(`delete_path`): `draft`(임시저장 즉시) / `no_target`(관여 팀 0팀 즉시) /
+- **상신 이후 문서의 모든 삭제 경로**에서 남긴다(`delete_path`): `no_target`(관여 팀 0팀 즉시) /
   `confirmed`(관여 팀 전원 확인 — 반려 문서 철회 포함) / `master`(MASTER 즉시, 메일은 종전대로 생략) /
   `delete_api`(`POST /documents/{id}/delete/`). 철회 거부·요청 취소는 문서가 남으므로 이력을 만들지 않는다.
+- **임시저장(draft) 문서는 어느 경로로 지워져도 남기지 않는다**(2026-11-23 사용자 결정 — 상신 전이라 결재 이력이 없다):
+  작성자 철회·MASTER 철회·삭제 기능·60일 자동 삭제(`scheduler.delete_stale_drafts`) 모두 해당. `create_before_delete` 가
+  draft 면 아무것도 적재하지 않는다. 처음 넣었던 `draft`(임시저장 즉시 삭제) 경로 값은 제거했다(마이그레이션
+  `0066_withdraw_snapshot_drop_draft_path` — 선택지만 바뀌고 DB 구조 변경 없음). 혹시 그 사이 쌓인 `draft` 기록이 있으면
+  화면은 라벨 대신 값을 그대로 보여준다(`HistoryPage.tsx` `withdrawPathLabel`). 테스트 `test_draft_deletions_leave_no_snapshot`.
 - 철회 경위: 사유, 요청자·요청일시(팀 확인 경로는 `WithdrawRequest` 값, 즉시 경로는 철회한 사람), **확인 기록**
   (`confirm_withdraw` 가 `WithdrawRequest.confirmed_by` 에 `{step_id, agent, round, loginid, name, at}` 를 쌓는다),
   삭제 처리자(즉시 경로는 철회한 사람, 확인 경로는 마지막 확인자)·삭제일시, 삭제 당시 상태.
