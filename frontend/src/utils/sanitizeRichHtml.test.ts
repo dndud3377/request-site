@@ -99,3 +99,26 @@ describe('sanitizeRichHtml — 에디터 서식 보존', () => {
     expect(sanitizeRichHtml('<p>a</p><p><br></p><p>b</p>')).toBe('<p>a</p><p><br></p><p>b</p>');
   });
 });
+
+// claude 수정 (2026-11-23): VOC @멘션 노드가 렌더 정화를 통과해 서버가 읽는 data-id 와 칩 표시가 유지되는지 고정
+describe('sanitizeRichHtml — @멘션', () => {
+  it('멘션 span 의 data-type·data-id·data-label 과 칩 클래스가 유지된다', () => {
+    const dom = toDom(sanitizeRichHtml(
+      '<p><span data-type="mention" data-id="team:TE_R" data-label="AGENT R팀" data-mention-suggestion-char="@">@AGENT R팀</span> 확인 부탁</p>',
+    ));
+    const mention = dom.querySelector('span[data-type="mention"]');
+    expect(mention?.getAttribute('data-id')).toBe('team:TE_R');
+    expect(mention?.getAttribute('data-label')).toBe('AGENT R팀');
+    expect(mention?.classList.contains('mention')).toBe(true);
+    expect(mention?.textContent).toBe('@AGENT R팀');
+  });
+
+  it('멘션 span 에 붙인 이벤트 핸들러·style 은 버린다', () => {
+    const dom = toDom(sanitizeRichHtml(
+      '<p><span data-type="mention" data-id="user:kim" data-label="김" onclick="alert(1)" style="background-image:url(x)">@김</span></p>',
+    ));
+    expect(hasEventHandlerAttr(dom)).toBe(false);
+    expect(dom.innerHTML).not.toContain('background-image');
+    expect(dom.querySelector('span[data-type="mention"]')?.getAttribute('data-id')).toBe('user:kim');
+  });
+});
