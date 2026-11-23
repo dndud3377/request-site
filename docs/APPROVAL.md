@@ -502,7 +502,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - **0팀이면 즉시 삭제**: 확인할 팀이 하나도 없으면 요청을 만들지 않고 바로 `_delete_withdrawn_document(..., PATH_NO_TARGET)` —
   `withdraw_completed` 메일 + 철회 이력. 사유는 그대로 필수. ⚠️ 일반 경로에서는 2구역부터 합의한 PL 이 항상 관여 팀이라
   **사실상 발생하지 않는다**(사용자 확인 후 규칙은 유지). 응답 `deleted: true`, 메시지 `확인할 관여 팀이 없어 의뢰서가 바로 철회(삭제)되었습니다.`
-- **중단 요청은 바꾸지 않았다**(사용자 결정) — 중단은 지금 진행 중 단계의 관여 팀(`_involved_pending_steps`)만 묻는다(Case M).
+- **중단 요청은 철회와 기준이 다르다**(사용자 결정) — 중단은 지금 진행 중 단계 중 담당자가 있는(검토중·지정) 단계만 묻는다(Case M, 2026-11-23).
 - **확인 순서는 자유다** — 서버는 `target_step_ids ⊆ confirmed_step_ids` 만 보고, 화면도 각자 자기 단계의
   [철회 확인]만 띄운다(로컬 실행으로 RA → O → J → P 역순 확인이 정상 동작함을 확인). 이미 합의한 단계(PL·R 등)는
   pending 이 아니므로 `_can_confirm_extra_zone` 으로 판정한다 — PL·SA 는 담당자 본인, R·P·J·O·E 는 지금 그 팀 누구나, RA 는 현재 후결자.
@@ -773,13 +773,20 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 
 - **중단 요청 (`request_pause`)**: 작성자 본인(또는 MASTER) + `status == 'under_review'` + **활성 중단요청 없음** + **철회 요청 확인 대기 아님**(2026-11-22, Case J '철회·중단 요청은 동시에 걸리지 않는다')일 때. **사유(reason) 필수**. 요청 시점의 현재(pending) 결재 단계 중 **관여한 팀의 단계** id 를 `target_step_ids` 로 기록한다(2026-11-22, 아래 "관여한 팀만 확인"). 상태 뱃지는 **확인 완료 전까지 그대로 유지**(검토중), 목록 현재단계 칸에 '중단 요청중' 칩만 표시.
   - ✅ **메일 수신 범위는 구역 전체(2026-09)**: `target_step_ids`(확인 대상, pending)는 그대로지만, **메일 수신자는 그 단계가 속한 구역(CLAUDE.md "용어 정리" 표의 1/2/3구역) 전체**로 넓힌다(`RequestDocument.pause_zones`/`pause_zone_for_agent`, `mailer._pause_zone_step_ids`). 같은 구역에서 이미 합의를 마친 사람도 중단 사실을 알아야 하기 때문이다(합의를 마쳤다고 확인 의무가 생기지는 않는다 — 확인 대상은 그대로 pending만). 단계별로 담당자가 지정돼 있으면 그 사람에게만(개인 메일), 미배정이면 담당 팀 전체에게(팀 메일) 가는 기존 규칙(`resolve_withdraw_target_recipients`)은 그대로다.
-- ✅ **(2026-11-22) 관여한 팀만 확인 + 0팀이면 즉시 중단** — 철회(Case J)와 같은 판정(`_involved_pending_steps`)을 쓴다.
-  대기중(담당자 없음) 팀은 확인 대상에서 빠지고(이전 회차에 관여했던 팀은 포함), RA 는 항상 대상이다. 확인할 팀이
-  0팀이면(예: 2구역 R 담당자 지정 전) 요청 즉시 `PauseRequest(state='confirmed')` 를 만들고 문서를 `pause` 로
+- ✅ **(2026-11-23) 검토중·지정된 단계만 확인 + 0팀이면 즉시 중단** — 중단 확인 대상은 **현재 진행 중 단계 중 담당자가 있는
+  (검토중·지정) 단계만**이다(`request_pause`: `[s for s in pending if s.assignee_id]`, System R 제외). **이전 회차 관여 여부는 보지
+  않는다** — 1회차에 JOB 이 반려했어도 2회차에 JOB 이 대기중이면 묻지 않는다(사용자 결정, 철회와 다름 — 철회는 한 번이라도 관여한
+  팀 전부). 후결자(RA)는 늘 담당자가 지정돼 있어 대상이다. 중단은 문서가 남고 재개 시 그 구역을 처음부터 다시 합의받으므로 지금
+  실제로 검토하는 사람만 확인하면 된다. (2026-11-22 판은 철회와 같은 `_involved_pending_steps` 로 이전 회차 관여 대기 팀까지 넣었다.)
+  대기중 팀도 중단 요청 메일은 받는다(구역 전체 발송 — `_pause_zone_step_ids`, 확인 의무만 없음). 확인할 단계가
+  0개면(예: 2구역 R 담당자 지정 전, 2회차에 R 만 대기) 요청 즉시 `PauseRequest(state='confirmed')` 를 만들고 문서를 `pause` 로
   바꾼다 — 확정 처리(`confirmed_at`·`content_snapshot`·`pause_confirmed` 메일)는 `confirm_pause` 의 전원 확인과 같고,
   `pause_requested` 메일은 보내지 않는다. 응답에 `paused: true`. 화면(중단 요청 창)은 대상이 없을 때
   `approval.pause_reason_hint_no_target` 안내를 띄우고(`utils/approvalTable.ts` `hasInvolvedConfirmTarget`), 응답이
-  `paused` 면 `approval.pause_immediate_toast` 를 띄운다. 테스트 `InvolvedTeamWithdrawPauseTest`, 러너 M-12.
+  `paused` 면 `approval.pause_immediate_toast` 를 띄운다. 테스트 `InvolvedTeamWithdrawPauseTest`(`test_pause_ignores_prior_round_involvement` 등),
+  `PauseAndOtherActionMailTest.test_request_pause_splits_unassigned_zone_teams_by_team`, 러너 M-12·M-13.
+  - **확인 대기 중·PAUSE 중 대기 팀의 검토중 잡기는 막혀 있다**(2026-11-23 실행 재확인): `claim_step`·`unclaim_step`·`assign_step`
+    모두 `_blocked_progress_response` 로 400(MASTER 포함), 화면은 `progressFrozen` 으로 [검토중]·[지정하기]·[검토중 취소]를 숨긴다.
 - **중단 확인 (`confirm_pause`)**: 현재 단계 담당자(assignee) 본인, 미배정 단계면 같은 팀(역할↔agent 일치), + MASTER (`_can_confirm_pause`). 병렬(P/J ∥ O/E)이면 **target 단계 전원**이 확인해야 최종 `pause` 전이(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)` 시 확정). 그 전엔 under_review 유지. **(2026-11-11)** `step_id`(선택)로 확인할 단계를 지정할 수 있고, `agent` 만 오면 이미 확인한 단계는 건너뛴다. MASTER 는 화면에서 '대신 확인할 팀 선택' 창으로 고른다 — 같은 agent 다중 단계(PV·EV·RA 등)에서 확정되지 않던 버그 수정 포함, 상세는 Case J '(2026-11-11) MASTER 대신 확인'.
 - ✅ **중단 거부 (`reject_pause`, 2026-08 추가)**: 인가는 확인과 동일(`_can_confirm_pause` 통과하는 대상 단계가 있으면 거부 가능 — 확인할 수 있는 사람이면 거부도 할 수 있다, `reject_withdraw`와 동일 패턴). **대상 단계 중 하나만 거부해도 요청 전체가 무효화**된다(전원 확인이 더 이상 성립할 수 없으므로) — `state → 'rejected'`, 결재는 그대로 이어진다. 이미 확인을 마친 다른 대상 단계가 있어도 그 확인은 함께 무효화되며(재요청 시 처음부터 다시 확인받아야 함), 문서·단계 자체는 바뀌지 않는다. 메일 발송 없음(중단 기능은 원래 메일 범위 밖).
 - **재개 (`resume`)**: 작성자 본인(또는 MASTER) + `status == 'pause'`. `pause → under_review` 로 되돌리고 **중단 시점 진행 중이던 구역부터** 이어간다(회차는 새로 만들지 않음). 문서 내용은 사전에 `/request` 편집(update)에서 저장되며, 재개 시 지정 PL 재선택 불필요(`RequestPage` 가 pause 문서 편집 시 상신 대신 `resume` 호출).
