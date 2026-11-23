@@ -24,7 +24,7 @@ from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
     UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
-    RoundSubmission, PersonalFilterPreset, VOC,
+    RoundSubmission, PersonalFilterPreset, VOC, WithdrawSnapshot,
 )
 
 
@@ -4092,19 +4092,23 @@ class WithdrawFlowTest(TestCase):
         self.assertFalse(WithdrawRequest.objects.filter(document_id=doc.id).exists())
         self.assertIn('withdraw_completed', self._events())
 
+    # claude 수정 (2026-11-22): 미배정 단계는 이전 회차 관여가 있어야 확인 대상 — 1회차 R 반려를 전제로 둔다
     def test_unassigned_step_can_be_confirmed_by_team_member(self):
-        """담당자 미배정 단계는 같은 팀 누구나 1명이 확인하면 그 단계는 확인 완료."""
+        """담당자 미배정 단계(이전 회차에 관여한 팀)는 같은 팀 누구나 1명이 확인하면 그 단계는 확인 완료."""
         doc = self._doc()
-        self._step(doc, 'R')  # 미배정
+        self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'R', round=2)  # 미배정
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
         res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
         self.assertEqual(res.status_code, 200, res.content)
         self.assertTrue(res.data['deleted'])
         self.assertFalse(self._exists(doc))
 
+    # claude 수정 (2026-11-22): 미배정 단계는 이전 회차 관여가 있어야 확인 대상 — 1회차 R 반려를 전제로 둔다
     def test_unassigned_step_mails_whole_team(self):
         doc = self._doc()
-        self._step(doc, 'R')
+        self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'R', round=2)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
         noti = MailNotification.objects.get(event_type='withdraw_requested')
         self.assertCountEqual(noti.recipients, ['wd_r@c.com', 'wd_r2@c.com'])
@@ -4187,6 +4191,8 @@ class WithdrawFlowTest(TestCase):
         self._step(doc, 'PL', action='approved', assignee=self.pl)
         self._step(doc, 'R', assignee=self.rfg)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        # claude 수정 (2026-11-22): 이미 합의한 PL 도 철회 확인 대상(한 번이라도 관여한 팀 전부)
+        self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'})
         self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
 
         # (2026-09) 개인 수신자(지정PL+작성자) 메일 1통 + 도달한 팀(R) 메일 1통으로 분리된다.
@@ -4205,6 +4211,8 @@ class WithdrawFlowTest(TestCase):
         self._step(doc, 'R', action='approved', assignee=self.rfg)
         self._step(doc, 'J', assignee=self.job)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        # claude 수정 (2026-11-22): 이미 합의한 R 도 철회 확인 대상(한 번이라도 관여한 팀 전부)
+        self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
         self._post(self.job, doc, 'confirm-withdraw', {'agent': 'J'})
 
         notis = list(MailNotification.objects.filter(event_type='withdraw_completed'))
@@ -4334,6 +4342,40 @@ class WithdrawFlowTest(TestCase):
         )
         self.assertNotIn(o_step.id, wr.target_step_ids)
 
+    # claude 수정 (2026-11-22): 이전 회차 도달 구역도 '어느 회차든 한 번이라도 관여'면 대상(최근 회차가 대기중이어도)
+    def test_extra_zone_includes_team_involved_in_any_earlier_round(self):
+        """1회차 R 반려 → 2회차 R 대기중(미지정) 상태에서 PL 반려 → 3회차 1구역 철회: R 은 1회차에 관여했으므로 대상.
+
+        대표 단계는 관여했던 단계 중 가장 최근 회차(1회차 R)이고, 지금 R 팀 누구나 확인할 수 있다.
+        """
+        doc = self._doc()
+        r1 = self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        r2 = self._step(doc, 'R', action='pending', assignee=None, round=2)
+        o1 = self._step(doc, 'O', action='pending', assignee=None, round=1)  # 한 번도 관여 안 함
+        pl_step = self._step(doc, 'PL', assignee=self.pl, round=3)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [pl_step.id, r1.id])
+        self.assertNotIn(r2.id, wr.target_step_ids)
+        self.assertNotIn(o1.id, wr.target_step_ids)
+
+        res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_rejected_withdraw_includes_team_involved_in_any_earlier_round(self):
+        """반려 문서 철회도 같은 규칙 — 1회차 R 반려, 2회차 R 대기중에서 PL 반려된 문서는 PL·R 확인 대상."""
+        doc = self._doc('rejected')
+        r1 = self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'R', action='pending', assignee=None, round=2)
+        pl2 = self._step(doc, 'PL', action='rejected', assignee=self.pl, round=2)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [pl2.id, r1.id])
+
     def test_reject_withdraw_by_extra_zone_team_member(self):
         """이전 회차 도달 구역 팀도 철회 요청을 거부할 수 있다 — 요청 전체가 무효화된다."""
         doc = self._doc()
@@ -4376,8 +4418,9 @@ class WithdrawFlowTest(TestCase):
         ra1 = UserProfile.objects.create(loginid='wd_ra1', mail='wd_ra1@c.com', role='PL', username='RA1')
         ra2 = UserProfile.objects.create(loginid='wd_ra2', mail='wd_ra2@c.com', role='PL', username='RA2')
         doc = self._doc()
-        self._step(doc, 'PL', action='approved', assignee=self.pl)
-        self._step(doc, 'R', action='approved', assignee=self.rfg)
+        # claude 수정 (2026-11-22): 이미 합의한 PL·R 도 철회 확인 대상이 되므로(한 번이라도 관여한 팀 전부),
+        # 같은 agent 다중 단계(PV·RA)만 대상이 되도록 앞 구역 단계는 두지 않는다. 대기중 J 는 대상이 아니다.
+        self._step(doc, 'J')
         steps = [
             self._step(doc, 'PV', assignee=pv1), self._step(doc, 'PV', assignee=pv2),
             self._step(doc, 'RA', assignee=ra1), self._step(doc, 'RA', assignee=ra2),
@@ -4419,8 +4462,9 @@ class WithdrawFlowTest(TestCase):
 
     def test_step_id_not_in_target_is_400(self):
         doc, _ = self._multi_zone3_withdraw()
-        approved_r = ApprovalStep.objects.get(document=doc, agent='R')
-        for bad in (approved_r.id, 'abc'):
+        # claude 수정 (2026-11-22): 대상이 아닌 단계 = 한 번도 관여하지 않은 대기중 J
+        not_target = ApprovalStep.objects.get(document=doc, agent='J')
+        for bad in (not_target.id, 'abc'):
             res = self._post(self.master, doc, 'confirm-withdraw', {'step_id': bad})
             self.assertEqual(res.status_code, 400, res.content)
         self.assertEqual(WithdrawRequest.objects.get(document=doc).confirmed_step_ids, [])
@@ -4887,11 +4931,14 @@ class PauseAndOtherActionMailTest(TestCase):
         self.assertEqual(noti.recipients, ['pm_r@c.com'])
         self.assertIn('사양 재검토', noti.contents)
 
+    # claude 수정 (2026-11-22): 미배정 단계는 이전 회차 관여가 있어야 확인 대상 — 1회차 관여를 전제로 둔다
     def test_request_pause_splits_unassigned_targets_by_team(self):
-        """확인 대상 단계가 미배정 R·J 둘 다면, 한 통이 아니라 팀별로 각 1통씩 나간다."""
+        """확인 대상 단계가 미배정 R·J(이전 회차 관여) 둘 다면, 한 통이 아니라 팀별로 각 1통씩 나간다."""
         doc = self._doc()
-        self._step(doc, 'R')  # 미배정
-        self._step(doc, 'J')  # 미배정
+        self._step(doc, 'R', action='approved', round=1)
+        self._step(doc, 'J', action='rejected', round=1)
+        self._step(doc, 'R', round=2)  # 미배정
+        self._step(doc, 'J', round=2)  # 미배정
         self._post(self.author, doc, 'request-pause', {'reason': '사유'})
 
         notis = list(MailNotification.objects.filter(event_type='pause_requested'))
@@ -10363,7 +10410,9 @@ class PartialShotLockTest(TestCase):
         self._to_zone3()
         self._act('O', 'approve')
         self._post(self.req, 'request-pause', {'reason': '사유'})
-        for agent in ApprovalStep.objects.filter(document=self.doc, action='pending', round=1).values_list('agent', flat=True):
+        # claude 수정 (2026-11-22): 확인 대상은 관여한 팀만(대기중 팀 제외) — 대상이 없으면 요청 즉시 pause
+        pr = PauseRequest.objects.get(document=self.doc)
+        for agent in ApprovalStep.objects.filter(id__in=pr.target_step_ids).values_list('agent', flat=True):
             self._post(self.users[agent], 'confirm-pause', {'agent': agent})
         self.doc.refresh_from_db()
         self.assertEqual(self.doc.status, 'pause')
@@ -13539,8 +13588,11 @@ class SystemRStageTest(TestCase):
 
     # ----- 중단·철회 확인 대상 -----
 
+    # claude 수정 (2026-11-22): 대기중(미지정) R 은 확인 대상이 아니므로 R 담당자를 지정해 대상이 남게 한다
     def test_pause_and_withdraw_targets_exclude_rs(self):
         doc = self._to_zone2()
+        self._post(self.r_user, doc, 'assign-step',
+                   {'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'R담당'})
         rs = self._rs(doc)
         self._post(self.author, doc, 'request-pause', {'reason': '중단'})
         pr = PauseRequest.objects.get(document=doc)
@@ -14401,6 +14453,306 @@ class VocTeamMailTest(TestCase):
         self.assertEqual(patch_toggle(self.m, self.e1).status_code, 200)
         self.assertEqual(patch_toggle(self.pl, self.pl).status_code, 400)
         self.assertEqual(patch_toggle(self.a, self.r2).status_code, 403)
+
+
+# claude 수정 (2026-11-22): 진행 중 문서 철회·중단 확인 대상 = 관여한 팀만(대기중 팀 제외) + 대상 0팀 즉시 처리 + 철회 이력
+class InvolvedTeamWithdrawPauseTest(TestCase):
+    """철회·중단 확인 대상 축소(2026-11-22 사용자 결정)와 철회 이력(WithdrawSnapshot).
+
+    - 현재 회차 pending 단계 중 담당자 있는 단계(검토중·지정)와 RA 만 확인 대상, 대기중 팀은 제외
+    - 단 대기중 팀이라도 이전 회차에 검토중·합의·반려한 적이 있으면 대상
+    - 대상이 0팀이면 철회는 즉시 삭제, 중단은 즉시 pause
+    - 모든 철회 삭제 경로가 WithdrawSnapshot 을 남기고, 조회 API 는 MASTER 전용
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='it_author', mail='it_a@c.com', role='PL', username='의뢰자')
+        self.pl = UserProfile.objects.create(loginid='it_pl', mail='it_pl@c.com', role='PL', username='지정PL')
+        self.p_user = UserProfile.objects.create(loginid='it_p', mail='it_p@c.com', role='TE_P', username='P담당')
+        self.j_user = UserProfile.objects.create(loginid='it_j', mail='it_j@c.com', role='TE_J', username='J팀원')
+        self.o_user = UserProfile.objects.create(loginid='it_o', mail='it_o@c.com', role='TE_O', username='O팀원')
+        self.r_user = UserProfile.objects.create(loginid='it_r', mail='it_r@c.com', role='TE_R', username='R팀원')
+        self.ra_user = UserProfile.objects.create(loginid='it_ra', mail='it_ra@c.com', role='TE_R', username='후결자')
+        self.master = UserProfile.objects.create(loginid='it_m', mail='it_m@c.com', role='MASTER', username='마스터')
+
+    def _doc(self, status='under_review'):
+        return RequestDocument.objects.create(
+            title=f'it-{status}', requester=self.author,
+            requester_name='의뢰자', requester_email='it_a@c.com', requester_department='d',
+            product_name='p', status=status, designated_pl=self.pl,
+        )
+
+    def _step(self, doc, agent, action='pending', assignee=None, round=1):
+        return ApprovalStep.objects.create(
+            document=doc, agent=agent, action=action, round=round,
+            assignee=assignee, assignee_name=(assignee.username if assignee else ''),
+        )
+
+    def _post(self, user, doc, path, payload=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/{path}/', payload or {}, format='json')
+
+    def _zone3(self, doc, round=1):
+        """3구역: P 검토중(담당자 있음), J·O 대기중(미배정), RA 자동 지정."""
+        return {
+            'P': self._step(doc, 'P', assignee=self.p_user, round=round),
+            'J': self._step(doc, 'J', round=round),
+            'O': self._step(doc, 'O', round=round),
+            'RA': self._step(doc, 'RA', assignee=self.ra_user, round=round),
+        }
+
+    # ----- 철회 확인 대상 -----
+    def test_withdraw_excludes_unclaimed_pending_teams(self):
+        doc = self._doc()
+        steps = self._zone3(doc)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [steps['P'].id, steps['RA'].id])
+
+    def test_unclaimed_team_cannot_confirm_withdraw(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.j_user, doc, 'confirm-withdraw', {'agent': 'J'})
+        self.assertEqual(res.status_code, 403)
+
+    def test_withdraw_includes_unclaimed_team_involved_in_prior_round(self):
+        """1회차에 J 가 검토중·합의했던 문서는 2회차 J 가 대기중이어도 확인 대상이다."""
+        doc = self._doc()
+        self._step(doc, 'J', action='approved', assignee=self.j_user, round=1)
+        self._step(doc, 'O', action='pending', round=1)  # 1회차에도 대기중 → 관여 아님
+        steps = self._zone3(doc, round=2)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [steps['P'].id, steps['J'].id, steps['RA'].id])
+        # 관여했던 팀은 지금 그 팀 누구나 확인할 수 있다
+        res = self._post(self.j_user, doc, 'confirm-withdraw', {'agent': 'J'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_withdraw_targets_can_confirm_in_any_order(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertFalse(self._post(self.ra_user, doc, 'confirm-withdraw', {'agent': 'RA'}).data['deleted'])
+        res = self._post(self.p_user, doc, 'confirm-withdraw', {'agent': 'P'})
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(RequestDocument.objects.filter(pk=doc.pk).exists())
+
+    def test_withdraw_without_involved_team_deletes_immediately(self):
+        """관여한 팀이 하나도 없으면(진행 단계는 대기중 R 뿐, PL 단계 없음) 확인 없이 즉시 삭제된다.
+
+        일반 경로에서는 2구역부터 PL 이 항상 합의를 마친 관여 팀이라 거의 생기지 않는다(2026-11-22).
+        """
+        doc = self._doc()
+        self._step(doc, 'R')
+        res = self._post(self.author, doc, 'withdraw', {'reason': '고객 일정 변경'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(RequestDocument.objects.filter(pk=doc.pk).exists())
+        self.assertFalse(WithdrawRequest.objects.exists())
+        self.assertTrue(MailNotification.objects.filter(event_type='withdraw_completed').exists())
+        snap = WithdrawSnapshot.objects.get(source_document_id=doc.id)
+        self.assertEqual(snap.delete_path, WithdrawSnapshot.PATH_NO_TARGET)
+        self.assertEqual(snap.reason, '고객 일정 변경')
+        self.assertEqual(snap.requested_by_loginid, 'it_author')
+        self.assertEqual(snap.status_at_delete, 'under_review')
+
+    # claude 수정 (2026-11-22): 진행 중 철회 = 이 문서에 한 번이라도 관여한 팀 전부(이번 회차에 이미 합의한 팀·앞 구역 포함)
+    def test_withdraw_includes_teams_already_approved_this_round(self):
+        """3구역: PL·R 합의, O 합의, P 검토중, J 대기, RA → 대상 = PL·R·O·P·RA (J 만 제외)."""
+        doc = self._doc()
+        pl = self._step(doc, 'PL', action='approved', assignee=self.pl)
+        r = self._step(doc, 'R', action='approved', assignee=self.r_user)
+        o = self._step(doc, 'O', action='approved', assignee=self.o_user)
+        steps = self._zone3(doc)
+        steps['O'].delete()
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertCountEqual(wr.target_step_ids, [pl.id, r.id, o.id, steps['P'].id, steps['RA'].id])
+        # 이미 합의한 단계는 담당자 본인(PL)·지금 그 팀 누구나(R·O)가 확인한다
+        for user, agent in ((self.pl, 'PL'), (self.r_user, 'R'), (self.o_user, 'O'), (self.p_user, 'P')):
+            self.assertEqual(self._post(user, doc, 'confirm-withdraw', {'agent': agent}).status_code, 200)
+        self.assertTrue(self._post(self.ra_user, doc, 'confirm-withdraw', {'agent': 'RA'}).data['deleted'])
+
+    def test_withdraw_before_r_assigned_asks_approved_pl(self):
+        """2구역 R 지정 전: 대기중 R 은 빠지지만 합의한 PL 이 대상이라 즉시 삭제되지 않는다."""
+        doc = self._doc()
+        pl = self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'R')
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertFalse(res.data['deleted'])
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).target_step_ids, [pl.id])
+        # 다른 PL 은 확인할 수 없다(담당자 본인만)
+        other_pl = UserProfile.objects.create(loginid='it_pl_x', mail='x@c.com', role='PL', username='다른PL')
+        self.assertEqual(self._post(other_pl, doc, 'confirm-withdraw', {'agent': 'PL'}).status_code, 403)
+        self.assertTrue(self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'}).data['deleted'])
+
+    def test_withdraw_reviewer_in_progress_represents_its_team(self):
+        """P 합의 → PV 검토중이면 P 팀은 PV 단계로 한 번만 묻는다(P 를 따로 넣지 않는다)."""
+        doc = self._doc()
+        self._step(doc, 'P', action='approved', assignee=self.p_user)
+        pv = self._step(doc, 'PV', assignee=self.p_user)
+        ra = self._step(doc, 'RA', assignee=self.ra_user)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertCountEqual(WithdrawRequest.objects.get(document=doc).target_step_ids, [pv.id, ra.id])
+
+    def test_pause_still_asks_only_current_involved_steps(self):
+        """중단은 바꾸지 않았다 — 이미 합의한 PL·R·O 는 묻지 않고 지금 진행 중인 관여 단계만."""
+        doc = self._doc()
+        self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'R', action='approved', assignee=self.r_user)
+        steps = self._zone3(doc)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        pr = PauseRequest.objects.get(document=doc)
+        self.assertCountEqual(pr.target_step_ids, [steps['P'].id, steps['RA'].id])
+
+    # claude 수정 (2026-11-22): 철회·중단 요청이 서로 겹치지 않게 막는다(발견 ①, 사용자 결정 1)
+    def test_pause_request_blocked_while_withdraw_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        self.client.force_authenticate(user=self.author)
+        self.assertFalse(self.client.get(f'/api/documents/{doc.id}/').data['can_request_pause'])
+        for user in (self.author, self.master):
+            res = self._post(user, doc, 'request-pause', {'reason': '중단'})
+            self.assertEqual(res.status_code, 400, res.content)
+            self.assertIn('철회 요청 확인 대기', res.data['error'])
+        self.assertFalse(PauseRequest.objects.filter(document=doc).exists())
+        # 철회가 취소되면 다시 중단을 요청할 수 있다
+        self._post(self.author, doc, 'cancel-withdraw')
+        self.assertEqual(self._post(self.author, doc, 'request-pause', {'reason': '중단'}).status_code, 200)
+
+    def test_withdraw_blocked_while_pause_request_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'request-pause', {'reason': '중단'})
+        res = self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn('중단 요청 확인 대기', res.data['error'])
+        self.assertFalse(WithdrawRequest.objects.filter(document=doc).exists())
+        # MASTER 는 종전대로 즉시 삭제
+        self.assertTrue(self._post(self.master, doc, 'withdraw', {}).data['deleted'])
+
+    def test_paused_document_cannot_be_deleted_via_overlapping_requests(self):
+        """재현했던 순서(철회 요청 → 중단 요청 → 중단 확인 → 철회 확인)가 더는 성립하지 않는다."""
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        self.assertEqual(self._post(self.author, doc, 'request-pause', {'reason': '중단'}).status_code, 400)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+    # claude 수정 (2026-11-22): 철회·중단 확인 대기 중에는 후결자·EV 추가·제거도 막는다(발견 ②, 사용자 결정 1)
+    def test_post_approver_and_ev_changes_blocked_while_withdraw_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        for path, user in (('add-post-approver', self.author), ('remove-post-approver', self.author),
+                           ('add-ev-reviewer', self.master), ('remove-ev-reviewer', self.master)):
+            res = self._post(user, doc, path, {'loginid': 'it_ra'})
+            self.assertEqual(res.status_code, 400, f'{path}: {res.content}')
+            self.assertIn('철회 요청 확인 대기', res.data['error'])
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='RA').exists())
+
+    def test_post_approver_change_blocked_while_pause_request_pending(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'request-pause', {'reason': '중단'})
+        res = self._post(self.author, doc, 'remove-post-approver', {'loginid': 'it_ra'})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn('중단 요청 확인 대기', res.data['error'])
+
+    def test_withdraw_without_involved_team_still_requires_reason(self):
+        doc = self._doc()
+        self._step(doc, 'R')
+        res = self._post(self.author, doc, 'withdraw', {'reason': ''})
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(RequestDocument.objects.filter(pk=doc.pk).exists())
+
+    # ----- 중단 확인 대상 -----
+    def test_pause_excludes_unclaimed_pending_teams(self):
+        doc = self._doc()
+        steps = self._zone3(doc)
+        res = self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        pr = PauseRequest.objects.get(document=doc)
+        self.assertEqual(pr.state, 'requested')
+        self.assertCountEqual(pr.target_step_ids, [steps['P'].id, steps['RA'].id])
+
+    def test_pause_without_involved_team_pauses_immediately(self):
+        doc = self._doc()
+        self._step(doc, 'R')
+        res = self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['paused'])
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'pause')
+        pr = PauseRequest.objects.get(document=doc)
+        self.assertEqual(pr.state, 'confirmed')
+        self.assertIsNotNone(pr.confirmed_at)
+        events = list(MailNotification.objects.values_list('event_type', flat=True))
+        self.assertIn('pause_confirmed', events)
+        self.assertNotIn('pause_requested', events)
+        # 즉시 중단된 문서도 종전대로 재개할 수 있다
+        res = self._post(self.author, doc, 'resume')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+    # ----- 철회 이력 -----
+    def test_confirmed_withdraw_snapshot_records_confirmers(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.ra_user, doc, 'confirm-withdraw', {'agent': 'RA'})
+        self._post(self.p_user, doc, 'confirm-withdraw', {'agent': 'P'})
+        snap = WithdrawSnapshot.objects.get(source_document_id=doc.id)
+        self.assertEqual(snap.delete_path, WithdrawSnapshot.PATH_CONFIRMED)
+        self.assertEqual(snap.requested_by_loginid, 'it_author')
+        self.assertEqual(snap.deleted_by_loginid, 'it_p')
+        self.assertEqual([(c['agent'], c['loginid']) for c in snap.confirmations], [('RA', 'it_ra'), ('P', 'it_p')])
+        self.assertEqual(len(json.loads(snap.approval_steps)), 4)
+
+    def test_draft_and_master_and_delete_api_leave_snapshots(self):
+        draft = self._doc('draft')
+        self._post(self.author, draft, 'withdraw', {'reason': ''})
+        mastered = self._doc()
+        self._zone3(mastered)
+        self._post(self.master, mastered, 'withdraw', {'reason': ''})
+        deleted = self._doc()
+        res = self._post(self.author, deleted, 'delete')
+        self.assertEqual(res.status_code, 200, res.content)
+        paths = dict(WithdrawSnapshot.objects.values_list('source_document_id', 'delete_path'))
+        self.assertEqual(paths, {
+            draft.id: WithdrawSnapshot.PATH_DRAFT,
+            mastered.id: WithdrawSnapshot.PATH_MASTER,
+            deleted.id: WithdrawSnapshot.PATH_DELETE_API,
+        })
+
+    def test_rejected_or_cancelled_withdraw_leaves_no_snapshot(self):
+        doc = self._doc()
+        self._zone3(doc)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.author, doc, 'cancel-withdraw')
+        self.assertFalse(WithdrawSnapshot.objects.exists())
+
+    def test_snapshot_api_is_master_only(self):
+        doc = self._doc()
+        self._step(doc, 'R')
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        for user in (self.author, self.p_user):
+            self.client.force_authenticate(user=user)
+            self.assertEqual(self.client.get('/api/withdraw-snapshots/').status_code, 403)
+        self.client.force_authenticate(user=self.master)
+        res = self.client.get('/api/withdraw-snapshots/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(res.data[0]['delete_path'], 'no_target')
+        self.assertIsInstance(res.data[0]['approval_steps'], list)
 
 
 # claude 수정 (2026-11-22): 오래된 임시저장 자동 삭제 잡(scheduler.delete_stale_drafts) 테스트

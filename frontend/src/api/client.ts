@@ -2,6 +2,7 @@ import {
   RequestDocument,
   ChangeRoutePayload,
   RejectionSnapshot,
+  WithdrawSnapshot,
   ReviewItem,
   VOC,
   VocComment,
@@ -551,8 +552,9 @@ const unclaimStep = async (docId: number, agent: AgentType) => {
 
 // ===== 결재 중단(PAUSE) =====
 
+// claude 수정 (2026-11-22): 확인할 관여 팀이 없으면 서버가 즉시 중단(PAUSE)하고 paused: true 를 준다
 const requestPause = async (docId: number, reason: string) => {
-  const data = await post<{ message: string; document: RequestDocument }>(
+  const data = await post<{ message: string; document: RequestDocument; paused?: boolean }>(
     `/documents/${docId}/request-pause/`,
     { reason }
   );
@@ -623,6 +625,21 @@ const deleteRejectionSnapshot = async (id: number): Promise<void> => {
 export const rejectionSnapshotsAPI = {
   list: listRejectionSnapshots,
   delete: deleteRejectionSnapshot,
+};
+
+// claude 수정 (2026-11-22): 철회 이력 조회(이력 조회 '철회' 탭) — MASTER 전용(그 외 서버 403)
+const listWithdrawSnapshots = async (
+  params?: Record<string, string>
+): Promise<{ data: WithdrawSnapshot[] }> => {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  const data = await get<{ results: WithdrawSnapshot[] } | WithdrawSnapshot[]>(
+    `/withdraw-snapshots/${qs}`
+  );
+  return { data: Array.isArray(data) ? data : data.results ?? [] };
+};
+
+export const withdrawSnapshotsAPI = {
+  list: listWithdrawSnapshots,
 };
 
 /** 홈 화면 연간 디자인룰 그래프 데이터.

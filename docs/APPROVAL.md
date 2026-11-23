@@ -408,7 +408,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case J — 철회 (`withdraw` / `confirm-withdraw` / `reject-withdraw` / `cancel-withdraw`, 2026-08 전면 개편)
 
 ⚠️ **철회는 더 이상 임시저장(draft)으로 되돌리는 동작이 아니다.** 철회가 확정되면 의뢰서를
-**완전히 삭제**한다(복구 불가). 진행 중인 결재는 현재 단계의 **확인**을 받아야 철회된다.
+**완전히 삭제**한다(복구 불가). 진행 중인 결재는 이 문서에 **한 번이라도 관여한 팀의 확인**을 받아야 철회된다
+(2026-11-22 — 대기중 팀 제외, 관여한 팀이 없으면 즉시 삭제). 삭제된 의뢰서는 **철회 이력**
+(`WithdrawSnapshot`, 이력 조회 '철회' 탭, MASTER 전용)에 남는다(2026-11-22).
 모델 `WithdrawRequest`(`models.py`), 마이그레이션 `0020`.
 
 - ✅ 권한(요청 자격): MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹
@@ -432,7 +434,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 | `draft` | 확인 없이 **즉시 삭제** (결재선이 없다). 프론트는 사유 입력란 없이 단순 확인 모달만 띄운다(2026-08) | 선택 |
 | `rejected` | **철회 요청 생성** → 이 문서에 **관여했던 팀 전원** 확인 시 삭제(2026-11, 아래 "반려 문서 철회" 참고). 2026-08 의 '철회 불가'는 폐지 | **필수** |
 | `approved` | **MASTER 만** 즉시 삭제, 그 외 403 (결재 완료본 = 이력, `can_delete` 와 같은 기준) | 선택 |
-| `under_review` / `submitted` | **철회 요청 생성** → 현재 단계 전원 확인 시 삭제 | **필수** |
+| `under_review` / `submitted` | **철회 요청 생성** → 이 문서에 **한 번이라도 관여한 팀** 전원 확인 시 삭제(이미 합의한 PL·R 등 포함, 대기중 팀 제외). 관여한 팀이 0팀이면 **즉시 삭제**(2026-11-22) | **필수** |
 | `pause` | 400 — 재개한 뒤 철회한다 | - |
 
 응답의 `deleted`(bool)로 "이미 삭제됨"과 "요청만 접수됨"을 구분한다.
@@ -449,8 +451,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - **확인 대상(`_rejected_withdraw_target_steps`, `views.py`)**
   - **1구역(PL·SA)**: **최신 회차**의 PL·SA 단계 전부. 담당자가 지정돼 있으면 관여로 보므로, 다중 PL
     중 아직 결정하지 않은 PL 도 포함한다(2026-11 결정). 담당자 없는 대기 단계만 뺀다.
-  - **2·3구역(R·P·J·O·E·RA)**: `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 가장 최근 회차 단계
-    1건을 대표로 삼고, 대기중(미선점·담당자 없음)이었던 팀은 뺀다. 반려 문서에는 '현재 구역'이 없으므로
+  - **2·3구역(R·P·J·O·E·RA)**: `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 **관여했던 단계 중 가장
+    최근 회차** 1건을 대표로 삼고, 어느 회차에서도 관여하지 않은(늘 대기중이었던) 팀만 뺀다(2026-11-22 변경 —
+    예전엔 최근 회차 단계가 대기중이면 이전 회차에 관여했어도 뺐다). 반려 문서에는 '현재 구역'이 없으므로
     1구역보다 깊은 구역 전부가 대상이다(`current_zone_idx=0` 으로 호출).
   - 대상이 0건이면(비정상 데이터) 400 `철회를 확인할 결재 단계가 없습니다.` — 요청을 만들지 않는다.
   - 예) 1회차 PL 합의 → R 반려 → 대상 = PL·R. 1회차 R 합의·J 반려(O 미선점) → 2회차 PL 반려(PL 2명) →
@@ -475,9 +478,60 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   approved 외 상태는 MASTER/의뢰자/지정 PL). 화면에는 결재 현황에 삭제 버튼이 없지만 API 직접 호출로
   "관여 팀 전원 확인" 원칙을 우회할 수 있다. 사용자 결정으로 이번에는 기록만 남긴다.
 
+**한 번이라도 관여한 팀만 확인 (2026-11-22, 사용자 결정)**
+
+진행 중 문서 철회의 확인 대상을 "이 문서에 **한 번이라도 관여한 팀 전부**"로 정했다. 두 단계로 바뀌었다.
+
+1. 아직 아무도 잡지 않은 **대기중 팀은 제외**(사용자 리포트 — 3구역 J·O 가 대기중인데도 확인 대상이었다).
+2. 이어서 회차·구역별 실행 결과를 검토하던 중, **이번 회차에 이미 합의한 팀**(같은 구역의 O 합의, 앞 구역의 PL·R)은
+   빠지는데 **예전 회차에 합의한 팀**은 들어가는 비대칭을 발견했다. 이에 따라 이미 합의한 팀도 포함하도록 바꿨다
+   (반려 문서 철회와 같은 기준, 사용자 선택).
+
+- **판정 (`_in_progress_withdraw_target_steps`, `views.py`)** — 아래를 합친다(System R 은 항상 제외).
+  - **지금 진행 중인 단계** — `_involved_pending_steps`:
+    - 담당자가 있는 단계(검토중 P·J·O·E, 지정된 R, PL·SA, 검토자 RV·PV·EV) → 대상
+    - 후결자(RA) → **항상 대상**(자동 지정이지만 확인 대상 — 사용자 결정)
+    - 담당자 없는 대기중 단계 → 제외. 단 같은 팀이 이전 회차에 검토중·합의·반려한 적이 있으면 대상(지금 그 팀 누구나 확인)
+  - **1구역(PL·SA)**: **최신 회차**에 지정된 PL·SA 단계 전부(이미 합의한 PL 포함, 담당자 본인이 확인). 재상신 때 바뀌어
+    최신 회차에 없는 예전 PL 은 묻지 않는다(사용자 결정).
+  - **2·3구역(R·P·J·O·E·RA)**: 지금 구역보다 앞이든 같든 깊든, **어느 회차든 한 번이라도 관여한 팀**
+    (`_extra_zone_target_steps(document, 0)` — 팀마다 관여했던 가장 최근 단계 1건, '지금 그 팀' 누구나 확인).
+    이미 진행 중 단계로 들어간 팀(검토자 RV·PV·EV 는 소속 팀 R·P·E 로 환산)은 중복으로 넣지 않는다.
+  - 실행 확인(2026-11-22, 시나리오 17건): 1회차 3구역(P 검토중·J/O 대기·RA) → PL·R·P·RA / 같은 상태에 O 합의 → +O /
+    2구역 R 지정 전 → **PL 만**(즉시 삭제 아님) / 2회차 3구역에서 O 가 이번 회차 합의 → O 포함.
+- **0팀이면 즉시 삭제**: 확인할 팀이 하나도 없으면 요청을 만들지 않고 바로 `_delete_withdrawn_document(..., PATH_NO_TARGET)` —
+  `withdraw_completed` 메일 + 철회 이력. 사유는 그대로 필수. ⚠️ 일반 경로에서는 2구역부터 합의한 PL 이 항상 관여 팀이라
+  **사실상 발생하지 않는다**(사용자 확인 후 규칙은 유지). 응답 `deleted: true`, 메시지 `확인할 관여 팀이 없어 의뢰서가 바로 철회(삭제)되었습니다.`
+- **중단 요청은 바꾸지 않았다**(사용자 결정) — 중단은 지금 진행 중 단계의 관여 팀(`_involved_pending_steps`)만 묻는다(Case M).
+- **확인 순서는 자유다** — 서버는 `target_step_ids ⊆ confirmed_step_ids` 만 보고, 화면도 각자 자기 단계의
+  [철회 확인]만 띄운다(로컬 실행으로 RA → O → J → P 역순 확인이 정상 동작함을 확인). 이미 합의한 단계(PL·R 등)는
+  pending 이 아니므로 `_can_confirm_extra_zone` 으로 판정한다 — PL·SA 는 담당자 본인, R·P·J·O·E 는 지금 그 팀 누구나, RA 는 현재 후결자.
+- **화면**: 철회 창은 진행 중 문서인데 대상이 0팀이면 `approval.withdraw_reason_hint_no_target`(바로 삭제됨) 안내와
+  [철회하고 삭제] 버튼을 보인다. 판정은 서버와 같은 규칙의 `utils/approvalTable.ts` `hasInvolvedConfirmTarget`
+  (화면 안내용 — 실제 처리는 서버가 판단). 배너·목록 칩은 서버 `target_step_ids` 를 그대로 쓴다.
+- 테스트: `backend/api/tests.py::InvolvedTeamWithdrawPauseTest`, `WithdrawFlowTest`(이전 회차 관여·이미 합의한 팀 포함 검증),
+  프론트 `approvalTable.test.ts` `hasInvolvedConfirmTarget`. 러너 W-09·W-17·W-18·W-19, M-12.
+  기존 테스트 중 '미배정 단계도 확인 대상' 또는 '이미 합의한 PL·R 은 대상 아님'을 전제로 한 테스트와 러너
+  M-03·M-04·W-07~W-11·W-15·R-21 은 새 규칙에 맞게 고쳤다.
+
+**철회 이력 (`WithdrawSnapshot`, 2026-11-22 — 2026-08 '이력 미보존' 결정 변경)**
+
+- 모델 `WithdrawSnapshot`(`models.py`), 마이그레이션 `0065_withdraw_snapshot`(+`WithdrawRequest.confirmed_by`),
+  적재 `withdraw_snapshots.create_before_delete` — 반려 이력(`RejectionSnapshot`)과 같이 삭제 **직전** 제목·제품·의뢰자·
+  상세 JSON·결재 단계 JSON 을 복사한다(원본 문서는 지워지므로 FK 없이 `source_document_id` 만 둔다).
+- **모든 삭제 경로**에서 남긴다(`delete_path`): `draft`(임시저장 즉시) / `no_target`(관여 팀 0팀 즉시) /
+  `confirmed`(관여 팀 전원 확인 — 반려 문서 철회 포함) / `master`(MASTER 즉시, 메일은 종전대로 생략) /
+  `delete_api`(`POST /documents/{id}/delete/`). 철회 거부·요청 취소는 문서가 남으므로 이력을 만들지 않는다.
+- 철회 경위: 사유, 요청자·요청일시(팀 확인 경로는 `WithdrawRequest` 값, 즉시 경로는 철회한 사람), **확인 기록**
+  (`confirm_withdraw` 가 `WithdrawRequest.confirmed_by` 에 `{step_id, agent, round, loginid, name, at}` 를 쌓는다),
+  삭제 처리자(즉시 경로는 철회한 사람, 확인 경로는 마지막 확인자)·삭제일시, 삭제 당시 상태.
+- 조회: `GET /api/withdraw-snapshots/`(`search`·`ordering` 지원) — **MASTER 전용**(그 외 403, `IsMasterUser`).
+  생성·수정·삭제 라우트는 없다. 화면은 `docs/HISTORY.md` '철회' 탭.
+- 서버 로그 `[WITHDRAW_DOCUMENT]`·`[DELETE_DOCUMENT]` 는 종전대로 남긴다.
+
 **요청 → 확인 → 삭제**
 
-- **철회 요청**: 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다.
+- **철회 요청**: 요청 시점의 현재(pending) 결재 단계 중 **관여한 팀의 단계**(위 2026-11-22) id 를 `target_step_ids` 로 기록한다.
   한 문서에 활성 요청(`state='requested'`)은 1건뿐이다. 상태 뱃지는 그대로 유지되고,
   목록 현재단계 칸에 '철회 요청중' 칩과 함께 **철회 확인이 필요한 팀 전체**를 작은 칩으로
   나열한다(아래 "이전 회차 도달 구역" 포함, `wr-need-chip`).
@@ -490,12 +544,19 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   - **구역(zone) 판정**: `RequestDocument.pause_zones()`(중단 기능과 동일 표, CLAUDE.md
     "용어 정리" §)의 0-based 인덱스로 "구역"을 정의한다. 현재 구역(현재 회차 pending 단계가
     속한 구역)보다 인덱스가 큰 구역만 대상이다.
-  - **팀 단위, 회차 무관**: 구역 안의 병렬 팀(3구역의 P/J/O/E/RA)마다 그 팀이 마지막으로
-    등장했던 회차 1건만 대표로 삼는다 — 같은 구역이 여러 회차에 걸쳐 반복 등장해도 회차별로
-    각각 확인받지 않는다("몇 회차 전 반려자"까지 거슬러 받지 않음).
-  - ⚠️ **대기중(미선점)이었던 팀은 제외**: 그 팀의 대표 단계가 `action='pending'`이고 담당자가
-    없으면(실제로 관여한 적이 없음) 확인 대상에서 뺀다. 검토중(담당자 지정)·합의완료·반려는
-    모두 "관여"로 보고 포함한다.
+  - **팀 단위, 회차 무관**: 구역 안의 병렬 팀(3구역의 P/J/O/E/RA)마다 단계 1건만 대표로 삼는다 —
+    같은 구역이 여러 회차에 걸쳐 반복 등장해도 회차별로 각각 확인받지 않고, '지금 그 팀' 누구나 한 번
+    확인하면 된다.
+  - ✅ **(2026-11-22 변경) 어느 회차든 한 번이라도 관여했으면 대상**: 대표 단계는 그 팀이 **관여했던
+    단계 중 가장 최근 회차**다. 검토중(담당자 지정)·합의완료·반려는 "관여", `action='pending'`이고
+    담당자가 없는 단계(대기중)는 관여가 아니다. **어느 회차에서도 관여하지 않은 팀만** 뺀다.
+    - 🐛 **수정 전**: 팀의 '가장 최근 회차' 단계만 봐서, 1회차 R 반려 → 2회차 R 대기중일 때 반려된 문서를
+      3회차에 철회하면 R 이 빠졌다 — 직접 반려했던 팀이 모르는 사이 문서가 삭제될 수 있었다(진행 중 문서의
+      '관여한 팀만 확인' 원칙과도 어긋났다, 사용자 결정으로 수정). 반려 문서 철회(`_rejected_withdraw_target_steps`)도
+      같은 함수를 쓰므로 함께 바뀐다.
+    - 테스트 `WithdrawFlowTest.test_extra_zone_includes_team_involved_in_any_earlier_round`·
+      `test_rejected_withdraw_includes_team_involved_in_any_earlier_round`(수정 전 코드에서 실패 확인),
+      프론트 `hasInvolvedConfirmTarget`, 러너 W-19.
   - **인가(`_can_confirm_extra_zone`)**: 그 회차의 담당자 개인이 아니라 **'지금 그 팀'**이면
     된다 — MASTER 항상 / 팀 역할(`_ROLE_TO_AGENT`)이 있는 agent(R·P·J·O·E)는 같은 팀 누구나.
     RA(후결자)는 역할로 묶이는 팀이 없어(개인 지정형) 대신 **이 문서의 현재 후결자 전원**
@@ -547,9 +608,27 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - **동결**: 확인 대기(`requested`) 동안 `approve_step`/`reject_step`/`assign_step`/`claim_step` 이
   400 으로 차단된다(`_blocked_progress_response`). 확인 도중 단계가 넘어가면 대상 단계가 끝나
   확인이 영영 완료되지 않기 때문이다. 거부·취소되면 즉시 풀린다.
-- ⚠️ **철회 이력은 남지 않는다**(2026-08 결정). 문서 삭제 시 `ApprovalStep`·`WithdrawRequest` 가
-  CASCADE 로 함께 사라지고, 누가 왜 철회했는지는 서버 로그
-  `[WITHDRAW_DOCUMENT] user=… doc=… reason=…` 에만 남는다.
+  - ✅ **(2026-11-22) 후결자·MASK 검토자 추가/제거도 동결**: `add/remove-post-approver`·`add/remove-ev-reviewer` 도
+    `_blocked_progress_response` 를 거친다(철회·중단 확인 대기 중 400). 🐛 수정 전에는 철회 대기 중 확인 대상인 추가
+    후결자를 제거할 수 있어, 그 단계가 사라진 뒤 남은 팀이 모두 확인해도 `target ⊆ confirmed` 가 성립하지 않아 문서가
+    삭제되지 않고 동결된 채 남았다(화면엔 모든 칩이 '확인함', 확인 버튼은 아무에게도 없음 — 로컬 재현·스크린샷 확인).
+    화면도 동결 중엔 후결자·검토자 관리 영역(칩 ×, '+ 추가')을 숨긴다(`canManagePa`/`canManageEv` 에 `!progressFrozen`).
+    사용자 결정(발견 ② — 선택 1).
+- ✅ **(2026-11-22) 철회 요청과 중단 요청은 동시에 걸리지 않는다** (사용자 결정, 발견 ① — 선택 1)
+  - 철회 확인 대기 중 → 중단 요청 400 `철회 요청 확인 대기 중인 의뢰서는 중단을 요청할 수 없습니다…`
+    (MASTER 포함, `doc_permissions.can_request_pause` 도 false 라 [⏸ 중단 요청] 버튼이 숨는다).
+  - 중단 요청 확인 대기 중 → 철회 400 `중단 요청 확인 대기 중인 의뢰서는 철회할 수 없습니다…` (MASTER 는 종전대로 즉시 삭제).
+    화면도 이때 [철회] 버튼을 숨긴다(목록·상세, MASTER 제외). 중단 확정(PAUSE) 문서는 종전대로 철회 400.
+  - 🐛 수정 전: 철회 요청 → 중단 요청 → 중단 전원 확인으로 문서가 PAUSE 가 된 뒤에도 철회 요청이 살아 있어, 철회 확인을
+    끝내면 **PAUSE 문서가 삭제**됐다("PAUSE 문서는 재개 후 철회" 규칙 우회, 로컬 재현·스크린샷 확인).
+  - 테스트 `InvolvedTeamWithdrawPauseTest.test_pause_request_blocked_while_withdraw_pending` 외 4건, 러너 W-20·W-21·W-22.
+- ℹ️ **철회 거부 뒤 마스터 DB 변경 자동 반려는 다음 스케줄러 주기에 판정한다**(2026-11-22 사용자 결정 — 유지).
+  철회 요청 *취소*(`cancel_withdraw`)는 끝나자마자 `layer_drift.auto_reject_if_confirmed` 로 즉시 재판정하지만
+  *거부*(`reject_withdraw`)는 하지 않는다. 그래서 거부 직후 다음 주기까지는 변경이 확정된 문서도 '검토중'으로 남아
+  합의·반려가 가능하다(로컬 재현 확인). 다음 주기에 자동 반려되므로 놓치지는 않는다.
+- ~~철회 이력은 남지 않는다(2026-08 결정)~~ → **2026-11-22 변경: 위 '철회 이력' 참고.** 문서 삭제 시 `ApprovalStep`·`WithdrawRequest` 가
+  CASCADE 로 함께 사라지는 것은 같고, 서버 로그
+  `[WITHDRAW_DOCUMENT] user=… doc=… reason=…` 도 종전대로 남는다.
 - **메일**: 요청/완료/거부/취소 4종이 발송된다. 수신자 규칙은 `docs/MAIL.md` §3.2.
 - 테스트: `backend/api/tests.py::WithdrawFlowTest`
 
@@ -687,8 +766,15 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 
 진행 중(under_review) 결재를 작성자가 **중단 요청** → 현재 단계 팀이 **확인 또는 거부** → (확인 전원 완료 시) 문서 `pause` 전이 → 작성자가 **수정 후 재개** 하는 흐름. 모델 `PauseRequest`(`models.py`), 마이그레이션 `0006`(모델 생성)·`0025`(2026-08, `state` choices 에 `rejected` 추가).
 
-- **중단 요청 (`request_pause`)**: 작성자 본인(또는 MASTER) + `status == 'under_review'` + **활성 중단요청 없음**일 때. **사유(reason) 필수**. 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다. 상태 뱃지는 **확인 완료 전까지 그대로 유지**(검토중), 목록 현재단계 칸에 '중단 요청중' 칩만 표시.
+- **중단 요청 (`request_pause`)**: 작성자 본인(또는 MASTER) + `status == 'under_review'` + **활성 중단요청 없음** + **철회 요청 확인 대기 아님**(2026-11-22, Case J '철회·중단 요청은 동시에 걸리지 않는다')일 때. **사유(reason) 필수**. 요청 시점의 현재(pending) 결재 단계 중 **관여한 팀의 단계** id 를 `target_step_ids` 로 기록한다(2026-11-22, 아래 "관여한 팀만 확인"). 상태 뱃지는 **확인 완료 전까지 그대로 유지**(검토중), 목록 현재단계 칸에 '중단 요청중' 칩만 표시.
   - ✅ **메일 수신 범위는 구역 전체(2026-09)**: `target_step_ids`(확인 대상, pending)는 그대로지만, **메일 수신자는 그 단계가 속한 구역(CLAUDE.md "용어 정리" 표의 1/2/3구역) 전체**로 넓힌다(`RequestDocument.pause_zones`/`pause_zone_for_agent`, `mailer._pause_zone_step_ids`). 같은 구역에서 이미 합의를 마친 사람도 중단 사실을 알아야 하기 때문이다(합의를 마쳤다고 확인 의무가 생기지는 않는다 — 확인 대상은 그대로 pending만). 단계별로 담당자가 지정돼 있으면 그 사람에게만(개인 메일), 미배정이면 담당 팀 전체에게(팀 메일) 가는 기존 규칙(`resolve_withdraw_target_recipients`)은 그대로다.
+- ✅ **(2026-11-22) 관여한 팀만 확인 + 0팀이면 즉시 중단** — 철회(Case J)와 같은 판정(`_involved_pending_steps`)을 쓴다.
+  대기중(담당자 없음) 팀은 확인 대상에서 빠지고(이전 회차에 관여했던 팀은 포함), RA 는 항상 대상이다. 확인할 팀이
+  0팀이면(예: 2구역 R 담당자 지정 전) 요청 즉시 `PauseRequest(state='confirmed')` 를 만들고 문서를 `pause` 로
+  바꾼다 — 확정 처리(`confirmed_at`·`content_snapshot`·`pause_confirmed` 메일)는 `confirm_pause` 의 전원 확인과 같고,
+  `pause_requested` 메일은 보내지 않는다. 응답에 `paused: true`. 화면(중단 요청 창)은 대상이 없을 때
+  `approval.pause_reason_hint_no_target` 안내를 띄우고(`utils/approvalTable.ts` `hasInvolvedConfirmTarget`), 응답이
+  `paused` 면 `approval.pause_immediate_toast` 를 띄운다. 테스트 `InvolvedTeamWithdrawPauseTest`, 러너 M-12.
 - **중단 확인 (`confirm_pause`)**: 현재 단계 담당자(assignee) 본인, 미배정 단계면 같은 팀(역할↔agent 일치), + MASTER (`_can_confirm_pause`). 병렬(P/J ∥ O/E)이면 **target 단계 전원**이 확인해야 최종 `pause` 전이(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)` 시 확정). 그 전엔 under_review 유지. **(2026-11-11)** `step_id`(선택)로 확인할 단계를 지정할 수 있고, `agent` 만 오면 이미 확인한 단계는 건너뛴다. MASTER 는 화면에서 '대신 확인할 팀 선택' 창으로 고른다 — 같은 agent 다중 단계(PV·EV·RA 등)에서 확정되지 않던 버그 수정 포함, 상세는 Case J '(2026-11-11) MASTER 대신 확인'.
 - ✅ **중단 거부 (`reject_pause`, 2026-08 추가)**: 인가는 확인과 동일(`_can_confirm_pause` 통과하는 대상 단계가 있으면 거부 가능 — 확인할 수 있는 사람이면 거부도 할 수 있다, `reject_withdraw`와 동일 패턴). **대상 단계 중 하나만 거부해도 요청 전체가 무효화**된다(전원 확인이 더 이상 성립할 수 없으므로) — `state → 'rejected'`, 결재는 그대로 이어진다. 이미 확인을 마친 다른 대상 단계가 있어도 그 확인은 함께 무효화되며(재요청 시 처음부터 다시 확인받아야 함), 문서·단계 자체는 바뀌지 않는다. 메일 발송 없음(중단 기능은 원래 메일 범위 밖).
 - **재개 (`resume`)**: 작성자 본인(또는 MASTER) + `status == 'pause'`. `pause → under_review` 로 되돌리고 **중단 시점 진행 중이던 구역부터** 이어간다(회차는 새로 만들지 않음). 문서 내용은 사전에 `/request` 편집(update)에서 저장되며, 재개 시 지정 PL 재선택 불필요(`RequestPage` 가 pause 문서 편집 시 상신 대신 `resume` 호출).
@@ -1626,7 +1712,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 결재 경로 변경 (2026-10) | 작성자(`requester_loginid`)/MASTER + under_review + 확인 대기 요청 없음 | `changeRoute` (`RouteChangeModal`) |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
-| 철회 | `can_withdraw` + 철회 요청중이 아닐 때(목록·상세 공통, 2026-11-09 목록도 적용) (draft / under_review / rejected(2026-11) / MASTER 는 전부) | 사유 입력 모달 → `withdraw`(진행 중·반려면 철회 요청, 그 외 즉시 삭제) |
+| 철회 | `can_withdraw` + 철회 요청중이 아닐 때(목록·상세 공통, 2026-11-09 목록도 적용) (draft / under_review / rejected(2026-11) / MASTER 는 전부) | 사유 입력 모달 → `withdraw`(진행 중·반려면 철회 요청, 그 외 즉시 삭제. 진행 중인데 관여 팀 0팀이면 즉시 삭제 — 창에 안내, 2026-11-22) |
 | 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함). **(2026-11-11) MASTER 는 [철회 확인] 시 '대신 확인할 팀 선택' 창**(Case J) | `confirmWithdraw`(MASTER 는 `stepId` 동봉) / `rejectWithdraw` |
 | 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중). **(2026-11-09) 목록 행에도 노출** — 요청중이면 목록의 [철회] 대신 [철회 요청 취소]가 보인다(MASTER 포함, 상세 모달과 동일 기준). 예전엔 목록에 [철회]가 남아 눌러도 400(이미 진행 중인 철회 요청)이었다 | `cancelWithdraw` (목록: `handleCancelWithdrawFromList`, 상세: `handleCancelWithdraw`) |
 | 수정 후 재상신 | rejected/draft + 철회 요청중이 아닐 때(2026-11) | `/request`로 이동(editDocId) |
@@ -1659,6 +1745,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 철회 확인 | `confirm-withdraw/` | `agent`, `step_id`(선택, 2026-11-11 — 주면 그 단계를 확인) |
 | 철회 거부 | `reject-withdraw/` | - |
 | 철회 요청 취소 | `cancel-withdraw/` | - |
+| 철회 이력 조회 (2026-11-22, MASTER 전용) | `GET /api/withdraw-snapshots/` | `search`, `ordering`(`deleted_at`·`submitted_at`) |
 | 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
 | 반려 | `reject-step/` | `agent`, `comment` · **(2026-11-11)** `step_id`(선택 — 주면 그 단계를 처리, MASTER 대신 합의·반려용) |
 | System R 수동 합의/반려 (2026-11-13) | `approve-step/` · `reject-step/` | `agent='RS'`, `comment` — **MASTER 만**(담당자가 없어 그 외 403). 아래 "System R" 절 |

@@ -399,6 +399,44 @@ export interface RejectionSnapshot {
   layer_drift: LayerDriftResponse | null;   // 반려 시점의 변경 감지 diff (뱃지 클릭 시 모달). 자동 반려 이력이 아니면 null
 }
 
+// claude 수정 (2026-11-22): 철회 이력(이력 조회 '철회' 탭, MASTER 전용) — 백엔드 WithdrawSnapshotSerializer 와 1:1
+/** 철회 이력의 삭제 경로 — 백엔드 WithdrawSnapshot.PATH_* 와 같은 값 */
+export type WithdrawDeletePath = 'draft' | 'no_target' | 'confirmed' | 'master' | 'delete_api';
+
+/** 철회 확인 기록 1건(누가 어느 팀 단계를 확인했는지) */
+export interface WithdrawConfirmation {
+  step_id: number;
+  agent: AgentType;
+  round: number;
+  loginid: string;
+  name: string;
+  at: string;
+}
+
+export interface WithdrawSnapshot {
+  id: number;
+  source_document_id: number;               // 원본 의뢰서 id (문서는 삭제됨)
+  title: string;
+  product_name: string;
+  requester_name: string;
+  requester_department: string;
+  requester_loginid: string;
+  submitted_at: string | null;
+  status_at_delete: RequestDocument['status']; // 삭제 당시 문서 상태
+  additional_notes: string;                 // 삭제 직전 상세 폼·표 전체 JSON
+  approval_steps: ApprovalStepFrontend[];   // 삭제 직전 결재 단계
+  round: number;
+  delete_path: WithdrawDeletePath;
+  reason: string;
+  requested_by_name: string;
+  requested_by_loginid: string;
+  requested_at: string | null;
+  confirmations: WithdrawConfirmation[];
+  deleted_by_name: string;
+  deleted_by_loginid: string;
+  deleted_at: string;
+}
+
 export type CreateDocumentInput = Omit<
   RequestDocument,
   'id' | 'status' | 'created_at' | 'updated_at' | 'submitted_at' | 'approval_steps'

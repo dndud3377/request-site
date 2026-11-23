@@ -34,6 +34,7 @@ from .models import (
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
     PersonalMarkCategory, PersonalDocumentMark, RoundSubmission, PersonalFilterPreset,
+    WithdrawSnapshot,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
 from .search_filters import AdiCdTargetSearchFilter
@@ -42,6 +43,7 @@ from . import doc_permissions
 from . import design_rule_stats
 from . import review_items as review_items_sync
 from . import rejection_snapshots
+from . import withdraw_snapshots
 from . import layer_drift
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
@@ -51,7 +53,7 @@ from .serializers import (
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
     RejectionSnapshotSerializer, LayerFilterSetSerializer, PersonalMarkCategorySerializer,
-    PersonalFilterPresetSerializer,
+    PersonalFilterPresetSerializer, WithdrawSnapshotSerializer,
 )
 import os
 import uuid
@@ -1230,6 +1232,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # claude 수정 (2026-11-09): 반려 문서도 철회 가능 — 관여했던 팀 전원 확인 후 삭제(2026-08 '반려 철회 불가' 폐지)
     # 반려 문서는 진행 중 단계가 없으므로, 이 문서에 관여했던 팀 전원의 확인을 받아야 철회된다.
     _WITHDRAW_REJECTED_STATUS = 'rejected'
+    # claude 수정 (2026-11-22): 철회·중단 요청이 서로 겹치지 않게 막을 때의 안내
+    _PAUSE_BLOCKED_BY_WITHDRAW_ERROR = '철회 요청 확인 대기 중인 의뢰서는 중단을 요청할 수 없습니다. 철회가 거부·취소된 뒤 요청해 주세요.'
+    _WITHDRAW_BLOCKED_BY_PAUSE_ERROR = '중단 요청 확인 대기 중인 의뢰서는 철회할 수 없습니다. 중단 요청이 확정·거부·취소된 뒤 철회해 주세요.'
     _WITHDRAW_PENDING_EDIT_ERROR = '철회 요청 확인 대기 중인 의뢰서는 수정·재상신할 수 없습니다. 철회가 거부·취소된 뒤 진행해 주세요.'
 
     def _zone_index(self, document, agent):
@@ -1242,24 +1247,83 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """반려 후 재상신으로 회차가 바뀐 뒤 철회할 때, 과거 회차에서 현재 구역보다 더
         깊이 도달했던 구역의 팀들을 대표하는 ApprovalStep 목록을 반환한다(2026-09).
 
-        팀(agent)당 그 구역에 가장 최근에 있었던 회차의 단계 하나만 대표로 삼는다 — 몇 회차
-        전 반려자였는지는 따지지 않고, "지금 그 팀"의 합의만 받으면 되기 때문이다. 그 회차에
-        **대기중(미선점, action='pending'이고 담당자 없음)** 이었던 팀은 실제로 관여한 적이
-        없으므로 대상에서 제외한다(검토중·합의완료·반려는 관여로 본다).
+        팀(agent)당 단계 하나만 대표로 삼는다 — 몇 회차 전 반려자였는지는 따지지 않고, "지금 그
+        팀"의 확인만 받으면 되기 때문이다. **대기중(미선점, action='pending'이고 담당자 없음)** 은
+        관여가 아니고, 검토중·합의완료·반려는 관여로 본다.
+
+        claude 수정 (2026-11-22): 관여 판정을 '가장 최근 회차' 기준에서 '어느 회차든 한 번이라도
+        관여' 기준으로 바꿨다(사용자 결정 — 진행 중 문서의 `_involved_pending_steps` 와 같은 원칙).
+        예전엔 1회차 R 반려 → 2회차 R 대기중 상태에서 반려된 문서를 철회하면 R 이 빠져, 직접
+        반려했던 팀이 모르는 사이 문서가 삭제될 수 있었다. 이제 팀마다 **관여했던 단계 중 가장
+        최근 회차**의 단계를 대표로 삼고, 한 번도 관여하지 않은 팀만 뺀다.
         """
-        latest_by_agent = {}
+        latest_involved_by_agent = {}
         for step in ApprovalStep.objects.filter(document=document, agent__in=self._ZONE_MAIN_AGENTS):
             zone_idx = self._zone_index(document, step.agent)
             if zone_idx is None or zone_idx <= current_zone_idx:
                 continue
-            prev = latest_by_agent.get(step.agent)
+            if step.action == 'pending' and not step.assignee_id:
+                continue
+            prev = latest_involved_by_agent.get(step.agent)
             if prev is None or step.round > prev.round:
-                latest_by_agent[step.agent] = step
+                latest_involved_by_agent[step.agent] = step
+
+        return list(latest_involved_by_agent.values())
+
+    # claude 수정 (2026-11-22): 진행 중 문서 철회·중단 확인 대상을 '관여한 팀'으로 좁힌다(대기중 팀 제외, 사용자 결정)
+    def _involved_pending_steps(self, document, pending, max_round):
+        """현재 회차 진행 중(pending) 단계 중 철회·중단 확인을 받아야 하는 단계만 고른다.
+
+        - 담당자가 있는 단계(검토중 P·J·O·E, 지정된 R, PL·SA, 검토자 RV·PV·EV)는 관여한 것으로 보고 포함한다.
+        - 후결자(RA)는 항상 포함한다(2026-11-22 사용자 결정 — 자동 지정이어도 확인 대상).
+        - 담당자 없는 대기중 단계는 한 번도 관여하지 않았으므로 뺀다. 단 같은 팀(agent)이 **이전 회차**에서
+          검토중·합의·반려한 적이 있으면 관여한 팀으로 보고 포함한다(지금 그 팀 누구나 확인 — `_can_confirm_pause`).
+        """
+        def _was_involved(step):
+            return not (step.action == 'pending' and not step.assignee_id)
+
+        unassigned_agents = {s.agent for s in pending if not s.assignee_id}
+        prior_involved_agents = {
+            s.agent for s in ApprovalStep.objects.filter(
+                document=document, round__lt=max_round, agent__in=unassigned_agents,
+            )
+            if _was_involved(s)
+        } if unassigned_agents else set()
 
         return [
-            step for step in latest_by_agent.values()
-            if not (step.action == 'pending' and not step.assignee_id)
+            s for s in pending
+            if s.assignee_id or s.agent == 'RA' or s.agent in prior_involved_agents
         ]
+
+    # claude 수정 (2026-11-22): 진행 중 문서 철회 확인 대상 = 이 문서에 한 번이라도 관여한 팀 전부(사용자 결정)
+    def _in_progress_withdraw_target_steps(self, document, pending, max_round):
+        """진행 중 문서 철회 시 확인을 받아야 하는 단계 목록 — 이 문서에 한 번이라도 관여한 팀 전부.
+
+        - 지금 진행 중인 단계: `_involved_pending_steps`(검토중·지정·RA, 이전 회차에 관여한 대기 팀) — 그 단계의
+          담당자(없으면 그 팀 누구나)가 확인한다. 검토자(RV·PV·EV)도 진행 중이면 여기 포함된다.
+        - 1구역(PL·SA): **최신 회차**에 지정된 PL·SA 단계 전부(이미 합의한 PL 포함, 반려 문서 철회와 같은 기준).
+        - 2·3구역(R·P·J·O·E·RA): 어느 회차든 한 번이라도 관여한 팀(`_extra_zone_target_steps`, 지금 구역보다 앞
+          구역·같은 구역 포함). 이미 진행 중 단계로 들어간 팀(검토자는 소속 팀으로 환산)은 중복으로 넣지 않는다.
+        - 아무도 잡지 않은 대기중 팀(어느 회차에서도 관여 안 함)과 System R 은 제외한다.
+
+        이전 규칙(지금 진행 중 단계 + 더 깊은 구역만)에서는 이번 회차에 이미 합의한 팀(예: 3구역 OVL 합의, 앞 구역
+        PL·R)이 빠져, 예전 회차 합의 팀은 묻고 이번 회차 합의 팀은 묻지 않는 비대칭이 있었다.
+        """
+        current = self._involved_pending_steps(document, pending, max_round)
+        current_ids = {s.id for s in current}
+        current_teams = {mailer.REVIEWER_TO_MAIN_AGENT.get(s.agent, s.agent) for s in current}
+
+        zone_1 = [
+            step for step in ApprovalStep.objects.filter(
+                document=document, round=max_round, agent__in=RequestDocument.PAUSE_ZONE_1_AGENTS,
+            )
+            if step.id not in current_ids and not (step.action == 'pending' and not step.assignee_id)
+        ]
+        other_zones = [
+            step for step in self._extra_zone_target_steps(document, 0)
+            if step.agent not in current_teams
+        ]
+        return current + zone_1 + other_zones
 
     # claude 수정 (2026-11-09): 반려 문서 철회 확인 대상 = 1구역(최신 회차 PL·SA) + 2·3구역 관여 팀
     def _rejected_withdraw_target_steps(self, document, max_round):
@@ -1267,9 +1331,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         - 1구역(PL·SA): 최신 회차의 단계 전부(담당자가 지정돼 있으면 관여로 본다 — 다중 PL 중
           아직 결정하지 않은 PL 도 포함, 2026-11 결정). 담당자 없는 대기 단계만 뺀다.
-        - 2·3구역(R·P·J·O·E·RA): `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 가장 최근
-          회차의 단계 1건을 대표로, 대기중(미선점)이었던 팀은 제외. 반려 문서에는 '현재 구역'이
-          없으므로 1구역(인덱스 0)보다 깊은 구역 전부가 대상이다.
+        - 2·3구역(R·P·J·O·E·RA): `_extra_zone_target_steps` 와 같은 규칙 — 팀마다 관여했던 단계 중
+          가장 최근 회차 1건을 대표로, 어느 회차에서도 관여하지 않은 팀만 제외(2026-11-22). 반려 문서에는
+          '현재 구역'이 없으므로 1구역(인덱스 0)보다 깊은 구역 전부가 대상이다.
         """
         zone_1_steps = [
             step for step in ApprovalStep.objects.filter(
@@ -1301,19 +1365,25 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return any(u.loginid == caller_loginid for u in mailer.post_approver_users(step.document))
         return bool(step.assignee_id and step.assignee.loginid == caller_loginid)
 
-    def _delete_withdrawn_document(self, request, document, reason, send_mail=True):
-        """철회 확정 — 완료 메일을 먼저 적재한 뒤 문서를 완전히 삭제한다.
+    # claude 수정 (2026-11-22): 삭제 직전 철회 이력(WithdrawSnapshot) 적재 추가 — 2026-08 '이력 미보존' 결정 변경(사용자 결정)
+    def _delete_withdrawn_document(self, request, document, reason, delete_path,
+                                   send_mail=True, withdraw_request=None):
+        """철회 확정 — 완료 메일과 철회 이력을 먼저 적재한 뒤 문서를 완전히 삭제한다.
 
-        메일 적재가 먼저여야 한다(`enqueue_withdraw_completed` 주석 참고). 삭제는 복구
-        불가이고 ApprovalStep/WithdrawRequest 가 CASCADE 로 함께 사라지므로, 누가 왜
-        철회했는지를 서버 로그에 남긴다(철회 이력 테이블은 두지 않는다 — 2026-08 결정).
+        메일 적재가 먼저여야 한다(`enqueue_withdraw_completed` 주석 참고). 철회 이력
+        (`withdraw_snapshots.create_before_delete`)도 결재 단계·철회 요청이 CASCADE 로
+        사라지기 전에 복사해야 한다. 서버 로그 `[WITHDRAW_DOCUMENT]` 도 종전대로 남긴다.
 
         `send_mail=False`: MASTER 의 제약 없는 즉시삭제 경로(2026-08) — 확인 절차 자체가
         없는 강제 삭제라 완료 통보 대상(도달한 단계 팀)이라는 개념이 성립하지 않으므로
-        메일은 생략하고 서버 로그만 남긴다.
+        메일은 생략한다(이력은 남긴다).
         """
         if send_mail:
             mailer.enqueue_withdraw_completed(document, reason)
+        withdraw_snapshots.create_before_delete(
+            document, delete_path, acting_user=request.user, reason=reason,
+            withdraw_request=withdraw_request,
+        )
         logging.getLogger(__name__).warning(
             "[WITHDRAW_DOCUMENT] user=%s(role=%s) doc=%s status=%s title=%r reason=%r",
             getattr(request.user, 'loginid', '-') or '-',
@@ -1334,8 +1404,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
           (2026-08 확장). 완료 메일은 보내지 않고 서버 로그만 남긴다.
         - draft            : 확인할 진행 중 단계가 없다 → 즉시 삭제(사유 선택)
         - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
-        - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
-          이 경로만 **사유(reason) 필수**이고, 확인 대기 동안 결재가 동결된다.
+        - under_review / submitted : 철회 요청 생성 → 이 문서에 **한 번이라도 관여한 팀** 전원 확인 시 삭제
+          (2026-11-22, `_in_progress_withdraw_target_steps` — 대기중 팀 제외). 관여한 팀이 하나도 없으면
+          확인 없이 **즉시 삭제**한다. 사유(reason) 필수, 확인 대기 동안 결재가 동결된다.
         - rejected         : 철회 요청 생성 → 이 문서에 관여했던 팀 전원 확인 시 삭제
           (2026-11, `_rejected_withdraw_target_steps`). 사유 필수, 확인 대기 동안 수정·재상신 차단.
         - pause            : 재개한 뒤 철회해야 한다(400).
@@ -1350,8 +1421,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         if getattr(request.user, 'role', '') == 'MASTER':
             # MASTER 는 상태·사유·활성 요청 여부와 무관하게 제약 없이 즉시 삭제한다.
-            self._delete_withdrawn_document(request, document, reason, send_mail=False)
+            self._delete_withdrawn_document(
+                request, document, reason, WithdrawSnapshot.PATH_MASTER, send_mail=False,
+            )
             return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
+
+        # claude 수정 (2026-11-22): 중단 요청 확인 대기 중에는 철회 불가(MASTER 는 위에서 즉시 삭제) — 두 요청이 겹치지 않게 한다
+        if PauseRequest.objects.filter(document=document, state='requested').exists():
+            return Response({'error': self._WITHDRAW_BLOCKED_BY_PAUSE_ERROR}, status=status.HTTP_400_BAD_REQUEST)
 
         if document.status in self._WITHDRAW_IMMEDIATE_STATUSES:
             # 결재 완료본은 이력이므로 임의 삭제를 막는다(delete 액션의 can_delete 와 동일 규칙).
@@ -1360,7 +1437,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     {'error': '결재가 완료된 의뢰서는 MASTER 만 철회할 수 있습니다.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            self._delete_withdrawn_document(request, document, reason)
+            self._delete_withdrawn_document(request, document, reason, WithdrawSnapshot.PATH_DRAFT)
             return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
 
         # claude 수정 (2026-11-09): 반려 문서도 철회 요청 대상(관여 팀 전원 확인) — 400 차단 제거
@@ -1399,17 +1476,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # 반려 후 재상신으로 회차가 바뀐 경우, 과거 회차에서 현재 구역보다 더 깊이
-            # 도달했던 구역의 팀들도 함께 확인 대상에 넣는다(2026-09, Case J 참고).
-            current_zone_idx = max(
-                (self._zone_index(document, s.agent) for s in pending if self._zone_index(document, s.agent) is not None),
-                default=None,
-            )
-            extra_steps = (
-                self._extra_zone_target_steps(document, current_zone_idx)
-                if current_zone_idx is not None else []
-            )
-            target_steps = pending + extra_steps
+            # claude 수정 (2026-11-22): 이 문서에 한 번이라도 관여한 팀 전부가 확인 대상, 확인할 팀이 없으면 즉시 삭제(사용자 결정)
+            target_steps = self._in_progress_withdraw_target_steps(document, pending, max_round)
+            if not target_steps:
+                self._delete_withdrawn_document(request, document, reason, WithdrawSnapshot.PATH_NO_TARGET)
+                return Response({
+                    'message': '확인할 관여 팀이 없어 의뢰서가 바로 철회(삭제)되었습니다.',
+                    'deleted': True,
+                })
             accepted_message = '철회 요청이 접수되었습니다. 현재 단계의 확인을 기다립니다.'
 
         wr = WithdrawRequest.objects.create(
@@ -1467,11 +1541,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         confirmed = list(wr.confirmed_step_ids or [])
         if step.id not in confirmed:
             confirmed.append(step.id)
+            # claude 수정 (2026-11-22): 철회 이력에 남길 확인자 기록(누가 어느 팀 단계를 확인했는지)
+            wr.confirmed_by = list(wr.confirmed_by or []) + [{
+                'step_id': step.id,
+                'agent': step.agent,
+                'round': step.round,
+                'loginid': getattr(request.user, 'loginid', '') or '',
+                'name': getattr(request.user, 'username', '') or '',
+                'at': timezone.now().isoformat(),
+            }]
         wr.confirmed_step_ids = confirmed
 
         if set(wr.target_step_ids or []).issubset(set(confirmed)):
             # 전원 확인 → 철회 확정. 문서와 함께 이 요청(wr)도 CASCADE 로 사라진다.
-            self._delete_withdrawn_document(request, document, wr.reason)
+            self._delete_withdrawn_document(
+                request, document, wr.reason, WithdrawSnapshot.PATH_CONFIRMED, withdraw_request=wr,
+            )
             return Response({'message': '철회가 확정되어 의뢰서가 삭제되었습니다.', 'deleted': True})
 
         wr.save()
@@ -1584,6 +1669,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document.pk, document.status, document.title,
         )
         mailer.enqueue_document_deleted(document)
+        # claude 수정 (2026-11-22): 삭제 기능으로 지운 문서도 철회 이력에 남긴다(사용자 결정 — 모든 삭제 경로)
+        withdraw_snapshots.create_before_delete(
+            document, WithdrawSnapshot.PATH_DELETE_API, acting_user=request.user,
+        )
         document.delete()
         return Response({'message': '삭제되었습니다.'})
 
@@ -2048,6 +2137,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 검토자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 검토자 추가도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_ev_reviewers(request.user):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -2100,6 +2193,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 검토자를 제거할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 검토자 제거도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_ev_reviewers(request.user):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -2221,8 +2318,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def request_pause(self, request, pk=None):
         """중단 요청: 작성자가 진행 중(under_review) 결재의 중단을 요청한다(사유 필수).
 
-        요청 시점의 현재(pending) 결재 단계 id 를 target 으로 기록하고, 그 단계 팀 전원이
-        '중단 확인'하면 문서가 pause 로 전이된다. 상태 뱃지는 확인 완료 전까지 그대로 유지된다.
+        요청 시점의 현재(pending) 결재 단계 중 **관여한 팀**의 단계 id 를 target 으로 기록하고
+        (2026-11-22, `_involved_pending_steps` — 대기중 팀 제외), 그 단계 전원이 '중단 확인'하면
+        문서가 pause 로 전이된다. 상태 뱃지는 확인 완료 전까지 그대로 유지된다.
+        관여한 팀이 하나도 없으면 확인 없이 **즉시 pause** 로 확정한다(응답 `paused: true`).
         """
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -2230,6 +2329,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         reason = (request.data.get('reason') or '').strip()
         if not reason:
             return Response({'error': '중단 사유를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # claude 수정 (2026-11-22): 철회 요청 확인 대기 중에는 중단 요청 불가 — 두 요청이 겹치면 PAUSE 문서가 철회로 삭제됐다
+        if self._active_withdraw_request(document):
+            return Response({'error': self._PAUSE_BLOCKED_BY_WITHDRAW_ERROR}, status=status.HTTP_400_BAD_REQUEST)
 
         if not doc_permissions.can_request_pause(request.user, document):
             return Response({'error': '중단 요청 권한이 없거나, 이미 진행 중인 중단 요청이 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
@@ -2242,13 +2345,39 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not pending:
             return Response({'error': '진행 중인 결재 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # claude 수정 (2026-11-22): 철회와 같이 관여한 팀만 확인 대상, 확인할 팀이 없으면 즉시 중단(PAUSE) 확정(사용자 결정)
+        targets = self._involved_pending_steps(document, pending, max_round)
+        if not targets:
+            PauseRequest.objects.create(
+                document=document,
+                requester=request.user if getattr(request.user, 'loginid', '') else None,
+                requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
+                reason=reason,
+                round=max_round,
+                state='confirmed',
+                target_step_ids=[],
+                confirmed_step_ids=[],
+                confirmed_at=timezone.now(),
+                # 재개 시 O 합의 유지 판정(Case U)용 — confirm_pause 의 확정 처리와 같다
+                content_snapshot=document.additional_notes or '',
+            )
+            document.status = 'pause'
+            document.save()
+            mailer.enqueue_pause_confirmed(document)
+            return Response({
+                'message': '확인할 관여 팀이 없어 바로 중단(PAUSE)되었습니다.',
+                'status': document.status,
+                'paused': True,
+                'document': RequestDocumentSerializer(document, context={'request': request}).data,
+            })
+
         pr = PauseRequest.objects.create(
             document=document,
             requester=request.user if getattr(request.user, 'loginid', '') else None,
             requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
             reason=reason,
             round=max_round,
-            target_step_ids=[s.id for s in pending],
+            target_step_ids=[s.id for s in targets],
             confirmed_step_ids=[],
         )
         mailer.enqueue_pause_requested(document, pr)
@@ -3772,6 +3901,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 후결자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 후결자 추가도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_post_approver(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -3831,6 +3964,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
         if document.status != 'under_review':
             return Response({'error': '진행 중인 의뢰서만 후결자를 제거할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 후결자 제거도 막는다(결재 동결과 동일) — 확인 대상 단계가 사라져 철회가 확정되지 않던 문제
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         if not self._can_manage_post_approver(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -4375,6 +4512,31 @@ class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelV
         if getattr(user, 'role', None) != User.OVERSEAS_PL_ROLE:
             return qs
         return qs.filter(Q(is_overseas=True) | Q(requester_loginid=user.loginid))
+
+
+# claude 수정 (2026-11-22): 철회 이력 조회(MASTER 전용) — 이력 조회 '철회' 탭
+class IsMasterUser(BasePermission):
+    """MASTER 만 허용."""
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
+
+
+class WithdrawSnapshotViewSet(viewsets.ReadOnlyModelViewSet):
+    """철회 이력 조회 — 이력 조회 화면의 '철회' 탭 데이터(MASTER 전용).
+
+    적재는 철회·삭제 API(`withdraw`/`confirm-withdraw`/`delete`)에서만 일어나므로 생성·수정·삭제
+    라우트는 두지 않는다. 삭제된 의뢰서 내용이 그대로 남아 있어 MASTER 외에는 403 이다(사용자 결정).
+    """
+
+    queryset = WithdrawSnapshot.objects.all()
+    serializer_class = WithdrawSnapshotSerializer
+    permission_classes = [IsMasterUser]
+    pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'product_name', 'requester_name', 'requester_department', 'reason']
+    ordering_fields = ['deleted_at', 'submitted_at']
+    ordering = ['-deleted_at']
 
 
 class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):

@@ -7,7 +7,7 @@ from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
     RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory, RoundSubmission,
-    MapSchedule, PersonalFilterPreset,
+    MapSchedule, PersonalFilterPreset, WithdrawSnapshot,
 )
 from . import doc_permissions
 from .pop3_mail import TARGET_STATUSES as MAP_BADGE_TARGET_STATUSES
@@ -994,6 +994,34 @@ class RejectionSnapshotSerializer(serializers.ModelSerializer):
             'oayer': detail.get('oayer') or empty_group,
             'extra': detail.get('extra') or empty_group,
         }
+
+    def get_approval_steps(self, obj):
+        import json
+        try:
+            steps = json.loads(obj.approval_steps or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+        return steps if isinstance(steps, list) else []
+
+
+# claude 수정 (2026-11-22): 이력 조회 '철회' 탭(MASTER 전용) 데이터 — 철회·삭제된 의뢰서 이력
+class WithdrawSnapshotSerializer(serializers.ModelSerializer):
+    """철회 이력 1건. 프론트 WithdrawSnapshot 타입과 1:1 매핑.
+
+    approval_steps 는 반려 이력과 같이 JSON 문자열로 보관하고 배열로 풀어서 내려준다.
+    """
+
+    approval_steps = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WithdrawSnapshot
+        fields = [
+            'id', 'source_document_id', 'title', 'product_name',
+            'requester_name', 'requester_department', 'requester_loginid',
+            'submitted_at', 'status_at_delete', 'additional_notes', 'approval_steps', 'round',
+            'delete_path', 'reason', 'requested_by_name', 'requested_by_loginid', 'requested_at',
+            'confirmations', 'deleted_by_name', 'deleted_by_loginid', 'deleted_at',
+        ]
 
     def get_approval_steps(self, obj):
         import json

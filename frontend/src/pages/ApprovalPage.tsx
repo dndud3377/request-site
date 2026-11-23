@@ -30,7 +30,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActiveStageStep, getStagePendingEnteredAt, isMyDocument,
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
-  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible, SYSTEM_R_AGENT,
+  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible, SYSTEM_R_AGENT, hasInvolvedConfirmTarget,
 } from '../utils/approvalTable';
 import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
@@ -1387,9 +1387,10 @@ export default function ApprovalPage(): React.ReactElement {
     }
     setProcessing(true);
     try {
-      await documentsAPI.requestPause(selected.id, pauseReasonInput.trim());
+      // claude 수정 (2026-11-22): 확인할 관여 팀이 없으면 서버가 바로 중단(PAUSE)한다(paused: true)
+      const r = await documentsAPI.requestPause(selected.id, pauseReasonInput.trim());
       setPauseReasonModalOpen(false);
-      addToast(t('approval.pause_requested_toast'), 'success');
+      addToast(t(r.data.paused ? 'approval.pause_immediate_toast' : 'approval.pause_requested_toast'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -1699,6 +1700,12 @@ export default function ApprovalPage(): React.ReactElement {
   const needsWithdrawConfirm = (doc: RequestDocument): boolean =>
     currentUser.role !== 'MASTER'
     && (doc.status === 'under_review' || doc.status === 'submitted' || doc.status === 'rejected');
+
+  // claude 수정 (2026-11-22): 진행 중 문서인데 확인할 관여 팀(대기중 팀 제외)이 없으면 서버가 확인 없이 바로 삭제한다 — 모달에서 미리 알린다
+  const withdrawDeletesNow = (doc: RequestDocument): boolean =>
+    currentUser.role !== 'MASTER'
+    && (doc.status === 'under_review' || doc.status === 'submitted')
+    && !hasInvolvedConfirmTarget(doc.approval_steps ?? [], true);
 
   const handleWithdrawClick = (doc: RequestDocument) => {
     setWithdrawDoc(doc);
@@ -2588,7 +2595,9 @@ export default function ApprovalPage(): React.ReactElement {
                           </button>
                         )}
                         {/* claude 수정 (2026-11-09): 철회 요청중이면 [철회] 대신 요청자 본인/MASTER 에게 [철회 요청 취소] (상세 모달과 동일 기준) */}
-                        {doc.can_withdraw && !doc.withdraw_request && (doc.status === 'under_review' || doc.status === 'draft' || doc.status === 'rejected' || currentUser.role === 'MASTER') && (
+                        {/* claude 수정 (2026-11-22): 중단 요청 확인 대기 중에는 철회 버튼을 숨긴다(MASTER 제외, 서버도 400) */}
+                        {doc.can_withdraw && !doc.withdraw_request && (doc.status === 'under_review' || doc.status === 'draft' || doc.status === 'rejected' || currentUser.role === 'MASTER')
+                          && (currentUser.role === 'MASTER' || doc.pause_request?.state !== 'requested') && (
                           <button
                             className="btn btn-secondary btn-sm"
                             data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
@@ -2804,8 +2813,11 @@ export default function ApprovalPage(): React.ReactElement {
               placeholder={t('approval.pause_reason_placeholder')}
               style={{ width: '100%', resize: 'vertical' }}
             />
+            {/* claude 수정 (2026-11-22): 확인할 관여 팀이 없으면 '바로 중단'됨을 안내(투어는 종전 안내) */}
             <p style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              {t('approval.pause_reason_hint')}
+              {t(!isTourMode && selected && !hasInvolvedConfirmTarget(selected.approval_steps ?? [], false)
+                ? 'approval.pause_reason_hint_no_target'
+                : 'approval.pause_reason_hint')}
             </p>
           </div>
         </Modal>
@@ -2884,7 +2896,7 @@ export default function ApprovalPage(): React.ReactElement {
                 onClick={submitWithdraw}
                 disabled={processing || (needsWithdrawConfirm(withdrawDoc) && !withdrawReasonInput.trim())}
               >
-                {needsWithdrawConfirm(withdrawDoc)
+                {needsWithdrawConfirm(withdrawDoc) && !withdrawDeletesNow(withdrawDoc)
                   ? t('approval.withdraw_submit')
                   : t('approval.withdraw_submit_immediate')}
               </button>
@@ -2919,8 +2931,11 @@ export default function ApprovalPage(): React.ReactElement {
                   placeholder={t(withdrawDoc.status === 'rejected' ? 'approval.withdraw_reason_placeholder_rejected' : 'approval.withdraw_reason_placeholder')}
                   style={{ width: '100%', resize: 'vertical' }}
                 />
+                {/* claude 수정 (2026-11-22): 확인할 관여 팀이 없으면 '바로 삭제'됨을 안내 */}
                 <p style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  {t(withdrawDoc.status === 'rejected' ? 'approval.withdraw_reason_hint_rejected' : 'approval.withdraw_reason_hint')}
+                  {t(withdrawDoc.status === 'rejected'
+                    ? 'approval.withdraw_reason_hint_rejected'
+                    : withdrawDeletesNow(withdrawDoc) ? 'approval.withdraw_reason_hint_no_target' : 'approval.withdraw_reason_hint')}
                 </p>
               </>
             )}
@@ -3104,7 +3119,8 @@ export default function ApprovalPage(): React.ReactElement {
           const parallelReached = (selected?.approval_steps ?? []).some(
             (s) => (s.round ?? 1) === currentRound && ['P', 'O', 'E', 'RA'].includes(s.agent)
           );
-          const canManagePa = !!selected && (isMaster || isPauseRequester) && selected.status === 'under_review' && parallelReached;
+          // claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 후결자 추가·제거도 숨긴다(서버도 400) — 확인 대상 단계가 사라지지 않게
+          const canManagePa = !!selected && !progressFrozen && (isMaster || isPauseRequester) && selected.status === 'under_review' && parallelReached;
 
           // MASK 검토자(EV) 관리: TE_E 팀원 전원 또는 MASTER + under_review + E 담당자 합의 후 항상 노출.
           // 후결자 관리와 같은 자리·같은 형태(칩 + × 제거 + '+ 검토자 추가')이되, 결재 경로 탭이 아니라
@@ -3112,7 +3128,8 @@ export default function ApprovalPage(): React.ReactElement {
           const evSteps = (selected?.approval_steps ?? []).filter(
             (s) => s.agent === 'EV' && (s.round ?? 1) === currentRound
           );
-          const canManageEv = !!selected && (isMaster || userAgent === 'E')
+          // claude 수정 (2026-11-22): 철회·중단 요청 확인 대기 중에는 검토자 추가·제거도 숨긴다(서버도 400)
+          const canManageEv = !!selected && !progressFrozen && (isMaster || userAgent === 'E')
             && selected.status === 'under_review' && mainStepApproved('E');
 
           return (
@@ -3389,7 +3406,9 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 요청 중에는 중복 요청을 막기 위해 철회 버튼을 감춘다 */}
-              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft' || selected.status === 'rejected' || isMaster) && (
+              {/* claude 수정 (2026-11-22): 중단 요청 확인 대기 중에는 철회 버튼을 숨긴다(MASTER 제외, 서버도 400) */}
+              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft' || selected.status === 'rejected' || isMaster)
+                && (isMaster || selected.pause_request?.state !== 'requested') && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>

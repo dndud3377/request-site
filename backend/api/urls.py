@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    RequestDocumentViewSet, ExternalRequestDocumentViewSet, RejectionSnapshotViewSet,
+    RequestDocumentViewSet, ExternalRequestDocumentViewSet, RejectionSnapshotViewSet, WithdrawSnapshotViewSet,
     VOCViewSet, LineViewSet, LayerFilterSetViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet, GuideViewSet, UserGroupViewSet, AddressBookViewSet,
     ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet, PersonalMarkCategoryViewSet,
@@ -18,6 +18,8 @@ from .auth_views_dev import dev_login_view
 router = DefaultRouter()
 router.register(r'documents', RequestDocumentViewSet, basename='document')
 router.register(r'rejection-snapshots', RejectionSnapshotViewSet, basename='rejection-snapshot')
+# claude 수정 (2026-11-22): 철회 이력 조회(MASTER 전용)
+router.register(r'withdraw-snapshots', WithdrawSnapshotViewSet, basename='withdraw-snapshot')
 router.register(r'voc', VOCViewSet, basename='voc')
 router.register(r'voc-histories', VocHistoryViewSet, basename='voc-history')
 router.register(r'lines', LineViewSet, basename='line')

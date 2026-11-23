@@ -33,6 +33,46 @@ export const isLayerDriftVisible = (doc: RequestDocument): boolean =>
 /** System R — 2구역에서 R 과 병렬로 MAP 정보를 시스템이 검증하는 단계(담당자 없음) */
 export const SYSTEM_R_AGENT = 'RS';
 
+// claude 수정 (2026-11-22): 철회·중단 확인 대상이 '관여한 팀'만으로 바뀌어(대기중 팀 제외), 대상이 0팀이면 서버가 즉시 처리한다 —
+// 모달에서 '바로 삭제/중단된다'고 미리 알리기 위해 서버와 같은 규칙으로 대상 존재 여부를 판정한다.
+/** 철회·중단 확인 대상 판정에 쓰는 2·3구역 팀 agent — 백엔드 `_ZONE_MAIN_AGENTS` 와 같다 */
+const ZONE_MAIN_AGENTS: AgentType[] = ['R', 'P', 'J', 'O', 'E', 'RA'];
+/** 후결자 — 자동 지정이어도 항상 확인 대상(2026-11-22 사용자 결정) */
+const POST_APPROVER_AGENT: AgentType = 'RA';
+
+/** 그 단계에 팀이 관여했는가 — 담당자 없는 대기중(pending)만 관여하지 않은 것으로 본다 */
+const wasStepInvolved = (s: ApprovalStepFrontend): boolean => !(s.action === 'pending' && !s.assignee_loginid);
+
+/** 1구역 agent — 백엔드 `RequestDocument.PAUSE_ZONE_1_AGENTS` 와 같다 */
+const ZONE_1_AGENTS: AgentType[] = ['PL', 'SA'];
+
+/**
+ * 진행 중 문서의 철회(`forWithdraw=true`)·중단(`false`) 요청 시 확인할 관여 팀이 하나라도 있는가.
+ * - 공통(중단은 이것만, 백엔드 `_involved_pending_steps`): 현재 회차 pending 단계(System R 제외) 중
+ *   담당자가 있거나 RA 이거나, 같은 팀이 이전 회차에 관여한 단계
+ * - 철회는 추가로(백엔드 `_in_progress_withdraw_target_steps`, 2026-11-22 — 이 문서에 한 번이라도 관여한 팀 전부):
+ *   최신 회차 PL·SA 중 담당자 있는 단계, 2·3구역 팀(R·P·J·O·E·RA) 중 어느 회차든 관여한 단계
+ * 화면 안내용 판정이며, 실제 처리는 서버가 최종 판단한다.
+ */
+export const hasInvolvedConfirmTarget = (steps: ApprovalStepFrontend[], forWithdraw: boolean): boolean => {
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0);
+  const pending = steps.filter(
+    (s) => (s.round ?? 1) === maxRound && s.action === 'pending' && s.agent !== SYSTEM_R_AGENT
+  );
+  const priorInvolvedAgents = new Set(
+    steps.filter((s) => (s.round ?? 1) < maxRound && wasStepInvolved(s)).map((s) => s.agent)
+  );
+  const hasCurrent = pending.some(
+    (s) => !!s.assignee_loginid || s.agent === POST_APPROVER_AGENT || priorInvolvedAgents.has(s.agent)
+  );
+  if (hasCurrent || !forWithdraw) return hasCurrent;
+
+  return steps.some((s) => wasStepInvolved(s) && (
+    ZONE_MAIN_AGENTS.includes(s.agent)
+    || (ZONE_1_AGENTS.includes(s.agent) && (s.round ?? 1) === maxRound)
+  ));
+};
+
 export interface DocDetailFields {
   line: string;
   /** 요청 목적 대분류(신규/차용/기타 등) */

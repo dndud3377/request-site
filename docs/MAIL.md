@@ -345,7 +345,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 
 | 이벤트 | 시점 | 수신자 |
 |---|---|---|
-| `withdraw_requested` | 철회 요청 접수 | **확인 대상 단계**의 담당자(assignee) 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**(`resolve_withdraw_target_recipients`). ⚠️ **통보처는 제외** — 확인 주체가 아니다 |
+| `withdraw_requested` | 철회 요청 접수 | **확인 대상 단계**의 담당자(assignee) 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**(`resolve_withdraw_target_recipients`). ⚠️ **통보처는 제외** — 확인 주체가 아니다. **(2026-11-22)** 확인 대상이 '이 문서에 한 번이라도 관여한 팀 전부'로 바뀌어, 이미 합의를 마친 PL·R 등도 이 메일을 받고, 대기중(어느 회차에서도 관여 안 함) 팀은 받지 않는다 — 그 팀은 철회가 확정되면 `withdraw_completed`(진행된 팀 통보)로 알게 된다. 관여 팀이 0팀이면 요청 메일 없이 바로 `withdraw_completed` 가 나간다 |
 | `withdraw_completed` | 철회 확정(문서 삭제 직전) · 즉시 삭제 경로 | 개인 수신자 메일 1통(① 상신 시 **지정된 PL 전원** ② **통보처 전원** ③ RA/SA 개인 담당자 ④ **작성자**) + **실제로 결재가 진행된 단계의 담당 팀별로 각각 별도 메일**(`resolve_withdraw_completed_recipients`) |
 | `withdraw_rejected` | 대상 단계가 철회 거부 | 철회를 **요청한 사람** + 의뢰서 **작성자** (분리 대상 아님) |
 | `withdraw_cancelled` | 요청자가 철회 요청 취소 | 요청 메일을 받았던 **확인 대상 단계**의 담당자(개인 수신자 메일)/팀(팀별로 각각 별도 메일) |
@@ -391,7 +391,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | 이벤트 | 시점 | 수신자 |
 |---|---|---|
 | `pause_requested` | 중단 요청 접수 | ✅ **(2026-09 확장) 확인 대상 단계가 속한 구역 전체**(요청 시점 pending 단계 + 같은 구역에서 이미 합의를 마친 단계, `mailer._pause_zone_step_ids`) — 각 단계 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 그대로 재사용한다(withdraw_requested 와 동일 규칙). 확인 의무(`target_step_ids`) 자체는 여전히 pending 단계만이다 — 넓어진 건 메일 수신 범위뿐 |
-| `pause_confirmed` | 중단 확정(대상 단계 **전원 확인 완료**로 문서가 pause 로 전이되는 시점) | 개인 수신자 메일 1통(**작성자** + 진행된 단계의 RA/SA 개인 담당자) + **실제로 결재가 진행된 단계의 담당 팀별로 각각 별도 메일**(`_reached_stage_team_groups` 재사용, withdraw_completed 와 동일 판정 기준). ⚠️ 부분 확인 시점에는 발송하지 않는다 — 대상 단계가 병렬이면 마지막 확인자가 확정시킬 때 1회만 나간다 |
+| `pause_confirmed` | 중단 확정(대상 단계 **전원 확인 완료**로 문서가 pause 로 전이되는 시점. **(2026-11-22)** 확인할 관여 팀이 0팀이라 요청 즉시 pause 되는 경우도 이 메일 1회만 나가고 `pause_requested` 는 없다) | 개인 수신자 메일 1통(**작성자** + 진행된 단계의 RA/SA 개인 담당자) + **실제로 결재가 진행된 단계의 담당 팀별로 각각 별도 메일**(`_reached_stage_team_groups` 재사용, withdraw_completed 와 동일 판정 기준). ⚠️ 부분 확인 시점에는 발송하지 않는다 — 대상 단계가 병렬이면 마지막 확인자가 확정시킬 때 1회만 나간다 |
 | `pause_rejected` | 대상 단계가 중단 거부 | 중단을 **요청한 사람** + 의뢰서 **작성자**(withdraw_rejected 와 동일 패턴, 분리 대상 아님) |
 | `pause_resumed` | 재개(작성자가 pause 문서를 under_review 로 되돌릴 때) | ✅ **(2026-09 확장) 재개 시점 pending 단계가 속한 구역 전체**(`pause_requested`와 동일한 `_pause_zone_step_ids`) — 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 그대로 재사용한다. 중단 중엔 결재가 막혀 구역 구성이 바뀌지 않으므로, 결과적으로 `pause_requested` 를 받았던 사람 전원이 재개 알림도 받는다 |
 | `document_deleted` | `delete` 액션으로 의뢰서가 완전히 삭제되는 시점(삭제 **전**에 적재) | withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients()` 재사용) — 개인 수신자 메일 1통(지정 PL 전원 + 통보처 전원 + RA/SA 개인 담당자 + 작성자) + 실제로 진행된 팀별로 각각 별도 메일. `_NO_LINK_EVENTS` 대상이라 딥링크 버튼을 싣지 않는다 |
