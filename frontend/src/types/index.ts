@@ -401,7 +401,8 @@ export interface RejectionSnapshot {
 
 // claude 수정 (2026-11-22): 철회 이력(이력 조회 '철회' 탭, MASTER 전용) — 백엔드 WithdrawSnapshotSerializer 와 1:1
 /** 철회 이력의 삭제 경로 — 백엔드 WithdrawSnapshot.PATH_* 와 같은 값 */
-export type WithdrawDeletePath = 'draft' | 'no_target' | 'confirmed' | 'master' | 'delete_api';
+// claude 수정 (2026-11-23): 'draft'(임시저장 즉시 삭제) 제거 — 임시저장은 이력을 남기지 않는다
+export type WithdrawDeletePath = 'no_target' | 'confirmed' | 'master' | 'delete_api';
 
 /** 철회 확인 기록 1건(누가 어느 팀 단계를 확인했는지) */
 export interface WithdrawConfirmation {

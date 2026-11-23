@@ -1157,7 +1157,6 @@
     "col_deleted": "Deleted Date",
     "col_delete_path": "Deletion Path",
     "col_withdraw_reason": "Withdrawal Reason",
-    "withdraw_path_draft": "Draft deleted immediately",
     "withdraw_path_no_target": "No involved team — deleted immediately",
     "withdraw_path_confirmed": "Deleted after involved teams confirmed",
     "withdraw_path_master": "Deleted immediately by MASTER",

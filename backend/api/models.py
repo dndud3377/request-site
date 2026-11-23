@@ -2137,17 +2137,17 @@ class WithdrawSnapshot(models.Model):
     이 테이블로 복사한다(반려 이력 `RejectionSnapshot` 과 같은 방식). 이력 조회 '철회' 탭
     (MASTER 전용)의 데이터 원본이다.
 
-    삭제 경로(`delete_path`)마다 1행씩 쌓인다 — 임시저장 즉시 삭제, 관여 팀이 없어 즉시 삭제,
-    관여 팀 전원 확인 후 삭제, MASTER 즉시 삭제, 삭제 기능(`delete/` API).
+    삭제 경로(`delete_path`)마다 1행씩 쌓인다 — 관여 팀이 없어 즉시 삭제, 관여 팀 전원 확인 후 삭제,
+    MASTER 즉시 삭제, 삭제 기능(`delete/` API). 임시저장(draft) 문서는 어느 경로로 지워져도 남기지 않는다
+    (2026-11-23 사용자 결정 — 상신 전이라 결재 이력이 없다).
     """
 
-    PATH_DRAFT = 'draft'
+    # claude 수정 (2026-11-23): 임시저장 즉시 삭제(PATH_DRAFT) 경로 제거 — 임시저장은 이력을 남기지 않는다
     PATH_NO_TARGET = 'no_target'
     PATH_CONFIRMED = 'confirmed'
     PATH_MASTER = 'master'
     PATH_DELETE_API = 'delete_api'
     PATH_CHOICES = [
-        (PATH_DRAFT, '임시저장 즉시 삭제'),
         (PATH_NO_TARGET, '확인할 관여 팀 없음 — 즉시 삭제'),
         (PATH_CONFIRMED, '관여 팀 전원 확인 후 삭제'),
         (PATH_MASTER, 'MASTER 즉시 삭제'),

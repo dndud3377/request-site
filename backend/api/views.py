@@ -1377,6 +1377,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         `send_mail=False`: MASTER 의 제약 없는 즉시삭제 경로(2026-08) — 확인 절차 자체가
         없는 강제 삭제라 완료 통보 대상(도달한 단계 팀)이라는 개념이 성립하지 않으므로
         메일은 생략한다(이력은 남긴다).
+
+        `delete_path`: `WithdrawSnapshot.PATH_*`. 임시저장(draft) 문서는 이력을 남기지 않으므로(2026-11-23) None 을 넘긴다.
         """
         if send_mail:
             mailer.enqueue_withdraw_completed(document, reason)
@@ -1437,7 +1439,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     {'error': '결재가 완료된 의뢰서는 MASTER 만 철회할 수 있습니다.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            self._delete_withdrawn_document(request, document, reason, WithdrawSnapshot.PATH_DRAFT)
+            # claude 수정 (2026-11-23): 임시저장은 철회 이력을 남기지 않는다(create_before_delete 가 draft 를 건너뜀)
+            self._delete_withdrawn_document(request, document, reason, None)
             return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
 
         # claude 수정 (2026-11-09): 반려 문서도 철회 요청 대상(관여 팀 전원 확인) — 400 차단 제거

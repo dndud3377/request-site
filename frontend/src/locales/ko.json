@@ -1157,7 +1157,6 @@
     "col_deleted": "삭제일",
     "col_delete_path": "삭제 경로",
     "col_withdraw_reason": "철회 사유",
-    "withdraw_path_draft": "임시저장 즉시 삭제",
     "withdraw_path_no_target": "관여 팀 없음 — 즉시 삭제",
     "withdraw_path_confirmed": "관여 팀 확인 후 삭제",
     "withdraw_path_master": "MASTER 즉시 삭제",
