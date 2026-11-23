@@ -2506,6 +2506,13 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
     수정 **전** `table` 로만 판정하므로, 이 검사가 없으면 TE_J 가 자기 J 필터를 `table='O'` 로 바꿔 O팀 공유 목록에
     넣을 수 있었다(O팀이 누르면 O 표 `st` 가 실제로 바뀜). 화면의 수정 요청(`layerFilterSetsAPI.update`)은
     `label`·`words` 만 보내므로 화면 동작은 바뀌지 않는다.
+  - ⚠️ **알려진 한계(2026-11-23 기록, 사용자 결정 — 기록만, 미수정)**: `validate_words` 는 `words.sp/sd/pp` 가 배열인지만
+    보고 **각 키워드가 문자열인지는 검사하지 않는다**. API 를 직접 호출해 숫자 등(예: `"sd": ["GATE", 123]`)을 넣으면
+    201 로 저장되고, 그 필터를 적용하면 `apply_layer_filter` 의 `kw.lower()` 에서 `AttributeError` → **HTTP 500**
+    (화면에는 사유 없이 "HTTP 500" 안내창, 같은 필터의 정상 키워드도 적용되지 않음 — 트랜잭션이라 데이터는 안 바뀜).
+    **화면 경로로는 발생하지 않는다** — 필터 관리 모달의 키워드 입력값은 항상 문자열이라 `123` 을 입력해도 `"123"` 으로
+    저장되고 정상 적용된다(개발 데모 환경에서 화면·API 양쪽 실행 확인). 운영에서 이 API 는 SSO 로그인한 TE_J/TE_O/MASTER 가
+    요청을 직접 조작할 때만 이 값을 만들 수 있어, 방어 검사는 넣지 않고 기록만 남긴다.
 - `POST /api/documents/{id}/apply-layer-filter/` — `{table, filter_id}` → 매칭된 행의 `st`를
   `'X'`로 설정하고 `new_or_copy`/`product_name`/`step`(J면 `item_id`도) 초기화, `additional_notes`
   저장. 이미 `st==='X'`인 행은 다시 매칭하지 않는다(재적용해도 중복 집계 없음). **매칭 1건
