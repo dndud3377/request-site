@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { vocAPI } from '../api/client';
 import RichTextEditor from '../components/RichTextEditor';
+import { vocMentionSuggestion } from '../components/VocMentionList';
 import StatusBadge from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
 import Modal, { ConfirmModal } from '../components/Modal';
@@ -397,10 +398,12 @@ export default function VOCPage(): React.ReactElement {
           </div>
           <div className="form-group">
             <label className="form-label">{t('voc.content')} <span className="required">*</span></label>
+            {/* claude 수정 (2026-11-23): 등록 본문에서도 @팀·@사용자 태그 — 태그 대상은 등록 메일을 받는다 */}
             <RichTextEditor
               value={form.content}
               onChange={(html) => setForm((f) => ({ ...f, content: html }))}
-              placeholder={t('voc.content')}
+              placeholder={t('voc.content_placeholder')}
+              mentionSuggestion={vocMentionSuggestion}
             />
           </div>
         </form>
@@ -512,10 +515,12 @@ export default function VOCPage(): React.ReactElement {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSendComment();
                   }}
                 >
+                  {/* claude 수정 (2026-11-23): 답글에서 @팀·@사용자 태그 — 태그 대상은 이번·이후 답글 메일을 받는다 */}
                   <RichTextEditor
                     value={commentText}
                     onChange={setComment}
                     placeholder={t('voc.comment_placeholder' as any)}
+                    mentionSuggestion={vocMentionSuggestion}
                   />
                   <button
                     className="btn btn-primary"
