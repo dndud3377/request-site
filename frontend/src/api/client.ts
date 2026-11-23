@@ -974,6 +974,15 @@ const listUsers = async (role?: string): Promise<{ data: UserWithRole[] }> => {
   return { data: (data as { results: UserWithRole[] }).results };
 };
 
+// claude 수정 (2026-11-23): VOC @멘션 추천용 사용자 검색 — 이름·loginid·부서(UserViewSet search_fields)
+const searchUsers = async (query: string): Promise<{ data: UserWithRole[] }> => {
+  const data = await get<{ results: UserWithRole[]; count: number } | UserWithRole[]>(
+    `/users/?search=${encodeURIComponent(query)}`,
+  );
+  if (Array.isArray(data)) return { data };
+  return { data: data.results };
+};
+
 const createUser = async (input: CreateUserInput): Promise<{ data: UserWithRole }> => {
   const data = await post<UserWithRole>('/users/', input);
   return { data };
@@ -1038,6 +1047,7 @@ const updateSubmitMail = async (
 
 export const usersAPI = {
   list: listUsers,
+  search: searchUsers,
   create: createUser,
   remove: deleteUser,
   forAssignment: getUsersForAssignment,

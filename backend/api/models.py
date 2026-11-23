@@ -1306,6 +1306,34 @@ class VocComment(models.Model):
         return f"[{self.voc_id}] {self.author_name}: {self.content[:30]}"
 
 
+# claude 수정 (2026-11-23): VOC @멘션 — 본문·답글에서 태그된 팀(AGENT R/P/J/O/E)·사용자를 VOC 에 누적한다.
+class VocMention(models.Model):
+    """VOC 본문·답글의 @멘션으로 태그된 팀 또는 사용자 1건.
+
+    한 번 태그되면 지우지 않는다 — 태그된 팀원·사용자는 이후 답글 메일도 계속 받고(mailer),
+    태그된 팀의 탭·태그된 사용자의 '내 VOC' 에도 보인다(VOCViewSet.get_queryset).
+    팀 태그면 team 에 역할 코드, 사용자 태그면 user 에 계정을 둔다(둘 중 하나만).
+    """
+    # 태그할 수 있는 팀 — AGENT 5팀. 제품 담당자·관리자는 태그 대상이 아니다(2026-11-23 사용자 결정).
+    TEAM_ROLES = ('TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E')
+
+    voc = models.ForeignKey(VOC, on_delete=models.CASCADE, related_name='mentions', verbose_name='VOC')
+    team = models.CharField(max_length=10, blank=True, default='', verbose_name='태그된 팀(역할 코드)')
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='voc_mentions', verbose_name='태그된 사용자'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='태그일시')
+
+    class Meta:
+        verbose_name = 'VOC 멘션'
+        verbose_name_plural = 'VOC 멘션 목록'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"[{self.voc_id}] @{self.team or self.user_id}"
+
+
 class AdminNotice(models.Model):
     """관리팀 공지사항"""
 

@@ -9,6 +9,7 @@
 - 백엔드: `backend/api/views.py` (`VOCViewSet`), `backend/api/models.py`
 - 본인 판정 헬퍼: `backend/api/doc_permissions.py` (`is_voc_submitter`)
 - 메일: `backend/api/mailer.py` (`enqueue_voc_created` / `enqueue_voc_comment`)
+- @멘션: `frontend/src/components/VocMentionList.tsx`(추천 목록) / `backend/api/views.py`(`_extract_voc_mentions`) / `VocMention` 모델
 
 ---
 
@@ -56,7 +57,23 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 | `content` | 내용. `RichTextEditor` 가 만든 **HTML** (2026-08-18 이전에는 평문이었다 — §7 참조) |
 | `created_at` | 작성일시. 정렬 기준(오름차순) |
 
-### 1.3 VocHistory
+### 1.3 VocMention (@멘션 태그, 2026-11-23)
+`backend/api/models.py` `VocMention`. VOC 에 FK(`related_name='mentions'`, CASCADE). 마이그레이션 0067.
+
+| 필드 | 의미 |
+|------|------|
+| `team` | 태그된 팀 역할 코드(`TE_R`/`TE_P`/`TE_J`/`TE_O`/`TE_E` — `VocMention.TEAM_ROLES`). 사용자 태그면 빈 값 |
+| `user` | 태그된 사용자 FK. 팀 태그면 `null` |
+| `created_at` | 태그일시 |
+
+- 등록 본문(`POST /api/voc/`)과 답글(`POST /api/voc/{id}/comment/`)을 저장할 때 서버가 **저장되는 HTML 의 멘션 표식**
+  `<span data-type="mention" data-id="team:TE_R">` / `data-id="user:<loginid>"` 을 직접 읽어 누적한다(`views._extract_voc_mentions`).
+  프론트가 따로 보낸 목록은 없다.
+- 받는 대상: 태그할 수 있는 팀(AGENT 5팀)과 **권한이 부여된 실제 계정**(`role != NONE`)뿐. 제품 담당자·관리자 팀, 없는 계정, 미지정 계정은 버린다.
+- 같은 대상을 다시 태그해도 행이 늘지 않고(`get_or_create`), **한 번 태그되면 지우지 않는다**.
+- ⚠️ MASTER 전용 수정 API(`PUT/PATCH /api/voc/{id}/`, 화면 없음)로 본문을 고쳐도 멘션은 다시 읽지 않는다.
+
+### 1.4 VocHistory
 `backend/api/models.py:885~`
 
 > ⚠️ **완전 미사용 모델이다.** 레코드를 생성하는 코드가 백엔드·프론트 어디에도 없고,
@@ -80,8 +97,8 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 
 | 파라미터 | 의미 |
 |---------|------|
-| `mine=true` | 로그인 사용자가 등록한 VOC 만. **사용자 id 를 보내지 않는다**(§3.1) |
-| `team` | 작성자 팀 필터(`submitter_role`). `PL`/`TE_R`/`TE_P`/`TE_J`/`TE_O`/`TE_E` 는 그 팀만, `etc` 는 그 외 전부(관리자·미지정·해외 제품 담당자·빈 값). 알 수 없는 값은 빈 목록. 기준 목록은 `VOC.TEAM_FILTER_ROLES` (2026-11-20, 유형 필터 `category` 대체) |
+| `mine=true` | 로그인 사용자가 등록한 VOC + **@멘션으로 나를 직접 태그한 VOC**(2026-11-23). 팀 태그만으로는 들어가지 않는다. **사용자 id 를 보내지 않는다**(§3.1) |
+| `team` | 작성자 팀 필터(`submitter_role`). `PL`/`TE_R`/`TE_P`/`TE_J`/`TE_O`/`TE_E` 는 그 팀이 쓴 VOC + **그 팀이 @멘션으로 태그된 VOC**(2026-11-23), `etc` 는 작성자 팀이 그 외 전부(관리자·미지정·해외 제품 담당자·빈 값). 알 수 없는 값은 빈 목록. 기준 목록은 `VOC.TEAM_FILTER_ROLES` (2026-11-20, 유형 필터 `category` 대체) |
 | `status` | 상태 필터 |
 | `search` | `title` / `submitter_name` / `content` 검색 |
 
@@ -139,6 +156,8 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 
 - **팀 필터(2026-11-20)**: 팀 탭은 서버의 `team` 쿼리 파라미터로 위임한다(§2.1). '기타'에는 관리자·미지정·해외 제품 담당자,
   작성자 계정이 없던 옛 VOC 가 들어간다. 팀 이름은 권한 라벨(`common.role_label_*`)을 그대로 쓴다.
+  2026-11-23부터 팀 탭에는 그 팀이 @멘션으로 태그된 VOC 도 보인다(예: 제품 담당자 VOC 에 R팀 태그 → '제품 담당자'·'AGENT R팀' 탭 모두).
+  목록의 '작성자 팀' 컬럼은 그대로 등록 시점 작성자 팀이다.
 
 - 제목을 클릭하면 상세 모달이 열린다.
 - `?id=123` 쿼리로 진입하면 해당 VOC 상세가 자동으로 열린다(메일 딥링크용). 목록이 여러 페이지로
@@ -156,6 +175,7 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
   저장값은 서버가 등록 시점 역할로 확정하므로, 개발 모드에서 사용자를 전환한 직후에는 일시적으로 다를 수 있다.
 
 - 내용은 태그를 걷어낸 평문이 비어 있으면 등록을 막는다.
+- **@멘션(2026-11-23)**: 본문에서 `@` 를 치면 추천 목록이 뜬다(§4.4). 태그한 팀·사용자는 등록 메일을 받는다(§5.1).
 - 입력칸 높이는 `RichTextEditor` 의 `EDITOR_MIN_HEIGHT`(240px)를 따른다.
 
 ### 4.3 상세 모달
@@ -174,6 +194,19 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 - 답글 입력창은 `checking` 상태에서만 보인다. 완료되면 사라진다.
 - Ctrl(⌘)+Enter 로 답글을 등록할 수 있다.
 - 버튼: `VOC 삭제`(MASTER) / `답변완료로 처리`(본인 또는 MASTER, `checking` 일 때) / `닫기`
+- **@멘션(2026-11-23)**: 답글에서도 `@` 로 팀·사용자를 태그한다(§4.4). 태그는 본문·답글에 강조 칩(`.mention`)으로 보인다.
+  태그된 사용자도 답변완료 권한은 없다(작성자 본인·MASTER 만).
+
+### 4.4 @멘션 추천 목록 (2026-11-23)
+`frontend/src/components/VocMentionList.tsx`. VOC 등록 본문·답글 에디터에만 켠다(`RichTextEditor` 의 `mentionSuggestion` prop).
+공지·가이드 등 다른 에디터는 멘션 노드를 렌더만 하고 `@` 추천은 뜨지 않는다(`richTextExtensions.SchemaMention`).
+
+- `@` 만 치면: **팀** AGENT R·P·J·O·E 5개 + "이름·ID·부서를 입력하면 사용자도 찾을 수 있습니다" 안내.
+- `@` 뒤에 글자를 치면: 팀은 이름으로 거르고, **사용자**는 `GET /api/users/?search=`(이름·loginid·부서, 200ms 지연)로 찾는다.
+  미지정(`NONE`) 계정은 빼고 최대 8명. 로딩 중 / 검색 실패 / 결과 없음 문구를 각각 보여 준다.
+- ↑/↓ 이동, Enter·Tab 선택, Esc 닫기, 마우스 클릭 선택.
+- 고르면 본문에 `@AGENT R팀` / `@이름` 칩이 들어간다. 저장 HTML 은 `<span class="mention" data-type="mention" data-id="team:TE_R" data-label="AGENT R팀">`.
+  렌더 정화(`sanitizeRichHtml`)는 이 span 의 `data-*`·`class` 를 유지하고 이벤트 핸들러·style 은 버린다.
 
 ---
 
@@ -183,24 +216,27 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 
 ### 5.1 VOC 등록 (`voc_created`)
 - 수신자: **`role='MASTER'` 사용자 중 VOC 메일을 켜둔 사람**(`UserProfile.receive_voc_mail`, 기본값 `True`)
-  \+ **작성자 팀원 전원**(작성자가 AGENT R·P·J·O·E팀일 때, VOC 메일 켬) − 작성자 본인 (2026-11-20, `_resolve_voc_created_recipients`).
+  \+ **작성자 팀원 전원**(작성자가 AGENT R·P·J·O·E팀일 때, VOC 메일 켬) − 작성자 본인 (2026-11-20, `_resolve_voc_created_recipients`)
+  \+ **본문에서 @멘션으로 태그한 팀원 전원**(VOC 메일 켬) + **태그한 사용자**(VOC 메일 설정 무관) (2026-11-23).
   MASTER·팀원이 늘어나도 설정 변경 없이 반영된다.
 - MASTER 는 권한 관리 화면 MASTER 탭의 '이메일 설정' 컬럼에서 `VOC` 토글로 수신 여부를 켜고 끌 수 있다
   (`PATCH /api/users/{id}/voc-mail/`, 본인 또는 MASTER 만 변경 가능). 라인별 메일 설정(`mail_lines`/`receive_all_mail`)과는 별개 설정이다.
 - AGENT 팀원도 서버에서는 같은 토글(`receive_voc_mail`)로 팀 발송(등록·답글)에서 빠질 수 있지만(API 허용 역할 MASTER·TE_R/P/J/O/E),
   ⚠️ **팀원용 토글 화면은 숨겨 두었다**(2026-11-20, 추후 재도입 가능). 팀원 값은 기본값(켜짐)이라 팀원 전원이 받는다.
-- 제목: `[VOC 등록] {제목}`
+- 제목: `[VOC 등록] {제목}`. 본문에서 팀을 태그했으면 앞에 `[R팀]` 처럼 붙는다(§5.4).
 
 ### 5.2 답글 등록 (`voc_comment`)
 - 메일 본문(`_latest_comment_text`)은 최신 답글의 HTML 을 `_html_to_text` 로 평문화한 뒤 싣는다
   (VOC 등록 메일이 `voc.content` 를 평문화하는 것과 동일한 방식, 2026-08-18부터 —
   답글 입력이 RichTextEditor 로 바뀌어 `content` 가 HTML 이 됐기 때문이다).
-- 수신자: **제출자 + 기존 답글 작성자 전원 + 작성자 팀원 전원(AGENT 팀, VOC 메일 켬) − 이번 작성자 본인**
-  (작성자 팀 = 등록 시점 `submitter_role`. **답글 작성자의 팀은 보지 않는다** — J팀 VOC 에 R팀이 답글을 달아도 R팀 전원에게는 가지 않는다)
+- 수신자: **제출자 + 기존 답글 작성자 전원 + 작성자 팀원 전원(AGENT 팀, VOC 메일 켬) + 지금까지 @멘션 태그된 팀원 전원(VOC 메일 켬)
+  \+ 지금까지 @멘션 태그된 사용자(설정 무관) − 이번 작성자 본인**
+  (작성자 팀 = 등록 시점 `submitter_role`. **답글 작성자의 팀은 보지 않는다** — J팀 VOC 에 R팀이 답글을 달아도 R팀 전원에게는 가지 않는다.
+  R팀 전원에게 보내려면 답글에서 `@AGENT R팀` 을 태그한다. 한 번 태그된 팀·사용자는 이후 답글 메일도 계속 받는다)
 - **두 통으로 나눠 발송한다.** 제출자에게 가는 메일에만
   "답변이 만족스러우셨다면 답변 완료 처리 해주세요." 안내가 들어가기 때문이다
   (한 통에 여러 수신자를 담으면 본문을 개인화할 수 없다).
-- 제목: `[VOC 답글] {제목}`
+- 제목: `[VOC 답글] {제목}`. 이번 답글에서 팀을 태그했으면 앞에 `[R팀]` 처럼 붙는다(§5.4).
 
 동작 예시 — A 가 등록, B 가 답글, 이어서 C 가 답글:
 
@@ -226,11 +262,19 @@ A 가 AGENT 팀원이면 각 행의 '그 외 참여자용'(등록 행은 `voc_cr
 
 > VOC 는 라인 개념이 없어 라인별 메일 수신 설정(`UserProfile.mail_lines`) 필터를 타지 않는다.
 
+### 5.4 제목 접두어 — 팀 태그 (2026-11-23)
+- 그 등록·답글에서 **팀을 태그했을 때만** 제목 맨 앞에 짧은 팀 이름을 붙인다: `[R팀] [VOC 답글] {제목}`.
+- 여러 팀이면 R·P·J·O·E 순으로 이어 붙인다: `[R팀][J팀] [VOC 등록] {제목}` (`mailer.VOC_MENTION_SUBJECT_LABEL`).
+- 태그 없이 달린 이후 답글 메일은 평소 제목이다(태그된 팀은 계속 받지만 접두어는 없다).
+- 제출자용·그 외용 두 통 모두 같은 제목이다. 사용자만 태그했으면 접두어가 없다.
+
 ---
 
 ## 6. i18n
 
-키 네임스페이스는 `voc.*` 이며 `ko.json` / `en.json` 에 **28개씩 동일하게** 존재한다.
+키 네임스페이스는 `voc.*` 이며 `ko.json` / `en.json` 에 **34개씩 동일하게** 존재한다.
+2026-11-23 @멘션으로 `content_placeholder`·`mention_group_team`·`mention_group_user`·`mention_hint`·`mention_no_user`·`mention_search_error`
+6개를 추가하고, `comment_placeholder` 문구에 `@` 태그 안내를 덧붙였다.
 2026-11-20 유형·페이지 폐지로 `category`·`category_*`(4)·`page`·`page_*`(4) 10개를 삭제하고 `team`·`team_etc` 를 추가했다.
 반려 관련 키(`status_rejected`, `reject_btn`, `reject_reason_placeholder`,
 `reject_confirm`)는 반려 제거와 함께 삭제했다.

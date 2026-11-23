@@ -1,7 +1,8 @@
 import React, { useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Placeholder from '@tiptap/extension-placeholder';
-import { RICH_TEXT_SCHEMA_EXTENSIONS } from './richTextExtensions';
+import Mention, { MentionOptions } from '@tiptap/extension-mention';
+import { RICH_TEXT_SCHEMA_EXTENSIONS, MENTION_HTML_ATTRIBUTES, SchemaMention } from './richTextExtensions';
 import { uploadImageAPI, uploadVideoAPI } from '../api/client';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -29,6 +30,8 @@ interface Props {
   onChange: (html: string) => void;
   readOnly?: boolean;
   placeholder?: string;
+  /** '@' 멘션 추천 설정. 넘긴 화면(VOC)에서만 '@' 입력 시 추천 목록이 뜬다. */
+  mentionSuggestion?: MentionOptions['suggestion'];
 }
 
 // 에디터 본문 최소 높이(px). 높이를 직접 지정하지 않는 사용처(VOC 등록·공지 작성)의
@@ -203,7 +206,7 @@ const Sep = () => (
   <div style={{ width: 1, background: '#dde1ea', margin: '0 3px', alignSelf: 'stretch', minHeight: 20 }} />
 );
 
-const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, placeholder }) => {
+const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, placeholder, mentionSuggestion }) => {
   const { t } = useTranslation();
   const [showEmoji, setShowEmoji] = React.useState(false);
   const [activeColorPicker, setActiveColorPicker] = React.useState<'text' | 'bg' | null>(null);
@@ -226,9 +229,17 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
   // Underline 중복 등록 제거, Enter=새 문단(Shift+Enter=줄바꿈, TipTap 기본)으로 되돌림
   // — Enter 를 <br>로 바꾸던 확장 때문에 글 전체가 한 문단이 되어 H1·정렬이 전체에 적용됐다.
   // claude 수정 (2026-11-20): 스키마 extension 목록을 richTextExtensions 로 분리(렌더 정화와 공유, B-26)
+  // claude 수정 (2026-11-23): mentionSuggestion 을 받은 에디터만 스키마의 멘션(추천 꺼짐)을 추천 켜진 멘션으로 바꾼다
+  const schemaExtensions = mentionSuggestion
+    ? [
+        ...RICH_TEXT_SCHEMA_EXTENSIONS.filter((ext) => ext !== SchemaMention),
+        Mention.configure({ HTMLAttributes: MENTION_HTML_ATTRIBUTES, suggestion: mentionSuggestion }),
+      ]
+    : RICH_TEXT_SCHEMA_EXTENSIONS;
+
   const editor = useEditor({
     extensions: [
-      ...RICH_TEXT_SCHEMA_EXTENSIONS,
+      ...schemaExtensions,
       Placeholder.configure({ placeholder: placeholder || t('guide.editor_placeholder') }),
     ],
     content: toEditorHtml(value),

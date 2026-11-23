@@ -1206,7 +1206,7 @@
     "col_created_at": "Received",
     "content_required": "Please enter the content.",
     "discussion": "Discussion",
-    "comment_placeholder": "Enter your reply",
+    "comment_placeholder": "Enter your reply (tag a team or user with @ to notify them by email)",
     "send_comment": "Send",
     "no_comments": "No replies yet.",
     "mark_completed": "Mark as Answered",
@@ -1219,7 +1219,13 @@
     "delete_btn": "Delete VOC",
     "delete_confirm_title": "Delete VOC",
     "delete_confirm_body": "Are you sure you want to delete this VOC? All comments and history will be permanently deleted.",
-    "delete_success": "VOC deleted successfully."
+    "delete_success": "VOC deleted successfully.",
+    "content_placeholder": "Enter details (tag a team or user with @ to notify them by email)",
+    "mention_group_team": "Teams",
+    "mention_group_user": "Users",
+    "mention_hint": "Type a name, ID or department to find users",
+    "mention_no_user": "No matching users",
+    "mention_search_error": "Failed to search users"
   },
   "login": {
     "title": "Product Introduction Map\nRequest System",

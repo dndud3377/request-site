@@ -24,7 +24,7 @@ from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
     UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
-    RoundSubmission, PersonalFilterPreset, VOC, WithdrawSnapshot,
+    RoundSubmission, PersonalFilterPreset, VOC, WithdrawSnapshot, VocMention,
 )
 
 
@@ -14453,6 +14453,133 @@ class VocTeamMailTest(TestCase):
         self.assertEqual(patch_toggle(self.m, self.e1).status_code, 200)
         self.assertEqual(patch_toggle(self.pl, self.pl).status_code, 400)
         self.assertEqual(patch_toggle(self.a, self.r2).status_code, 403)
+
+
+# claude 수정 (2026-11-23): VOC @멘션(팀·사용자) — 누적 저장·메일 수신자·제목 접두어·팀 탭·내 VOC 회귀 고정
+class VocMentionTest(TestCase):
+    """본문·답글의 @멘션으로 태그된 팀원(토글 켬)·사용자는 그 메일과 이후 답글 메일을 받고,
+    태그한 등록·답글 메일 제목 앞에만 [R팀] 이 붙는다. 태그된 팀 탭·태그된 사용자의 '내 VOC' 에도 보인다."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        mk = lambda lid, role, on=True: UserProfile.objects.create(
+            loginid=lid, username=lid, mail=f'{lid}@c.com', role=role, receive_voc_mail=on)
+        self.pl, self.pl2 = mk('pl', 'PL'), mk('pl2', 'PL')
+        self.r1, self.r2, self.r_off = mk('r1', 'TE_R'), mk('r2', 'TE_R'), mk('r_off', 'TE_R', on=False)
+        self.j1 = mk('j1', 'TE_J')
+        self.j_off = mk('j_off', 'TE_J', on=False)
+        self.m = mk('ma', 'MASTER')
+        self.none_user = mk('nobody', 'NONE')
+
+    @staticmethod
+    def _team(role):
+        return f'<span data-type="mention" data-id="team:{role}" data-label="{role}">@{role}</span>'
+
+    @staticmethod
+    def _user(loginid):
+        return f'<span data-type="mention" data-id="user:{loginid}" data-label="{loginid}">@{loginid}</span>'
+
+    def _post(self, user, url, data):
+        self.client.force_authenticate(user=user)
+        before = MailNotification.objects.count()
+        with patch('api.mailer._send_now_async'):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = self.client.post(url, data, format='json')
+        self.assertIn(r.status_code, (200, 201), r.content)
+        notis = list(MailNotification.objects.order_by('id')[before:])
+        return r.json(), [(n.subject, sorted(n.recipients)) for n in notis]
+
+    def _create(self, user, content='<p>x</p>', title='t'):
+        body, mails = self._post(user, '/api/voc/', {
+            'title': title, 'content': content, 'submitter_name': 'n', 'submitter_email': user.mail})
+        return body['id'], mails
+
+    def _comment(self, user, voc_id, content='<p>c</p>'):
+        return self._post(user, f'/api/voc/{voc_id}/comment/', {
+            'author_name': 'n', 'author_role': user.role, 'is_submitter': False, 'content': content})[1]
+
+    def test_create_with_team_and_user_mention(self):
+        """제품 담당자 등록 본문에서 R팀·j_off 태그 → MASTER + R팀(토글 켬) + j_off(토글 무관), 제목 [R팀]."""
+        voc_id, mails = self._create(self.pl, f'<p>{self._team("TE_R")} {self._user("j_off")} 확인 부탁</p>')
+        self.assertEqual(mails, [('[R팀] [VOC 등록] t', sorted(['ma@c.com', 'r1@c.com', 'r2@c.com', 'j_off@c.com']))])
+        self.assertEqual(
+            sorted((m.team, m.user.loginid if m.user else '') for m in VocMention.objects.filter(voc_id=voc_id)),
+            [('', 'j_off'), ('TE_R', '')],
+        )
+
+    def test_comment_mention_then_later_comments_keep_team(self):
+        """답글에서 R팀 태그 → 그 답글 두 통 모두 [R팀] 접두어, 이후 태그 없는 답글은 접두어 없이 R팀이 계속 받는다."""
+        voc_id, created = self._create(self.pl)
+        self.assertEqual(created, [('[VOC 등록] t', ['ma@c.com'])])
+        mails = self._comment(self.m, voc_id, f'<p>{self._team("TE_R")} 확인 부탁드립니다</p>')
+        self.assertEqual(mails, [
+            ('[R팀] [VOC 답글] t', ['pl@c.com']),
+            ('[R팀] [VOC 답글] t', ['r1@c.com', 'r2@c.com']),
+        ])
+        # R팀 r1 이 답을 단다 → 제출자 / 그 외: MASTER(기존 답글 작성자) + r2. 접두어 없음.
+        self.assertEqual(self._comment(self.r1, voc_id), [
+            ('[VOC 답글] t', ['pl@c.com']),
+            ('[VOC 답글] t', ['ma@c.com', 'r2@c.com']),
+        ])
+        # 제출자 답글 → 제출자 메일 없음 / 그 외: MASTER + r1 + r2 (R팀은 태그 이후 계속)
+        self.assertEqual(self._comment(self.pl, voc_id), [
+            ('[VOC 답글] t', ['ma@c.com', 'r1@c.com', 'r2@c.com']),
+        ])
+
+    def test_user_mention_keeps_receiving(self):
+        """사용자 태그는 VOC 메일 토글과 무관하게 받고, 이후 답글에서도 계속 받는다."""
+        voc_id, _ = self._create(self.pl)
+        self.assertEqual(self._comment(self.m, voc_id, f'<p>{self._user("j_off")}</p>'), [
+            ('[VOC 답글] t', ['pl@c.com']),
+            ('[VOC 답글] t', ['j_off@c.com']),
+        ])
+        self.assertEqual(self._comment(self.pl, voc_id), [
+            ('[VOC 답글] t', ['j_off@c.com', 'ma@c.com']),
+        ])
+
+    def test_multiple_teams_prefix_order_and_no_duplicates(self):
+        """여러 팀은 R·P·J·O·E 순서로 붙고, 같은 팀을 다시 태그해도 멘션 행은 늘지 않는다."""
+        voc_id, mails = self._create(self.pl, f'<p>{self._team("TE_J")} {self._team("TE_R")} {self._team("TE_R")}</p>')
+        self.assertEqual(mails[0][0], '[R팀][J팀] [VOC 등록] t')
+        self._comment(self.m, voc_id, f'<p>{self._team("TE_R")}</p>')
+        self.assertEqual(VocMention.objects.filter(voc_id=voc_id).count(), 2)
+
+    def test_invalid_mentions_are_ignored(self):
+        """태그 대상이 아닌 팀(제품 담당자·관리자)·없는 계정·권한 미지정 계정·형식이 다른 span 은 무시한다."""
+        content = (
+            f'<p>{self._team("PL")} {self._team("MASTER")} {self._user("ghost")} {self._user("nobody")}'
+            '<span data-id="team:TE_R">@가짜</span></p>'
+        )
+        voc_id, mails = self._create(self.pl, content)
+        self.assertEqual(VocMention.objects.filter(voc_id=voc_id).count(), 0)
+        self.assertEqual(mails, [('[VOC 등록] t', ['ma@c.com'])])
+
+    def _titles(self, user, **params):
+        self.client.force_authenticate(user=user)
+        r = self.client.get('/api/voc/', params)
+        self.assertEqual(r.status_code, 200)
+        return sorted(v['title'] for v in r.json())
+
+    def test_team_tab_includes_tagged_vocs(self):
+        """제품 담당자 VOC 에 R팀을 태그하면 제품 담당자 탭과 R팀 탭 모두에 보이고 J팀 탭에는 없다."""
+        voc_id, _ = self._create(self.pl, title='태그')
+        self._create(self.pl, title='무태그')
+        self._comment(self.m, voc_id, f'<p>{self._team("TE_R")}</p>')
+        self._comment(self.m, voc_id, f'<p>{self._team("TE_R")}</p>')  # 중복 태그여도 목록에 한 번만
+        self.assertEqual(self._titles(self.m, team='PL'), ['무태그', '태그'])
+        self.assertEqual(self._titles(self.m, team='TE_R'), ['태그'])
+        self.assertEqual(self._titles(self.m, team='TE_J'), [])
+        self.assertEqual(self._titles(self.m, team='etc'), [])
+
+    def test_my_voc_includes_tagged_user(self):
+        """'내 VOC' 는 내가 등록한 VOC + 나를 직접 태그한 VOC. 팀 태그만으로는 들어가지 않는다."""
+        self._create(self.j1, title='내 글')
+        tagged_id, _ = self._create(self.pl, f'<p>{self._user("j1")}</p>', title='나를 태그')
+        self._create(self.pl, f'<p>{self._team("TE_J")}</p>', title='J팀 태그')
+        self._comment(self.m, tagged_id, f'<p>{self._user("j1")}</p>')  # 중복 태그여도 한 번만
+        self.assertEqual(self._titles(self.j1, mine='true'), ['나를 태그', '내 글'])
+        self.assertEqual(self._titles(self.pl2, mine='true'), [])
 
 
 # claude 수정 (2026-11-22): 진행 중 문서 철회·중단 확인 대상 = 관여한 팀만(대기중 팀 제외) + 대상 0팀 즉시 처리 + 철회 이력

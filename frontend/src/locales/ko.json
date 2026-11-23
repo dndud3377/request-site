@@ -1206,7 +1206,7 @@
     "col_created_at": "접수일",
     "content_required": "내용을 입력해주세요.",
     "discussion": "댓글",
-    "comment_placeholder": "댓글을 입력하세요",
+    "comment_placeholder": "댓글을 입력하세요 (@로 팀·사용자를 태그하면 메일로 알립니다)",
     "send_comment": "댓글 등록",
     "no_comments": "아직 댓글이 없습니다.",
     "mark_completed": "답변완료로 처리",
@@ -1219,7 +1219,13 @@
     "delete_btn": "VOC 삭제",
     "delete_confirm_title": "VOC 삭제",
     "delete_confirm_body": "이 VOC를 삭제하시겠습니까? 댓글과 이력이 모두 삭제되며 되돌릴 수 없습니다.",
-    "delete_success": "VOC가 삭제되었습니다."
+    "delete_success": "VOC가 삭제되었습니다.",
+    "content_placeholder": "내용을 입력하세요 (@로 팀·사용자를 태그하면 메일로 알립니다)",
+    "mention_group_team": "팀",
+    "mention_group_user": "사용자",
+    "mention_hint": "이름·ID·부서를 입력하면 사용자도 찾을 수 있습니다",
+    "mention_no_user": "일치하는 사용자가 없습니다",
+    "mention_search_error": "사용자 검색에 실패했습니다"
   },
   "login": {
     "title": "제품 소개 지도\n의뢰 시스템",
