@@ -29,11 +29,18 @@ def create_before_delete(document, delete_path, acting_user=None, reason='', wit
     ⚠️ 반드시 `document.delete()` **앞에서** 호출해야 한다 — 결재 단계·철회 요청이 CASCADE 로
     함께 지워지기 때문이다.
 
+    임시저장(draft) 문서는 남기지 않고 None 을 돌려준다 — 상신 전이라 결재 이력이 없다
+    (2026-11-23 사용자 결정: 철회·삭제·MASTER 삭제·60일 자동 삭제 모두 임시저장은 이력 없음).
+
     - delete_path: `WithdrawSnapshot.PATH_*`
     - acting_user: 삭제를 확정시킨 사람(즉시 삭제면 철회한 사람, 팀 확인 경로면 마지막 확인자)
     - withdraw_request: 팀 확인을 거친 경로의 철회 요청 — 요청자·요청일시·확인 기록을 복사한다.
       즉시 삭제 경로에서는 None 이고, 그때는 철회한 사람(acting_user)을 요청자로 기록한다.
     """
+    # claude 수정 (2026-11-23): 임시저장은 철회 이력을 남기지 않는다(사용자 결정)
+    if document.status == 'draft':
+        return None
+
     steps = document.approval_steps.all()
     steps_json = json.dumps(
         ApprovalStepSerializer(steps, many=True).data,
