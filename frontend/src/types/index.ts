@@ -445,6 +445,18 @@ export type CreateDocumentInput = Omit<
 
 export type UpdateDocumentInput = Partial<CreateDocumentInput>;
 
+// claude 수정 (2026-11-23): VOC @멘션 — 에디터 추천 목록 항목. id 는 서버가 읽는 멘션 표식(team:TE_R / user:<loginid>)
+export type VocMentionKind = 'team' | 'user';
+export interface VocMentionItem {
+  /** 멘션 노드 data-id 로 저장되는 값. 서버(VOCViewSet)가 이 값으로 태그 대상을 확정한다. */
+  id: string;
+  /** 본문에 '@라벨' 로 보이는 이름(팀 이름 또는 사용자 이름). */
+  label: string;
+  kind: VocMentionKind;
+  /** 추천 목록 보조 표시(사용자: loginid·부서). 팀은 빈 문자열. */
+  detail: string;
+}
+
 export interface VocComment {
   id: number;
   author_name: string;
