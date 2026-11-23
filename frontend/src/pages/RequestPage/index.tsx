@@ -408,6 +408,8 @@ export default function RequestPage(): React.ReactElement {
   const [loadError, setLoadError] = useState(false);
   // 임시저장/자동저장/상신이 동시에 create()를 호출해 의뢰서가 중복 생성되는 race 방지 가드
   const isPersistingRef = useRef(false);
+  // claude 수정 (2026-11-22): 20분 무조작 자동저장 안내를 토스트 대신 화면 가운데 모달로 보여준다
+  const [autoSaveNoticeOpen, setAutoSaveNoticeOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // claude 수정 (2026-10-28): 일반 목적 상신 시 J/O 표가 0행이면 실제 0건이 맞는지 확인받는다 — 비어 있는 표 이름 목록(null=닫힘)
   const [joEmptyConfirm, setJoEmptyConfirm] = useState<string[] | null>(null);
@@ -4947,7 +4949,8 @@ export default function RequestPage(): React.ReactElement {
       : `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_${flowStepPart}_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
-    let history: HistorySnapshot[] = [];
+    // claude 수정 (2026-11-22): 임시저장·자동저장 때 history 를 빈 배열로 보내 반려·중단·진행 중 문서의 변경 이력이 지워지던 문제 — 불러온 이력을 그대로 유지
+    let history: HistorySnapshot[] = prevParsedRef.current?.history ?? [];
     if (shouldAddHistory && prevParsedRef.current) {
       const prev = prevParsedRef.current;
       history = [
@@ -5022,7 +5025,8 @@ export default function RequestPage(): React.ReactElement {
         const res = await documentsAPI.create(enriched);
         setSavedId(res.data.id);
       }
-      addToast(t('request.save_success'), 'success');
+      // claude 수정 (2026-11-22): 저장 완료 토스트에 임시저장 자동 삭제 규칙(마지막 저장 후 60일) 안내 추가
+      addToast(`${t('request.save_success')} ${t('request.draft_retention_notice')}`, 'success');
       // claude 수정 (2026-11-10): 임시저장 실패 시 서버 거부 사유(예: MAP 정보 잠금 400)를 토스트에 표시 — 일반 문구만 보여 원인을 알 수 없었다
     } catch (err) {
       addToast(err instanceof Error ? err.message : t('common.error'), 'error');
@@ -5045,7 +5049,8 @@ export default function RequestPage(): React.ReactElement {
         const res = await documentsAPI.create(enriched);
         setSavedId(res.data.id);
       }
-      addToast(t('request.auto_save_success'), 'info');
+      // claude 수정 (2026-11-22): 토스트 대신 화면 가운데 안내 모달(자동 삭제 규칙 포함)
+      setAutoSaveNoticeOpen(true);
     } catch {
       // 자동저장 실패는 조용히 무시
     } finally {
@@ -5974,6 +5979,25 @@ export default function RequestPage(): React.ReactElement {
           localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
         }}
       />
+
+      {/* claude 수정 (2026-11-22): 20분 무조작 자동저장 안내 모달(자동 삭제 규칙 포함) */}
+      <Modal
+        isOpen={autoSaveNoticeOpen}
+        onClose={() => setAutoSaveNoticeOpen(false)}
+        title={t('request.auto_save_notice_title')}
+        size="sm"
+        hideFullscreen
+        footer={
+          <button className="btn btn-primary" onClick={() => setAutoSaveNoticeOpen(false)}>
+            {t('common.confirm')}
+          </button>
+        }
+      >
+        <div style={{ lineHeight: 1.8, wordBreak: 'keep-all' }}>
+          <p>{t('request.auto_save_success')}</p>
+          <p style={{ color: 'var(--text-secondary)' }}>{t('request.draft_retention_notice')}</p>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={mergeConfirmOpen}

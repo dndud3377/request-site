@@ -14,7 +14,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 - **`apps.py` 는 스케줄러를 자동 기동하지 않는다.** (gunicorn 워커·runserver 어디서도 안 뜸)
 - 스케줄러는 관리 명령 **`python manage.py run_scheduler`** 로 띄우는 **`scheduler` 서비스(컨테이너 1개)** 에서만 실행한다.
-  - `run_scheduler` 는 `SKIP_SCHEDULER=true` 면 `start_mail_only()`(메일만), 아니면 `start()`(전체)를 호출하고 프로세스를 유지한다.
+  - `run_scheduler` 는 `SKIP_SCHEDULER=true` 면 `start_mail_only()`(메일 큐 + 오래된 임시저장 자동 삭제 — 2026-11-22), 아니면 `start()`(전체)를 호출하고 프로세스를 유지한다.
 - `docker-compose.yml`: 운영 `scheduler` 서비스(`SKIP_SCHEDULER=false`, 전체 동기화 + 메일).
 - `docker-compose.dev.yml`: 개발 `scheduler` 서비스(`SKIP_SCHEDULER=true`, 메일 큐만).
 - 마이그레이션/시드/정적파일 수집은 **웹 `backend` 서비스**가 담당하고, `scheduler` 서비스는 `wait_for_db` 후 스케줄러만 실행한다.
@@ -41,6 +41,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | `sync_map_schedule` | 매일 02:00 | `sync_map_schedule()` | 라인-제품 예정일(DCQ `sd.tg`) 동기화 → `api_mapschedule` 전체 갱신(날짜만 저장). 결재현황 MAP 목적 `MM/DD 예정` 뱃지용. 실패·빈 결과 시 기존 데이터를 지우지 않고 **DCQ 동기화 실패** 알림 메일 발송(구분 `-` / 대상 `MAP 예정일`). `HEAVY_SYNC_JOB_IDS` 포함 → 개발 환경에서는 실행되지 않는다. 상세는 `docs/MAP_COMPLETION_MAIL.md` §10 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
 | `check_map_completion_mail` | **10분** | `pop3_mail.check_map_completion_mail()` | POP3 메일함의 '완료 알림' 메일 제목 ↔ MAP 목적 'NEW' 상신 문서 product_name 매칭. `HEAVY_SYNC_JOB_IDS`에 포함되어 개발 환경(`SKIP_SCHEDULER=true`)에서는 실행되지 않는다. 상세는 `docs/MAP_COMPLETION_MAIL.md` 참고 |
+| `delete_stale_drafts` | 매일 03:00 (2026-11-22 추가) | `delete_stale_drafts()` | **오래된 임시저장 자동 삭제.** `status='draft'` 이고 마지막 임시저장(`updated_at`) 후 `DRAFT_RETENTION_DAYS`(**60일**)가 지난 문서를 삭제한다(복구 불가, CASCADE). 반려·중단·진행 중·승인 문서는 대상 아님. 메일 없이 문서마다 `[DELETE_STALE_DRAFT]` 서버 로그만 남긴다. `updated_at` 은 임시저장·20분 자동저장(PATCH) 때 갱신되고 '그룹 지정'(`save(update_fields=['shared_group'])`)으로는 갱신되지 않는다. 외부 DB 가 필요 없어 **개발(`start_mail_only`)에서도 실행**한다(사용자 결정). 하루 1회라 실제 삭제는 60일이 된 다음 03:00(최대 약 하루 늦음). 배포 후 첫 실행에서 이미 60일이 지난 임시저장은 바로 삭제된다(사용자 결정 — 유예 없음). 화면 안내 문구는 `request.draft_retention_notice` (`docs/REQUEST.md` 2026-11-22 절). 테스트 `api/tests.py::StaleDraftCleanupTest` |
 
 > `sync_rtdb_options`는 RTDB(REST API) 소스만, `sync_form_options`/`sync_holidays`/`sync_design_rule`/`sync_map_schedule`는
 > DCQ 소스만 다루므로 실패 알림도 그에 맞춰 각각 `rtdb_sync_failed`(RTDB) / `dcq_sync_failed`(DCQ)로

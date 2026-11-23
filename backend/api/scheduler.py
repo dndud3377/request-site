@@ -927,6 +927,58 @@ def sync_map_schedule():
                 engine.dispose()
 
 
+# claude 수정 (2026-11-22): 마지막 임시저장(updated_at) 후 60일이 지난 임시저장(draft) 문서 자동 삭제 잡 추가(사용자 결정 — 60일 고정·알림 없음·개발에서도 실행)
+DRAFT_RETENTION_DAYS = 60
+DELETE_STALE_DRAFTS_JOB_ID = 'delete_stale_drafts'
+DELETE_STALE_DRAFTS_HOUR = 3
+
+
+def delete_stale_drafts():
+    """마지막 임시저장 후 `DRAFT_RETENTION_DAYS`(60일)가 지난 임시저장 문서를 삭제한다.
+
+    - 대상: `status='draft'` 이고 `updated_at` 이 지금으로부터 60일보다 이전인 문서.
+      `updated_at`(auto_now)은 임시저장·자동저장(PATCH) 때 갱신되고, '그룹 지정'처럼
+      `save(update_fields=[...])` 로 다른 필드만 저장할 때는 갱신되지 않는다.
+    - 반려·중단·진행 중·승인 문서는 대상이 아니다.
+    - 메일은 보내지 않는다(사용자 결정). 삭제는 복구 불가라 문서마다 서버 로그를 남긴다
+      (철회 삭제 `_delete_withdrawn_document` 와 같은 방식).
+
+    Returns:
+        int: 삭제한 문서 수.
+    """
+    from datetime import timedelta
+    from .models import RequestDocument
+
+    cutoff = timezone.now() - timedelta(days=DRAFT_RETENTION_DAYS)
+    stale = RequestDocument.objects.filter(status='draft', updated_at__lt=cutoff)
+    deleted = 0
+    for document in stale:
+        logger.warning(
+            "[DELETE_STALE_DRAFT] doc=%s title=%r requester=%s last_saved=%s retention_days=%s",
+            document.pk, document.title,
+            getattr(document.requester, 'loginid', '-') if document.requester_id else '-',
+            document.updated_at.isoformat(), DRAFT_RETENTION_DAYS,
+        )
+        document.delete()
+        deleted += 1
+    if deleted:
+        logger.info(_("[scheduler] 오래된 임시저장 {count}건 자동 삭제").format(count=deleted))
+    return deleted
+
+
+def _add_delete_stale_drafts_job(scheduler):
+    """`delete_stale_drafts` 를 매일 03:00(KST) 잡으로 등록한다 — 전체·메일 전용 스케줄러 공용."""
+    from apscheduler.triggers.cron import CronTrigger
+    scheduler.add_job(
+        delete_stale_drafts,
+        trigger=CronTrigger(hour=DELETE_STALE_DRAFTS_HOUR, minute=0),
+        id=DELETE_STALE_DRAFTS_JOB_ID,
+        name='오래된 임시저장 자동 삭제',
+        replace_existing=True,
+        max_instances=1,
+    )
+
+
 # start_mail_only()(SKIP_SCHEDULER=true, 예: 개발)에서는 add_job 하지 않는 무거운 외부 동기화
 # 잡 ID. DjangoJobStore 는 DB(django_apscheduler_djangojob 테이블)에 저장된 잡을 연결 시 그대로
 # 복원하므로, 이 잡들이 (예: db-sync 로 운영 잡 상태가 dev DB 에 유입되는 등) DB 에 남아있으면
@@ -1017,6 +1069,9 @@ def start():
             max_instances=1,
         )
 
+        # claude 수정 (2026-11-22): 오래된 임시저장 자동 삭제 잡(매일 03:00) 등록
+        _add_delete_stale_drafts_job(scheduler)
+
         # 구(舊) 단독 잡(process_product 전용)이 통합 잡으로 대체되어 남아있으면 제거한다.
         try:
             scheduler.remove_job('sync_process_product')
@@ -1024,8 +1079,8 @@ def start():
             pass
 
         scheduler.start()
-        # claude 수정 (2026-11-16): DCQ 동기화 주기 문구 1 시간 → 10 분
-        logger.info(_("[scheduler] APScheduler 시작 - 10 분 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰·MAP 예정일 동기화 등록"))
+        # claude 수정 (2026-11-22): 기동 로그에 매일 03:00 오래된 임시저장 자동 삭제 추가(2026-11-16: DCQ 주기 문구 1 시간 → 10 분)
+        logger.info(_("[scheduler] APScheduler 시작 - 10 분 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰·MAP 예정일 동기화 / 매일 03:00 오래된 임시저장 자동 삭제 등록"))
 
         # claude 수정 (2026-10-29): 기동 시 순차 실행 DCQ 잡에 sync_map_schedule 추가
         def _run_dcq_jobs_sequentially():
@@ -1089,7 +1144,9 @@ def start_mail_only():
             replace_existing=True,
             max_instances=1,
         )
+        # claude 수정 (2026-11-22): 오래된 임시저장 자동 삭제는 외부 DB 가 필요 없어 개발에서도 실행한다(사용자 결정)
+        _add_delete_stale_drafts_job(scheduler)
         scheduler.start()
-        logger.info(_("[scheduler] 메일 전용 스케줄러 시작 - 1 분 주기 결재 알림 발송"))
+        logger.info(_("[scheduler] 메일 전용 스케줄러 시작 - 1 분 주기 결재 알림 발송 / 매일 03:00 오래된 임시저장 자동 삭제"))
     except ProgrammingError as e:
         logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e), exc_info=True)
