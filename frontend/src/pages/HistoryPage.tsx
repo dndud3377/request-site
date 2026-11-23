@@ -138,8 +138,8 @@ const withdrawSnapshotToDocument = (snap: WithdrawSnapshot): RequestDocument => 
 });
 
 /** 철회 이력 삭제 경로 라벨 키 */
+// claude 수정 (2026-11-23): 'draft' 경로 제거(임시저장은 이력 없음). 목록에 없는 옛 값은 원래 값을 그대로 보여준다(withdrawPathLabel)
 const WITHDRAW_PATH_LABEL_KEY: Record<WithdrawDeletePath, `history.withdraw_path_${WithdrawDeletePath}`> = {
-  draft: 'history.withdraw_path_draft',
   no_target: 'history.withdraw_path_no_target',
   confirmed: 'history.withdraw_path_confirmed',
   master: 'history.withdraw_path_master',
@@ -410,6 +410,12 @@ export default function HistoryPage(): React.ReactElement {
     setModalOpen(true);
   };
 
+  // claude 수정 (2026-11-23): 삭제 경로 라벨 — 알 수 없는 값(제거된 옛 경로 등)은 원래 값을 그대로 보여준다
+  const withdrawPathLabel = (path: string): string => {
+    const key = WITHDRAW_PATH_LABEL_KEY[path as WithdrawDeletePath];
+    return key ? t(key) : path;
+  };
+
   // claude 수정 (2026-11-22): 철회 이력은 원본이 지워졌으므로 스냅샷만으로 열고, 철회 정보를 함께 보여준다
   const openWithdrawDetail = (snap: WithdrawSnapshot) => {
     setSelected(withdrawSnapshotToDocument(snap));
@@ -569,7 +575,7 @@ export default function HistoryPage(): React.ReactElement {
                   </td>
                   <td>{formatDateTime(snap.submitted_at)}</td>
                   <td>{formatDateTime(snap.deleted_at)}</td>
-                  <td>{t(WITHDRAW_PATH_LABEL_KEY[snap.delete_path])}</td>
+                  <td>{withdrawPathLabel(snap.delete_path)}</td>
                   <td style={{ maxWidth: 260, whiteSpace: 'pre-wrap' }}>{snap.reason || '-'}</td>
                 </tr>
               ))}
@@ -710,7 +716,7 @@ export default function HistoryPage(): React.ReactElement {
               <div style={{ fontSize: '1.2rem', lineHeight: 1.2 }} aria-hidden="true">🗑️</div>
               <div style={{ flex: 1, fontSize: '0.85rem' }}>
                 <p className="pause-banner-title">
-                  {t('history.withdraw_info_title')} · {t(WITHDRAW_PATH_LABEL_KEY[selectedWithdraw.delete_path])}
+                  {t('history.withdraw_info_title')} · {withdrawPathLabel(selectedWithdraw.delete_path)}
                 </p>
                 {selectedWithdraw.reason && (
                   <p className="pause-banner-reason">“{selectedWithdraw.reason}”</p>
