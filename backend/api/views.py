@@ -2,6 +2,7 @@
 
 import datetime
 from decimal import Decimal
+from html.parser import HTMLParser
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -34,7 +35,7 @@ from .models import (
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
     PersonalMarkCategory, PersonalDocumentMark, RoundSubmission, PersonalFilterPreset,
-    WithdrawSnapshot,
+    WithdrawSnapshot, VocMention,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
 from .search_filters import AdiCdTargetSearchFilter
@@ -4621,6 +4622,55 @@ class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data)
 
 
+# claude 수정 (2026-11-23): VOC @멘션 — 본문·답글 HTML 의 멘션 표식을 서버가 직접 읽어 태그 대상을 확정한다.
+# 표식은 프론트 Tiptap Mention 확장이 만드는 <span data-type="mention" data-id="team:TE_R | user:<loginid>">.
+VOC_MENTION_TEAM_PREFIX = 'team:'
+VOC_MENTION_USER_PREFIX = 'user:'
+
+
+class _VocMentionParser(HTMLParser):
+    """HTML 에서 멘션 노드(span[data-type=mention])의 data-id 만 모은다."""
+
+    def __init__(self):
+        super().__init__()
+        self.ids = []
+
+    def handle_starttag(self, tag, attrs):
+        attr_map = dict(attrs)
+        if tag == 'span' and attr_map.get('data-type') == 'mention' and attr_map.get('data-id'):
+            self.ids.append(attr_map['data-id'])
+
+
+def _extract_voc_mentions(html):
+    """본문·답글 HTML 에서 태그된 팀 코드와 사용자를 뽑는다.
+
+    프론트가 따로 보낸 목록이 아니라 저장되는 HTML 자체를 근거로 한다. 태그할 수 있는 팀
+    (VocMention.TEAM_ROLES)과 권한이 부여된 실제 계정(role != NONE)만 받고 나머지는 버린다.
+    반환: (팀 코드 리스트 — TEAM_ROLES 순서, User 리스트 — loginid 순)
+    """
+    parser = _VocMentionParser()
+    parser.feed(html or '')
+    team_codes, loginids = set(), set()
+    for mention_id in parser.ids:
+        if mention_id.startswith(VOC_MENTION_TEAM_PREFIX):
+            team_codes.add(mention_id[len(VOC_MENTION_TEAM_PREFIX):])
+        elif mention_id.startswith(VOC_MENTION_USER_PREFIX):
+            loginids.add(mention_id[len(VOC_MENTION_USER_PREFIX):])
+    teams = [role for role in VocMention.TEAM_ROLES if role in team_codes]
+    users = []
+    if loginids:
+        users = list(User.objects.filter(loginid__in=loginids).exclude(role='NONE').order_by('loginid'))
+    return teams, users
+
+
+def _save_voc_mentions(voc, teams, users):
+    """태그된 팀·사용자를 VOC 에 누적한다. 이미 태그된 대상은 다시 만들지 않고, 지우지도 않는다."""
+    for team in teams:
+        VocMention.objects.get_or_create(voc=voc, team=team, user=None)
+    for user in users:
+        VocMention.objects.get_or_create(voc=voc, team='', user=user)
+
+
 class VOCViewSet(viewsets.ModelViewSet):
     queryset = VOC.objects.all()
     serializer_class = VOCSerializer
@@ -4632,12 +4682,13 @@ class VOCViewSet(viewsets.ModelViewSet):
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
 
-    # claude 수정 (2026-11-20): ?team= 작성자 팀 필터 추가(PL/TE_R/TE_P/TE_J/TE_O/TE_E, 그 외는 etc)
+    # claude 수정 (2026-11-23): '내 VOC' 에 나를 태그한 VOC, 팀 탭에 그 팀을 태그한 VOC 도 포함(@멘션)
     def get_queryset(self):
-        """`?mine=true` 면 로그인 사용자가 등록한 VOC 만 반환한다.
+        """`?mine=true` 면 로그인 사용자가 등록했거나 @멘션으로 태그된 VOC 만 반환한다.
 
         `?team=` 은 등록 시점 작성자 팀(submitter_role)으로 거른다. `VOC.TEAM_FILTER_ROLES` 중 하나면
-        그 팀만, `etc` 면 그 외 전부(MASTER·NONE·PL_GL·빈 값). 알 수 없는 값은 빈 목록.
+        그 팀이 쓴 VOC 와 그 팀이 @멘션으로 태그된 VOC, `etc` 면 작성자 팀이 그 외 전부(MASTER·NONE·PL_GL·빈 값).
+        알 수 없는 값은 빈 목록.
 
         프론트가 사용자 id 를 쿼리로 보내던 방식을 대체한다 — 개발 모드의 목 사용자
         id 는 DB 의 실제 user.id 와 어긋날 수 있어 '내 VOC' 가 오동작했다.
@@ -4648,25 +4699,32 @@ class VOCViewSet(viewsets.ModelViewSet):
             loginid = getattr(user, 'loginid', '')
             if not loginid:
                 return queryset.none()
-            queryset = queryset.filter(submitter__loginid=loginid)
+            queryset = queryset.filter(
+                Q(submitter__loginid=loginid) | Q(mentions__user__loginid=loginid)
+            ).distinct()
         team = self.request.query_params.get('team')
         if team:
             if team in VOC.TEAM_FILTER_ROLES:
-                queryset = queryset.filter(submitter_role=team)
+                queryset = queryset.filter(Q(submitter_role=team) | Q(mentions__team=team)).distinct()
             elif team == VOC.TEAM_FILTER_ETC:
                 queryset = queryset.exclude(submitter_role__in=VOC.TEAM_FILTER_ROLES)
             else:
                 queryset = queryset.none()
         return queryset
 
-    # claude 수정 (2026-11-20): 작성자 팀(submitter_role)도 등록 시점 역할로 서버가 확정
+    # claude 수정 (2026-11-23): 등록 본문의 @멘션(팀·사용자)을 VOC 에 누적하고 등록 메일 수신자·제목에 반영
     def perform_create(self, serializer):
-        """제출자 FK·작성자 팀은 프론트가 보낸 값이 아니라 인증된 사용자로 서버가 확정한다."""
+        """제출자 FK·작성자 팀은 프론트가 보낸 값이 아니라 인증된 사용자로 서버가 확정한다.
+
+        본문의 @멘션은 VocMention 으로 누적하고, 태그된 팀은 등록 메일 제목 앞에 붙인다.
+        """
         user = self.request.user
         submitter = user if getattr(user, 'is_authenticated', False) else None
         submitter_role = (getattr(submitter, 'role', '') or '') if submitter else ''
         voc = serializer.save(submitter=submitter, submitter_role=submitter_role)
-        mailer.enqueue_voc_created(voc)
+        mention_teams, mention_users = _extract_voc_mentions(voc.content)
+        _save_voc_mentions(voc, mention_teams, mention_users)
+        mailer.enqueue_voc_created(voc, mention_teams=mention_teams)
 
     # claude 수정 (2026-11-20): PUT/PATCH /api/voc/{id}/ 를 MASTER 전용으로 제한 — 권한 클래스가 DELETE 만 막아
     # 로그인 사용자 누구나 남의 VOC 제목·내용을 고칠 수 있었다. 공용 IsAuthenticatedOrMasterDelete 는 다른
@@ -4707,16 +4765,22 @@ class VOCViewSet(viewsets.ModelViewSet):
         voc.save(update_fields=['status', 'responded_at'])
         return Response(VOCSerializer(voc).data)
 
+    # claude 수정 (2026-11-23): 답글의 @멘션(팀·사용자)을 VOC 에 누적하고 답글 메일 수신자·제목에 반영
     @action(detail=True, methods=['post'])
     def comment(self, request, pk=None):
+        """답글 등록. 답글의 @멘션은 VocMention 으로 누적되어 이번·이후 답글 메일을 받는다."""
         voc = self.get_object()
         commenter_email = getattr(request.user, 'mail', '') or ''
         commenter_name = getattr(request.user, 'username', '') or ''
         data = {**request.data, 'voc': voc.id}
         serializer = VocCommentSerializer(data=data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(author_email=commenter_email)
-        mailer.enqueue_voc_comment(voc, commenter_email, commenter_name=commenter_name)
+        comment = serializer.save(author_email=commenter_email)
+        mention_teams, mention_users = _extract_voc_mentions(comment.content)
+        _save_voc_mentions(voc, mention_teams, mention_users)
+        mailer.enqueue_voc_comment(
+            voc, commenter_email, commenter_name=commenter_name, mention_teams=mention_teams,
+        )
         return Response(VOCSerializer(voc).data)
 
 
