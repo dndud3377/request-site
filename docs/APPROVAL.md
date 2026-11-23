@@ -2471,6 +2471,7 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 |------|------|
 | J-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_J` 또는 `MASTER` (`CanManageLayerFilter`) |
 | O-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_O` 또는 `MASTER` |
+| 기존 필터의 **대상 표(`table`) 변경** (J↔O) | `MASTER` 만 (2026-11-23). TE_J/TE_O 는 400 — 같은 값을 다시 보내는 수정은 허용 |
 | 필터 **적용**(`apply-layer-filter`)·**초기화**(`reset-layer-filter`) | 위 역할 조건 **+** 문서가
   `under_review` **+** 해당 단계(J 또는 O)가 이번 회차에 아직 `approved` 가 아님 —
   `update_validation_system` 의 MASK 게이트와 동일한 발상(단, J/O 는 PV/EV 같은 별도 검토자가
@@ -2499,6 +2500,12 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 - `GET/POST /api/layer-filter-sets/?table=J|O`, `PATCH/DELETE /api/layer-filter-sets/{id}/` — 필터
   정의 CRUD. `list`/`create`는 `table` 쿼리 파라미터·바디가 필수(어느 권한으로 판정할지 알 수 없으면
   403).
+  - **대상 표 변경 제한 (2026-11-23)**: `PATCH`/`PUT` 으로 기존 필터의 `table` 을 다른 값으로 바꾸는 것은
+    `MASTER` 만 가능하다. TE_J/TE_O 가 시도하면 400 `{"table": ["필터의 대상 표(J/O)는 바꿀 수 없습니다."]}`.
+    판정은 `LayerFilterSetSerializer.validate_table` 이 한다 — 권한 클래스(`CanManageLayerFilter.has_object_permission`)는
+    수정 **전** `table` 로만 판정하므로, 이 검사가 없으면 TE_J 가 자기 J 필터를 `table='O'` 로 바꿔 O팀 공유 목록에
+    넣을 수 있었다(O팀이 누르면 O 표 `st` 가 실제로 바뀜). 화면의 수정 요청(`layerFilterSetsAPI.update`)은
+    `label`·`words` 만 보내므로 화면 동작은 바뀌지 않는다.
 - `POST /api/documents/{id}/apply-layer-filter/` — `{table, filter_id}` → 매칭된 행의 `st`를
   `'X'`로 설정하고 `new_or_copy`/`product_name`/`step`(J면 `item_id`도) 초기화, `additional_notes`
   저장. 이미 `st==='X'`인 행은 다시 매칭하지 않는다(재적용해도 중복 집계 없음). **매칭 1건
@@ -2546,8 +2553,8 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 
 ### 12-5. 테스트
 
-`backend/api/tests.py::LayerFilterSetTest`(27건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
-파라미터 누락 시 거부), 적용 권한(TE_J/TE_O/MASTER, 그 외 역할 거부), 문서 상태·단계 게이트, 필드
+`backend/api/tests.py::LayerFilterSetTest`(31건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
+파라미터 누락 시 거부, 대상 표(`table`) 변경은 TE_J/TE_O 400·MASTER 200·같은 값 수정은 허용 — 2026-11-23), 적용 권한(TE_J/TE_O/MASTER, 그 외 역할 거부), 문서 상태·단계 게이트, 필드
 초기화, 이미 비활성인 행 재매칭 안 함, 다른 테이블 필터로 적용 시도 거부, O-layer 행에 `item_id`
 키가 생기지 않음. 초기화: 필터 여러 번 적용 후에도 baseline 은 최초 상신 시점 값 그대로 남아
 초기화 시 완전히 복원됨, baseline 없을 때/회차 변경 후 200+`reset:false`(에러 아님), 적용→초기화
