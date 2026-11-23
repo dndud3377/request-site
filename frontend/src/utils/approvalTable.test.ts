@@ -1090,17 +1090,23 @@ describe('hasInvolvedConfirmTarget', () => {
     expect(hasInvolvedConfirmTarget(steps, false)).toBe(true);
   });
 
-  it('후결자(RA)는 항상 대상이다', () => {
-    const steps = [makeStep({ agent: 'J', zone_index: 2 }), makeStep({ agent: 'RA', zone_index: 2 })];
+  // claude 수정 (2026-11-23): 후결자는 늘 담당자가 지정돼 있어 철회·중단 모두 대상. 철회는 담당자가 없어도 RA 를 대상으로 본다
+  it('후결자(RA)는 대상이다', () => {
+    const steps = [makeStep({ agent: 'J', zone_index: 2 }), makeStep({ agent: 'RA', assignee_loginid: 'ra', zone_index: 2 })];
     expect(hasInvolvedConfirmTarget(steps, false)).toBe(true);
+    expect(hasInvolvedConfirmTarget(steps, true)).toBe(true);
+    const unassignedRa = [makeStep({ agent: 'J', zone_index: 2 }), makeStep({ agent: 'RA', zone_index: 2 })];
+    expect(hasInvolvedConfirmTarget(unassignedRa, true)).toBe(true);
   });
 
-  it('이전 회차에 관여한 팀이면 지금 대기중이어도 대상이다', () => {
+  // claude 수정 (2026-11-23): 이전 회차 관여 대기 팀 — 철회는 대상, 중단은 대상 아님(검토중·지정만)
+  it('이전 회차에 관여한 팀이 지금 대기중이면 철회는 대상, 중단은 대상이 아니다', () => {
     const steps = [
       makeStep({ agent: 'J', action: 'approved', assignee_loginid: 'j1', round: 1, zone_index: 2 }),
       makeStep({ agent: 'J', round: 2, zone_index: 2 }),
     ];
-    expect(hasInvolvedConfirmTarget(steps, false)).toBe(true);
+    expect(hasInvolvedConfirmTarget(steps, true)).toBe(true);
+    expect(hasInvolvedConfirmTarget(steps, false)).toBe(false);
   });
 
   it('이전 회차에도 대기중이었던 팀은 대상이 아니다', () => {
