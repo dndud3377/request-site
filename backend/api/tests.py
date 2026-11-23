@@ -8614,6 +8614,51 @@ class LayerFilterSetTest(TestCase):
         r = self.client.delete(f'/api/layer-filter-sets/{fs.id}/')
         self.assertEqual(r.status_code, 403, r.content)
 
+    # claude 수정 (2026-11-23): 대상 표(J/O) 변경 권한 회귀 테스트 — TE_J/TE_O 는 불가, MASTER 는 가능
+    def test_te_j_cannot_move_j_filter_to_o_table(self):
+        """TE_J 가 자기 J 필터의 table 을 'O' 로 바꿔 O팀 목록에 넣을 수 없다(권한 우회 차단)."""
+        fs = LayerFilterSet.objects.create(table='J', label='j-filter', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'table': 'O'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.table, 'J')
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.get('/api/layer-filter-sets/', {'table': 'O'})
+        self.assertEqual([f['id'] for f in r.json()], [])
+
+    def test_te_o_cannot_move_o_filter_to_j_table(self):
+        fs = LayerFilterSet.objects.create(table='O', label='o-filter', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.put(f'/api/layer-filter-sets/{fs.id}/', {
+            'table': 'J', 'label': 'o-filter', 'words': {'sp': ['SP01'], 'sd': [], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.table, 'O')
+
+    def test_master_can_change_filter_table(self):
+        """MASTER 는 대상 표를 바꿀 수 있다(사용자 결정 2026-11-23 — MASTER 는 모든 것이 가능)."""
+        fs = LayerFilterSet.objects.create(table='J', label='j-filter', words={'sp': [], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.master)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'table': 'O'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.table, 'O')
+
+    def test_te_j_can_update_label_and_words_with_same_table(self):
+        """같은 table 을 함께 보내거나 label·words 만 보내는 기존 수정은 계속 허용된다."""
+        fs = LayerFilterSet.objects.create(table='J', label='j-filter', words={'sp': [], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {
+            'table': 'J', 'label': 'renamed', 'words': {'sp': ['SP02'], 'sd': [], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'label': 'renamed2'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        fs.refresh_from_db()
+        self.assertEqual((fs.table, fs.label, fs.words['sp']), ('J', 'renamed2', ['SP02']))
+
     def test_list_requires_table_param(self):
         """table 파라미터 없이 목록 조회하면 어느 테이블 권한인지 판정할 수 없어 거부한다."""
         self.client.force_authenticate(user=self.j_user)
