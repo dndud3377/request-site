@@ -86,7 +86,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import escape
 
-from .models import VOC, ApprovalStep, MailNotification, UserProfile, ADDRESS_BOOK_MAIL_DOMAIN
+from .models import VOC, ApprovalStep, MailNotification, UserProfile, VocMention, ADDRESS_BOOK_MAIL_DOMAIN
 
 logger = logging.getLogger(__name__)
 
@@ -1755,6 +1755,14 @@ VOC_TEAM_LABEL = {
     'NONE': '미지정',
 }
 VOC_DATE_FORMAT = '%Y-%m-%d'
+# claude 수정 (2026-11-23): @멘션으로 팀을 태그한 등록·답글 메일 제목 앞에 붙이는 짧은 팀 이름(예: [R팀][P팀] [VOC 답글] 제목).
+VOC_MENTION_SUBJECT_LABEL = {
+    'TE_R': 'R팀',
+    'TE_P': 'P팀',
+    'TE_J': 'J팀',
+    'TE_O': 'O팀',
+    'TE_E': 'E팀',
+}
 
 # 제출자에게만 덧붙이는 안내 — 답변 완료 처리는 작성자 본인(또는 MASTER)만 할 수 있다.
 VOC_COMPLETE_GUIDE = '답변이 만족스러우셨다면 답변 완료 처리 해주세요.'
@@ -1777,21 +1785,35 @@ def _html_to_text(html):
     return text.strip()
 
 
-# claude 수정 (2026-11-20): 작성자 팀원 전원 발송 — 등록 시점 작성자 팀(voc.submitter_role) 기준.
-# 답글 작성자의 팀은 보지 않는다(예: J팀 VOC 에 R팀이 답글 → J팀 전원, R팀 전원 X).
+# claude 수정 (2026-11-23): 팀 발송 대상에 @멘션으로 태그된 팀(VocMention.team)을 더한다. 작성자 팀은 등록 시점
+# 작성자 팀(voc.submitter_role) 기준이고, 답글 작성자의 팀은 여전히 보지 않는다(태그하지 않았다면).
 def _voc_team_emails(voc):
-    """VOC 작성자 팀(AGENT R/P/J/O/E)원 중 VOC 메일을 켜둔 사람의 메일 주소(정렬, 미리다이렉트).
+    """VOC 작성자 팀 + @멘션으로 태그된 팀(AGENT R/P/J/O/E)원 중 VOC 메일을 켜둔 사람의 메일 주소(정렬, 미리다이렉트).
 
-    팀 발송 대상이 아닌 역할(VOC.TEAM_MAIL_ROLES 외)이 쓴 VOC 는 빈 목록.
+    작성자가 팀 발송 대상이 아닌 역할(VOC.TEAM_MAIL_ROLES 외)이고 태그된 팀도 없으면 빈 목록.
     """
-    if voc.submitter_role not in VOC.TEAM_MAIL_ROLES:
+    roles = set(voc.mentions.exclude(team='').values_list('team', flat=True))
+    if voc.submitter_role in VOC.TEAM_MAIL_ROLES:
+        roles.add(voc.submitter_role)
+    if not roles:
         return []
-    return sorted(
-        UserProfile.objects.filter(role=voc.submitter_role, receive_voc_mail=True)
+    return sorted(set(
+        UserProfile.objects.filter(role__in=roles, receive_voc_mail=True)
         .exclude(mail='')
         .exclude(mail__isnull=True)
         .values_list('mail', flat=True)
-    )
+    ))
+
+
+# claude 수정 (2026-11-23): @멘션으로 직접 태그된 사용자 — 지목된 사람이라 VOC 메일 토글과 상관없이 받는다.
+def _voc_mentioned_user_emails(voc):
+    """@멘션으로 태그된 사용자의 메일 주소(정렬, 미리다이렉트)."""
+    return sorted(set(
+        VocMention.objects.filter(voc=voc, user__isnull=False)
+        .exclude(user__mail='')
+        .exclude(user__mail__isnull=True)
+        .values_list('user__mail', flat=True)
+    ))
 
 
 # claude 수정 (2026-11-20): MASTER 조회를 _voc_master_emails 로 분리 — 등록 수신자 산출(_resolve_voc_created_recipients)과 공유
@@ -1832,7 +1854,7 @@ def _resolve_voc_comment_recipients(voc, commenter_email):
 
     제출자에게 가는 메일에만 '답변 완료 처리' 안내를 넣어야 해서, 한 통에 모든
     수신자를 담지 않고 본문이 다른 두 통으로 나눈다.
-    그 외 참여자 = (기존 댓글 작성자 전원 + 작성자 팀원 전원) - 제출자 - 이번 댓글 작성자 본인.
+    그 외 참여자 = (기존 댓글 작성자 전원 + 작성자·태그된 팀원 전원 + 태그된 사용자) - 제출자 - 이번 댓글 작성자 본인.
     """
     me = (commenter_email or '').strip()
     submitter_email = _voc_submitter_email(voc)
@@ -1843,6 +1865,8 @@ def _resolve_voc_comment_recipients(voc, commenter_email):
             others.add(comment.author_email.strip())
     # claude 수정 (2026-11-20): 작성자 팀원 전원(VOC 메일 켬)도 '그 외 참여자' 메일로 받는다
     others.update(addr.strip() for addr in _voc_team_emails(voc) if addr)
+    # claude 수정 (2026-11-23): @멘션으로 태그된 사용자도 '그 외 참여자' 메일로 받는다(태그 이후 답글 계속)
+    others.update(addr.strip() for addr in _voc_mentioned_user_emails(voc) if addr)
     others.discard(submitter_email)
     others.discard(me)
 
@@ -1946,10 +1970,22 @@ def _latest_comment_text(voc):
     return _html_to_text(comment.content) if comment else ''
 
 
-def _build_voc_message(event_type, voc, commenter_name=None, for_submitter=False):
+# claude 수정 (2026-11-23): 이번 등록·답글에서 @멘션으로 태그한 팀을 제목 앞에 붙인다(예: [R팀] [VOC 답글] 제목)
+def _voc_mention_subject_prefix(mention_teams):
+    """태그한 팀의 제목 접두어. 팀 순서는 VocMention.TEAM_ROLES 를 따른다. 태그한 팀이 없으면 빈 문자열."""
+    labels = [
+        f'[{VOC_MENTION_SUBJECT_LABEL[role]}]'
+        for role in VocMention.TEAM_ROLES
+        if role in (mention_teams or ())
+    ]
+    return f"{''.join(labels)} " if labels else ''
+
+
+def _build_voc_message(event_type, voc, commenter_name=None, for_submitter=False, mention_teams=None):
     """VOC 이벤트 유형별 제목/본문(HTML)을 생성한다.
 
     for_submitter=True 면 제출자용 메일이라 '답변 완료 처리' 안내를 함께 싣는다.
+    mention_teams 는 이번 등록·답글에서 태그한 팀 코드 — 제목 앞에 [R팀] 처럼 붙인다(수신자 전원 동일).
     """
     link = _voc_link(voc.id)
     guide_text = VOC_COMPLETE_GUIDE if for_submitter else ''
@@ -1964,11 +2000,12 @@ def _build_voc_message(event_type, voc, commenter_name=None, for_submitter=False
         headline = f'{writer}님이 답글을 남겼습니다.'
         body_text = _latest_comment_text(voc)
 
+    subject = f'{_voc_mention_subject_prefix(mention_teams)}{subject}'
     contents = _render_voc_email(event_type, headline, voc, body_text, guide_text, link)
     return subject, contents
 
 
-def _enqueue_voc(voc, event_type, recipients, commenter_name=None, for_submitter=False):
+def _enqueue_voc(voc, event_type, recipients, commenter_name=None, for_submitter=False, mention_teams=None):
     """VOC 알림용 MailNotification 적재 (document=None)."""
     if not recipients:
         logger.info(
@@ -1977,7 +2014,7 @@ def _enqueue_voc(voc, event_type, recipients, commenter_name=None, for_submitter
         )
         return None
     subject, contents = _build_voc_message(
-        event_type, voc, commenter_name, for_submitter=for_submitter,
+        event_type, voc, commenter_name, for_submitter=for_submitter, mention_teams=mention_teams,
     )
     from .models import MailNotification
     noti = MailNotification.objects.create(
@@ -1992,33 +2029,41 @@ def _enqueue_voc(voc, event_type, recipients, commenter_name=None, for_submitter
     return noti
 
 
-# claude 수정 (2026-11-20): 등록 알림 수신자에 작성자 팀원 전원 추가(작성자 본인 제외)
+# claude 수정 (2026-11-23): 등록 알림 수신자에 @멘션으로 태그된 팀원(토글 켬)·사용자 추가(작성자 본인 제외)
 def _resolve_voc_created_recipients(voc):
-    """VOC 등록 알림 수신자 = MASTER(VOC 메일 켬) + 작성자 팀원(VOC 메일 켬) − 작성자 본인."""
+    """VOC 등록 알림 수신자 = MASTER(VOC 메일 켬) + 작성자·태그된 팀원(VOC 메일 켬) + 태그된 사용자 − 작성자 본인."""
     submitter_email = _voc_submitter_email(voc)
-    emails = [addr.strip() for addr in _voc_master_emails() + _voc_team_emails(voc)]
-    return _apply_redirect([addr for addr in emails if addr and addr != submitter_email])
+    emails = [
+        addr.strip()
+        for addr in _voc_master_emails() + _voc_team_emails(voc) + _voc_mentioned_user_emails(voc)
+        if addr
+    ]
+    return _apply_redirect(sorted({addr for addr in emails if addr and addr != submitter_email}))
 
 
-def enqueue_voc_created(voc):
-    """VOC 신규 등록 알림 적재 — MASTER 전원 + 작성자 팀원 전원(작성자 본인 제외)."""
+def enqueue_voc_created(voc, mention_teams=None):
+    """VOC 신규 등록 알림 적재 — MASTER 전원 + 작성자·태그된 팀원 전원 + 태그된 사용자(작성자 본인 제외).
+
+    mention_teams: 등록 본문에서 태그한 팀 코드 — 제목 앞에 [R팀] 처럼 붙인다.
+    """
     recipients = _resolve_voc_created_recipients(voc)
-    return _enqueue_voc(voc, 'voc_created', recipients)
+    return _enqueue_voc(voc, 'voc_created', recipients, mention_teams=mention_teams)
 
 
-def enqueue_voc_comment(voc, commenter_email, commenter_name=None):
+def enqueue_voc_comment(voc, commenter_email, commenter_name=None, mention_teams=None):
     """VOC 답글 등록 알림 적재.
 
     제출자와 그 외 참여자에게 본문이 다른 두 통을 보낸다 — 제출자 메일에만
     '답변 완료 처리' 안내가 들어간다. (제출자용, 그 외용) 튜플을 반환한다.
+    mention_teams: 이번 답글에서 태그한 팀 코드 — 두 통 모두 제목 앞에 [R팀] 처럼 붙인다.
     """
     submitter_recipients, other_recipients = _resolve_voc_comment_recipients(voc, commenter_email)
     to_submitter = _enqueue_voc(
         voc, 'voc_comment', submitter_recipients,
-        commenter_name=commenter_name, for_submitter=True,
+        commenter_name=commenter_name, for_submitter=True, mention_teams=mention_teams,
     )
     to_others = _enqueue_voc(
-        voc, 'voc_comment', other_recipients, commenter_name=commenter_name,
+        voc, 'voc_comment', other_recipients, commenter_name=commenter_name, mention_teams=mention_teams,
     )
     return to_submitter, to_others
 
