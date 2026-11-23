@@ -1702,6 +1702,29 @@ def w22(ctx):
     return f'doc={doc_id}'
 
 
+# claude 수정 (2026-11-23): 중단 확인 대상은 현재 진행 중 단계 중 담당자 있는(검토중·지정) 단계만 — 이전 회차 관여 무시
+@case('M-13', 'M', '2회차 3구역 중단 → 1회차에 관여한 JOB 도 지금 대기면 확인 대상 아님')
+def m13(ctx):
+    ctx.need(PL=2, TE_R=1, TE_J=1)
+    doc_id, author, pls = F.to_parallel(ctx)
+    F.claim_step(ctx.actor('TE_J', 0), doc_id, 'J')
+    F.reject_step(ctx.actor('TE_J', 0), doc_id, 'J')             # 1회차: J 가 검토중 → 반려(관여)
+    F.resubmit(author, doc_id, [p['loginid'] for p in pls])
+    F.pass_pl_stage(ctx, doc_id, pls)
+    if F.steps(F.fetch(author, doc_id), agent='R', action='pending', round_no=2):
+        F.pass_r_stage(ctx, doc_id)
+    else:
+        F.pass_system_r(ctx, doc_id)
+    doc = F.fetch(author, doc_id)
+    if not F.steps(doc, agent='J', action='pending', round_no=2):
+        raise CaseSkip('재상신 후 2회차 J 단계가 열리지 않았다.')
+    F.request_pause(author, doc_id)
+    targets = _target_agents(F.fetch(author, doc_id), 'pause')
+    if 'J' in targets:
+        raise CaseFailure(f'지금 대기중인 J 가 중단 확인 대상에 들어갔다: {targets}')
+    return f'doc={doc_id} 중단 대상={targets}'
+
+
 # ============================================================ A. 인가
 
 @case('A-01', 'A', '담당자가 아닌 사용자의 합의 → 403')

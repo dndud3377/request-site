@@ -1272,7 +1272,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     # claude 수정 (2026-11-22): 진행 중 문서 철회·중단 확인 대상을 '관여한 팀'으로 좁힌다(대기중 팀 제외, 사용자 결정)
     def _involved_pending_steps(self, document, pending, max_round):
-        """현재 회차 진행 중(pending) 단계 중 철회·중단 확인을 받아야 하는 단계만 고른다.
+        """현재 회차 진행 중(pending) 단계 중 철회 확인을 받아야 하는 단계만 고른다.
+
+        (2026-11-23) 중단 요청은 더 이상 이 함수를 쓰지 않는다 — 중단은 담당자가 있는 단계만 본다(`request_pause`).
 
         - 담당자가 있는 단계(검토중 P·J·O·E, 지정된 R, PL·SA, 검토자 RV·PV·EV)는 관여한 것으로 보고 포함한다.
         - 후결자(RA)는 항상 포함한다(2026-11-22 사용자 결정 — 자동 지정이어도 확인 대상).
@@ -2321,10 +2323,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def request_pause(self, request, pk=None):
         """중단 요청: 작성자가 진행 중(under_review) 결재의 중단을 요청한다(사유 필수).
 
-        요청 시점의 현재(pending) 결재 단계 중 **관여한 팀**의 단계 id 를 target 으로 기록하고
-        (2026-11-22, `_involved_pending_steps` — 대기중 팀 제외), 그 단계 전원이 '중단 확인'하면
+        요청 시점의 현재(pending) 결재 단계 중 **담당자가 있는(검토중·지정) 단계**만 target 으로 기록하고
+        (2026-11-23 — 대기중 단계는 이전 회차에 관여했어도 제외, 철회와 다름), 그 단계 전원이 '중단 확인'하면
         문서가 pause 로 전이된다. 상태 뱃지는 확인 완료 전까지 그대로 유지된다.
-        관여한 팀이 하나도 없으면 확인 없이 **즉시 pause** 로 확정한다(응답 `paused: true`).
+        확인할 단계가 하나도 없으면 확인 없이 **즉시 pause** 로 확정한다(응답 `paused: true`).
         """
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -2348,8 +2350,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not pending:
             return Response({'error': '진행 중인 결재 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # claude 수정 (2026-11-22): 철회와 같이 관여한 팀만 확인 대상, 확인할 팀이 없으면 즉시 중단(PAUSE) 확정(사용자 결정)
-        targets = self._involved_pending_steps(document, pending, max_round)
+        # claude 수정 (2026-11-23): 중단 확인 대상 = 현재 진행 중 단계 중 담당자가 있는(검토중·지정) 단계만 — 이전 회차 관여 여부는
+        # 보지 않는다(사용자 결정, 철회와 다름). 후결자(RA)는 늘 담당자가 있어 포함된다. 확인할 단계가 없으면 즉시 중단(PAUSE) 확정.
+        targets = [s for s in pending if s.assignee_id]
         if not targets:
             PauseRequest.objects.create(
                 document=document,
