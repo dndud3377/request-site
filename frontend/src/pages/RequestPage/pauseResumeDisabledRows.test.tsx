@@ -231,3 +231,25 @@ describe('중단 후 재개(resume) — 비활성(st===X) J/O-layer 행이 재�
     expect(o2?.st).toBe('X');
   });
 });
+
+// claude 수정 (2026-11-23): 중단(PAUSE) 문서 편집 화면은 '수정 후 재개' 제목·안내, 반려 문서는 종전 '수정·재상신' 문구
+describe('편집 화면 제목 — 중단 문서는 재개, 반려 문서는 재상신', () => {
+  beforeEach(() => {
+    mockState.optionsFor = optionsFor;
+  });
+
+  it('PAUSE 문서를 열면 "의뢰서 수정 후 재개" 제목과 재개 안내가 보인다', async () => {
+    mockState.doc = fixtureDoc;
+    await renderLoadedPage();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('의뢰서 수정 후 재개');
+    expect(screen.queryByText(/반려 단계부터 다시 검토/)).toBeNull();
+    expect(screen.getByText(/중단 당시 진행 중이던 구역부터 결재가 다시 이어집니다/)).toBeDefined();
+  });
+
+  it('반려 문서를 열면 종전대로 "의뢰서 수정·재상신" 제목과 재상신 안내가 보인다', async () => {
+    mockState.doc = { ...fixtureDoc, status: 'rejected' };
+    await renderLoadedPage();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('의뢰서 수정·재상신');
+    expect(screen.getByText(/반려 단계부터 다시 검토/)).toBeDefined();
+  });
+});

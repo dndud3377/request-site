@@ -5629,8 +5629,9 @@ export default function RequestPage(): React.ReactElement {
   return (
     <div className="container page">
       <div className="page-header">
-        <h1>{isPeerReviewMode ? '의뢰서 수정·재상신' : isEditMode ? '의뢰서 수정·재상신' : t('request.title')}</h1>
-        <p>{isPeerReviewMode || isEditMode ? '내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.' : t('request.subtitle')}</p>
+        {/* claude 수정 (2026-11-23): 중단(PAUSE) 문서 편집은 '수정 후 재개' 제목·안내로 — 반려 재상신 문구가 나와 오해 소지. 하드코딩 문구는 i18n 키로 */}
+        <h1>{isResumeMode ? t('request.resume_edit_title') : (isPeerReviewMode || isEditMode) ? t('request.edit_title') : t('request.title')}</h1>
+        <p>{isResumeMode ? t('request.resume_edit_subtitle') : (isPeerReviewMode || isEditMode) ? t('request.edit_subtitle') : t('request.subtitle')}</p>
       </div>
       {isPeerReviewMode && (
         <div style={{ background: 'var(--warning-light)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', padding: '10px 16px', marginBottom: 16, color: 'var(--warning)', fontSize: '0.9rem', fontWeight: 500 }}>
