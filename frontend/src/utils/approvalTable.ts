@@ -47,8 +47,10 @@ const wasStepInvolved = (s: ApprovalStepFrontend): boolean => !(s.action === 'pe
 const ZONE_1_AGENTS: AgentType[] = ['PL', 'SA'];
 
 /**
- * 진행 중 문서의 철회(`forWithdraw=true`)·중단(`false`) 요청 시 확인할 관여 팀이 하나라도 있는가.
- * - 공통(중단은 이것만, 백엔드 `_involved_pending_steps`): 현재 회차 pending 단계(System R 제외) 중
+ * 진행 중 문서의 철회(`forWithdraw=true`)·중단(`false`) 요청 시 확인할 팀이 하나라도 있는가.
+ * - 중단(2026-11-23, 백엔드 `request_pause`): 현재 회차 pending 단계(System R 제외) 중 담당자가 있는(검토중·지정) 단계만.
+ *   이전 회차 관여 여부는 보지 않는다.
+ * - 철회(백엔드 `_involved_pending_steps`): 현재 회차 pending 단계(System R 제외) 중
  *   담당자가 있거나 RA 이거나, 같은 팀이 이전 회차에 관여한 단계
  * - 철회는 추가로(백엔드 `_in_progress_withdraw_target_steps`, 2026-11-22 — 이 문서에 한 번이라도 관여한 팀 전부):
  *   최신 회차 PL·SA 중 담당자 있는 단계, 2·3구역 팀(R·P·J·O·E·RA) 중 어느 회차든 관여한 단계
@@ -59,13 +61,15 @@ export const hasInvolvedConfirmTarget = (steps: ApprovalStepFrontend[], forWithd
   const pending = steps.filter(
     (s) => (s.round ?? 1) === maxRound && s.action === 'pending' && s.agent !== SYSTEM_R_AGENT
   );
+  // claude 수정 (2026-11-23): 중단은 지금 검토중·지정된(담당자 있는) 단계만 확인 대상
+  if (!forWithdraw) return pending.some((s) => !!s.assignee_loginid);
   const priorInvolvedAgents = new Set(
     steps.filter((s) => (s.round ?? 1) < maxRound && wasStepInvolved(s)).map((s) => s.agent)
   );
   const hasCurrent = pending.some(
     (s) => !!s.assignee_loginid || s.agent === POST_APPROVER_AGENT || priorInvolvedAgents.has(s.agent)
   );
-  if (hasCurrent || !forWithdraw) return hasCurrent;
+  if (hasCurrent) return true;
 
   return steps.some((s) => wasStepInvolved(s) && (
     ZONE_MAIN_AGENTS.includes(s.agent)
