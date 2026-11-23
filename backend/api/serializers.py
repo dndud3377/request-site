@@ -633,9 +633,20 @@ class LayerFilterSetSerializer(serializers.ModelSerializer):
         fields = ['id', 'table', 'label', 'words', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    # claude 수정 (2026-11-23): 기존 필터의 대상 표(J/O) 변경은 MASTER 만 허용 — TE_J/TE_O 가 자기 필터를 다른 팀 목록으로 옮기던 권한 우회 차단
     def validate_table(self, value):
+        """대상 표는 'J'/'O' 만 받는다. 생성 후 다른 표로 바꾸는 것은 MASTER 만 가능하다.
+
+        권한(`CanManageLayerFilter.has_object_permission`)은 수정 **전** table 로만 판정하므로,
+        여기서 막지 않으면 TE_J 가 자기 J 필터의 table 을 'O' 로 바꿔 O팀 공유 목록에 넣을 수 있다.
+        같은 값을 다시 보내는 수정은 변경이 아니므로 허용한다.
+        """
         if value not in ('J', 'O'):
             raise serializers.ValidationError("table 은 'J' 또는 'O' 여야 합니다.")
+        if self.instance is not None and value != self.instance.table:
+            request = self.context.get('request')
+            if getattr(getattr(request, 'user', None), 'role', '') != 'MASTER':
+                raise serializers.ValidationError('필터의 대상 표(J/O)는 바꿀 수 없습니다.')
         return value
 
     def validate_words(self, value):
