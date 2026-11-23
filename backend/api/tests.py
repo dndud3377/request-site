@@ -4931,25 +4931,25 @@ class PauseAndOtherActionMailTest(TestCase):
         self.assertEqual(noti.recipients, ['pm_r@c.com'])
         self.assertIn('사양 재검토', noti.contents)
 
-    # claude 수정 (2026-11-22): 미배정 단계는 이전 회차 관여가 있어야 확인 대상 — 1회차 관여를 전제로 둔다
-    def test_request_pause_splits_unassigned_targets_by_team(self):
-        """확인 대상 단계가 미배정 R·J(이전 회차 관여) 둘 다면, 한 통이 아니라 팀별로 각 1통씩 나간다."""
+    # claude 수정 (2026-11-23): 중단 확인 대상은 담당자 있는 단계만 — 미배정 J·O 는 대상이 아니지만 같은 구역이라 메일은 받는다
+    def test_request_pause_splits_unassigned_zone_teams_by_team(self):
+        """확인 대상(후결자)과 같은 구역의 미배정 J·O 는 확인 대상이 아니어도 중단 요청 메일을 팀별로 각 1통씩 받는다."""
+        o1 = UserProfile.objects.create(loginid='pm_o', mail='pm_o@c.com', role='TE_O', username='O담당')
+        o2 = UserProfile.objects.create(loginid='pm_o2', mail='pm_o2@c.com', role='TE_O', username='O2')
         doc = self._doc()
-        self._step(doc, 'R', action='approved', round=1)
-        self._step(doc, 'J', action='rejected', round=1)
-        self._step(doc, 'R', round=2)  # 미배정
-        self._step(doc, 'J', round=2)  # 미배정
+        ra = self._step(doc, 'RA', assignee=self.pa)
+        self._step(doc, 'J')  # 미배정
+        self._step(doc, 'O')  # 미배정
         self._post(self.author, doc, 'request-pause', {'reason': '사유'})
 
+        self.assertEqual(PauseRequest.objects.get(document=doc).target_step_ids, [ra.id])
         notis = list(MailNotification.objects.filter(event_type='pause_requested'))
-        self.assertEqual(len(notis), 2, 'R 팀 1통 + J 팀 1통이어야 한다')
+        self.assertEqual(len(notis), 3, '후결자 개인 1통 + J 팀 1통 + O 팀 1통이어야 한다')
         for n in notis:
-            self.assertFalse({'pm_r@c.com', 'pm_j@c.com'} <= set(n.recipients), '서로 다른 팀을 한 통에 묶으면 안 된다')
+            self.assertFalse({'pm_j@c.com', o1.mail} <= set(n.recipients), '서로 다른 팀을 한 통에 묶으면 안 된다')
         all_recipients = [mail for n in notis for mail in n.recipients]
-        self.assertIn('pm_r@c.com', all_recipients)
-        self.assertIn('pm_r2@c.com', all_recipients)
-        self.assertIn('pm_j@c.com', all_recipients)
-        self.assertIn('pm_j2@c.com', all_recipients)
+        for mail in ('pm_pa@c.com', 'pm_j@c.com', 'pm_j2@c.com', o1.mail, o2.mail):
+            self.assertIn(mail, all_recipients)
 
     # ----- confirm-pause -----
     def test_partial_confirm_sends_no_mail(self):
@@ -14682,6 +14682,32 @@ class InvolvedTeamWithdrawPauseTest(TestCase):
         pr = PauseRequest.objects.get(document=doc)
         self.assertEqual(pr.state, 'requested')
         self.assertCountEqual(pr.target_step_ids, [steps['P'].id, steps['RA'].id])
+
+    # claude 수정 (2026-11-23): 중단 확인 대상은 현재 진행 중 단계 중 담당자 있는 단계만 — 이전 회차 관여 여부는 보지 않는다
+    def test_pause_ignores_prior_round_involvement(self):
+        """2회차 3구역: P 검토중, J·O 대기(1회차에 J 합의·O 반려), RA → 대상 = P·RA (J·O 제외, 철회와 다름)."""
+        doc = self._doc()
+        self._step(doc, 'J', action='approved', assignee=self.j_user, round=1)
+        self._step(doc, 'O', action='rejected', assignee=self.o_user, round=1)
+        steps = self._zone3(doc, round=2)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        pr = PauseRequest.objects.get(document=doc)
+        self.assertCountEqual(pr.target_step_ids, [steps['P'].id, steps['RA'].id])
+        # 같은 상황에서 철회는 이전 회차에 관여한 J·O 도 묻는다(대비)
+        self._post(self.author, doc, 'cancel-pause')
+        self._post(self.author, doc, 'withdraw', {'reason': '철회'})
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertIn(steps['J'].id, wr.target_step_ids)
+
+    def test_pause_with_only_unassigned_prior_involved_team_pauses_immediately(self):
+        """지금 진행 중 단계가 대기중 R 뿐이면 1회차에 R 이 반려했어도 확인할 단계가 없어 즉시 PAUSE."""
+        doc = self._doc()
+        self._step(doc, 'R', action='rejected', assignee=self.r_user, round=1)
+        self._step(doc, 'R', round=2)
+        res = self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self.assertTrue(res.data['paused'])
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'pause')
 
     def test_pause_without_involved_team_pauses_immediately(self):
         doc = self._doc()
