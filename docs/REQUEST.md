@@ -7356,6 +7356,19 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
 - **수동 검증**: 결재 현황 → PAUSE 문서 → [▶ 수정 후 재개] → 상단 제목이 "의뢰서 수정 후 재개", 안내에 "반려 단계부터"가
   없으면 정상. 반려 문서 [수정·재상신] 은 종전 문구.
 
+### 기능 변경 (2026-11-27 — CC 적용 여부(`mshot_change_cc`) MAP 정보 잠금·R/O 재합의 제외)
+
+- **배경(사용자 결정)**: CC 적용 여부는 상세 모달에서 MAP 정보(R) 탭이 아니라 '의뢰 상세' 탭에 있는 항목이라 R팀과 관계가 없다.
+  R 합의 후 반려된 문서에서도 바꿀 수 있어야 하고, 바꿔도 R·O 가 다시 합의할 필요가 없다.
+- **백엔드**: `RequestDocument.MAP_INFO_NOT_REVIEWED_FIELDS = ('mshot_change_cc',)` / `MAP_INFO_REVIEWED_FIELDS` 신설.
+  잠금(`changed_map_info_fields`)·R 생략(`_should_skip_r_stage`)·O 생략(`o_review_content_same`)이 `MAP_INFO_REVIEWED_FIELDS` 로 비교한다.
+  `MAP_INFO_FIELDS` 는 `mapInfoDefaults()` 와 같은 키 목록 계약 때문에 그대로 둔다(2026-09-21 후속2 항목 참고 — 그 항목의
+  "잠금 우회" 회귀 테스트는 이번 결정으로 '잠금 상태에서도 200'으로 기대값이 바뀌었다).
+- **프론트(`StepMap.tsx`)**: 잠금을 영역 전체 `<fieldset disabled>` 1개(2026-11-10) → 구간별 `MapInfoLockArea` 로 나눴다
+  (display:contents fieldset, 잠기면 `disabled` + `.map-info-locked > *` 흐림·마우스 차단 — `global.css`). CC 선택칸만 구간 밖이라
+  잠긴 문서에서도 같은 자리에서 선택할 수 있다. 레이아웃·i18n 변경 없음.
+- **테스트·수동 검증**: `docs/APPROVAL.md` "CC 적용 여부 — 잠금·R/O 재합의 제외 (2026-11-27)" 절.
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
