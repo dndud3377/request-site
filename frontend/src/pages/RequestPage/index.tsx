@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI } from '../../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI, layerFilterSetsAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import { useCellSelection } from '../../hooks/useCellSelection';
@@ -40,6 +40,7 @@ import {
   MapInfo,
   NumCheckConfig,
   LayerNpKeywords,
+  LayerFilterSet,
   DuplicateDocument,
   plRoleFor,
 } from '../../types';
@@ -143,6 +144,7 @@ import {
   isInterAutoYesProcess, isNumericValue, sortRowsBySp, isNumCheckRequired, isNumCheckImageRequired,
   findAutoBorrowRowIds,
   matchesNpKeyword, isNpRow, findNpKeywordRowIds,
+  matchesSharedFilters, findSharedFilterRowIds,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -569,6 +571,25 @@ export default function RequestPage(): React.ReactElement {
   /** 키워드로 X·미진행이 된 행인가 — 참이면 ST·요청 기준 칸을 바꿀 수 없다(MASTER·투어 제외) */
   const isNpLocked = (table: 'jayer' | 'oayer', row: { sd: string; pp: string; st: string; new_or_copy: string }): boolean =>
     !npKeywordExempt && isNpRow(row) && matchesNpKeyword(row, npKeywords[table]);
+  // claude 수정 (2026-11-27): J/O 공유 필터(결재 현황 '필터 관리'에서 TE_J/TE_O/MASTER 가 관리) 자동 적용 —
+  // 매칭 행은 '다음'·'상신' 때 ST X 로 바꾸고 ST 를 잠근다. 예외(MASTER·가이드 투어)는 '자동 미진행'과 같다.
+  const [sharedFilterSets, setSharedFilterSets] = useState<{ jayer: LayerFilterSet[]; oayer: LayerFilterSet[] }>({ jayer: [], oayer: [] });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [jayer, oayer] = await Promise.all([layerFilterSetsAPI.list('J'), layerFilterSetsAPI.list('O')]);
+        if (!cancelled) setSharedFilterSets({ jayer, oayer });
+      } catch {
+        // 조회 실패 시 자동 적용을 못 한다 — 알리고, 서버 상신 검증이 미적용 행을 그대로 막는다
+        if (!cancelled) addToast(t('request.toast_shared_filter_load_error'), 'warning');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /** 공유 필터로 ST X 가 된 행인가 — 참이면 ST 칸을 바꿀 수 없다(MASTER·투어 제외) */
+  const isSharedFilterLocked = (table: 'jayer' | 'oayer', row: { sp: string; sd: string; pp: string; st: string }): boolean =>
+    !npKeywordExempt && isRowInactive(row.st) && matchesSharedFilters(row, sharedFilterSets[table]);
   // 직전 판정 결과 — 기준에 해당하다가 해당하지 않게 된 순간에만 NO 로 되돌리기 위해 쓴다.
   const interAutoMatchedRef = useRef(false);
   // 자동 MAP 매칭이 source_line 을 세팅한 직후 1틱 — "원본 위치 변경 → 원본 제품 초기화" 효과가
@@ -2916,6 +2937,11 @@ export default function RequestPage(): React.ReactElement {
       addToast(t('request.np_keyword_locked'), 'error');
       return;
     }
+    // claude 수정 (2026-11-27): 공유 필터로 X 가 된 행의 ST 는 바꿀 수 없다(MASTER 제외)
+    if (field === 'st' && changedRow && isSharedFilterLocked('jayer', changedRow)) {
+      addToast(t('request.shared_filter_locked'), 'error');
+      return;
+    }
     if (blockRefDocStChange(field, value, changedRow?.st)) return;
     // bb 행이 J-ayer 에서 복사해 가는 값이 실제로 바뀐 경우에만 매핑을 해제한다.
     // (예전엔 컬럼을 가리지 않고 해제해, st 하나만 바꿔도 bb 재선택을 다시 해야 했다.)
@@ -3212,8 +3238,11 @@ export default function RequestPage(): React.ReactElement {
   const handleOayerAfterClear = (changes: { rowId: string; values: Record<string, string> }[]) => clearNocOfStCleared(setOayerRows, changes);
   // claude 수정 (2026-11-16): '자동 미진행' 키워드로 잠긴 행의 ST·요청 기준은 붙여넣기·Delete 로도 바꿀 수 없다
   const isNpCol = (col: string) => col === 'st' || col === 'new_or_copy';
-  const isJayerCellLocked = (row: JayerRow, col: string) => isLayerCellLocked(row, col) || (isNpCol(col) && isNpLocked('jayer', row));
-  const isOayerCellLocked = (row: OayerRow, col: string) => isLayerCellLocked(row, col) || (isNpCol(col) && isNpLocked('oayer', row));
+  // claude 수정 (2026-11-27): 붙여넣기·Delete 도 공유 필터로 잠긴 ST 칸을 건너뛴다
+  const isJayerCellLocked = (row: JayerRow, col: string) => isLayerCellLocked(row, col) || (isNpCol(col) && isNpLocked('jayer', row))
+    || (col === 'st' && isSharedFilterLocked('jayer', row));
+  const isOayerCellLocked = (row: OayerRow, col: string) => isLayerCellLocked(row, col) || (isNpCol(col) && isNpLocked('oayer', row))
+    || (col === 'st' && isSharedFilterLocked('oayer', row));
   const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, isJayerCellLocked, handleJayerAfterPaste, handleJayerAfterClear);
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, isOayerCellLocked, handleOayerAfterPaste, handleOayerAfterClear);
 
@@ -3230,8 +3259,8 @@ export default function RequestPage(): React.ReactElement {
   };
   // claude 수정 (2026-11-16): 일괄 버튼(ST·요청 기준 '전체 …'·'초기화')은 '자동 미진행' 키워드로 잠긴 행을 건너뛴다
   const isBulkTarget = (
-    table: 'jayer' | 'oayer', r: { sd: string; pp: string; st: string; new_or_copy: string }, field: 'st' | 'new_or_copy', value: string,
-  ): boolean => !isNpLocked(table, r) && isBulkStOrNocTarget(r, field, value);
+    table: 'jayer' | 'oayer', r: { sp: string; sd: string; pp: string; st: string; new_or_copy: string }, field: 'st' | 'new_or_copy', value: string,
+  ): boolean => !isNpLocked(table, r) && !(field === 'st' && isSharedFilterLocked(table, r)) && isBulkStOrNocTarget(r, field, value); // claude 수정 (2026-11-27): 공유 필터 잠금 행 제외
   /** claude 수정 (2026-11-06): 일괄 버튼 값을 한 행에 적용 — ST 는 직접 바꿀 때와 같이 요청 기준 등을 정리한다(stChangeExtra). */
   const applyBulkValue = <Row extends { st: string; new_or_copy: string }>(
     r: Row, field: 'st' | 'new_or_copy', value: string, hasItemId: boolean,
@@ -3311,6 +3340,11 @@ export default function RequestPage(): React.ReactElement {
     // claude 수정 (2026-11-16): '자동 미진행' 키워드로 잠긴 행의 ST·요청 기준은 바꿀 수 없다(MASTER 제외)
     if ((field === 'st' || field === 'new_or_copy') && changedRow && isNpLocked('oayer', changedRow)) {
       addToast(t('request.np_keyword_locked'), 'error');
+      return;
+    }
+    // claude 수정 (2026-11-27): 공유 필터로 X 가 된 행의 ST 는 바꿀 수 없다(MASTER 제외)
+    if (field === 'st' && changedRow && isSharedFilterLocked('oayer', changedRow)) {
+      addToast(t('request.shared_filter_locked'), 'error');
       return;
     }
     if (blockRefDocStChange(field, value, changedRow?.st)) return;
@@ -5187,6 +5221,28 @@ export default function RequestPage(): React.ReactElement {
     return ids.length;
   };
 
+  // claude 수정 (2026-11-27): 공유 필터에 걸리는 J/O 행을 ST X 로 바꾸고(잠금) 토스트로 알린다 — '자동 미진행'과 같은 방식.
+  // ST X 로 바꿀 때와 같이 요청 기준·제품 이름·STEP(·ID)을 비우고 J 는 bb 매핑을 푼다. 반대편 표로는 전파하지 않는다
+  // (서버 일괄 적용과 같다). 바꾼 행 수를 돌려준다. MASTER·가이드 투어 미리보기는 제외.
+  const applySharedFilters = (table: 'jayer' | 'oayer'): number => {
+    if (npKeywordExempt) return 0;
+    const ids = findSharedFilterRowIds(table === 'jayer' ? jayerRows : oayerRows, sharedFilterSets[table]);
+    if (ids.length === 0) return 0;
+    const idSet = new Set(ids);
+    if (table === 'jayer') {
+      setJayerRows((rows) => rows.map((r) => (idSet.has(r.id)
+        ? { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '', item_id: '' }
+        : r)));
+      unmapIfMapped(ids);
+    } else {
+      setOayerRows((rows) => rows.map((r) => (idSet.has(r.id)
+        ? { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '' }
+        : r)));
+    }
+    addToast(t('request.toast_shared_filter_applied', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
+    return ids.length;
+  };
+
   const clearAutoBorrowHighlight = () => {
     setAutoBorrowJayerIds(new Set());
     setAutoBorrowOayerIds(new Set());
@@ -5205,6 +5261,12 @@ export default function RequestPage(): React.ReactElement {
     for (let s = step; s < target; s++) {
       // claude 수정 (2026-11-16): '자동 미진행' 키워드 행 변경을 '차용' 자동 변경보다 먼저 확인한다 — 바꾼 행이 있으면 그 단계에 머문다.
       if ((s === STEP_JAYER || s === STEP_OAYER) && applyNpKeyword(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
+        if (s !== step) setStep(s);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      // claude 수정 (2026-11-27): 이어서 공유 필터 자동 적용 — 바꾼 행이 있으면 그 단계에 머문다('자동 미진행' 다음, '차용' 전)
+      if ((s === STEP_JAYER || s === STEP_OAYER) && applySharedFilters(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
         if (s !== step) setStep(s);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
@@ -5332,6 +5394,14 @@ export default function RequestPage(): React.ReactElement {
       const npO = applyNpKeyword('oayer');
       if (npJ + npO > 0) {
         setStep(npJ > 0 ? STEP_JAYER : STEP_OAYER);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      // claude 수정 (2026-11-27): 상신 때도 공유 필터 자동 적용을 확인한다 — 바꾼 행이 있으면 그 표의 단계로 이동해 멈춘다.
+      const sfJ = applySharedFilters('jayer');
+      const sfO = applySharedFilters('oayer');
+      if (sfJ + sfO > 0) {
+        setStep(sfJ > 0 ? STEP_JAYER : STEP_OAYER);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
@@ -5807,6 +5877,7 @@ export default function RequestPage(): React.ReactElement {
           cellSel={jayerCellSel}
           autoBorrowRowIds={autoBorrowJayerIds}
           npLockedRowIds={new Set(jayerRows.filter((r) => isNpLocked('jayer', r)).map((r) => r.id))}
+          sharedFilterLockedRowIds={new Set(jayerRows.filter((r) => isSharedFilterLocked('jayer', r)).map((r) => r.id))}
           GuideTourBadge={<StepTourBadge step={3} />}
           GuideBadge={GuideBadge}
           validationSystem={detail.validation_system}
@@ -5842,6 +5913,7 @@ export default function RequestPage(): React.ReactElement {
           cellSel={oayerCellSel}
           autoBorrowRowIds={autoBorrowOayerIds}
           npLockedRowIds={new Set(oayerRows.filter((r) => isNpLocked('oayer', r)).map((r) => r.id))}
+          sharedFilterLockedRowIds={new Set(oayerRows.filter((r) => isSharedFilterLocked('oayer', r)).map((r) => r.id))}
           GuideTourBadge={<StepTourBadge step={4} />}
           GuideBadge={GuideBadge}
         />
