@@ -555,6 +555,12 @@ export default function ApprovalPage(): React.ReactElement {
   // 다르게 도착할 수 있다(느린 "전체 목록" 요청이 빠른 "검색" 요청보다 늦게 도착 등).
   // 시퀀스 토큰으로 "가장 최근에 보낸 요청"의 응답만 반영하고 나머지는 버린다.
   const fetchSeqRef = useRef(0);
+  // claude 수정 (2026-11-27): 모달 핸들러는 누른 시점의 클로저를 쥐고 있어, 처리 API 가 도는 사이 검색어·탭이 바뀌면
+  // refreshAndSelect 가 옛 값으로 목록을 덮는다 — 재조회 시점의 최신 검색어·탭 필터를 ref 로 읽는다.
+  const searchRef = useRef(search);
+  searchRef.current = search;
+  const applyClientFilterRef = useRef(applyClientFilter);
+  applyClientFilterRef.current = applyClientFilter;
 
   const fetchDocs = useCallback(() => {
     if (isTourMode) {
@@ -1248,13 +1254,25 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  // claude 수정 (2026-11-27): 모달 안 동작(검토중·반려·지정 등) 뒤 재조회가 검색어를 빠뜨려 검색이 풀리던 문제 — 현재 검색어로 다시 받고, fetchDocs 와 같은 시퀀스 토큰으로 더 최신 요청이 나간 뒤 도착한 응답은 버린다
   const refreshAndSelect = async (docId: number) => {
-    const listResult = await documentsAPI.list({});
-    const listData = listResult.data;
-    let newDocs: RequestDocument[] = Array.isArray(listData) ? listData : (listData as any).results ?? [];
-    newDocs = newDocs.filter((d) => d.status !== 'approved');
-    setAllDocs(newDocs);
-    setDocs(applyClientFilter(newDocs));
+    const seq = ++fetchSeqRef.current;
+    const params: Record<string, string> = {};
+    if (searchRef.current) params.search = searchRef.current;
+    let newDocs: RequestDocument[] = [];
+    try {
+      const listResult = await documentsAPI.list(params);
+      const listData = listResult.data;
+      newDocs = Array.isArray(listData) ? listData : (listData as any).results ?? [];
+      newDocs = newDocs.filter((d) => d.status !== 'approved');
+      if (seq === fetchSeqRef.current) {
+        setAllDocs(newDocs);
+        setDocs(applyClientFilterRef.current(newDocs));
+      }
+    } finally {
+      // 시퀀스를 올리면서 진행 중이던 fetchDocs 응답이 버려졌을 수 있다 — 로딩 표시가 남지 않게 여기서 끈다.
+      if (seq === fetchSeqRef.current) setLoading(false);
+    }
     const freshDoc = await documentsAPI.get(docId).then(r => r.data).catch(() => newDocs.find(d => d.id === docId));
     if (freshDoc) setSelected(freshDoc);
   };

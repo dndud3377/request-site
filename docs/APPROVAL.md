@@ -1455,6 +1455,19 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
   바로 보인다 — 페이지 번호로 찾아다닐 필요가 없다.
 - 결재 처리 후 목록이 줄어(승인 완료 등으로 제외) 지금 보던 페이지가 더 이상 존재하지 않게 되면
   자동으로 마지막 페이지로 보정한다(`listPage > totalListPages` 감지 `useEffect`).
+- ✅ **(2026-11-27) 상세 모달 안 동작 뒤에도 검색 결과 유지** — 모달이 열린 채 남는 동작(검토중·검토중 취소,
+  반려, 지정하기, 후결자·EV 검토자 추가/삭제, 결재 경로 변경, 중단·철회 요청/확인(미확정)/반려/취소,
+  J/O Layer 필터 적용·초기화, 검증 시스템·Partial shot 변경, JOB 검토 항목 액션)은 모두 `refreshAndSelect` 로
+  목록을 다시 받는다. 예전에는 이 재조회가 `documentsAPI.list({})` 로 **검색어 없이** 받아, 검색창에는
+  검색어가 남아 있는데 목록·탭 건수는 전체로 돌아갔다. 지금은:
+  - 재조회 시점의 **최신 검색어**(`searchRef`)·탭 필터(`applyClientFilterRef`)로 받는다 — 처리 API 가 도는
+    사이 검색어·탭이 바뀌어도 누른 시점의 옛 값으로 덮지 않는다.
+  - `fetchDocs` 와 같은 시퀀스 토큰(`fetchSeqRef`)을 써서 더 최신 목록 요청이 나간 뒤 도착한 응답은 버리고,
+    그 때문에 버려진 `fetchDocs` 의 로딩 표시가 남지 않도록 `refreshAndSelect` 가 끝날 때 로딩을 끈다.
+  - 다른 화면으로 이동했다가 돌아오면(예: 수정·재상신 → `/request` → 결재 현황) 검색어는 **초기화가 맞다** —
+    검색어는 페이지 안 상태로만 둔다.
+  - 모달이 닫히는 동작(합의, 중단·철회 최종 확정, 철회 즉시 삭제)은 원래부터 `fetchDocs` 라 검색이 유지됐다.
+  - 테스트: `frontend/src/pages/ApprovalPage.searchKeep.test.tsx`.
 - i18n: `approval.pagination_nav`(네비게이션 영역 aria-label), `approval.pagination_go_to_page`
   (페이지 버튼 aria-label, `{{page}}` 보간). 이전/다음 버튼 라벨은 공용 `common.prev`/`common.next` 재사용.
 
