@@ -809,6 +809,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
       - **조건**: 지난 회차를 포함해 **R(+RV) 전원 합의 회차가 하나라도 있거나, 고정 후결자(`settings.POST_APPROVER_LOGINID`) RA 가 합의한 적이 있으면** 잠근다(`RequestDocument.has_map_info_approval` — `approval_steps.all()` prefetch 캐시만 사용). 이후 회차에서 R 이 직접 반려해도 잠금은 풀리지 않는다(MAP 을 바꿔야 하면 MAP 삭제 후 새 요청서).
       - **상태**: `pause` 뿐 아니라 `rejected`·`under_review`·`submitted` 에도 적용(`doc_permissions.MAP_INFO_LOCK_STATUSES`). `draft`·`approved`(MASTER 수정)는 대상이 아니다.
       - ✅ **(2026-11-05) MASTER 예외**: MASTER 는 잠기지 않는다 — 편집 화면 read-only 도 풀리고(상세 응답 `map_info_locked` 를 요청자 기준으로 계산, MASTER 는 항상 false) `update` 의 400 도 적용되지 않는다(`doc_permissions.map_info_locked(document, user)`). 사용자 결정: "MASTER 는 대부분의 제약에서 예외가 되어야 한다. 어떤 상황에서든 대처를 해줄 수 있어야 하기 때문이다." 테스트: `MapInfoLockAfterApprovalHistoryTest.test_master_is_exempt_from_lock`.
+      - ✅ **(2026-11-27) CC 적용 여부(`mshot_change_cc`)는 잠그지 않는다**: R 검토 대상이 아니다(상세 모달에서도 MAP 정보(R) 탭이 아니라 '의뢰 상세' 탭에 표시). 잠금 비교는 `RequestDocument.MAP_INFO_REVIEWED_FIELDS`(= `MAP_INFO_FIELDS` − `MAP_INFO_NOT_REVIEWED_FIELDS`)로 한다. 편집 화면도 그 칸만 열려 있다. 아래 "CC 적용 여부 — 잠금·R/O 재합의 제외 (2026-11-27)" 절 참조.
       - **범위**: MAP 정보에 더해 의뢰 상세의 **요청 목적·라인·조합법·제품 이름·조리법**도 잠근다(`RequestDocument.MAP_LOCK_STEP1_FIELDS`). 라인/제품이 바뀌면 StepMap 이 초기화되고 EXISTING 이 자동 재매칭되며, 조합법·조리법을 바꾸면 제품 이름이 지워지기 때문이다. 프론트는 `Step1` 의 해당 입력·버튼을 disabled + 안내 문구(`request.step1_locked_notice`), 백엔드 `update` 는 값이 달라지면 400.
       - ✅ **(2026-11-09) 요청 기준에 따른 요청 목적 변경 예외**: 요청 목적은 STEP1 에서 직접 고를 수 없지만, J·O 표 요청 기준이 바뀌어 STEP4→5 '요청 목적 확인'(취소 없이 '확인'만)으로 **신규·차용·신규+차용 사이**에서 바뀌는 것은 허용한다. 서버는 변경 전·후가 모두 이 셋 중 하나이고 변경 후 값이 같은 요청의 J·O 표로 계산한 값(`RequestDocument.expected_request_purpose`)과 같을 때만 통과시킨다(`changed_map_info_fields(new_detail, new_notes)`). 그 외는 기존대로 400. 상세는 `docs/REQUEST.md` "기능 변경 (2026-11-09 — 잠긴 문서도 요청 기준에 따른 요청 목적 변경 허용 …)".
       - ✅ **(2026-11-10) 옛 문서 편집 로드 백필 오판 수정**: 필드 도입 전 문서(`prodc_scope` 2026-08-03, `map_change_reason` 2026-08-06 이전 저장)는 편집 화면이 로드 시 값을 채워(`prodc_scope` = 저장값 || 리전 역추론, `map_change_reason` = 저장값 ?? '') 보내는데, 서버가 키 없음(None)과 비교해 잠금 위반으로 판정해 수정·재상신이 전부 400 으로 막혔다. 이제 `changed_map_info_fields` 가 저장본·요청본을 같은 백필 규칙으로 채운 뒤 비교한다(`RequestDocument._with_edit_load_backfill`). 실제 변경은 계속 400. main 병합 후 '숫자 확인 필수'(`num_check`·`num_check_value`·`num_check_images`, 로드 시 `'해당 없음'`·`''`·`[]`)도 같은 규칙으로 보정한다. NEW+PPPP 옛 문서가 화면에서 '해당 있음'으로 자동 전환돼 400 이 나던 문제는, '숫자 확인 필수' 도입 전 문서(저장본에 `num_check` 키 없음)를 판정·검증하지 않고 저장 시 키도 보내지 않도록 해 해결했다(`docs/REQUEST.md` 같은 항목). 같은 날 잠금 영역의 키보드(Tab) 입력도 `<fieldset disabled>` 로 막았다. 상세는 `docs/REQUEST.md` "버그 수정 (2026-11-10 — MAP 정보 잠금: 옛 문서의 편집 로드 백필 …)".
@@ -1190,7 +1191,8 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   `RejectionSnapshot`(반려 시점 스냅샷)과 지금 재상신하려는(수정 반영 완료된) 문서 내용을
   비교한다 — `jayerRows` 전체와, `RequestDocument.MAP_INFO_FIELDS`(MAP 정보) +
   `DETAIL_LINE_TO_PROCESS_ID_FIELDS`(의뢰 상세의 `line`/`process_selection`/`partid_selection`/
-  `process_id` 4개 필드만, 2026-09) 필드가 하나라도 다르면 R을 정상 생성한다. 의뢰 상세 폼의
+  `process_id` 4개 필드만, 2026-09) 필드가 하나라도 다르면 R을 정상 생성한다. **(2026-11-27) MAP 정보 중
+  CC 적용 여부(`mshot_change_cc`)는 비교하지 않는다**(`MAP_INFO_REVIEWED_FIELDS` 사용 — R 검토 대상 아님). 의뢰 상세 폼의
   그 외 필드(`customer_name`/`customer_requirement`/`other_purpose`/`source_line`/
   `source_partid`/`change_purpose_note`/`flow_chart` 등)와 O-layer(`oayerRows`)·Backbone
   (`bb_zone`/`bb_entries`)은 R의 관심사가 아니므로 비교 대상이 아니다 — 바뀌어도 위 4개 필드와
@@ -1236,8 +1238,8 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 
 ### Case U — O 재합의 생략 (반려 후 재상신 · 중단 후 재개, 2026-11-04)
 
-O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oayerRows`)·MAP 정보(`MAP_INFO_FIELDS`)**가
-그대로면 O 를 다시 거치지 않는다(O팀 반복 합의 부담 감소). **Case T(R 생략)와 별개 규칙**이다 — 비교 구간·
+O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oayerRows`)·MAP 정보(`MAP_INFO_REVIEWED_FIELDS` —
+CC 적용 여부 제외, 2026-11-27)**가 그대로면 O 를 다시 거치지 않는다(O팀 반복 합의 부담 감소). **Case T(R 생략)와 별개 규칙**이다 — 비교 구간·
 예외·적용 경로가 다르다.
 
 | 항목 | Case T (R 생략) | Case U (O 생략) |
@@ -2954,3 +2956,40 @@ Only MAP  : PL(+SA) ─▶ [ R(→RV) ∥ System R ] ─▶ RA
 ### 테스트
 `backend/api/tests.py` `DuplicateSubmitBlockTest` 11건 — 반려/검토중/중단 차단, draft·approved 허용, 키 하나라도 다르면 허용,
 MAP 삭제 그룹 분리, 빈 키 미판정, 기존 반려 문서 재상신 비차단, 확인 API 응답(반려 우선·필드·자기 제외·해외 PL `can_open=false`), 설정 off.
+
+## CC 적용 여부 — 잠금·R/O 재합의 제외 (2026-11-27)
+
+**배경(사용자 결정)**: R 합의 후 3구역에서 반려된 문서의 CC 적용 여부(`mshot_change_cc`)를 바꾸려 했는데, 이 필드가
+`MAP_INFO_FIELDS` 에 들어 있어 ① MAP 정보 잠금으로 요청자는 수정할 수 없었고(PATCH 400) ② MASTER 가 바꾸면 R·System R
+에 이어 이미 합의한 O 까지 다시 합의해야 했다(재현 테스트로 확인). CC 적용 여부는 상세 모달에서도 MAP 정보(R) 탭이 아니라
+'의뢰 상세' 탭에 있는 항목이라 R팀과 관계가 없다 — R 이 다시 볼 필요도, R 합의로 고정할 필요도 없다. O 재합의에서도 제외한다.
+
+### 동작
+| 판정 | 비교 필드 | CC 적용 여부만 바꿨을 때 |
+|---|---|---|
+| MAP 정보 잠금 (`changed_map_info_fields`, `update` 400) | `MAP_INFO_REVIEWED_FIELDS` + `MAP_LOCK_STEP1_FIELDS` | 잠기지 않음 — 저장 200 |
+| R 생략 (Case T, `_should_skip_r_stage`) | `MAP_INFO_REVIEWED_FIELDS` + line~process_id + Jayer | R·System R 생략 |
+| O 생략 (Case U, `o_review_content_same`) | `MAP_INFO_REVIEWED_FIELDS` + Jayer + Oayer | O 생략 |
+
+- `RequestDocument.MAP_INFO_NOT_REVIEWED_FIELDS = ('mshot_change_cc',)`, `MAP_INFO_REVIEWED_FIELDS` = 그 외 MAP 정보 필드.
+  `MAP_INFO_FIELDS` 자체에서는 빼지 않는다 — 프론트 `mapInfoDefaults()`(StepMap 소유 필드 초기화)와 같은 키 목록이어야 한다.
+- 다른 MAP 정보 필드가 함께 바뀌면 종전대로 잠금·재합의 대상이다.
+- 편집 화면(`StepMap.tsx`): 잠금을 영역 전체 fieldset 1개에서 구간별 `MapInfoLockArea`(display:contents fieldset +
+  `.map-info-locked` 흐림)로 나눴다. CC 선택칸만 구간 밖에 있어 잠긴 문서에서도 **같은 자리**("X표시 변경 여부" 옆)에서 바꿀 수 있다.
+- 결재 흐름 액션 API·메일은 바뀌지 않았다. 상세 모달 '의뢰 상세' 탭의 CC 칩 변경 강조·이력 확인은 종전대로 동작한다.
+
+### 테스트
+- `MapInfoLockedFieldCoverageTest.test_mshot_change_cc_is_allowed_when_locked`(종전 `..._is_rejected_when_locked` 400 → 200),
+  `test_mshot_change_cc_stays_in_map_info_fields`, `test_mshot_change_cc_change_keeps_o_review_same`.
+- `RSkipStageIntegrationTest.test_cc_only_change_skips_r_and_o_on_resubmit` — R·O 합의 → J 반려 → 요청자가 CC 만 바꿔 저장(200)
+  → 재상신 → 2회차에 R·RS·O 없음, J·P 생성.
+- 프론트 `mapInfoLockKeyboard.test.tsx` '잠긴 C가문 문서에서 CC 적용 여부만 선택할 수 있고 나머지 칸은 잠긴다'.
+- 위 테스트는 모두 수정 전 코드에서 실패함을 확인했다.
+
+### 수동 검증
+1. 결재 현황 → R 합의를 마치고 3구역(J/P/E/비고정 RA 등)에서 반려된 **C가문** 문서 → [수정·재상신] → MAP 정보 단계:
+   🔒 안내와 함께 다른 칸은 흐리게 잠기고, **CC 적용 여부 선택칸만 선명하게 선택 가능**하면 정상.
+2. CC 적용 여부만 바꿔 재상신 → PL 합의 → 결재 경로 탭에서 2회차 **R 이 '해당없음'**, 1회차에 O 가 합의했다면 **O 도 생략**,
+   J/P 등 3구역이 바로 열리면 정상. R·O 가 대기중으로 다시 생기면 실패.
+3. 대조군: X표시 변경 여부 등 다른 MAP 정보는 같은 화면에서 바꿀 수 없어야 한다(잠금 유지).
+4. 상세 모달 '의뢰 상세' 탭 → CC 적용 여부 칩이 빨간 테두리(변경 강조) + 이력 확인으로 이전 값이 보이면 정상.

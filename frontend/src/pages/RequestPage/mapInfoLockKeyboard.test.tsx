@@ -136,7 +136,8 @@ const APPLIES_DETAIL = { num_check: NUM_CHECK_APPLIES, num_check_value: '9 이�
 describe('MAP 정보 잠금 — 키보드 입력 차단', () => {
   it('잠긴 문서는 영역 안 모든 입력 요소가 :disabled (숫자 확인 값 포함)', async () => {
     const { container } = await openDocAtMapStep(APPLIES_DETAIL, true);
-    expect(container.querySelector('fieldset > .form-grid')).not.toBeNull();
+    // claude 수정 (2026-11-27): 잠금이 영역 전체 fieldset 1개 → 구간별 fieldset(.map-info-locked) 여러 개로 바뀌어 선택자 변경
+    expect(container.querySelector('.form-grid fieldset.map-info-locked')).not.toBeNull();
     expect(numCheckInput(container).matches(':disabled')).toBe(true);
     const controls = mapControls(container);
     expect(controls.length).toBeGreaterThan(0);
@@ -147,6 +148,20 @@ describe('MAP 정보 잠금 — 키보드 입력 차단', () => {
     const { container } = await openDocAtMapStep(APPLIES_DETAIL, false);
     expect(numCheckInput(container).matches(':disabled')).toBe(false);
     expect(buttonWith(container, 'CLONE').matches(':disabled')).toBe(false);
+  });
+
+  // claude 수정 (2026-11-27): CC 적용 여부는 R 검토 대상이 아니라 잠금에서 뺀다(사용자 결정) — 잠긴 문서에서도 같은 자리에서 바꿀 수 있다
+  it('잠긴 C가문 문서에서 CC 적용 여부만 선택할 수 있고 나머지 칸은 잠긴다', async () => {
+    const { container } = await openDocAtMapStep({ only_prodc: 'Yes', mshot_change_cc: 'not_exists' }, true);
+    const cc = container.querySelector('select[name="mshot_change_cc"]') as HTMLSelectElement;
+    expect(cc).not.toBeNull();
+    expect(cc.matches(':disabled')).toBe(false);
+    expect(cc.closest('.map-info-locked')).toBeNull();
+    const xmark = container.querySelector('select[name="mshot_change"]') as HTMLSelectElement;
+    expect(xmark.matches(':disabled')).toBe(true);
+    const others = mapControls(container).filter((el) => el !== cc);
+    expect(others.length).toBeGreaterThan(0);
+    others.forEach((el) => expect(el.matches(':disabled')).toBe(true));
   });
 
   it('MAP 삭제 이유 에디터는 잠기면 readOnly, 아니면 편집 가능', async () => {

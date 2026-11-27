@@ -446,12 +446,13 @@ class RequestDocument(models.Model):
             return sorted(out)
         return canonical(prev_rows) == canonical(curr_rows)
 
-    # claude 수정 (2026-11-20): 표 비교를 layer_rows_content_same 으로 교체(sortOrder·loaded·행 순서 무시)
+    # claude 수정 (2026-11-27): 상세 비교를 MAP_INFO_REVIEWED_FIELDS 로 변경 — CC 적용 여부만 바뀌면 O 재합의 생략
     @classmethod
     def o_review_content_same(cls, prev_data, curr_data):
         """두 additional_notes(파싱된 dict)의 O 검토 대상 구간이 같은가.
 
-        비교 구간 = `jayerRows` + `oayerRows` + 상세의 `MAP_INFO_FIELDS`. 그 외 필드(의뢰 상세
+        비교 구간 = `jayerRows` + `oayerRows` + 상세의 `MAP_INFO_REVIEWED_FIELDS`(MAP 정보 중 CC 적용 여부
+        `mshot_change_cc` 제외, 2026-11-27). 그 외 필드(의뢰 상세
         line~process_id, Backbone 등)는 O 생략 판정에 영향을 주지 않는다. 표는
         `layer_rows_content_same` 으로 내용만 비교한다(sortOrder·loaded·행 순서 무시).
         """
@@ -462,7 +463,7 @@ class RequestDocument(models.Model):
                 return False
         prev_detail = prev_data.get('detail') or {}
         curr_detail = curr_data.get('detail') or {}
-        return all(prev_detail.get(f) == curr_detail.get(f) for f in cls.MAP_INFO_FIELDS)
+        return all(prev_detail.get(f) == curr_detail.get(f) for f in cls.MAP_INFO_REVIEWED_FIELDS)
 
     def is_o_skipped(self, round=None):
         """지정(또는 현재) 회차에서 O 재합의가 생략됐는지 여부(Case U).
@@ -645,6 +646,13 @@ class RequestDocument(models.Model):
         'labelsideshot', 'hpkglabelheight', 'final_yn', 'final_entries',
     )
 
+    # claude 수정 (2026-11-27): CC 적용 여부를 MAP 정보 잠금·R/O 재합의 비교에서 제외(R팀 검토 대상이 아님 — 사용자 결정)
+    # MAP_INFO_FIELDS 중 R·O 가 검토하지 않는 필드. 상세 모달에서도 MAP 정보(R) 탭이 아니라 '의뢰 상세' 탭에
+    # 표시된다. MAP_INFO_FIELDS 는 mapInfoDefaults() 와 같은 키 목록이어야 하므로 거기서 빼지 않고 여기서 제외한다.
+    MAP_INFO_NOT_REVIEWED_FIELDS = ('mshot_change_cc',)
+    # 잠금(changed_map_info_fields)·R 생략(_should_skip_r_stage)·O 생략(o_review_content_same) 비교 대상.
+    MAP_INFO_REVIEWED_FIELDS = tuple(sorted(set(MAP_INFO_FIELDS) - set(MAP_INFO_NOT_REVIEWED_FIELDS)))
+
     # claude 수정 (2026-10-19): MAP 정보 잠금 시 함께 잠그는 의뢰 상세(Step1) 필드 신설 — 요청 목적 + 라인·조합법·제품 이름·조리법.
     # 이 값이 바뀌면 MAP 정보가 초기화·재판별되거나(라인/제품 → EXISTING 자동 매칭) 다른 제품의
     # 요청서가 되므로, R 이 합의한 MAP 정보를 지키려면 같이 잠가야 한다(2026-10).
@@ -728,11 +736,11 @@ class RequestDocument(models.Model):
             filled['num_check_images'] = []
         return filled
 
-    # claude 수정 (2026-11-10): 저장본·요청본을 편집 로드 백필과 같게 보정한 뒤 비교 — 옛 문서의 키 없음 오판 제거
+    # claude 수정 (2026-11-27): 잠금 대상에서 CC 적용 여부(mshot_change_cc) 제외 — MAP_INFO_REVIEWED_FIELDS 로 비교
     def changed_map_info_fields(self, new_detail, new_notes=None):
         """저장된 detail 과 비교해 값이 달라진 잠금 대상 필드 이름 목록을 반환한다.
 
-        잠금 대상 = MAP 정보(`MAP_INFO_FIELDS`) + `MAP_LOCK_STEP1_FIELDS`.
+        잠금 대상 = MAP 정보(`MAP_INFO_REVIEWED_FIELDS` — CC 적용 여부 제외, 2026-11-27) + `MAP_LOCK_STEP1_FIELDS`.
         `map_info_locked()` 가 참인 상태에서 편집 요청(PATCH)을 검증할 때 쓴다
         (`views.py` `RequestDocumentViewSet.update`).
 
@@ -745,7 +753,7 @@ class RequestDocument(models.Model):
         old_detail = self._with_edit_load_backfill(self.get_detail().get('detail', {}) or {})
         new_detail = self._with_edit_load_backfill(new_detail or {})
         changed = [
-            f for f in self.MAP_INFO_FIELDS + self.MAP_LOCK_STEP1_FIELDS
+            f for f in self.MAP_INFO_REVIEWED_FIELDS + self.MAP_LOCK_STEP1_FIELDS
             if old_detail.get(f) != new_detail.get(f)
         ]
         if 'request_purpose' in changed and isinstance(new_notes, dict):

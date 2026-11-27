@@ -9618,6 +9618,42 @@ class RSkipStageIntegrationTest(TestCase):
         self.assertNotIn('R', teams, f'R 이 없던 회차의 반려 메일은 TE_R 에 가지 않아야 한다: {teams}')
         self.assertIn('J', teams, '아직 합의하지 않은 J 팀은 반려 메일을 받아야 한다')
 
+    # claude 수정 (2026-11-27): CC 적용 여부만 바꿔 재상신하면 R·O 재합의를 생략하는지 고정(사용자 결정)
+    def test_cc_only_change_skips_r_and_o_on_resubmit(self):
+        detail = {'line': 'L1', 'process_id': 'PID-1', 'mshot_change_cc': 'not_exists'}
+        doc = self._make_doc(detail, [{'id': 'j1', 'pp': 'NORMAL'}], [{'id': 'o1', 'st': 'O'}])
+        self._submit_and_reach_zone3(doc)
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self._claim_and_reject('J', self.j_user, doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        # 요청자가 편집 화면에서 CC 적용 여부만 바꿔 저장 — R 합의 이력이 있어도 잠기지 않는다
+        payload = self._json.loads(doc.additional_notes)
+        payload['detail']['mshot_change_cc'] = 'exists'
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.patch(f'/api/documents/{doc.id}/',
+                              {'additional_notes': self._json.dumps(payload, ensure_ascii=False)}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self._resubmit(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.r_skip_round, 2, 'CC 적용 여부만 바뀐 재상신은 R 을 생략해야 한다')
+
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        agents = set(ApprovalStep.objects.filter(document=doc, round=2).values_list('agent', flat=True))
+        self.assertNotIn('R', agents)
+        self.assertNotIn('RS', agents)
+        self.assertNotIn('O', agents, 'CC 적용 여부만 바뀌면 이미 합의한 O 도 다시 거치지 않아야 한다')
+        self.assertIn('J', agents)
+        self.assertIn('P', agents)
+
     def test_o_reject_changed_map_info_keeps_r_on_resubmit(self):
         detail = {'line': 'L1', 'process_id': 'PID-1', 'map_type': 'NEW'}
         jayer_rows = [{'id': 'j1', 'pp': 'NORMAL'}]
@@ -10568,12 +10604,28 @@ class MapInfoLockedFieldCoverageTest(TestCase):
         res = self._patch_detail(doc, base, {'mshot_change': '수정'})
         self.assertEqual(res.status_code, 400, res.content)
 
-    def test_mshot_change_cc_is_rejected_when_locked(self):
-        """이 테스트가 실패한다면 MAP_INFO_FIELDS 에서 'mshot_change_cc' 가 다시 빠진 것이다."""
+    # claude 수정 (2026-11-27): CC 적용 여부는 R 검토 대상이 아니라 잠금에서 제외(사용자 결정) — 400 → 200 으로 기대값 변경
+    def test_mshot_change_cc_is_allowed_when_locked(self):
+        """CC 적용 여부(mshot_change_cc)는 MAP 정보 잠금 대상이 아니다 — R 합의 후에도 바꿀 수 있다."""
         base = {'mshot_change': '없음', 'mshot_change_cc': 'not_exists'}
         doc = self._make_locked_doc(base)
         res = self._patch_detail(doc, base, {'mshot_change_cc': 'exists'})
-        self.assertEqual(res.status_code, 400, res.content)
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_mshot_change_cc_stays_in_map_info_fields(self):
+        """잠금·재합의에서만 빠질 뿐 StepMap 소유 필드 목록(mapInfoDefaults 와 같은 키)에는 남아 있어야 한다."""
+        self.assertIn('mshot_change_cc', RequestDocument.MAP_INFO_FIELDS)
+        self.assertNotIn('mshot_change_cc', RequestDocument.MAP_INFO_REVIEWED_FIELDS)
+        self.assertEqual(
+            set(RequestDocument.MAP_INFO_REVIEWED_FIELDS) | {'mshot_change_cc'},
+            set(RequestDocument.MAP_INFO_FIELDS),
+        )
+
+    def test_mshot_change_cc_change_keeps_o_review_same(self):
+        """CC 적용 여부만 바뀌면 O 재합의 생략 비교에서 '같다'로 판정돼야 한다."""
+        prev = {'detail': {'mshot_change_cc': 'not_exists'}, 'jayerRows': [], 'oayerRows': []}
+        changed = {'detail': {'mshot_change_cc': 'exists'}, 'jayerRows': [], 'oayerRows': []}
+        self.assertTrue(RequestDocument.o_review_content_same(prev, changed))
 
     # claude 수정 (2026-11-10): '숫자 확인 필수' 사진(num_check_images) 잠금·O 재합의 비교 회귀 테스트
     def test_num_check_images_is_rejected_when_locked(self):
