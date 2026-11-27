@@ -8576,20 +8576,24 @@ class LayerFilterSetTest(TestCase):
         }, format='json')
         self.assertEqual(r.status_code, 201, r.content)
 
-    def test_te_j_cannot_list_or_create_o_filter(self):
+    # claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 목록 조회는 로그인 사용자 전원, 추가는 여전히 팀별
+    def test_te_j_can_list_but_cannot_create_o_filter(self):
         self.client.force_authenticate(user=self.j_user)
         r = self.client.get('/api/layer-filter-sets/', {'table': 'O'})
-        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(r.status_code, 200, r.content)
         r = self.client.post('/api/layer-filter-sets/', {
             'table': 'O', 'label': 'f1', 'words': {'sp': [], 'sd': [], 'pp': []},
         }, format='json')
         self.assertEqual(r.status_code, 403, r.content)
 
-    def test_te_o_can_list_and_create_o_filter_only(self):
+    def test_te_o_can_list_both_tables_but_create_o_only(self):
         self.client.force_authenticate(user=self.o_user)
-        r = self.client.get('/api/layer-filter-sets/', {'table': 'O'})
-        self.assertEqual(r.status_code, 200, r.content)
-        r = self.client.get('/api/layer-filter-sets/', {'table': 'J'})
+        for table in ('O', 'J'):
+            r = self.client.get('/api/layer-filter-sets/', {'table': table})
+            self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post('/api/layer-filter-sets/', {
+            'table': 'J', 'label': 'f1', 'words': {'sp': [], 'sd': [], 'pp': []},
+        }, format='json')
         self.assertEqual(r.status_code, 403, r.content)
 
     def test_master_can_manage_both_tables(self):
@@ -8614,330 +8618,272 @@ class LayerFilterSetTest(TestCase):
         r = self.client.delete(f'/api/layer-filter-sets/{fs.id}/')
         self.assertEqual(r.status_code, 403, r.content)
 
+    # claude 수정 (2026-11-23): 대상 표(J/O) 변경 권한 회귀 테스트 — TE_J/TE_O 는 불가, MASTER 는 가능
+    def test_te_j_cannot_move_j_filter_to_o_table(self):
+        """TE_J 가 자기 J 필터의 table 을 'O' 로 바꿔 O팀 목록에 넣을 수 없다(권한 우회 차단)."""
+        fs = LayerFilterSet.objects.create(table='J', label='j-filter', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'table': 'O'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.table, 'J')
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.get('/api/layer-filter-sets/', {'table': 'O'})
+        self.assertEqual([f['id'] for f in r.json()], [])
+
+    def test_te_o_cannot_move_o_filter_to_j_table(self):
+        fs = LayerFilterSet.objects.create(table='O', label='o-filter', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.put(f'/api/layer-filter-sets/{fs.id}/', {
+            'table': 'J', 'label': 'o-filter', 'words': {'sp': ['SP01'], 'sd': [], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.table, 'O')
+
+    def test_master_can_change_filter_table(self):
+        """MASTER 는 대상 표를 바꿀 수 있다(사용자 결정 2026-11-23 — MASTER 는 모든 것이 가능)."""
+        fs = LayerFilterSet.objects.create(table='J', label='j-filter', words={'sp': [], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.master)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'table': 'O'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.table, 'O')
+
+    def test_te_j_can_update_label_and_words_with_same_table(self):
+        """같은 table 을 함께 보내거나 label·words 만 보내는 기존 수정은 계속 허용된다."""
+        fs = LayerFilterSet.objects.create(table='J', label='j-filter', words={'sp': [], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {
+            'table': 'J', 'label': 'renamed', 'words': {'sp': ['SP02'], 'sd': [], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'label': 'renamed2'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        fs.refresh_from_db()
+        self.assertEqual((fs.table, fs.label, fs.words['sp']), ('J', 'renamed2', ['SP02']))
+
     def test_list_requires_table_param(self):
         """table 파라미터 없이 목록 조회하면 어느 테이블 권한인지 판정할 수 없어 거부한다."""
         self.client.force_authenticate(user=self.j_user)
         r = self.client.get('/api/layer-filter-sets/')
         self.assertEqual(r.status_code, 403, r.content)
 
-    # ----- apply-layer-filter -----
+    # ----- 자동 적용(2026-11-27 프로세스 전환): 조회 권한·일괄 적용·미리보기·상신 검증 -----
 
-    def test_te_j_applies_j_filter_clears_fields_and_sets_st_x(self):
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01'), self._row(id='r2', sp='SP99')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.data['matched_count'], 1)
-
+    def _rows_of(self, doc, key='jayerRows'):
         doc.refresh_from_db()
-        rows = self._json.loads(doc.additional_notes)['jayerRows']
-        matched = next(row for row in rows if row['id'] == 'r1')
-        unmatched = next(row for row in rows if row['id'] == 'r2')
-        self.assertEqual(matched['st'], 'X')
-        self.assertEqual(matched['new_or_copy'], '')
-        self.assertEqual(matched['product_name'], '')
-        self.assertEqual(matched['step'], '')
-        self.assertEqual(matched['item_id'], '')
-        self.assertEqual(unmatched['st'], 'O', '매칭되지 않은 행은 그대로여야 한다')
+        return {row['id']: row for row in self._json.loads(doc.additional_notes)[key]}
 
-    def test_already_x_row_not_rematched(self):
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01', st='X', new_or_copy='', product_name='', step='', item_id='')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+    def _create(self, user, table, words, label='f1'):
+        self.client.force_authenticate(user=user)
+        return self.client.post('/api/layer-filter-sets/', {'table': table, 'label': label, 'words': words}, format='json')
 
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.data['matched_count'], 0)
-
-    def test_te_o_cannot_apply_j_filter(self):
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.o_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 403, r.content)
-
-    def test_master_can_apply_either_table(self):
-        fs = LayerFilterSet.objects.create(table='O', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(oayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='O', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.master)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'O', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.data['matched_count'], 1)
-
-    def test_rejected_when_document_not_in_progress(self):
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='approved')
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='approved')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
-
-    def test_rejected_when_j_stage_already_approved(self):
-        """문서는 under_review 여도(다른 단계가 남아 있어도) J 단계 자체가 끝났으면 J 필터는 막는다."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='under_review')
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='approved')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
-
-    def test_filter_from_wrong_table_rejected(self):
-        fs = LayerFilterSet.objects.create(table='O', label='o-filter', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 404, r.content)
-
-    def test_pl_role_cannot_apply_any_filter(self):
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
+    def test_any_logged_in_user_can_read_but_not_manage(self):
+        """작성 화면이 적용하도록 조회는 전원(PL 포함) 허용, 추가·수정·삭제·미리보기는 팀/MASTER 만."""
+        fs = LayerFilterSet.objects.create(table='J', label='j', words={'sp': ['SP01'], 'sd': [], 'pp': []})
         self.client.force_authenticate(user=self.outsider)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
+        for table in ('J', 'O'):
+            self.assertEqual(self.client.get('/api/layer-filter-sets/', {'table': table}).status_code, 200)
+        self.assertEqual(self.client.get(f'/api/layer-filter-sets/{fs.id}/').status_code, 200)
+        self.assertEqual(self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'label': 'x'}, format='json').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/layer-filter-sets/{fs.id}/').status_code, 403)
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': ['SP01'], 'sd': [], 'pp': []}}, format='json')
         self.assertEqual(r.status_code, 403, r.content)
 
-    def test_o_filter_apply_does_not_add_item_id_key(self):
-        """O-layer 행에는 원래 item_id 필드가 없다 — 적용해도 새로 생기면 안 된다."""
-        fs = LayerFilterSet.objects.create(table='O', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        o_row = {
-            'id': 'r1', 'process_id': 'P1', 'sp': 'SP01', 'sd': 'SD01', 'pp': 'PP01',
-            'layerid': 'L1', 'st': 'O', 'new_or_copy': '신규', 'product_name': '제품A', 'step': '10',
+    def test_create_bulk_applies_by_status_and_team_agreement(self):
+        """추가 저장 시 임시저장·반려·상신됨·검토중·중단 문서에 적용하되, 이번 회차 J 합의가 끝난 문서와 승인 완료 문서는 제외."""
+        row = lambda: [self._row(id='r1', sd='GATE'), self._row(id='r2', sd='METAL')]
+        draft = self._make_doc(jayer_rows=row(), status='draft')
+        rejected = self._make_doc(jayer_rows=row(), status='rejected')
+        ApprovalStep.objects.create(document=rejected, agent='J', round=1, action='approved')
+        zone1 = self._make_doc(jayer_rows=row(), status='under_review')
+        ApprovalStep.objects.create(document=zone1, agent='PL', round=1, action='pending')
+        j_pending = self._make_doc(jayer_rows=row(), status='under_review')
+        ApprovalStep.objects.create(document=j_pending, agent='J', round=1, action='pending')
+        paused = self._make_doc(jayer_rows=row(), status='pause')
+        ApprovalStep.objects.create(document=paused, agent='J', round=1, action='pending')
+        j_agreed = self._make_doc(jayer_rows=row(), status='under_review')
+        ApprovalStep.objects.create(document=j_agreed, agent='J', round=1, action='approved')
+        done = self._make_doc(jayer_rows=row(), status='approved')
+
+        r = self._create(self.j_user, 'J', {'sp': [], 'sd': ['gate'], 'pp': []})
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.data['applied'], {'document_count': 5, 'row_count': 5})
+
+        for doc in (draft, rejected, zone1, j_pending, paused):
+            rows = self._rows_of(doc)
+            self.assertEqual(rows['r1']['st'], 'X', doc.status)
+            self.assertEqual((rows['r1']['new_or_copy'], rows['r1']['product_name'], rows['r1']['step'], rows['r1']['item_id']),
+                             ('미진행', '', '', ''))
+            self.assertEqual(rows['r2']['st'], 'O', '매칭되지 않은 행은 그대로')
+        for doc in (j_agreed, done):
+            self.assertEqual(self._rows_of(doc)['r1']['st'], 'O', '합의 끝난 문서·승인 완료 문서는 바꾸지 않는다')
+
+    def test_agreement_is_judged_on_current_round(self):
+        """1회차 J 합의 후 2회차에 J 단계가 아직 없으면(또는 대기면) 대상이다."""
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')], status='under_review')
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='approved')
+        ApprovalStep.objects.create(document=doc, agent='P', round=2, action='pending')
+        self._create(self.j_user, 'J', {'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.assertEqual(self._rows_of(doc)['r1']['st'], 'X')
+
+    def test_partial_team_agreement_still_applies(self):
+        """이번 회차 J 단계가 여럿이면 전원 합의해야 '합의 끝남' — 하나라도 남았으면 대상이다."""
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')], status='under_review')
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='approved')
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+        self._create(self.j_user, 'J', {'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.assertEqual(self._rows_of(doc)['r1']['st'], 'X')
+
+    def test_o_filter_touches_only_o_rows_and_adds_no_item_id(self):
+        doc = self._make_doc(
+            jayer_rows=[self._row(id='j1', sp='SP01')],
+            oayer_rows=[{'id': 'o1', 'sp': 'SP01', 'sd': 'SD', 'pp': 'PP', 'st': 'O', 'new_or_copy': '신규',
+                         'product_name': 'A', 'step': '1'}],
+            status='under_review',
+        )
+        r = self._create(self.o_user, 'O', {'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.assertEqual(r.data['applied']['row_count'], 1)
+        self.assertEqual(self._rows_of(doc)['j1']['st'], 'O', 'O 필터는 J 표를 건드리지 않는다')
+        o1 = self._rows_of(doc, 'oayerRows')['o1']
+        self.assertEqual((o1['st'], o1['new_or_copy']), ('X', '미진행'))
+        self.assertNotIn('item_id', o1)
+
+    def test_x_row_with_other_request_criteria_becomes_not_proceeding(self):
+        """이미 X 지만 요청 기준이 미진행이 아닌(기등록 등) 매칭 행도 X + 미진행으로 바꾼다('자동 미진행'과 같은 규칙)."""
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01', st='X', new_or_copy='기등록')], status='under_review')
+        r = self._create(self.j_user, 'J', {'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.assertEqual(r.data['applied'], {'document_count': 1, 'row_count': 1})
+        self.assertEqual((self._rows_of(doc)['r1']['st'], self._rows_of(doc)['r1']['new_or_copy']), ('X', '미진행'))
+
+    def test_already_x_row_is_not_counted_again(self):
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01', st='X', new_or_copy='미진행')], status='under_review')
+        r = self._create(self.j_user, 'J', {'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.assertEqual(r.data['applied'], {'document_count': 0, 'row_count': 0})
+        self.assertEqual(self._rows_of(doc)['r1']['new_or_copy'], '미진행', '이미 X 인 행(자동 미진행 등)은 건드리지 않는다')
+
+    def test_update_applies_new_keywords(self):
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['NOPE'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', pp='PP_A')], status='under_review')
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'words': {'sp': ['NOPE'], 'sd': [], 'pp': ['pp_a']}}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['applied'], {'document_count': 1, 'row_count': 1})
+        self.assertEqual(self._rows_of(doc)['r1']['st'], 'X')
+
+    def test_delete_does_not_revert_rows(self):
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')], status='under_review')
+        fid = self._create(self.j_user, 'J', {'sp': ['SP01'], 'sd': [], 'pp': []}).data['id']
+        r = self.client.delete(f'/api/layer-filter-sets/{fid}/')
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertEqual(self._rows_of(doc)['r1']['st'], 'X', '삭제해도 이미 X 가 된 행은 되돌리지 않는다(사용자 결정)')
+
+    def test_corrupted_document_is_skipped_without_blocking_others(self):
+        broken = self._make_doc(status='under_review')
+        broken.additional_notes = '{broken'
+        broken.save(update_fields=['additional_notes'])
+        ok = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')], status='under_review')
+        r = self._create(self.j_user, 'J', {'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(self._rows_of(ok)['r1']['st'], 'X')
+
+    def test_preview_counts_without_saving(self):
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01'), self._row(id='r2', sp='SP01X')], status='under_review')
+        self._make_doc(jayer_rows=[self._row(id='r1', sp='SP99')], status='under_review')
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': ['sp01'], 'sd': [], 'pp': []}}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((r.data['document_count'], r.data['row_count']), (1, 2))
+        self.assertEqual(r.data['documents'], [{'id': doc.id, 'title': doc.title, 'status': 'under_review', 'row_count': 2}])
+        self.assertEqual(LayerFilterSet.objects.count(), 0, '미리보기는 필터를 저장하지 않는다')
+        self.assertEqual(self._rows_of(doc)['r1']['st'], 'O', '미리보기는 문서를 바꾸지 않는다')
+
+    def test_preview_respects_team_permission(self):
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': ['A'], 'sd': [], 'pp': []}}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': ['A'], 'sd': [], 'pp': []}}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    # claude 수정 (2026-11-27): 문자열이 아닌 키워드는 저장 단계에서 400(사용자 결정 — 발견 2 영향 확대로 수정)
+    def test_non_string_keyword_rejected_on_create_and_update(self):
+        """숫자 등 문자열이 아닌 키워드는 생성·수정 모두 400 — 진행 중 문서가 없어도 저장되지 않는다."""
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post('/api/layer-filter-sets/', {
+            'table': 'J', 'label': 'bad', 'words': {'sp': [], 'sd': ['GATE', 123], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('words', r.data)
+        self.assertEqual(LayerFilterSet.objects.count(), 0)
+
+        fs = LayerFilterSet.objects.create(table='J', label='ok', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'words': {'sp': ['SP01', None], 'sd': [], 'pp': []}}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.words['sp'], ['SP01'], '거부된 수정은 기존 키워드를 바꾸지 않는다')
+
+    def test_non_string_keyword_rejected_on_preview(self):
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': [], 'sd': [], 'pp': [1]}}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_per_document_apply_and_reset_api_removed(self):
+        """문서별 적용·초기화 API 는 삭제됐다(사용자 결정 2026-11-27)."""
+        doc = self._make_doc(jayer_rows=[self._row()], status='under_review')
+        self.client.force_authenticate(user=self.master)
+        for path in ('apply-layer-filter', 'reset-layer-filter'):
+            r = self.client.post(f'/api/documents/{doc.id}/{path}/', {'table': 'J'}, format='json')
+            self.assertEqual(r.status_code, 404, path)
+
+
+# claude 수정 (2026-11-27): 상신 시 공유 필터 서버 검증 — 실제 submit API 로 확인(LayerNpSkipIntegrationTest 와 같은 구성)
+@override_settings(POST_APPROVER_LOGINID='')
+class LayerFilterSubmitValidationTest(TestCase):
+    """공유 필터에 걸리는 J/O 행이 ST X + 요청 기준 미진행이 아니면 상신 400(MASTER 예외), 맞으면 통과."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='lfs_req', mail='lfs_req@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='lfs_master', mail='lfs_m@c.com', role='MASTER')
+        self.pl_user = UserProfile.objects.create(loginid='lfs_pl', mail='lfs_pl@c.com', role='PL')
+        LayerFilterSet.objects.create(table='O', label='o', words={'sp': [], 'sd': ['GATE'], 'pp': []})
+
+    def _doc(self, st, noc=''):
+        payload = {
+            'detail': {'line': 'line1', 'process_id': 'PID-1', 'map_type': 'NEW'},
+            'jayerRows': [],
+            'oayerRows': [{'id': 'o1', 'sp': 'S1', 'sd': 'GATE-1', 'pp': 'R1', 'layerid': '', 'st': st, 'new_or_copy': noc}],
         }
-        doc = self._make_doc(oayer_rows=[o_row])
-        ApprovalStep.objects.create(document=doc, agent='O', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.o_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'O', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        doc.refresh_from_db()
-        row = self._json.loads(doc.additional_notes)['oayerRows'][0]
-        self.assertEqual(row['st'], 'X')
-        self.assertNotIn('item_id', row)
-
-    # ----- reset-layer-filter -----
-
-    def test_apply_creates_baseline_and_reset_restores_original_after_multiple_filters(self):
-        """필터를 여러 번 적용해도 baseline 은 최초 상신 시점 값 그대로 남고, 초기화하면 그 값으로 완전히 복원된다."""
-        fs_a = LayerFilterSet.objects.create(table='J', label='fa', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        fs_b = LayerFilterSet.objects.create(table='J', label='fb', words={'sp': ['SP02'], 'sd': [], 'pp': []})
-        original_rows = [
-            self._row(id='r1', sp='SP01'),
-            self._row(id='r2', sp='SP02'),
-            self._row(id='r3', sp='SP99'),
-        ]
-        doc = self._make_doc(jayer_rows=[dict(r) for r in original_rows])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs_a.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs_b.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-
-        doc.refresh_from_db()
-        rows_after_apply = self._json.loads(doc.additional_notes)['jayerRows']
-        self.assertEqual({row['id']: row['st'] for row in rows_after_apply}, {'r1': 'X', 'r2': 'X', 'r3': 'O'})
-
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-
-        doc.refresh_from_db()
-        restored = self._json.loads(doc.additional_notes)['jayerRows']
-        self.assertEqual(restored, original_rows)
-
-    def test_reset_without_prior_apply_is_graceful_not_an_error(self):
-        """되돌릴 baseline이 없으면 에러가 아니라 200 + reset:false로 안내만 한다."""
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertFalse(r.data['reset'])
-
-    def test_apply_with_zero_matches_does_not_create_baseline(self):
-        """매칭 0건이면 아무것도 안 바뀌었으므로 baseline도 만들지 않는다(초기화가 곧바로 가능 상태가 되면 안 됨)."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['NO_MATCH'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.data['matched_count'], 0)
-
-        doc.refresh_from_db()
-        data = self._json.loads(doc.additional_notes)
-        self.assertNotIn('jayerFilterBaseline', data)
-
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertFalse(r.data['reset'], '실제로 바뀐 적이 없으므로 초기화도 할 게 없어야 한다')
-
-    def test_reset_is_repeatable_without_corrupting_baseline(self):
-        """적용→초기화를 반복해도 baseline(상신 시점 값)은 절대 바뀌지 않는다."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        original_row = self._row(id='r1', sp='SP01')
-        doc = self._make_doc(jayer_rows=[dict(original_row)])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        for _ in range(3):
-            r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-                'table': 'J', 'filter_id': fs.id,
-            }, format='json')
-            self.assertEqual(r.status_code, 200, r.content)
-            r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-            self.assertEqual(r.status_code, 200, r.content)
-            doc.refresh_from_db()
-            self.assertEqual(self._json.loads(doc.additional_notes)['jayerRows'], [original_row])
-
-    def test_reset_invalid_after_round_change(self):
-        """반려 후 재상신으로 회차가 바뀌면 이전 회차 baseline 으로는 초기화할 수 없다(에러 아닌 안내)."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-
-        # 반려 후 재상신을 흉내낸다: 2회차 J 단계 추가 + 행을 새 상신값으로 갈아끼움
-        ApprovalStep.objects.create(document=doc, agent='J', round=2, action='pending')
-        doc.refresh_from_db()
-        data = self._json.loads(doc.additional_notes)
-        data['jayerRows'] = [self._row(id='r1', sp='SP01', st='O')]
-        doc.additional_notes = self._json.dumps(data)
-        doc.save(update_fields=['additional_notes'])
-
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertFalse(r.data['reset'])
-
-    def test_apply_rejected_when_document_paused(self):
-        """중단(pause) 확정된 문서에는 필터 적용도 막는다(결재 액션과 동일 메시지)."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='pause')
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
-        self.assertEqual(r.data['error'], '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.')
-
-    def test_reset_rejected_when_document_paused(self):
-        """중단(pause) 확정된 문서에는 초기화도 막는다(baseline이 있어도)."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-
-        doc.status = 'pause'
-        doc.save(update_fields=['status'])
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
-        self.assertEqual(r.data['error'], '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.')
-
-    def test_apply_rejected_while_pause_request_awaiting_confirmation(self):
-        """상신자가 중단을 요청했지만 대상 단계 전원이 아직 확인 전이면(status는 여전히
-        under_review) 그 구간에도 필터 적용을 막아야 한다 — 이게 원래 버그였던 지점."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='under_review')
-        j_step = ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-        PauseRequest.objects.create(
-            document=doc, requester_name='요청자', reason='검토 필요',
-            round=1, state='requested', target_step_ids=[j_step.id],
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자', requester_email='lfs_req@c.com',
+            requester_department='개발팀', product_name='PROD-1', status='draft',
+            additional_notes=json.dumps(payload, ensure_ascii=False),
         )
 
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
+    def _submit(self, user, doc):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+
+    def test_unapplied_filter_row_rejected(self):
+        r = self._submit(self.requester, self._doc('O'))
         self.assertEqual(r.status_code, 400, r.content)
-        self.assertEqual(doc.status, 'under_review', '재현 전제: 확인 대기 중엔 status가 아직 안 바뀐다')
+        self.assertIn('공유 필터', r.data['error'])
 
-    def test_reset_rejected_while_withdraw_request_awaiting_confirmation(self):
-        """철회 요청 확인 대기 중(status는 여전히 under_review)에도 초기화를 막아야 한다."""
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='under_review')
-        j_step = ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+    def test_x_without_not_proceeding_is_rejected(self):
+        r = self._submit(self.requester, self._doc('X', '기등록'))
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('공유 필터', r.data['error'])
 
-        self.client.force_authenticate(user=self.j_user)
-        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
-            'table': 'J', 'filter_id': fs.id,
-        }, format='json')
+    def test_applied_filter_row_passes(self):
+        r = self._submit(self.requester, self._doc('X', '미진행'))
         self.assertEqual(r.status_code, 200, r.content)
 
-        WithdrawRequest.objects.create(
-            document=doc, requester_name='요청자', reason='철회 사유',
-            round=1, state='requested', target_step_ids=[j_step.id],
-        )
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
-
-    def test_reset_role_gate_matches_apply(self):
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-        self.client.force_authenticate(user=self.o_user)
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 403, r.content)
-
-    def test_reset_rejected_when_document_not_in_progress(self):
-        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
-        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
-        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
-        self.client.force_authenticate(user=self.j_user)
-        self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {'table': 'J', 'filter_id': fs.id}, format='json')
-        doc.status = 'approved'
-        doc.save(update_fields=['status'])
-        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
+    def test_master_is_exempt(self):
+        r = self._submit(self.master, self._doc('O'))
+        self.assertEqual(r.status_code, 200, r.content)
 
 
 class LayerDriftPurposeExclusionTest(TestCase):

@@ -804,15 +804,94 @@ class RequestDocument(models.Model):
 
 
 class LayerFilterSet(models.Model):
-    """결재 상세페이지의 J/O-layer 공유 필터.
+    """J/O-layer 공유 필터 — 항상 적용되는 규칙(2026-11-27 프로세스 전환).
 
-    의뢰서 작성 화면의 필터(개인별, localStorage)와 달리 이건 팀 전체가 공유하는
-    단일 목록이다 — table='J'인 필터는 TE_J/MASTER 전원이, table='O'인 필터는
-    TE_O/MASTER 전원이 같은 목록을 보고 관리한다. 실제 적용(문서의 st를 'X'로
-    바꾸는 것)은 `RequestDocumentViewSet.apply_layer_filter` 가 담당하고, 이 모델은
-    필터 정의(라벨 + 키워드)만 저장한다.
+    table='J' 인 필터는 TE_J/MASTER, table='O' 인 필터는 TE_O/MASTER 가 관리하고(목록 조회는 로그인 사용자 전원),
+    저장된 필터는 전부 다음 두 곳에 자동 적용된다 — 매칭된 행을 st 'X' + 요청 기준 '미진행' 으로 바꾸고 관련 칸을 비운다
+    ('자동 미진행' 키워드와 같은 결과, 사용자 결정 2026-11-27).
+      - 의뢰서 작성: STEP3(J)/STEP4(O) '다음'·'상신' 때 화면이 적용하고, 상신 API 가 다시 검증한다
+        (`RequestDocumentViewSet._validate_layer_filter_rows`).
+      - 필터 추가·수정 저장 시: `target_documents` 의 진행 중 문서 전체에 일괄 적용한다
+        (`LayerFilterSetViewSet`). 필터 삭제·키워드 제거는 이미 X 가 된 행을 되돌리지 않는다.
+    의뢰서 작성 화면의 개인 필터(localStorage)와는 별개다.
     """
     TABLE_CHOICES = [('J', 'J'), ('O', 'O')]
+
+    # claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 매칭·적용·일괄 대상 판정을 모델에 모은다
+    MATCH_FIELDS = ('sp', 'sd', 'pp')
+    ROWS_KEYS = {'J': 'jayerRows', 'O': 'oayerRows'}
+    ST_INACTIVE = 'X'
+    NOC_NOT_PROCEEDING = '미진행'
+    # 일괄 적용 대상 상태(사용자 결정 2026-11-27) — 승인 완료(approved)만 제외한다.
+    #  - 임시저장·반려됨: 항상 대상(재상신하면 새 회차에서 다시 검토된다)
+    #  - 상신됨·검토중·중단: 이번 회차에 그 팀(J/O)이 아직 합의를 끝내지 않았을 때만 대상
+    #    (J/O 단계가 아직 없는 1·2구역, 생략·제외로 단계가 없는 회차 포함. 중단·철회 확인 대기도 포함)
+    ALWAYS_TARGET_STATUSES = ('draft', 'rejected')
+    STAGE_TARGET_STATUSES = ('submitted', 'under_review', 'pause')
+
+    @classmethod
+    def row_matches(cls, words, row):
+        """행의 SP·SD·PP 중 하나라도 이 필터의 같은 칸 키워드를 포함하는가(대소문자 무시·부분 일치)."""
+        words = words or {}
+        for field in cls.MATCH_FIELDS:
+            value = (row.get(field) or '').lower()
+            for kw in (words.get(field) or []):
+                if kw and kw.lower() in value:
+                    return True
+        return False
+
+    @classmethod
+    def is_applied_row(cls, row):
+        """이미 공유 필터가 적용된 모양(st 'X' + 요청 기준 '미진행')인가."""
+        return row.get('st') == cls.ST_INACTIVE and row.get('new_or_copy') == cls.NOC_NOT_PROCEEDING
+
+    @classmethod
+    def clear_matched_rows(cls, table, rows, words_list):
+        """rows(행 dict 리스트)에서 필터(words 목록) 중 하나라도 매칭되는 행을 제자리에서 st 'X' + 요청 기준 '미진행' 으로 바꾼다.
+
+        product_name·step(J 는 item_id 도)은 비운다 — '자동 미진행' 키워드(`RequestPage/index.tsx` applyNpKeyword)와 같다.
+        이미 X + 미진행 인 행은 건너뛰고(중복 집계 없음), X 지만 요청 기준이 다른 행(기등록 등)은 미진행으로 바꾼다.
+        반환값은 바뀐 행 수.
+        """
+        count = 0
+        for row in rows:
+            if cls.is_applied_row(row):
+                continue
+            if not any(cls.row_matches(words, row) for words in words_list):
+                continue
+            row['st'] = cls.ST_INACTIVE
+            row['new_or_copy'] = cls.NOC_NOT_PROCEEDING
+            row['product_name'] = ''
+            row['step'] = ''
+            if table == 'J':
+                row['item_id'] = ''
+            count += 1
+        return count
+
+    @classmethod
+    def violating_rows(cls, table, rows):
+        """저장된 공유 필터(table) 중 하나라도 매칭되는데 st 'X' + 요청 기준 '미진행' 이 아닌 행(상신 서버 검증용)."""
+        words_list = list(cls.objects.filter(table=table).values_list('words', flat=True))
+        if not words_list:
+            return []
+        return [r for r in rows if not cls.is_applied_row(r) and any(cls.row_matches(w, r) for w in words_list)]
+
+    @classmethod
+    def target_documents(cls, table):
+        """일괄 적용 대상 문서 목록(위 STATUSES 규칙). '합의를 끝냈다' = 현재 회차의 그 팀 단계가 있고 전부 approved."""
+        docs = RequestDocument.objects.filter(
+            status__in=cls.ALWAYS_TARGET_STATUSES + cls.STAGE_TARGET_STATUSES,
+        ).prefetch_related('approval_steps').order_by('id')
+        targets = []
+        for doc in docs:
+            if doc.status in cls.STAGE_TARGET_STATUSES:
+                steps = list(doc.approval_steps.all())
+                current_round = max((s.round for s in steps), default=1)
+                team_steps = [s for s in steps if s.agent == table and s.round == current_round]
+                if team_steps and all(s.action == 'approved' for s in team_steps):
+                    continue
+            targets.append(doc)
+        return targets
 
     table = models.CharField(max_length=1, choices=TABLE_CHOICES, verbose_name='대상 표')
     label = models.CharField(max_length=100, verbose_name='필터 이름')

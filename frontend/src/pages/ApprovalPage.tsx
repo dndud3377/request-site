@@ -20,7 +20,7 @@ import {
   sanitizePresetValues, isPresetActive, hasAnyPresetFilter, buildPresetSummary,
 } from '../components/FilterPresetModals';
 import RouteChangeModal from '../components/RouteChangeModal';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, PersonalFilterPreset, ColorFilterSet, LayerDriftResponse, isPlRole, plRoleFor } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, LayerFilterPreview, PersonalMarkCategory, PersonalFilterPreset, ColorFilterSet, LayerDriftResponse, isPlRole, plRoleFor } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import ExportAllButton from '../components/ExportAllButton';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -401,10 +401,19 @@ export default function ApprovalPage(): React.ReactElement {
   // 팀 전체가 공유하는 필터라 삭제는(개별/전체 모두) 확인 후 진행한다.
   const [layerFilterDeleteConfirm, setLayerFilterDeleteConfirm] = useState<{ table: 'J' | 'O'; id: number; label: string } | null>(null);
   const [layerFilterAllDeleteConfirm, setLayerFilterAllDeleteConfirm] = useState<'J' | 'O' | null>(null);
-  // 필터 초기화 확인(네이티브 confirm 대신 공통 ConfirmModal 사용)
-  const [layerFilterResetConfirm, setLayerFilterResetConfirm] = useState<'J' | 'O' | null>(null);
-  // 필터 적용/초기화가 서버에서 거부됐을 때 사유를 그대로 보여주는 공통 안내 모달
+  // 공유 필터 미리보기·저장이 서버에서 실패했을 때 사유를 그대로 보여주는 공통 안내 모달
   const [layerFilterErrorNotice, setLayerFilterErrorNotice] = useState<string | null>(null);
+  // claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 저장 전 "진행 중 N건·M행이 바뀝니다" 미리보기 확인창
+  // resolve 는 FilterManageModal 의 onAdd/onEdit Promise 를 끝낸다(true=저장됨, false=취소·실패).
+  const [sharedFilterSaveConfirm, setSharedFilterSaveConfirm] = useState<{
+    table: 'J' | 'O';
+    filterId: number | null;
+    label: string;
+    words: LayerFilterSet['words'];
+    preview: LayerFilterPreview;
+    resolve: (saved: boolean) => void;
+  } | null>(null);
+  const [sharedFilterSaving, setSharedFilterSaving] = useState(false);
 
   useEffect(() => {
     if (currentUser.role === 'TE_J' || currentUser.role === 'MASTER') {
@@ -1005,9 +1014,9 @@ export default function ApprovalPage(): React.ReactElement {
   };
 
   /**
-   * 결재 상세페이지 J/O-layer 공유 필터 사용 가능 여부.
+   * 결재 상세페이지 J/O-layer 공유 필터 '필터 관리' 버튼(과 색상 적용 툴바) 노출 여부.
    * table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER. 문서가 under_review/pause 이고
-   * 해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 — 백엔드 apply_layer_filter 와 같은 규칙.
+   * 해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 보인다.
    */
   const canUseLayerFilter = (doc: RequestDocument | null, table: 'J' | 'O'): boolean => {
     if (!doc || isTourMode) return false;
@@ -1019,40 +1028,53 @@ export default function ApprovalPage(): React.ReactElement {
     return !step || step.action !== 'approved';
   };
 
-  const handleApplyLayerFilter = async (table: 'J' | 'O', filterId: number) => {
-    if (!selected) return;
+  // claude 수정 (2026-11-27): 문서별 적용·초기화를 없애고, 필터 추가·수정 저장 시 미리보기 확인 → 진행 중 문서 일괄 적용으로 바꾼다
+  /**
+   * 공유 필터 저장 요청 — 먼저 미리보기(바뀔 진행 중 문서·행 수)를 받아 확인창을 띄운다.
+   * 돌려주는 Promise 는 확인창에서 저장이 끝나면 true, 취소·실패면 false 로 끝난다(FilterManageModal 이 입력 유지 여부를 정한다).
+   */
+  const requestSharedFilterSave = async (
+    table: 'J' | 'O', filterId: number | null, label: string, words: LayerFilterSet['words'],
+  ): Promise<boolean> => {
     try {
-      const { data } = await documentsAPI.applyLayerFilter(selected.id, table, filterId);
-      addToast(data.message, data.matched_count > 0 ? 'success' : 'info');
-      await refreshAndSelect(selected.id);
+      const preview = await layerFilterSetsAPI.preview(table, words);
+      return await new Promise<boolean>((resolve) => {
+        setSharedFilterSaveConfirm({ table, filterId, label, words, preview, resolve });
+      });
     } catch (err) {
-      // 상태값만으로는 "중단/철회 확인 대기 중"까지 못 걸러내므로 항상 서버에 물어보고,
-      // 거부되면 서버가 준 실제 사유(err.message)를 그대로 공통 안내 모달에 띄운다.
       setLayerFilterErrorNotice(err instanceof Error ? err.message : t('common.process_error'));
+      return false;
     }
   };
 
-  /**
-   * 결재 상세페이지 J/O-layer 필터 "초기화" 버튼 노출 여부 — 필터 적용과 동일한 조건
-   * (canUseLayerFilter)이다. 실제 동작 가능 여부(중단/철회 확인 대기 중 등)는 노출 조건이
-   * 아니라 백엔드 게이트가 최종 판정하고, 거부 사유는 layerFilterErrorNotice 모달로 보여준다.
-   */
-  const canResetLayerFilter = canUseLayerFilter;
-
-  const handleResetLayerFilter = (table: 'J' | 'O') => {
-    if (!selected) return;
-    setLayerFilterResetConfirm(table);
+  const cancelSharedFilterSave = () => {
+    sharedFilterSaveConfirm?.resolve(false);
+    setSharedFilterSaveConfirm(null);
   };
 
-  const confirmResetLayerFilter = async () => {
-    const table = layerFilterResetConfirm;
-    if (!selected || !table) return;
+  const confirmSharedFilterSave = async () => {
+    const req = sharedFilterSaveConfirm;
+    if (!req) return;
+    setSharedFilterSaving(true);
     try {
-      const { data } = await documentsAPI.resetLayerFilter(selected.id, table);
-      addToast(data.message, data.reset ? 'success' : 'info');
-      await refreshAndSelect(selected.id);
+      const saved = req.filterId === null
+        ? await layerFilterSetsAPI.create(req.table, req.label, req.words)
+        : await layerFilterSetsAPI.update(req.filterId, req.label, req.words);
+      const { applied, ...filterSet } = saved;
+      const setter = req.table === 'J' ? setJayerLayerFilterSets : setOayerLayerFilterSets;
+      setter((prev) => (req.filterId === null
+        ? [...prev, filterSet]
+        : prev.map((f) => (f.id === filterSet.id ? filterSet : f))));
+      addToast(t('approval.layer_filter_applied_toast', { docs: applied.document_count, rows: applied.row_count }), 'info');
+      setSharedFilterSaveConfirm(null);
+      req.resolve(true);
+      if (selected) await refreshAndSelect(selected.id);
     } catch (err) {
+      setSharedFilterSaveConfirm(null);
+      req.resolve(false);
       setLayerFilterErrorNotice(err instanceof Error ? err.message : t('common.process_error'));
+    } finally {
+      setSharedFilterSaving(false);
     }
   };
 
@@ -3824,16 +3846,8 @@ export default function ApprovalPage(): React.ReactElement {
               reviewItems={buildReviewItemsProps(selected)}
               canUseJayerFilter={canUseLayerFilter(selected, 'J')}
               canUseOayerFilter={canUseLayerFilter(selected, 'O')}
-              jayerLayerFilterSets={jayerLayerFilterSets}
-              oayerLayerFilterSets={oayerLayerFilterSets}
-              onApplyJayerLayerFilter={(filterId) => handleApplyLayerFilter('J', filterId)}
-              onApplyOayerLayerFilter={(filterId) => handleApplyLayerFilter('O', filterId)}
               onOpenJayerFilterManage={() => setJayerFilterManageOpen(true)}
               onOpenOayerFilterManage={() => setOayerFilterManageOpen(true)}
-              canResetJayerFilter={canResetLayerFilter(selected, 'J')}
-              canResetOayerFilter={canResetLayerFilter(selected, 'O')}
-              onResetJayerLayerFilter={() => handleResetLayerFilter('J')}
-              onResetOayerLayerFilter={() => handleResetLayerFilter('O')}
               canUseJayerColorFilter={canUseLayerFilter(selected, 'J')}
               canUseOayerColorFilter={canUseLayerFilter(selected, 'O')}
               jayerColorFilterSets={jayerColorFilterSets}
@@ -3862,14 +3876,9 @@ export default function ApprovalPage(): React.ReactElement {
         setNewFilter={setJayerFilterNewDraft}
         onAllDelete={() => setLayerFilterAllDeleteConfirm('J')}
         onRequestDelete={(fs) => setLayerFilterDeleteConfirm({ table: 'J', id: Number(fs.id), label: fs.label })}
-        onAdd={async (label, words) => {
-          const created = await layerFilterSetsAPI.create('J', label, words);
-          setJayerLayerFilterSets((prev) => [...prev, created]);
-        }}
-        onEdit={async (filterId, label, words) => {
-          const updated = await layerFilterSetsAPI.update(Number(filterId), label, words);
-          setJayerLayerFilterSets((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
-        }}
+        onAdd={(label, words) => requestSharedFilterSave('J', null, label, words)}
+        onEdit={(filterId, label, words) => requestSharedFilterSave('J', Number(filterId), label, words)}
+        notice={t('approval.layer_filter_manage_notice')}
       />
 
       {/* O-layer 공유 필터 관리 — TE_O/MASTER 전원이 같은 목록을 본다 */}
@@ -3882,14 +3891,9 @@ export default function ApprovalPage(): React.ReactElement {
         setNewFilter={setOayerFilterNewDraft}
         onAllDelete={() => setLayerFilterAllDeleteConfirm('O')}
         onRequestDelete={(fs) => setLayerFilterDeleteConfirm({ table: 'O', id: Number(fs.id), label: fs.label })}
-        onAdd={async (label, words) => {
-          const created = await layerFilterSetsAPI.create('O', label, words);
-          setOayerLayerFilterSets((prev) => [...prev, created]);
-        }}
-        onEdit={async (filterId, label, words) => {
-          const updated = await layerFilterSetsAPI.update(Number(filterId), label, words);
-          setOayerLayerFilterSets((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
-        }}
+        onAdd={(label, words) => requestSharedFilterSave('O', null, label, words)}
+        onEdit={(filterId, label, words) => requestSharedFilterSave('O', Number(filterId), label, words)}
+        notice={t('approval.layer_filter_manage_notice')}
       />
 
       <ConfirmModal
@@ -3927,15 +3931,6 @@ export default function ApprovalPage(): React.ReactElement {
         topLevel
       />
 
-      <ConfirmModal
-        isOpen={!!layerFilterResetConfirm}
-        onClose={() => setLayerFilterResetConfirm(null)}
-        onConfirm={confirmResetLayerFilter}
-        title={t('common.confirm')}
-        message={t('approval.layer_filter_reset_confirm')}
-        confirmLabel={t('approval.layer_filter_reset_btn')}
-        topLevel
-      />
 
       {/* J-layer 색상 적용 관리 — 개인별(localStorage), 데이터는 바꾸지 않고 표시 색만 관리 */}
       <ColorFilterManageModal
@@ -3996,6 +3991,59 @@ export default function ApprovalPage(): React.ReactElement {
         confirmLabel={t('approval.layer_filter_reset_btn')}
         topLevel
       />
+
+      {/* claude 수정 (2026-11-27): 공유 필터 저장 전 미리보기 확인 — '적용'을 눌러야 저장·진행 중 문서 일괄 적용 */}
+      {sharedFilterSaveConfirm && (
+        <Modal
+          isOpen
+          onClose={cancelSharedFilterSave}
+          title={t('approval.layer_filter_preview_title', { label: sharedFilterSaveConfirm.label })}
+          size="md"
+          hideFullscreen
+          topLevel
+          footer={
+            <>
+              <button className="btn btn-secondary" onClick={cancelSharedFilterSave} disabled={sharedFilterSaving}>
+                {t('common.cancel')}
+              </button>
+              <button className="btn btn-primary" onClick={confirmSharedFilterSave} disabled={sharedFilterSaving}>
+                {sharedFilterSaving ? t('common.loading') : t('approval.layer_filter_preview_confirm_btn')}
+              </button>
+            </>
+          }
+        >
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 10 }}>
+            {sharedFilterSaveConfirm.preview.document_count > 0
+              ? t('approval.layer_filter_preview_message', {
+                docs: sharedFilterSaveConfirm.preview.document_count,
+                rows: sharedFilterSaveConfirm.preview.row_count,
+              })
+              : t('approval.layer_filter_preview_empty')}
+          </p>
+          {sharedFilterSaveConfirm.preview.documents.length > 0 && (
+            <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+              <table className="table" style={{ width: '100%', fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th>{t('approval.layer_filter_preview_col_title')}</th>
+                    <th>{t('approval.layer_filter_preview_col_status')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('approval.layer_filter_preview_col_rows')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sharedFilterSaveConfirm.preview.documents.map((d) => (
+                    <tr key={d.id}>
+                      <td>{d.title}</td>
+                      <td><StatusBadge status={d.status} /></td>
+                      <td style={{ textAlign: 'right' }}>{d.row_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Modal>
+      )}
 
       {layerFilterErrorNotice && (
         <Modal

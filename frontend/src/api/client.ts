@@ -44,6 +44,8 @@ import {
   ValidationSystemValue,
   PartialShotValue,
   LayerFilterSet,
+  LayerFilterSaveResult,
+  LayerFilterPreview,
   MapInfo,
   NumCheckConfig,
   LayerNpKeywords,
@@ -415,25 +417,6 @@ const updatePartialShot = async (docId: number, value: PartialShotValue) => {
   return { data };
 };
 
-/** 결재 상세페이지에서 J/O-layer 공유 필터를 적용 — 매칭된 행의 st를 'X'로 바꾼다. */
-const applyLayerFilter = async (docId: number, table: 'J' | 'O', filterId: number) => {
-  const data = await post<{ message: string; matched_count: number; document: RequestDocument }>(
-    `/documents/${docId}/apply-layer-filter/`,
-    { table, filter_id: filterId }
-  );
-  return { data };
-};
-
-/** 결재 상세페이지에서 이번 회차에 적용한 J/O-layer 필터를 상신 시점 값으로 전부 초기화한다.
- * 되돌릴 내용이 없으면 reset:false로 응답한다(에러 아님 — 안내 토스트만 다르게 띄우기 위함). */
-const resetLayerFilter = async (docId: number, table: 'J' | 'O') => {
-  const data = await post<{ message: string; reset: boolean; document: RequestDocument }>(
-    `/documents/${docId}/reset-layer-filter/`,
-    { table }
-  );
-  return { data };
-};
-
 const assignStep = async (
   docId: number,
   agent: AgentType,
@@ -681,8 +664,6 @@ export const documentsAPI = {
   rejectStep,
   updateValidationSystem,
   updatePartialShot,
-  applyLayerFilter,
-  resetLayerFilter,
   assignStep,
   addPostApprover,
   removePostApprover,
@@ -871,14 +852,17 @@ export const changeStatusAPI = {
 
 // ===== 결재 상세페이지 J/O-layer 공유 필터 API =====
 
+// claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 저장 전 미리보기 추가, 추가·수정 응답에 일괄 적용 결과(applied) 포함
 export const layerFilterSetsAPI = {
   list: (table: 'J' | 'O'): Promise<LayerFilterSet[]> =>
     get<LayerFilterSet[] | { results: LayerFilterSet[] }>(`/layer-filter-sets/?table=${table}`)
       .then((data) => (Array.isArray(data) ? data : data.results ?? [])),
-  create: (table: 'J' | 'O', label: string, words: LayerFilterSet['words']): Promise<LayerFilterSet> =>
-    post<LayerFilterSet>('/layer-filter-sets/', { table, label, words }),
-  update: (id: number, label: string, words: LayerFilterSet['words']): Promise<LayerFilterSet> =>
-    patch<LayerFilterSet>(`/layer-filter-sets/${id}/`, { label, words }),
+  create: (table: 'J' | 'O', label: string, words: LayerFilterSet['words']): Promise<LayerFilterSaveResult> =>
+    post<LayerFilterSaveResult>('/layer-filter-sets/', { table, label, words }),
+  update: (id: number, label: string, words: LayerFilterSet['words']): Promise<LayerFilterSaveResult> =>
+    patch<LayerFilterSaveResult>(`/layer-filter-sets/${id}/`, { label, words }),
+  preview: (table: 'J' | 'O', words: LayerFilterSet['words']): Promise<LayerFilterPreview> =>
+    post<LayerFilterPreview>('/layer-filter-sets/preview/', { table, words }),
   delete: (id: number): Promise<void> => request(`/layer-filter-sets/${id}/`, { method: 'DELETE' }),
 };
 

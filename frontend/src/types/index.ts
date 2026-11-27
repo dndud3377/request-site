@@ -529,7 +529,7 @@ export interface FilterSet {
   words: { sp: string[]; sd: string[]; pp: string[] };
 }
 
-/** 결재 상세페이지의 J/O-layer 공유 필터 — 개인별(FilterSet)과 달리 팀 전체가 공유하는 서버 저장 목록. */
+/** J/O-layer 공유 필터 — 개인별(FilterSet)과 달리 서버에 저장되고, 의뢰서 작성·진행 중 문서에 항상 자동 적용된다. */
 export interface LayerFilterSet {
   id: number;
   table: 'J' | 'O';
@@ -537,6 +537,23 @@ export interface LayerFilterSet {
   words: { sp: string[]; sd: string[]; pp: string[] };
   created_at: string;
   updated_at: string;
+}
+
+// claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 일괄 적용 결과·저장 전 미리보기 응답 타입
+/** 공유 필터를 진행 중 문서에 일괄 적용한 결과(바뀐 문서 수·행 수). */
+export interface LayerFilterApplied {
+  document_count: number;
+  row_count: number;
+}
+
+/** 공유 필터 추가·수정 응답 — 저장된 필터 + 진행 중 문서 일괄 적용 결과. */
+export interface LayerFilterSaveResult extends LayerFilterSet {
+  applied: LayerFilterApplied;
+}
+
+/** 공유 필터를 저장하면 바뀔 진행 중 문서 미리보기(POST /layer-filter-sets/preview/). */
+export interface LayerFilterPreview extends LayerFilterApplied {
+  documents: { id: number; title: string; status: Status; row_count: number }[];
 }
 
 /** 키워드 하나 + 그 키워드에 지정된 색상. */

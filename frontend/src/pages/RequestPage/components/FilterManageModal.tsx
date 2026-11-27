@@ -16,9 +16,13 @@ interface FilterManageModalProps {
   setNewFilter: React.Dispatch<React.SetStateAction<FilterDraft>>;
   onAllDelete: () => void;
   onRequestDelete: (fs: FilterSet) => void;
-  onEdit: (filterId: string, label: string, words: FilterDraft['words']) => void;
-  /** 새 필터 추가 — 저장 방식(localStorage/서버 API 등)은 호출부가 결정한다. */
-  onAdd: (label: string, words: FilterDraft['words']) => void;
+  // claude 수정 (2026-11-27): 공유 필터는 저장 전 미리보기 확인·서버 저장을 거치므로 Promise<boolean>(저장 여부)도 받는다
+  /** 필터 수정 — Promise 를 돌려주면 결과가 true 일 때만 성공 처리(입력 비움·토스트)한다. */
+  onEdit: (filterId: string, label: string, words: FilterDraft['words']) => void | Promise<boolean>;
+  /** 새 필터 추가 — 저장 방식(localStorage/서버 API 등)은 호출부가 결정한다. Promise 규칙은 onEdit 과 같다. */
+  onAdd: (label: string, words: FilterDraft['words']) => void | Promise<boolean>;
+  /** 목록 위에 보여 줄 안내 문구(공유 필터: 자동 적용 범위 설명). 없으면 표시하지 않는다. */
+  notice?: string;
 }
 
 const FilterManageModal: React.FC<FilterManageModalProps> = ({
@@ -32,6 +36,7 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
   onRequestDelete,
   onEdit,
   onAdd,
+  notice,
 }) => {
   const { t } = useTranslation();
   const addToast = useToast();
@@ -82,18 +87,23 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
               type="button"
               className="btn btn-primary"
               disabled={newFilter.words.sp.length === 0 && newFilter.words.sd.length === 0 && newFilter.words.pp.length === 0}
-              onClick={() => {
+              onClick={async () => {
                 const label = newFilter.label || t('request.filter_default_label');
-                if (editingId) {
-                  onEdit(editingId, label, newFilter.words);
+                // claude 수정 (2026-11-27): 호출부가 저장하지 않았으면(취소·실패) 입력을 그대로 두고 성공 토스트도 띄우지 않는다
+                try {
+                  if (editingId) {
+                    if ((await onEdit(editingId, label, newFilter.words)) === false) return;
+                    setNewFilter({ label: '', words: emptyDraftWords() });
+                    setEditingId(null);
+                    addToast(t('request.filter_edit_success_toast', { label }), 'success');
+                    return;
+                  }
+                  if ((await onAdd(label, newFilter.words)) === false) return;
                   setNewFilter({ label: '', words: emptyDraftWords() });
-                  setEditingId(null);
-                  addToast(t('request.filter_edit_success_toast', { label }), 'success');
-                  return;
+                  addToast(t('request.filter_add_success_toast', { label }), 'success');
+                } catch {
+                  addToast(t('common.process_error'), 'error');
                 }
-                onAdd(label, newFilter.words);
-                setNewFilter({ label: '', words: emptyDraftWords() });
-                addToast(t('request.filter_add_success_toast', { label }), 'success');
               }}
             >{editingId ? t('request.filter_apply_edit') : t('request.filter_add_btn')}</button>
             <button className="btn btn-secondary" onClick={onClose}>
@@ -133,6 +143,12 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
         );
         return (
           <div style={{ fontSize: 13 }}>
+            {/* claude 수정 (2026-11-27): 공유 필터 자동 적용 안내(호출부가 notice 를 넘길 때만) */}
+            {notice && (
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderLeft: '3px solid var(--accent)', borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 12, lineHeight: 1.6, color: 'var(--text-secondary)', whiteSpace: 'pre-line' }}>
+                {notice}
+              </div>
+            )}
             {/* 저장된 필터 목록 */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontWeight: 600, fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>{t('request.filter_saved_label')}</div>

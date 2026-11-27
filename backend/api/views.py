@@ -1,6 +1,7 @@
 # ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 
 import datetime
+import json  # claude 수정 (2026-11-27): LayerFilterSetViewSet 일괄 적용이 모듈 수준에서 사용
 from decimal import Decimal
 from html.parser import HTMLParser
 
@@ -90,11 +91,14 @@ class IsMasterOrReadOnly(BasePermission):
         return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
 
 
+# claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 작성 화면이 적용하도록 목록·단건 조회는 로그인 사용자 전원 허용
 class CanManageLayerFilter(BasePermission):
-    """J-layer 공유 필터는 TE_J/MASTER만, O-layer 공유 필터는 TE_O/MASTER만 조회·관리할 수 있다.
+    """J/O-layer 공유 필터 권한.
 
-    개인별 필터(의뢰서 작성 화면, localStorage)와 달리 팀 전체가 공유하는 목록이라
-    _is_dev() 우회 없이 항상 인증 + 역할을 확인한다.
+    - 조회(목록·단건): 로그인 사용자 전원 — 의뢰서 작성 화면이 모든 공유 필터를 자동 적용해야 하므로.
+      목록은 어느 표인지 `?table=J|O` 가 필수다.
+    - 추가·수정·삭제·미리보기: J 필터는 TE_J/MASTER, O 필터는 TE_O/MASTER.
+    _is_dev() 우회 없이 항상 인증을 확인한다.
     """
     TABLE_ROLE = {'J': 'TE_J', 'O': 'TE_O'}
 
@@ -108,11 +112,12 @@ class CanManageLayerFilter(BasePermission):
         if request.method == 'POST':
             return self._allowed(request.user, request.data.get('table'))
         if view.action == 'list':
-            table = request.query_params.get('table')
-            return bool(table) and self._allowed(request.user, table)
+            return request.query_params.get('table') in self.TABLE_ROLE
         return True  # retrieve/update/destroy 는 has_object_permission 에서 판정
 
     def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
         return self._allowed(request.user, obj.table)
 
 
@@ -625,6 +630,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                         f'해당 단계에서 다음을 눌러 자동 변경을 적용한 뒤 상신하세요.')
         return None
 
+    # claude 수정 (2026-11-27): 공유 필터(LayerFilterSet)에 걸리는 J/O 행을 상신 시 서버에서도 검증한다
+    def _validate_layer_filter_rows(self, document, user):
+        """저장된 공유 필터 중 하나라도 매칭되는 J/O 행은 ST 'X' + 요청 기준 '미진행' 이어야 한다.
+
+        문제 있으면 error 문자열, 없으면 None. MASTER 가 상신·재상신하면 검사하지 않는다
+        ('자동 미진행' 키워드와 같은 예외). 프론트 `RequestPage/index.tsx` applySharedFilters 와 같은 규칙이다.
+        """
+        if getattr(user, 'role', None) == 'MASTER':
+            return None
+        data = document.get_detail()
+        for table, label in (('J', 'J-ayer'), ('O', 'O-ayer')):
+            if LayerFilterSet.violating_rows(table, data.get(LayerFilterSet.ROWS_KEYS[table]) or []):
+                return (f'{label} 표에 공유 필터에 해당하는 행이 ST X·요청 기준 미진행이 아닌 채로 있습니다. '
+                        f'해당 단계에서 다음을 눌러 공유 필터를 적용한 뒤 상신하세요.')
+        return None
+
     def _validate_post_approvers(self, document):
         """C가문(only_prodc=YES) 또는 '연구소 제품' 문서는 상신 시 추가 후결자
         (detail.post_approvers)를 1명 이상 지정해야 한다. 문제 있으면 error 문자열, 없으면 None.
@@ -799,6 +820,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_np_keyword_rows(document, request.user)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_layer_filter_rows(document, request.user)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -992,6 +1017,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_layer_filter_rows(document, request.user)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -1105,6 +1134,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        err = self._validate_layer_filter_rows(document, request.user)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         err = self._validate_post_approvers(document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
@@ -1200,6 +1233,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_np_keyword_rows(document, request.user)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_layer_filter_rows(document, request.user)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2715,180 +2752,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
 
         return Response({'message': '변경했습니다.'})
-
-    def _layer_filter_gate(self, request, document, table, action_label='적용'):
-        """apply/reset-layer-filter 공통 게이트.
-
-        table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER 만 허용한다. 문서 진행 상태
-        판정은 결재 액션(approve_step 등)과 완전히 동일한 `_blocked_progress_response`를
-        그대로 재사용한다 — `document.status`만 보면 안 된다: 상신자가 중단/철회를
-        요청해도 대상 단계 팀 **전원이 확인하기 전까지는 `status`가 여전히
-        `under_review`**로 남아 있어(`PauseRequest`/`WithdrawRequest`의 `state='requested'`
-        구간), 상태값만 보는 게이트는 이 확인 대기 구간의 필터 적용/초기화를 못 막는다.
-        `_blocked_progress_response`는 이 확인 대기 구간 + `status=='pause'`(중단 확정) +
-        그 외 종료 상태까지 한 번에 판정해 준다.
-        해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 허용한다(합의된 뒤
-        데이터를 바꾸면 그 합의가 무의미해지는 것을 막는다).
-        문제 없으면 None, 문제 있으면 에러 Response를 반환한다.
-        """
-        if table not in ('J', 'O'):
-            return Response({'error': "table 은 'J' 또는 'O' 여야 합니다."}, status=status.HTTP_400_BAD_REQUEST)
-
-        role = getattr(request.user, 'role', '')
-        allowed_role = 'TE_J' if table == 'J' else 'TE_O'
-        if role != 'MASTER' and role != allowed_role:
-            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-
-        blocked = self._blocked_progress_response(document)
-        if blocked:
-            return blocked
-
-        max_round = self._max_round(document)
-        stage_step = ApprovalStep.objects.filter(document=document, agent=table, round=max_round).first()
-        if stage_step and stage_step.action == 'approved':
-            return Response(
-                {'error': f'{table} 단계 검토가 끝난 의뢰서는 {action_label}할 수 없습니다.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return None
-
-    @action(detail=True, methods=['post'], url_path='apply-layer-filter')
-    @transaction.atomic
-    def apply_layer_filter(self, request, pk=None):
-        """결재 상세페이지에서 J/O-layer 공유 필터(LayerFilterSet)를 적용해, 매칭된 행의
-        st를 'X'로 바꾼다(+ 의뢰서 작성 화면의 필터 적용과 동일하게 new_or_copy/product_name/
-        step(J면 item_id도) 초기화).
-
-        의뢰서 작성 화면의 필터는 개인별(localStorage)이지만 이건 팀 전체가 공유하는
-        LayerFilterSet 하나를 그대로 적용하는 것이라 별도 상태를 이 문서에 저장하지 않는다.
-        권한·상태·단계 조건은 `_layer_filter_gate` 참조.
-
-        이번 회차 첫 **유효한**(1건 이상 매칭돼 실제로 바뀐) 적용 시점에 한해, 바뀌기
-        직전의 행 전체를 `jayerFilterBaseline`/`oayerFilterBaseline`(`{round, rows}`)으로
-        그대로 저장해 둔다 — 상신 이후 이 표를 건드리는 곳은 이 액션뿐이므로, 이 시점
-        값이 곧 상신 시점 값이다. 매칭 0건인 호출은 baseline 을 만들지 않는다(아무것도
-        안 바뀌었는데 "초기화" 가능 상태가 되는 것을 막기 위해). 이후 몇 번을 다시
-        적용하더라도 baseline 은 절대 재작성하지 않는다(`reset_layer_filter` 가 항상 같은
-        원본으로 복원할 수 있어야 하기 때문). 회차가 바뀌면(반려 후 재상신) 이전 baseline
-        은 무효 처리하고 새 회차 첫 유효 적용 시점에 다시 저장한다.
-        """
-        document = self.get_object()
-        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
-
-        table = request.data.get('table')
-        gate_error = self._layer_filter_gate(request, document, table, action_label='적용')
-        if gate_error:
-            return gate_error
-
-        try:
-            filter_set = LayerFilterSet.objects.get(pk=request.data.get('filter_id'), table=table)
-        except (LayerFilterSet.DoesNotExist, ValueError, TypeError):
-            return Response({'error': '필터를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
-
-        import json
-        try:
-            data = json.loads(document.additional_notes or '{}')
-        except (json.JSONDecodeError, TypeError):
-            return Response(
-                {'error': '의뢰서 데이터가 손상되어 적용할 수 없습니다.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        rows_key = 'jayerRows' if table == 'J' else 'oayerRows'
-        baseline_key = 'jayerFilterBaseline' if table == 'J' else 'oayerFilterBaseline'
-        rows = data.get(rows_key, [])
-        words = filter_set.words or {}
-
-        max_round = self._max_round(document)
-        baseline = data.get(baseline_key)
-        needs_baseline = not baseline or baseline.get('round') != max_round
-        pre_snapshot = json.loads(json.dumps(rows, ensure_ascii=False)) if needs_baseline else None
-
-        def matches(row):
-            for field in ('sp', 'sd', 'pp'):
-                row_val = (row.get(field) or '').lower()
-                for kw in (words.get(field) or []):
-                    if kw and kw.lower() in row_val:
-                        return True
-            return False
-
-        matched_count = 0
-        for row in rows:
-            if row.get('st') == 'X' or not matches(row):
-                continue
-            matched_count += 1
-            row['st'] = 'X'
-            row['new_or_copy'] = ''
-            row['product_name'] = ''
-            row['step'] = ''
-            if table == 'J':
-                row['item_id'] = ''
-
-        if matched_count > 0:
-            if needs_baseline:
-                data[baseline_key] = {'round': max_round, 'rows': pre_snapshot}
-            data[rows_key] = rows
-            document.additional_notes = json.dumps(data, ensure_ascii=False)
-            document.save(update_fields=['additional_notes'])
-
-        return Response({
-            'message': f'{matched_count}건 적용했습니다.' if matched_count > 0 else '적용할 행이 없습니다.',
-            'matched_count': matched_count,
-            'document': RequestDocumentSerializer(document, context={'request': request}).data,
-        })
-
-    @action(detail=True, methods=['post'], url_path='reset-layer-filter')
-    @transaction.atomic
-    def reset_layer_filter(self, request, pk=None):
-        """apply_layer_filter 로 바뀐 J/O-layer 행을 이번 회차 상신 시점 값(baseline)으로
-        통째로 되돌린다. baseline 은 이번 회차 첫 유효 apply_layer_filter 호출 시 한 번만
-        저장되고 이후 절대 재작성되지 않으므로, 적용→초기화를 몇 번 반복해도 항상 같은
-        원본으로 복원된다(초기화 자체도 baseline 을 건드리지 않는다 — 재사용 가능).
-        권한·상태·단계 조건은 `_layer_filter_gate` 참조(apply_layer_filter 와 동일 —
-        `_blocked_progress_response`로 중단/철회 확인 대기·확정·종료 상태를 모두 거부).
-
-        baseline 이 없거나(이번 회차에 실제로 바뀐 적이 없음) 회차가 달라졌으면(반려 후
-        재상신) 에러가 아니라 200 + `reset: false` 로 "초기화할 내용이 없습니다"를
-        돌려준다 — apply_layer_filter 가 매칭 0건일 때 에러 대신 안내만 하는 것과 같은
-        방식이다.
-        """
-        document = self.get_object()
-        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
-
-        table = request.data.get('table')
-        gate_error = self._layer_filter_gate(request, document, table, action_label='초기화')
-        if gate_error:
-            return gate_error
-
-        import json
-        try:
-            data = json.loads(document.additional_notes or '{}')
-        except (json.JSONDecodeError, TypeError):
-            return Response(
-                {'error': '의뢰서 데이터가 손상되어 초기화할 수 없습니다.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        rows_key = 'jayerRows' if table == 'J' else 'oayerRows'
-        baseline_key = 'jayerFilterBaseline' if table == 'J' else 'oayerFilterBaseline'
-        baseline = data.get(baseline_key)
-        max_round = self._max_round(document)
-        if not baseline or baseline.get('round') != max_round:
-            return Response({
-                'message': '초기화할 내용이 없습니다.',
-                'reset': False,
-                'document': RequestDocumentSerializer(document, context={'request': request}).data,
-            })
-
-        data[rows_key] = json.loads(json.dumps(baseline.get('rows', []), ensure_ascii=False))
-        document.additional_notes = json.dumps(data, ensure_ascii=False)
-        document.save(update_fields=['additional_notes'])
-
-        return Response({
-            'message': '상신 시점 값으로 초기화했습니다.',
-            'reset': True,
-            'document': RequestDocumentSerializer(document, context={'request': request}).data,
-        })
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""
@@ -4795,8 +4658,14 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = None
 
 
+# claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 미리보기 추가, 추가·수정 저장 시 진행 중 문서 일괄 적용
 class LayerFilterSetViewSet(viewsets.ModelViewSet):
-    """결재 상세페이지 J/O-layer 공유 필터 CRUD. 목록 조회는 ?table=J|O 쿼리 파라미터 필수."""
+    """J/O-layer 공유 필터 CRUD + 미리보기. 목록 조회는 ?table=J|O 쿼리 파라미터 필수.
+
+    추가(POST)·수정(PATCH/PUT)을 저장하면 같은 트랜잭션에서 그 필터를 `LayerFilterSet.target_documents` 의
+    문서 전체에 적용하고, 응답에 `applied: {document_count, row_count}` 를 싣는다. 삭제는 이미 바뀐 행을 되돌리지 않는다.
+    화면은 저장 전에 `preview/` 로 바뀔 문서·행 수를 먼저 보여 준다(사용자 결정 2026-11-27).
+    """
     queryset = LayerFilterSet.objects.all()
     serializer_class = LayerFilterSetSerializer
     permission_classes = [CanManageLayerFilter]
@@ -4807,6 +4676,69 @@ class LayerFilterSetViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         table = self.request.query_params.get('table')
         return qs.filter(table=table) if table else qs
+
+    @staticmethod
+    def _collect_changes(table, words, lock=False):
+        """words(필터 하나)를 대상 문서에 적용했을 때 바뀌는 문서별 (문서, 바뀐 data, 바뀐 행 수) 목록.
+
+        lock=True 면 대상 문서를 select_for_update 로 다시 읽어 잠근 뒤 계산한다(실제 적용용).
+        """
+        rows_key = LayerFilterSet.ROWS_KEYS[table]
+        changes = []
+        for doc in LayerFilterSet.target_documents(table):
+            if lock:
+                doc = RequestDocument.objects.select_for_update().get(pk=doc.pk)
+            try:
+                data = json.loads(doc.additional_notes or '{}')
+            except (json.JSONDecodeError, TypeError):
+                continue  # 손상된 문서는 건너뛴다(다른 문서 적용을 막지 않는다)
+            rows = data.get(rows_key) or []
+            count = LayerFilterSet.clear_matched_rows(table, rows, [words])
+            if count:
+                data[rows_key] = rows
+                changes.append((doc, data, count))
+        return changes
+
+    def _apply_to_documents(self, filter_set):
+        """저장된 필터를 대상 문서 전체에 적용하고 {document_count, row_count} 를 돌려준다."""
+        changes = self._collect_changes(filter_set.table, filter_set.words, lock=True)
+        for doc, data, _count in changes:
+            doc.additional_notes = json.dumps(data, ensure_ascii=False)
+            doc.save(update_fields=['additional_notes'])
+        return {'document_count': len(changes), 'row_count': sum(c for _d, _data, c in changes)}
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        filter_set = LayerFilterSet.objects.get(pk=response.data['id'])
+        response.data['applied'] = self._apply_to_documents(filter_set)
+        return response
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        response.data['applied'] = self._apply_to_documents(self.get_object())
+        return response
+
+    @action(detail=False, methods=['post'], url_path='preview')
+    def preview(self, request):
+        """`{table, words}` 필터를 지금 저장하면 바뀔 진행 중 문서·행 수(저장·변경 없음).
+
+        응답: `{document_count, row_count, documents: [{id, title, status, row_count}]}`.
+        수정 미리보기도 바뀐 뒤의 words 를 그대로 보내면 된다(이미 X 인 행은 세지 않는다).
+        """
+        table = request.data.get('table')
+        serializer = self.get_serializer(data={'table': table, 'label': 'preview', 'words': request.data.get('words')})
+        serializer.is_valid(raise_exception=True)
+        changes = self._collect_changes(table, serializer.validated_data['words'])
+        return Response({
+            'document_count': len(changes),
+            'row_count': sum(c for _d, _data, c in changes),
+            'documents': [
+                {'id': doc.id, 'title': doc.title, 'status': doc.status, 'row_count': count}
+                for doc, _data, count in changes
+            ],
+        })
 
 
 class AdminNoticeViewSet(viewsets.ModelViewSet):
