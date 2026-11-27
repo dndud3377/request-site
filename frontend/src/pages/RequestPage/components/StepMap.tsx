@@ -19,6 +19,18 @@ const SELECT_W = '300px';
 // claude 수정 (2026-10-22): MAP 목적 게이트용 fieldset — 잠금(disabled)만 하위로 전달하고 form-grid 배치·모양은 바꾸지 않는다
 const GATE_FIELDSET_STYLE: React.CSSProperties = { display: 'contents', border: 0, margin: 0, padding: 0, minWidth: 0 };
 
+// claude 수정 (2026-11-27): MAP 정보 잠금을 구간별 fieldset 으로 나눔 — CC 적용 여부(mshot_change_cc)만 잠금에서 빼기 위해(사용자 결정)
+/** 잠금 구간 표시 클래스 — 바로 아래 자식들을 흐리게 하고 마우스를 막는다(global.css). */
+const MAP_INFO_LOCKED_CLASS = 'map-info-locked';
+
+/** MAP 정보 잠금 구간. display:contents 라 레이아웃은 그대로 두고, 잠기면 안의 입력을 disabled(키보드 포함)로 막는다.
+ * 잠금 영역 안에 잠기지 않는 칸(CC 적용 여부)이 있어 영역 전체를 하나의 fieldset 으로 감쌀 수 없다. */
+const MapInfoLockArea: React.FC<{ locked: boolean; children: React.ReactNode }> = ({ locked, children }) => (
+  <fieldset disabled={locked} className={locked ? MAP_INFO_LOCKED_CLASS : undefined} style={GATE_FIELDSET_STYLE}>
+    {children}
+  </fieldset>
+);
+
 // claude 수정 (2026-11-10): 숫자 확인 안내 문구 스타일 — 활성 안내는 꼭 지켜야 할 조건이라 빨간 굵은 글씨로 강조, 비활성 안내는 기존 회색 유지
 const NUM_CHECK_HINT_BASE_STYLE: React.CSSProperties = { display: 'block', marginTop: 4 };
 const NUM_CHECK_ACTIVE_HINT_STYLE: React.CSSProperties = {
@@ -209,9 +221,10 @@ const StepMap: React.FC<StepMapProps> = ({
           🔒 {t('request.map_info_locked_notice')}
         </p>
       )}
-      {/* claude 수정 (2026-11-10): 잠금 시 fieldset disabled 로 키보드(Tab) 입력까지 막는다 — pointerEvents 는 마우스만 막았다 */}
-      <fieldset disabled={mapInfoLocked} style={GATE_FIELDSET_STYLE}>
-      <div className="form-grid" style={mapInfoLocked ? { pointerEvents: 'none', opacity: 0.6 } : undefined}>
+      {/* claude 수정 (2026-11-27): 잠금(키보드 포함 disabled + 흐림)을 구간별 MapInfoLockArea 로 나눴다 — CC 적용 여부만 잠그지 않는다.
+          이전(2026-11-10): 영역 전체를 하나의 fieldset disabled 로 감쌌다. */}
+      <div className="form-grid">
+      <MapInfoLockArea locked={mapInfoLocked}>
 
         {/* 요청 목적 (신규/차용/기등록) */}
         <div className="full-width" data-tour="map-purpose">
@@ -274,6 +287,8 @@ const StepMap: React.FC<StepMapProps> = ({
           </div>
         )}
 
+        </MapInfoLockArea>
+
         {/* ▼▼ 아래는 모두 MAP 삭제('삭제')에서 렌더하지 않는다 —
                이유 입력칸 하나만 남기는 것이 이 모드의 요구사항이다.
                validate(2) 도 같은 조건으로 이 항목들의 검증을 건너뛴다(짝을 맞춰야 함). ▼▼ */}
@@ -281,6 +296,7 @@ const StepMap: React.FC<StepMapProps> = ({
             CLONE/EXISTING 으로 바뀐 뒤 잠긴 채 저장되던 경로를 막는다. 판정은 값(map_type)만 보므로 자동 매칭 EXISTING 도
             값이 채워지는 즉시 풀린다. fieldset 으로 묶어 이 영역에 새 항목이 추가돼도 따로 처리 없이 함께 잠긴다. */}
         {!isMapReasonMode && (<fieldset disabled={!detail.map_type} style={GATE_FIELDSET_STYLE}>
+        <MapInfoLockArea locked={mapInfoLocked}>
         {/* 원본 위치/Part ID (CLONE·EXISTING 공용) — isMapRegistered 로 잠그지 않는다.
             단 자동 MAP 매칭으로 정해진 EXISTING(existingAutoLocked)은 수정할 수 없다. */}
         {isMapRegisteredType(detail.map_type) && (
@@ -626,12 +642,16 @@ const StepMap: React.FC<StepMapProps> = ({
           <div style={{ flex: 3.5 }} />
         </div>
 
+        </MapInfoLockArea>
+
         {/* X표시 변경 여부 + CC 적용 여부(mshot_change_cc, C가문 전용 필수) — prodc_status(only_prodc)
             가 Yes 일 때만 노출된다. flexShrink:0 고정폭 칸으로 나란히 붙인다(prodc_status/map_opt_inter
             와 동일 패턴) — flex-col(flex:1)을 쓰면 select 폭(300px)보다 칸이 훨씬 넓어져 두 칸이
             멀리 떨어져 보인다. */}
         <div className="form-group full-width" data-tour="map-xmark">
+          {/* CC 적용 여부는 R 검토 대상이 아니라 MAP 정보 잠금에서 뺀다(2026-11-27) — X표시 변경 여부와 아래 첨부칸만 잠근다. */}
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <MapInfoLockArea locked={mapInfoLocked}>
             <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
               <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
               <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={(e) => handleMshotChangeChange(e.target.value)} disabled={isMapRegistered}>
@@ -641,6 +661,7 @@ const StepMap: React.FC<StepMapProps> = ({
                 <option value="삭제">{t('request.mshot_delete')}</option>
               </select>
             </div>
+            </MapInfoLockArea>
             {detail.only_prodc === 'Yes' && (
               <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }} title={t('request.mshot_change_cc_tooltip')}>
                 <label className="form-label">{t('request.mshot_change_cc_label')} <span className="required">*</span></label>
@@ -658,6 +679,7 @@ const StepMap: React.FC<StepMapProps> = ({
               </div>
             )}
           </div>
+          <MapInfoLockArea locked={mapInfoLocked}>
           {/* claude 수정 (2026-10-15): 하드코딩된 '특정 제품 삭제 필요' 문구를 i18n(request.mshot_delete_desc)으로 교체 */}
           {mshotDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>{t('request.mshot_delete_desc')}</p>
@@ -696,8 +718,10 @@ const StepMap: React.FC<StepMapProps> = ({
               </div>
             </div>
           )}
+          </MapInfoLockArea>
         </div>
 
+        <MapInfoLockArea locked={mapInfoLocked}>
         {/* claude 수정 (2026-11-11): '숫자 확인 필수' — X표시 변경 여부 아래, 예외 구역과 같은 [드롭다운 + 값] 배치.
             해당 여부 드롭다운은 PPPP 판정이 정하므로 항상 잠긴다. 값(이상/이하 드롭다운)은 '해당 있음'일 때만 선택·필수이고,
             '이상'을 고르면 그 아래에 사진 첨부 영역(최소 2칸)이 열린다.
@@ -884,10 +908,10 @@ const StepMap: React.FC<StepMapProps> = ({
             </div>
           );
         })()}
+        </MapInfoLockArea>
         </fieldset>)}
 
       </div>
-      </fieldset>
     </div>
   );
 };
