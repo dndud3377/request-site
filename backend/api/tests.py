@@ -8691,8 +8691,9 @@ class LayerFilterSetTest(TestCase):
         r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': ['SP01'], 'sd': [], 'pp': []}}, format='json')
         self.assertEqual(r.status_code, 403, r.content)
 
+    # claude 수정 (2026-11-27): 임시저장·반려 문서는 일괄 적용 대상에서 제외(사용자 결정)
     def test_create_bulk_applies_by_status_and_team_agreement(self):
-        """추가 저장 시 임시저장·반려·상신됨·검토중·중단 문서에 적용하되, 이번 회차 J 합의가 끝난 문서와 승인 완료 문서는 제외."""
+        """추가 저장 시 상신됨·검토중·중단 문서에 적용하되, 이번 회차 J 합의가 끝난 문서·승인 완료·임시저장·반려 문서는 제외."""
         row = lambda: [self._row(id='r1', sd='GATE'), self._row(id='r2', sd='METAL')]
         draft = self._make_doc(jayer_rows=row(), status='draft')
         rejected = self._make_doc(jayer_rows=row(), status='rejected')
@@ -8709,16 +8710,16 @@ class LayerFilterSetTest(TestCase):
 
         r = self._create(self.j_user, 'J', {'sp': [], 'sd': ['gate'], 'pp': []})
         self.assertEqual(r.status_code, 201, r.content)
-        self.assertEqual(r.data['applied'], {'document_count': 5, 'row_count': 5})
+        self.assertEqual(r.data['applied'], {'document_count': 3, 'row_count': 3})
 
-        for doc in (draft, rejected, zone1, j_pending, paused):
+        for doc in (zone1, j_pending, paused):
             rows = self._rows_of(doc)
             self.assertEqual(rows['r1']['st'], 'X', doc.status)
             self.assertEqual((rows['r1']['new_or_copy'], rows['r1']['product_name'], rows['r1']['step'], rows['r1']['item_id']),
                              ('미진행', '', '', ''))
             self.assertEqual(rows['r2']['st'], 'O', '매칭되지 않은 행은 그대로')
-        for doc in (j_agreed, done):
-            self.assertEqual(self._rows_of(doc)['r1']['st'], 'O', '합의 끝난 문서·승인 완료 문서는 바꾸지 않는다')
+        for doc in (j_agreed, done, draft, rejected):
+            self.assertEqual(self._rows_of(doc)['r1']['st'], 'O', '합의 끝난·승인 완료·임시저장·반려 문서는 바꾸지 않는다')
 
     def test_agreement_is_judged_on_current_round(self):
         """1회차 J 합의 후 2회차에 J 단계가 아직 없으면(또는 대기면) 대상이다."""
@@ -8798,6 +8799,16 @@ class LayerFilterSetTest(TestCase):
         self.assertEqual(r.data['documents'], [{'id': doc.id, 'title': doc.title, 'status': 'under_review', 'row_count': 2}])
         self.assertEqual(LayerFilterSet.objects.count(), 0, '미리보기는 필터를 저장하지 않는다')
         self.assertEqual(self._rows_of(doc)['r1']['st'], 'O', '미리보기는 문서를 바꾸지 않는다')
+
+    def test_preview_excludes_draft_and_rejected(self):
+        """미리보기 목록에 임시저장·반려 문서는 나오지 않는다(작성자 손에 있는 문서)."""
+        self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')], status='draft')
+        self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')], status='rejected')
+        live = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')], status='under_review')
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': ['SP01'], 'sd': [], 'pp': []}}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([d['id'] for d in r.data['documents']], [live.id])
 
     def test_preview_respects_team_permission(self):
         self.client.force_authenticate(user=self.o_user)
