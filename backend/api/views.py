@@ -632,7 +632,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     # claude 수정 (2026-11-27): 공유 필터(LayerFilterSet)에 걸리는 J/O 행을 상신 시 서버에서도 검증한다
     def _validate_layer_filter_rows(self, document, user):
-        """저장된 공유 필터 중 하나라도 매칭되는 J/O 행은 ST 'X' 여야 한다.
+        """저장된 공유 필터 중 하나라도 매칭되는 J/O 행은 ST 'X' + 요청 기준 '미진행' 이어야 한다.
 
         문제 있으면 error 문자열, 없으면 None. MASTER 가 상신·재상신하면 검사하지 않는다
         ('자동 미진행' 키워드와 같은 예외). 프론트 `RequestPage/index.tsx` applySharedFilters 와 같은 규칙이다.
@@ -642,7 +642,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         data = document.get_detail()
         for table, label in (('J', 'J-ayer'), ('O', 'O-ayer')):
             if LayerFilterSet.violating_rows(table, data.get(LayerFilterSet.ROWS_KEYS[table]) or []):
-                return (f'{label} 표에 공유 필터에 해당하는 행이 ST X 가 아닌 채로 있습니다. '
+                return (f'{label} 표에 공유 필터에 해당하는 행이 ST X·요청 기준 미진행이 아닌 채로 있습니다. '
                         f'해당 단계에서 다음을 눌러 공유 필터를 적용한 뒤 상신하세요.')
         return None
 
