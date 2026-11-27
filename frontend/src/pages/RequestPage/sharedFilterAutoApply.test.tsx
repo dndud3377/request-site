@@ -1,10 +1,11 @@
 /**
- * claude 수정 (2026-11-27): J/O 공유 필터 자동 적용 — '다음'·'상신' 때 공유 필터 매칭 행을 ST X 로 자동 변경·잠금.
+ * claude 수정 (2026-11-27): J/O 공유 필터 자동 적용 — '다음'·'상신' 때 공유 필터 매칭 행을 ST X + 요청 기준 미진행으로 자동 변경·잠금.
  *
  * - STEP3/STEP4 에서 '다음'을 누르면 그 표의 공유 필터(SP·SD·PP 부분 일치, 대소문자 무시)에 걸리는 활성 행이 ST 'X' 로 바뀌고
- *   (요청 기준·제품 이름·STEP·ID 비움, J 는 bb 매핑 해제) 경고 토스트가 뜨며 그 단계에 머문다. ST 칸만 잠기고 이유 툴팁이 붙는다.
+ *   요청 기준이 '미진행'이 되며(제품 이름·STEP·ID 비움, J 는 bb 매핑 해제) 경고 토스트가 뜨고 그 단계에 머문다.
+ *   ST·요청 기준 칸이 잠기고 이유 툴팁이 붙는다('자동 미진행' 키워드와 같은 결과 — 사용자 결정).
  * - 다른 표의 공유 필터는 적용하지 않는다(J 필터에 걸리는 O 행은 그대로).
- * - 일괄 버튼('전체 O')도 잠긴 행의 ST 를 건너뛴다.
+ * - 일괄 버튼('전체 O')도 잠긴 행을 건너뛴다.
  * - MASTER 는 자동 변경·잠금 대상이 아니다. 공유 필터 조회가 실패하면 경고 토스트만 띄우고 자동 적용하지 않는다.
  * 하네스(mock·픽스처·이동/저장 헬퍼)는 npKeywordAutoApply.test.tsx 와 같다('자동 미진행' 키워드는 비워 둔다).
  */
@@ -299,7 +300,7 @@ const nocTdOf = (tr: HTMLTableRowElement) => tr.querySelectorAll('td')[8] as HTM
 const stInputOf = (tr: HTMLTableRowElement) => stTdOf(tr).querySelector('input') as HTMLInputElement;
 const LOCK_TITLE = '공유 필터에 해당하는 행이라';
 
-describe('J/O 공유 필터 → ST X 자동 변경·잠금', () => {
+describe('J/O 공유 필터 → ST X·미진행 자동 변경·잠금', () => {
   beforeEach(() => {
     mockState.doc = makeDoc();
     mockState.optionsFor = optionsFor;
@@ -309,7 +310,7 @@ describe('J/O 공유 필터 → ST X 자동 변경·잠금', () => {
     localStorage.clear();
   });
 
-  it("STEP3 첫 '다음'에서 공유 필터 행만 X 로 바꾸고 ST 를 잠근 뒤 머물고, 다시 '다음'을 누르면 STEP4 로 간다", async () => {
+  it("STEP3 첫 '다음'에서 공유 필터 행만 X·미진행으로 바꾸고 잠근 뒤 머물고, 다시 '다음'을 누르면 STEP4 로 간다", async () => {
     const { container } = await renderAtStep(J_TABLE);
     await clickButton('다음');
 
@@ -318,10 +319,11 @@ describe('J/O 공유 필터 → ST X 자동 변경·잠금', () => {
     const j1 = rowOf(container, J_TABLE, 'SP01');
     const j2 = rowOf(container, J_TABLE, 'SP02');
     expect([stInputOf(j1).value, nocInputOf(j1).value]).toEqual(['O', '신규']);
-    expect([stInputOf(j2).value, nocInputOf(j2).value]).toEqual(['X', '']);
+    expect([stInputOf(j2).value, nocInputOf(j2).value]).toEqual(['X', '미진행']);
     expect(stInputOf(j2).disabled).toBe(true);
+    expect(nocInputOf(j2).disabled).toBe(true);
     expect(stTdOf(j2).getAttribute('title')).toContain(LOCK_TITLE);
-    expect(nocTdOf(j2).getAttribute('title') ?? '').not.toContain(LOCK_TITLE);
+    expect(nocTdOf(j2).getAttribute('title')).toContain(LOCK_TITLE);
     expect(stInputOf(j1).disabled).toBe(false);
     expect(toastsOf('warning')).toContain('공유 필터에 해당하는 1개 행을');
 
@@ -329,7 +331,7 @@ describe('J/O 공유 필터 → ST X 자동 변경·잠금', () => {
     expect(container.querySelector(O_TABLE)).not.toBeNull();
     const saved = await saveDraftAndCapture();
     expect(saved.jayerRows.map((r) => [r.id, r.st, r.new_or_copy, r.product_name, r.step, r.item_id]))
-      .toEqual([['j1', 'O', '신규', PRODUCT, '10', 'ITEM_1'], ['j2', 'X', '', '', '', ''], ['j3', 'X', '미진행', '', '', '']]);
+      .toEqual([['j1', 'O', '신규', PRODUCT, '10', 'ITEM_1'], ['j2', 'X', '미진행', '', '', ''], ['j3', 'X', '미진행', '', '', '']]);
     expect(saved.bbRows.map((r) => r.sourceJayerRowId)).toEqual(['j1']);
   });
 
@@ -339,12 +341,13 @@ describe('J/O 공유 필터 → ST X 자동 변경·잠금', () => {
     expect(container.querySelector(O_TABLE)).not.toBeNull();
     const o2 = rowOf(container, O_TABLE, 'SP02');
     const o4 = rowOf(container, O_TABLE, 'SP04');
-    expect(stInputOf(o2).value).toBe('X');
+    expect([stInputOf(o2).value, nocInputOf(o2).value]).toEqual(['X', '미진행']);
     expect(stInputOf(o2).disabled).toBe(true);
+    expect(nocInputOf(o2).disabled).toBe(true);
     expect([stInputOf(o4).value, nocInputOf(o4).value]).toEqual(['O', '신규']);
   });
 
-  it("일괄 버튼 '전체 O' 는 공유 필터로 잠긴 행의 ST 를 건너뛴다", async () => {
+  it("일괄 버튼 '전체 O' 는 공유 필터로 잠긴 행을 건너뛴다", async () => {
     const { container } = await renderAtStep(J_TABLE);
     await clickButton('다음');
     const toolbar = container.querySelector('.wizard-table-toolbar') as HTMLElement;
@@ -353,6 +356,7 @@ describe('J/O 공유 필터 → ST X 자동 변경·잠금', () => {
     await act(async () => { allO.click(); });
     await flush(3);
     expect(stInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('X');
+    expect(nocInputOf(rowOf(container, J_TABLE, 'SP02')).value).toBe('미진행');
     expect(stInputOf(rowOf(container, J_TABLE, 'SP03')).value).toBe('O');
   });
 
