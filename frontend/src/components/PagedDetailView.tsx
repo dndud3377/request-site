@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, ColorFilterSet, RoundSubmitter } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, LayerFilterSet, ColorFilterSet, RoundSubmitter } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -1147,6 +1147,34 @@ function ExtraLayerTable({
   );
 }
 
+// claude 수정 (2026-11-27): 공유 필터가 자동 적용으로 바뀌어 버튼이 없어지면서 무엇이 적용 중인지 안 보이던 것을 표시
+/**
+ * 공유 필터 툴바의 저장된 필터 이름 칩 — 누를 수 없는 표시 전용. 마우스를 올리면 칸별 키워드를 툴팁으로 보여 준다.
+ * 필터가 없으면 '저장된 필터가 없습니다.' 문구.
+ */
+function SharedFilterChips({ sets }: { sets: LayerFilterSet[] }) {
+  const { t } = useTranslation();
+  if (sets.length === 0) {
+    return <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{t('request.filter_saved_empty')}</span>;
+  }
+  const fieldLabels: [keyof LayerFilterSet['words'], string][] = [
+    ['sp', t('request.filter_sp_label')], ['sd', t('request.filter_sd_label')], ['pp', t('request.filter_pp_label')],
+  ];
+  return (
+    <>
+      {sets.map((fs) => (
+        <span
+          key={fs.id}
+          title={fieldLabels.filter(([k]) => fs.words[k].length > 0).map(([k, label]) => `${label}: ${fs.words[k].join(', ')}`).join('\n')}
+          style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: '0.7rem', background: 'var(--bg-secondary)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'default' }}
+        >
+          {fs.label || t('request.filter_unnamed')}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /**
  * J/O-layer "색상 적용" 툴바 — 위 공유 필터 툴바와 같은 자리에, 같은 스타일로 한 줄 더 보여준다.
  * 칩(색상 필터)은 여러 개 동시에 켤 수 있는 토글이고, 켜진 칩의 점들이 그 필터 안에 서로
@@ -1682,6 +1710,9 @@ export interface PagedDetailViewProps {
    */
   canUseJayerFilter?: boolean;
   canUseOayerFilter?: boolean;
+  /** claude 수정 (2026-11-27): 지금 적용 중인 공유 필터 목록 — 툴바에 이름 칩(표시 전용, 키워드는 툴팁)으로 보여 준다 */
+  jayerLayerFilterSets?: LayerFilterSet[];
+  oayerLayerFilterSets?: LayerFilterSet[];
   onOpenJayerFilterManage?: () => void;
   onOpenOayerFilterManage?: () => void;
 
@@ -1721,6 +1752,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   canEditPartialShot = false, onPartialShotChange,
   reviewItems, historyMode = false,
   canUseJayerFilter = false, canUseOayerFilter = false,
+  jayerLayerFilterSets, oayerLayerFilterSets,
   onOpenJayerFilterManage, onOpenOayerFilterManage,
   canUseJayerColorFilter = false, canUseOayerColorFilter = false,
   jayerColorFilterSets, oayerColorFilterSets,
@@ -3264,6 +3296,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
           {canUseJayerFilter && (
             <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
               <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
+              <SharedFilterChips sets={jayerLayerFilterSets ?? []} />
               <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenJayerFilterManage}>
                 {t('request.layer_filter_manage_btn')}
               </button>
@@ -3363,6 +3396,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                   {canUseOayerFilter && (
                     <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
                       <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
+                      <SharedFilterChips sets={oayerLayerFilterSets ?? []} />
                       <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenOayerFilterManage}>
                         {t('request.layer_filter_manage_btn')}
                       </button>
