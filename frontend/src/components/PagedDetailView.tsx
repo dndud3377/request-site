@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, LayerFilterSet, ColorFilterSet, RoundSubmitter } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, ExtraLayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, MergeRefMode, AdiCdStep, ColorFilterSet, RoundSubmitter } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -1674,24 +1674,16 @@ export interface PagedDetailViewProps {
    *  - true(이력 조회): **한 번이라도 바뀌었으면** 강조·버튼, 모달은 회차별 전체.
    */
   historyMode?: boolean;
+  // claude 수정 (2026-11-27): 공유 필터가 자동 적용으로 바뀌어 필터별 적용·초기화 버튼을 없애고 '필터 관리'만 남긴다
   /**
-   * 결재 상세페이지 J/O-layer 공유 필터. 넘기지 않으면(HistoryPage 등) 툴바 자체가 뜨지 않는다.
-   * 사용 가능 여부(canUse*)·목록·적용/관리 핸들러 모두 호출부(ApprovalPage)가 소유한다 —
-   * 이 컴포넌트는 API를 직접 호출하지 않는 순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다.
+   * 결재 상세페이지 J/O-layer 공유 필터 관리 버튼. 넘기지 않으면(HistoryPage 등) 툴바 자체가 뜨지 않는다.
+   * 공유 필터는 저장하는 순간 진행 중 문서에 자동 적용되므로 이 화면에는 '필터 관리'만 있다.
+   * 노출 조건(canUse*)·관리 핸들러는 호출부(ApprovalPage)가 소유한다(순수 표시 컴포넌트 원칙).
    */
   canUseJayerFilter?: boolean;
   canUseOayerFilter?: boolean;
-  jayerLayerFilterSets?: LayerFilterSet[];
-  oayerLayerFilterSets?: LayerFilterSet[];
-  onApplyJayerLayerFilter?: (filterId: number) => void;
-  onApplyOayerLayerFilter?: (filterId: number) => void;
   onOpenJayerFilterManage?: () => void;
   onOpenOayerFilterManage?: () => void;
-  /** 이번 회차에 필터를 적용한 적이 있어 "초기화"(상신 시점 값으로 복원) 버튼을 보여줄지 여부. */
-  canResetJayerFilter?: boolean;
-  canResetOayerFilter?: boolean;
-  onResetJayerLayerFilter?: () => void;
-  onResetOayerLayerFilter?: () => void;
 
   /**
    * 결재 상세페이지 J/O-layer "색상 적용" — 위 공유 필터(데이터를 실제로 바꿈)와 달리 매칭된
@@ -1729,11 +1721,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   canEditPartialShot = false, onPartialShotChange,
   reviewItems, historyMode = false,
   canUseJayerFilter = false, canUseOayerFilter = false,
-  jayerLayerFilterSets, oayerLayerFilterSets,
-  onApplyJayerLayerFilter, onApplyOayerLayerFilter,
   onOpenJayerFilterManage, onOpenOayerFilterManage,
-  canResetJayerFilter = false, canResetOayerFilter = false,
-  onResetJayerLayerFilter, onResetOayerLayerFilter,
   canUseJayerColorFilter = false, canUseOayerColorFilter = false,
   jayerColorFilterSets, oayerColorFilterSets,
   activeJayerColorFilterIds, activeOayerColorFilterIds,
@@ -3276,19 +3264,9 @@ type Page = { label: string; content: React.ReactNode; key?: string };
           {canUseJayerFilter && (
             <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
               <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
-              {(jayerLayerFilterSets ?? []).map((fs) => (
-                <button key={fs.id} type="button" className="th-header-btn" onClick={() => onApplyJayerLayerFilter?.(fs.id)}>
-                  {fs.label}
-                </button>
-              ))}
               <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenJayerFilterManage}>
                 {t('request.layer_filter_manage_btn')}
               </button>
-              {canResetJayerFilter && (
-                <button type="button" className="btn btn-secondary btn-sm" onClick={onResetJayerLayerFilter}>
-                  {t('approval.layer_filter_reset_btn')}
-                </button>
-              )}
             </div>
           )}
           {canUseJayerColorFilter && (
@@ -3385,19 +3363,9 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                   {canUseOayerFilter && (
                     <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
                       <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
-                      {(oayerLayerFilterSets ?? []).map((fs) => (
-                        <button key={fs.id} type="button" className="th-header-btn" onClick={() => onApplyOayerLayerFilter?.(fs.id)}>
-                          {fs.label}
-                        </button>
-                      ))}
                       <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenOayerFilterManage}>
                         {t('request.layer_filter_manage_btn')}
                       </button>
-                      {canResetOayerFilter && (
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={onResetOayerLayerFilter}>
-                          {t('approval.layer_filter_reset_btn')}
-                        </button>
-                      )}
                     </div>
                   )}
                   {canUseOayerColorFilter && (
