@@ -8807,6 +8807,28 @@ class LayerFilterSetTest(TestCase):
         r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': ['A'], 'sd': [], 'pp': []}}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
+    # claude 수정 (2026-11-27): 문자열이 아닌 키워드는 저장 단계에서 400(사용자 결정 — 발견 2 영향 확대로 수정)
+    def test_non_string_keyword_rejected_on_create_and_update(self):
+        """숫자 등 문자열이 아닌 키워드는 생성·수정 모두 400 — 진행 중 문서가 없어도 저장되지 않는다."""
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post('/api/layer-filter-sets/', {
+            'table': 'J', 'label': 'bad', 'words': {'sp': [], 'sd': ['GATE', 123], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('words', r.data)
+        self.assertEqual(LayerFilterSet.objects.count(), 0)
+
+        fs = LayerFilterSet.objects.create(table='J', label='ok', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'words': {'sp': ['SP01', None], 'sd': [], 'pp': []}}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        fs.refresh_from_db()
+        self.assertEqual(fs.words['sp'], ['SP01'], '거부된 수정은 기존 키워드를 바꾸지 않는다')
+
+    def test_non_string_keyword_rejected_on_preview(self):
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': [], 'sd': [], 'pp': [1]}}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
     def test_per_document_apply_and_reset_api_removed(self):
         """문서별 적용·초기화 API 는 삭제됐다(사용자 결정 2026-11-27)."""
         doc = self._make_doc(jayer_rows=[self._row()], status='under_review')
