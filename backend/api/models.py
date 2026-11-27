@@ -811,7 +811,7 @@ class LayerFilterSet(models.Model):
     ('자동 미진행' 키워드와 같은 결과, 사용자 결정 2026-11-27).
       - 의뢰서 작성: STEP3(J)/STEP4(O) '다음'·'상신' 때 화면이 적용하고, 상신 API 가 다시 검증한다
         (`RequestDocumentViewSet._validate_layer_filter_rows`).
-      - 필터 추가·수정 저장 시: `target_documents` 의 진행 중 문서 전체에 일괄 적용한다
+      - 필터 추가·수정 저장 시: `target_documents` 의 결재 진행 중 문서 전체에 일괄 적용한다(임시저장·반려 제외)
         (`LayerFilterSetViewSet`). 필터 삭제·키워드 제거는 이미 X 가 된 행을 되돌리지 않는다.
     의뢰서 작성 화면의 개인 필터(localStorage)와는 별개다.
     """
@@ -822,11 +822,10 @@ class LayerFilterSet(models.Model):
     ROWS_KEYS = {'J': 'jayerRows', 'O': 'oayerRows'}
     ST_INACTIVE = 'X'
     NOC_NOT_PROCEEDING = '미진행'
-    # 일괄 적용 대상 상태(사용자 결정 2026-11-27) — 승인 완료(approved)만 제외한다.
-    #  - 임시저장·반려됨: 항상 대상(재상신하면 새 회차에서 다시 검토된다)
-    #  - 상신됨·검토중·중단: 이번 회차에 그 팀(J/O)이 아직 합의를 끝내지 않았을 때만 대상
-    #    (J/O 단계가 아직 없는 1·2구역, 생략·제외로 단계가 없는 회차 포함. 중단·철회 확인 대기도 포함)
-    ALWAYS_TARGET_STATUSES = ('draft', 'rejected')
+    # claude 수정 (2026-11-27): 임시저장·반려 문서는 작성자 손에 있으므로 일괄 적용에서 뺀다(사용자 결정) —
+    # 재상신할 때 작성 화면 '다음'·'상신' 자동 적용과 상신 서버 검증(_validate_layer_filter_rows)이 맡는다.
+    # 일괄 적용 대상 = 상신됨·검토중·중단 중 이번 회차에 그 팀(J/O)이 아직 합의를 끝내지 않은 문서
+    #   (J/O 단계가 아직 없는 1·2구역, 생략·제외로 단계가 없는 회차 포함. 중단·철회 확인 대기도 포함). 승인 완료 제외.
     STAGE_TARGET_STATUSES = ('submitted', 'under_review', 'pause')
 
     @classmethod
@@ -878,18 +877,17 @@ class LayerFilterSet(models.Model):
 
     @classmethod
     def target_documents(cls, table):
-        """일괄 적용 대상 문서 목록(위 STATUSES 규칙). '합의를 끝냈다' = 현재 회차의 그 팀 단계가 있고 전부 approved."""
+        """일괄 적용 대상 문서 목록(위 STAGE_TARGET_STATUSES 규칙). '합의를 끝냈다' = 현재 회차의 그 팀 단계가 있고 전부 approved."""
         docs = RequestDocument.objects.filter(
-            status__in=cls.ALWAYS_TARGET_STATUSES + cls.STAGE_TARGET_STATUSES,
+            status__in=cls.STAGE_TARGET_STATUSES,
         ).prefetch_related('approval_steps').order_by('id')
         targets = []
         for doc in docs:
-            if doc.status in cls.STAGE_TARGET_STATUSES:
-                steps = list(doc.approval_steps.all())
-                current_round = max((s.round for s in steps), default=1)
-                team_steps = [s for s in steps if s.agent == table and s.round == current_round]
-                if team_steps and all(s.action == 'approved' for s in team_steps):
-                    continue
+            steps = list(doc.approval_steps.all())
+            current_round = max((s.round for s in steps), default=1)
+            team_steps = [s for s in steps if s.agent == table and s.round == current_round]
+            if team_steps and all(s.action == 'approved' for s in team_steps):
+                continue
             targets.append(doc)
         return targets
 
