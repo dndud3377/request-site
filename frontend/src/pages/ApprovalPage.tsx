@@ -3890,6 +3890,8 @@ export default function ApprovalPage(): React.ReactElement {
               reviewItems={buildReviewItemsProps(selected)}
               canUseJayerFilter={canUseLayerFilter(selected, 'J')}
               canUseOayerFilter={canUseLayerFilter(selected, 'O')}
+              jayerLayerFilterSets={jayerLayerFilterSets}
+              oayerLayerFilterSets={oayerLayerFilterSets}
               onOpenJayerFilterManage={() => setJayerFilterManageOpen(true)}
               onOpenOayerFilterManage={() => setOayerFilterManageOpen(true)}
               canUseJayerColorFilter={canUseLayerFilter(selected, 'J')}
