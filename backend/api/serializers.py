@@ -649,12 +649,15 @@ class LayerFilterSetSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError('필터의 대상 표(J/O)는 바꿀 수 없습니다.')
         return value
 
+    # claude 수정 (2026-11-27): 키워드가 문자열인지 검사 — 숫자 등이 저장되면 작성 화면(STEP3 멈춤·흰 화면)과 상신(500)이 전원 막힌다
     def validate_words(self, value):
         if not isinstance(value, dict) or not all(k in ('sp', 'sd', 'pp') for k in value.keys()):
             raise serializers.ValidationError("words 는 {sp, sd, pp} 형태여야 합니다.")
         for k in ('sp', 'sd', 'pp'):
             if k in value and not isinstance(value[k], list):
                 raise serializers.ValidationError(f"words.{k} 는 배열이어야 합니다.")
+            if k in value and not all(isinstance(kw, str) for kw in value[k]):
+                raise serializers.ValidationError(f"words.{k} 의 키워드는 문자열이어야 합니다.")
         return value
 
 
