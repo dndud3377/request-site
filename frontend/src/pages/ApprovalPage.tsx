@@ -100,6 +100,9 @@ type MarkCategoryFilterValue = number | 'none';
 const APPROVAL_LIST_PAGE_SIZE = 10;
 // 숫자 페이지 버튼 표시 시 현재 페이지 앞뒤로 보여줄 개수(그 밖은 '…'로 생략)
 const APPROVAL_PAGE_WINDOW = 2;
+// claude 수정 (2026-11-27): 공유 필터 삭제가 '이미 삭제됨'(404)으로 실패했는지 판별 — api/client request() 는 상태를 메시지 앞에 붙인다
+const HTTP_NOT_FOUND_PREFIX = 'HTTP 404';
+const isNotFoundError = (err: unknown): boolean => err instanceof Error && err.message.startsWith(HTTP_NOT_FOUND_PREFIX);
 
 // ===== Utils =====
 // 결재 현황 테이블 계산 헬퍼는 utils/approvalTable 로 이동(HomePage 최근 의뢰 현황과 공유).
@@ -1076,6 +1079,47 @@ export default function ApprovalPage(): React.ReactElement {
     } finally {
       setSharedFilterSaving(false);
     }
+  };
+
+  // claude 수정 (2026-11-27): 공유 필터 개별·전체 삭제 오류 처리 — 다른 팀원이 먼저 지운 필터(404)는 안내만 하고,
+  // 그 밖의 실패는 서버 사유를 안내 모달로 보여 준다. 성공·실패와 관계없이 끝나면 서버 목록을 다시 불러와 화면을 맞춘다.
+  const reloadSharedFilterSets = async (table: 'J' | 'O') => {
+    try {
+      const sets = await layerFilterSetsAPI.list(table);
+      (table === 'J' ? setJayerLayerFilterSets : setOayerLayerFilterSets)(sets);
+    } catch (err) {
+      setLayerFilterErrorNotice(err instanceof Error ? err.message : t('common.process_error'));
+    }
+  };
+
+  const confirmSharedFilterDelete = async () => {
+    if (!layerFilterDeleteConfirm) return;
+    const { table, id } = layerFilterDeleteConfirm;
+    setLayerFilterDeleteConfirm(null);
+    try {
+      await layerFilterSetsAPI.delete(id);
+    } catch (err) {
+      if (isNotFoundError(err)) addToast(t('approval.layer_filter_already_deleted'), 'info');
+      else setLayerFilterErrorNotice(err instanceof Error ? err.message : t('common.process_error'));
+    }
+    await reloadSharedFilterSets(table);
+  };
+
+  /** 전체 삭제 — 하나가 실패해도 나머지는 계속 지운다(allSettled). 404 만 있으면 안내, 다른 실패가 있으면 첫 사유를 모달로. */
+  const confirmSharedFilterAllDelete = async () => {
+    const table = layerFilterAllDeleteConfirm;
+    if (!table) return;
+    setLayerFilterAllDeleteConfirm(null);
+    const sets = table === 'J' ? jayerLayerFilterSets : oayerLayerFilterSets;
+    const results = await Promise.allSettled(sets.map((fs) => layerFilterSetsAPI.delete(fs.id)));
+    const reasons = results.flatMap((r) => (r.status === 'rejected' ? [r.reason as unknown] : []));
+    const failure = reasons.find((reason) => !isNotFoundError(reason));
+    if (failure !== undefined) {
+      setLayerFilterErrorNotice(failure instanceof Error ? failure.message : t('common.process_error'));
+    } else if (reasons.length > 0) {
+      addToast(t('approval.layer_filter_already_deleted'), 'info');
+    }
+    await reloadSharedFilterSets(table);
   };
 
   // ===== 결재 상세페이지 J/O-layer "색상 적용" =====
@@ -3899,13 +3943,7 @@ export default function ApprovalPage(): React.ReactElement {
       <ConfirmModal
         isOpen={!!layerFilterDeleteConfirm}
         onClose={() => setLayerFilterDeleteConfirm(null)}
-        onConfirm={async () => {
-          if (!layerFilterDeleteConfirm) return;
-          const { table, id } = layerFilterDeleteConfirm;
-          await layerFilterSetsAPI.delete(id);
-          (table === 'J' ? setJayerLayerFilterSets : setOayerLayerFilterSets)((prev) => prev.filter((f) => f.id !== id));
-          setLayerFilterDeleteConfirm(null);
-        }}
+        onConfirm={confirmSharedFilterDelete}
         title={t('common.confirm')}
         message={t('request.filter_delete_confirm', { label: layerFilterDeleteConfirm?.label ?? '' })}
         confirmLabel={t('common.delete')}
@@ -3916,14 +3954,7 @@ export default function ApprovalPage(): React.ReactElement {
       <ConfirmModal
         isOpen={!!layerFilterAllDeleteConfirm}
         onClose={() => setLayerFilterAllDeleteConfirm(null)}
-        onConfirm={async () => {
-          const table = layerFilterAllDeleteConfirm;
-          if (!table) return;
-          const sets = table === 'J' ? jayerLayerFilterSets : oayerLayerFilterSets;
-          await Promise.all(sets.map((fs) => layerFilterSetsAPI.delete(fs.id)));
-          (table === 'J' ? setJayerLayerFilterSets : setOayerLayerFilterSets)([]);
-          setLayerFilterAllDeleteConfirm(null);
-        }}
+        onConfirm={confirmSharedFilterAllDelete}
         title={t('common.confirm')}
         message={t('request.filter_all_delete_confirm')}
         confirmLabel={t('common.delete')}
