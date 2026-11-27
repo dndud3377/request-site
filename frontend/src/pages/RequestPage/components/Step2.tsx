@@ -24,6 +24,8 @@ interface Step2Props {
   autoBorrowRowIds?: ReadonlySet<string>;
   /** claude 수정 (2026-11-16): '자동 미진행' 키워드로 ST X·미진행이 돼 잠긴 행 id — ST·요청 기준 칸을 비활성으로 두고 이유를 툴팁으로 보여 준다 */
   npLockedRowIds?: ReadonlySet<string>;
+  /** claude 수정 (2026-11-27): 공유 필터로 ST X 가 돼 잠긴 행 id — ST 칸을 비활성으로 두고 이유를 툴팁으로 보여 준다 */
+  sharedFilterLockedRowIds?: ReadonlySet<string>;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
@@ -52,6 +54,7 @@ const Step2: React.FC<Step2Props> = ({
   cellSel,
   autoBorrowRowIds = EMPTY_ID_SET,
   npLockedRowIds = EMPTY_ID_SET,
+  sharedFilterLockedRowIds = EMPTY_ID_SET,
   GuideTourBadge,
   GuideBadge,
   validationSystem,
@@ -175,6 +178,9 @@ const Step2: React.FC<Step2Props> = ({
               // claude 수정 (2026-11-16): '자동 미진행' 키워드 잠금 — ST·요청 기준 칸 비활성 + 이유 툴팁(마우스 이벤트를 칸이 받도록 입력은 pointer-events 끔)
               const npLocked = npLockedRowIds.has(row.id);
               const npLockTitle = npLocked ? t('request.np_keyword_locked_title') : undefined;
+              // claude 수정 (2026-11-27): 공유 필터 잠금 — ST 칸만 비활성 + 이유 툴팁('자동 미진행' 잠금이 먼저 보인다)
+              const sfLocked = sharedFilterLockedRowIds.has(row.id);
+              const sfLockTitle = sfLocked ? t('request.shared_filter_locked_title') : undefined;
               const itemIdError = errors[`jayer_noc_${row.id}_item_id`];
               const regBg = '#e5e7eb';
               // 편집 셀 공통 props: 셀 선택(드래그/Ctrl) + 선택 하이라이트
@@ -199,16 +205,16 @@ const Step2: React.FC<Step2Props> = ({
                   <td {...cellProps('sd', greyBg ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                   <td {...cellProps('layerid', greyBg ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                   <td {...cellProps('pp', greyBg ? regBg : undefined)}><input value={row.pp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                  <td {...cellProps('st', greyBg ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined} title={npLockTitle ?? stLockTitle}>
+                  <td {...cellProps('st', greyBg ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined} title={npLockTitle ?? sfLockTitle ?? stLockTitle}>
                     <AutocompleteInput
                       value={row.st}
                       onChange={(v) => handleJayerChange(row.id, 'st', v)}
                       options={ST_OPTIONS}
                       // claude 수정 (2026-11-06): ST 를 먼저 고르도록 순서를 강제해, 요청 기준(기등록/layer삭제/미진행)으로 ST 를 'X' 에 잠그지 않는다.
-                      disabled={stLocked || npLocked}
+                      disabled={stLocked || npLocked || sfLocked}
                       inputStyle={{
                         backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
-                        ...(stLocked || npLocked ? { pointerEvents: 'none' as const } : {}),
+                        ...(stLocked || npLocked || sfLocked ? { pointerEvents: 'none' as const } : {}),
                         ...(stError ? { border: '1px solid var(--danger)' } : {}),
                       }}
                       dropdownFontSize="0.7rem"
