@@ -1274,7 +1274,8 @@ O(OVL)가 이미 합의를 마친 요청서는 **Jayer(`jayerRows`)·Oayer(`oaye
   넣지 않는다 — O 합의 뒤에 바뀔 길이 MASTER 수정뿐이다. 상세는 `docs/REQUEST.md` 2026-11-05 항목.
 - 🔎 **기록만 한 관련 사항(2026-11-04, 사용자 확인 대기)**: 생략 회차에도 P 완료 참고 통보(`notify_p_completed`)는 TE_O 에
   그대로 발송된다. O-layer 공유 필터 사용은 "O 단계 완료 전"을 O step 존재로 판정해 생략 회차에는 계속 열려 있고,
-  J·O 필터로 바뀐 표 내용이 다음 회차 O 생략 판정에서 변경으로 잡힌다.
+  J·O 필터로 바뀐 표 내용이 다음 회차 O 생략 판정에서 변경으로 잡힌다. (2026-11-27: 공유 필터가 자동 일괄 적용으로 바뀌어
+  생략 회차 문서도 의도적으로 적용 대상이다 — §12-3.)
 - 테스트: `backend/api/tests.py::ShouldSkipOStageTest`, `OSkipStageIntegrationTest`, `OSkipPauseResumeTest`,
   `frontend/src/components/PagedDetailView.oSkipRoute.test.tsx`. 러너: `X-10`~`X-14`, `M-10`·`M-11`.
 
@@ -2440,139 +2441,112 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ---
 
-## 12. 결재 상세페이지 J/O-layer 공유 필터 (2026-08-25, 초기화 2026-09)
+## 12. J/O-layer 공유 필터 — 항상 자동 적용 (2026-11-27 프로세스 전환)
 
-의뢰서 작성 화면(STEP3/STEP4)의 필터는 **개인별**(localStorage)이지만, 결재 상세페이지의 필터는
-**팀 전체가 공유**하는 별도 목록이다 — J-layer 필터는 TE_J/MASTER 전원이, O-layer 필터는
-TE_O/MASTER 전원이 같은 하나의 목록을 보고 관리한다. 적용하면 이미 상신된 문서의 J/O 행을
-실제로 바꾼다(매칭된 행의 `st`를 `'X'`로, 나머지 관련 필드를 초기화) — 결재 상세페이지에서
-유일하게 문서 데이터를 직접 편집하는 지점이다. 여러 번 적용해 바뀐 값은 "초기화"로 이번 회차
-상신 시점 값으로 한 번에 되돌릴 수 있다(§12-3-1).
+> **이력**: 2026-08-25 도입 당시에는 결재 상세페이지에서 TE_J/TE_O 가 **요청서마다 필터 버튼을 눌러** 적용했고,
+> 2026-09 에 이번 회차 상신 시점 값으로 되돌리는 "초기화"(baseline)가 붙었다. 2026-11-27 사용자 결정으로
+> "항상 적용할 규칙인데 요청서마다 누를 필요가 없다"는 의도에 맞춰 **자동 적용**으로 바꾸고, 문서별 적용·초기화
+> (`apply-layer-filter`·`reset-layer-filter`·baseline)는 **삭제**했다. DB 에 남은 `jayerFilterBaseline`/`oayerFilterBaseline`
+> 값은 지우지 않으며 아무 곳에서도 읽지 않는다.
+
+**한 줄 요약**: TE_J/TE_O/MASTER 가 결재 현황 '필터 관리'에서 만든 공유 필터(A·B·C…)는 저장하는 즉시
+① 앞으로 작성하는 모든 의뢰서와 ② 그 팀이 아직 합의하지 않은 진행 중 의뢰서 전부에 적용된다.
+매칭된 행은 **ST 'X' + 요청 기준 '미진행'**(제품 이름·STEP, J 는 ID 도 비움)이 되고 ST·요청 기준이 잠긴다 —
+`.env` '자동 미진행' 키워드(`docs/REQUEST.md` 2026-11-16)와 결과가 같다(사용자 결정).
 
 ### 12-1. 데이터 모델
 
-`LayerFilterSet`(`backend/api/models.py`) — `table`('J'/'O'), `label`, `words`(JSONField
-`{sp, sd, pp}`). 마이그레이션: `0030_layerfilterset.py`. 의뢰서별 데이터가 아니라 독립 테이블 —
-문서가 삭제돼도 필터 정의는 남는다.
+`LayerFilterSet`(`backend/api/models.py`) — `table`('J'/'O'), `label`, `words`(JSONField `{sp, sd, pp}` 각 문자열 배열).
+마이그레이션 `0030_layerfilterset.py`(이번 전환에 마이그레이션 없음). 의뢰서별 데이터가 아니라 독립 테이블이다.
+매칭·적용·대상 판정은 모델 클래스 메서드에 모았다.
 
-이와 별개로, 문서의 `additional_notes` JSON 안에 `jayerFilterBaseline`/`oayerFilterBaseline`
-(`{round, rows}`)을 둔다 — 이번 회차 첫 **유효한**(1건 이상 매칭돼 실제로 바뀐)
-`apply-layer-filter` 호출 시점의, 바뀌기 직전 `jayerRows`/`oayerRows` 전체를 그대로 복사해 둔
-것이다. 상신 이후 이 표를 건드리는 곳이 `apply_layer_filter`/`reset_layer_filter` 뿐이므로 이
-시점 값이 곧 상신 시점 값이다. 매칭 0건인 호출은 baseline 을 만들지 않는다(아무것도 안
-바뀌었는데 "초기화할 것이 있다"는 상태가 되는 것을 막기 위해). 이후 몇 번을 다시 적용해도 이
-baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본으로 복원할 수 있어야 하므로). 회차가
-바뀌면(반려 후 재상신) `round` 불일치로 이전 baseline 은 무효 처리되고, 새 회차 첫 유효 적용
-시점에 새로 저장된다.
+| 메서드 | 역할 |
+|---|---|
+| `row_matches(words, row)` | 행의 SP·SD·PP 중 하나라도 같은 칸 키워드를 포함(대소문자 무시·부분 일치) — 프론트 `helpers.ts` `matchesSharedFilters` 와 같은 규칙 |
+| `clear_matched_rows(table, rows, words_list)` | 매칭 행을 제자리에서 ST X + 미진행 으로 바꾸고 바뀐 행 수를 돌려준다. 이미 X+미진행 행은 건너뛰고, **X 지만 요청 기준이 다른 행(기등록·layer삭제·빈칸)도 미진행으로 바꾼다**('자동 미진행'과 같다) |
+| `violating_rows(table, rows)` | 저장된 공유 필터에 걸리는데 X+미진행이 아닌 행(상신 서버 검증용) |
+| `target_documents(table)` | 진행 중 일괄 적용 대상 문서(12-3) |
 
 ### 12-2. 인가
 
 | 동작 | 조건 |
 |------|------|
-| J-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_J` 또는 `MASTER` (`CanManageLayerFilter`) |
-| O-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_O` 또는 `MASTER` |
+| 목록·단건 조회 | **로그인 사용자 전원**(2026-11-27 — 작성 화면이 자동 적용하려면 필요). 목록은 `?table=J|O` 필수(없거나 다른 값이면 403) |
+| J 필터 추가·수정·삭제·미리보기 | `TE_J` 또는 `MASTER` (`CanManageLayerFilter`) |
+| O 필터 추가·수정·삭제·미리보기 | `TE_O` 또는 `MASTER` |
 | 기존 필터의 **대상 표(`table`) 변경** (J↔O) | `MASTER` 만 (2026-11-23). TE_J/TE_O 는 400 — 같은 값을 다시 보내는 수정은 허용 |
-| 필터 **적용**(`apply-layer-filter`)·**초기화**(`reset-layer-filter`) | 위 역할 조건 **+** 문서가
-  `under_review` **+** 해당 단계(J 또는 O)가 이번 회차에 아직 `approved` 가 아님 —
-  `update_validation_system` 의 MASK 게이트와 동일한 발상(단, J/O 는 PV/EV 같은 별도 검토자가
-  없어 담당 단계 하나만 확인하면 된다). 두 액션은 `_layer_filter_gate` 헬퍼를 공유한다. |
 
-문서가 `pause`(중단 요청 중)이면 적용·초기화 **버튼은 계속 노출**하지만(아래 12-4), 실제 동작은
-막는다. 이 상태 판정은 `_layer_filter_gate`가 자체적으로 하지 않고, 결재 액션(`approve_step` 등)이
-쓰는 것과 완전히 동일한 `_blocked_progress_response(document)`를 그대로 재사용한다 — 반드시
-그래야 하는 이유가 있다: 상신자가 중단/철회를 요청해도 대상 단계 팀 **전원이 확인하기 전까지는
-`document.status`가 여전히 `under_review`**로 남아 있다(`PauseRequest`/`WithdrawRequest`의
-`state='requested'` 구간). `status`만 보는 게이트로는 이 확인 대기 구간을 못 잡아서, 실제로
-"중단 요청을 걸어 놨는데도 필터로 데이터가 바뀌는" 버그가 있었다(2026-09 발견·수정).
-`_blocked_progress_response`는 다음을 전부 한 번에 판정한다: `under_review`면 통과, 철회 요청
-확인 대기 중(`WithdrawRequest.state='requested'`)이면 거부, 중단 요청 확인 대기 중
-(`PauseRequest.state='requested'`, 아직 `status`가 안 바뀐 상태)이면 거부, `status=='pause'`(중단
-확정)면 거부, 그 외 종료 상태(approved/rejected/draft 등, 원래 버튼 자체가 안 보이는 상태)면
-거부(직접 API 호출 방어용) — 각각 결재 액션과 동일한 문구로 응답한다. `action_label`
-(`'적용'`/`'초기화'`) 인자는 이 상태 체크가 아니라 아래 단계-합의-완료 체크에서만 쓰인다.
+### 12-3. 진행 중 의뢰서 일괄 적용 (필터 추가·수정 저장 시)
 
-적용·초기화 사실 자체는 별도로 기록하지 않는다(사용자 확정 — `validation_system`처럼 결재 단계
-코멘트에 note를 남기는 방식조차 쓰지 않는다). baseline 은 이 게이트 판정을 위한 상태일 뿐,
-감사 로그가 아니다.
+- `POST /api/layer-filter-sets/`·`PATCH|PUT /api/layer-filter-sets/{id}/` 를 저장하면 **같은 트랜잭션**에서 그 필터를
+  `target_documents` 전부에 적용하고, 응답에 `applied: {document_count, row_count}` 를 싣는다. 적용 중 오류가 나면 필터 저장도 함께 롤백된다.
+- **대상 문서**(사용자 결정 2026-11-27):
 
-### 12-3. API
+  | 상태 | 대상 여부 |
+  |---|---|
+  | 임시저장(`draft`)·반려됨(`rejected`) | 항상 대상(재상신하면 새 회차에서 다시 검토된다) |
+  | 상신됨(`submitted`)·검토중(`under_review`)·중단(`pause`) | **이번 회차에 그 팀(J/O)이 아직 합의를 끝내지 않았을 때만**. '합의를 끝냈다' = 현재 회차의 그 팀 단계가 있고 **전부** `approved`. J/O 단계가 아직 없는 1·2구역, 생략·제외로 단계가 없는 회차(O 재합의 생략 Case U, J 제외 등), 중단·철회 확인 대기도 대상이다 |
+  | 승인 완료(`approved`) | 대상 아님 |
 
-- `GET/POST /api/layer-filter-sets/?table=J|O`, `PATCH/DELETE /api/layer-filter-sets/{id}/` — 필터
-  정의 CRUD. `list`/`create`는 `table` 쿼리 파라미터·바디가 필수(어느 권한으로 판정할지 알 수 없으면
-  403).
-  - **대상 표 변경 제한 (2026-11-23)**: `PATCH`/`PUT` 으로 기존 필터의 `table` 을 다른 값으로 바꾸는 것은
-    `MASTER` 만 가능하다. TE_J/TE_O 가 시도하면 400 `{"table": ["필터의 대상 표(J/O)는 바꿀 수 없습니다."]}`.
-    판정은 `LayerFilterSetSerializer.validate_table` 이 한다 — 권한 클래스(`CanManageLayerFilter.has_object_permission`)는
-    수정 **전** `table` 로만 판정하므로, 이 검사가 없으면 TE_J 가 자기 J 필터를 `table='O'` 로 바꿔 O팀 공유 목록에
-    넣을 수 있었다(O팀이 누르면 O 표 `st` 가 실제로 바뀜). 화면의 수정 요청(`layerFilterSetsAPI.update`)은
-    `label`·`words` 만 보내므로 화면 동작은 바뀌지 않는다.
-  - ⚠️ **알려진 한계(2026-11-23 기록, 사용자 결정 — 기록만, 미수정)**: `validate_words` 는 `words.sp/sd/pp` 가 배열인지만
-    보고 **각 키워드가 문자열인지는 검사하지 않는다**. API 를 직접 호출해 숫자 등(예: `"sd": ["GATE", 123]`)을 넣으면
-    201 로 저장되고, 그 필터를 적용하면 `apply_layer_filter` 의 `kw.lower()` 에서 `AttributeError` → **HTTP 500**
-    (화면에는 사유 없이 "HTTP 500" 안내창, 같은 필터의 정상 키워드도 적용되지 않음 — 트랜잭션이라 데이터는 안 바뀜).
-    **화면 경로로는 발생하지 않는다** — 필터 관리 모달의 키워드 입력값은 항상 문자열이라 `123` 을 입력해도 `"123"` 으로
-    저장되고 정상 적용된다(개발 데모 환경에서 화면·API 양쪽 실행 확인). 운영에서 이 API 는 SSO 로그인한 TE_J/TE_O/MASTER 가
-    요청을 직접 조작할 때만 이 값을 만들 수 있어, 방어 검사는 넣지 않고 기록만 남긴다.
-- `POST /api/documents/{id}/apply-layer-filter/` — `{table, filter_id}` → 매칭된 행의 `st`를
-  `'X'`로 설정하고 `new_or_copy`/`product_name`/`step`(J면 `item_id`도) 초기화, `additional_notes`
-  저장. 이미 `st==='X'`인 행은 다시 매칭하지 않는다(재적용해도 중복 집계 없음). **매칭 1건
-  이상일 때만** baseline 도 함께 저장한다(매칭 0건이면 `additional_notes` 자체를 건드리지 않음).
+  → 2026-11-23 검토 '발견 3'(단계가 없을 때 적용 허용)은 이 결정으로 **의도된 동작**이 됐다.
+- 손상된 `additional_notes`(JSON 파싱 실패) 문서는 건너뛰고 다른 문서 적용은 계속한다.
+- **반대편 표로 전파하지 않는다**(J 필터는 J 표만, O 필터는 O 표만). bb 매핑(`bbRows`)은 서버에서 건드리지 않는다
+  (X 행은 bb 검증에서 원래 제외된다).
+- **삭제·키워드 제거는 되돌리지 않는다**(사용자 결정): 필터를 지우거나 키워드를 빼도 이미 X+미진행이 된 행은 그대로이고,
+  작성 화면 잠금만 풀린다.
+- 적용 사실은 따로 기록하지 않는다(기존 결정 유지 — 결재 단계 코멘트·감사 로그 없음).
+- **미리보기**: `POST /api/layer-filter-sets/preview/` `{table, words}` → `{document_count, row_count, documents: [{id, title, status, row_count}]}`.
+  저장·변경 없이, 지금 저장하면 바뀔 문서·행 수만 계산한다(수정 미리보기도 바뀐 뒤의 words 를 그대로 보낸다).
+- 부수효과(기록): 미진행 행은 '변경 감지' 자동 반려 비교(`layer_drift`)에서 빠진다(`DRIFT_EXCLUDED_NEW_OR_COPY`).
+  J/O 결재 건너뛰기(Case V)는 `.env` 키워드 기준이라 공유 필터 행만으로는 건너뛰지 않는다.
 
-- (참고) 2026-10 에 있던 **J/O-layer SD-Layer 검사 예외** API(`/api/layer-sd-exceptions/`)와 홈 `SD-Layer 예외`
-  버튼은 **2026-10-14 에 삭제**됐다(`docs/REQUEST.md` §4.1 2026-10-14 SD-Layer 삭제 항목).
+### 12-4. 의뢰서 작성 화면 자동 적용·잠금
 
-#### 12-3-1. 초기화 (`reset-layer-filter`, 2026-09)
+- 화면이 마운트 시 `GET /layer-filter-sets/?table=J`·`?table=O` 로 공유 필터를 읽는다(`RequestPage/index.tsx` `sharedFilterSets`).
+  조회 실패 시 경고 토스트(`request.toast_shared_filter_load_error`)만 띄우고 자동 적용하지 않는다 — 서버 상신 검증이 막는다.
+- **자동 적용 시점**: STEP3(J)·STEP4(O)에서 '다음'을 누를 때, 그리고 '상신'을 누를 때(STEP5 에서 시작한 임시저장 대비).
+  순서는 '자동 미진행' 키워드 → **공유 필터** → '차용' 자동 변경이며, 바꾼 행이 있으면 경고 토스트
+  (`request.toast_shared_filter_applied`)를 띄우고 그 단계에 머문다(상신이면 그 표의 단계로 이동). J 는 bb 매핑을 푼다.
+- **잠금**: 공유 필터에 걸리면서 이미 X+미진행인 행은 ST·요청 기준을 바꿀 수 없다 — 칸 비활성 + 툴팁(`request.shared_filter_locked_title`),
+  직접 입력 시 토스트(`request.shared_filter_locked`), 붙여넣기·Delete(`isJayer/OayerCellLocked`), ST·요청 기준 일괄 버튼(`isBulkTarget`)에서 건너뛴다.
+- **예외**: MASTER 와 가이드 투어 미리보기는 자동 적용·잠금 대상이 아니다('자동 미진행'과 같다).
+- **서버 검증**: 상신·재상신·의뢰자 재상신·이력 바로 등록에서 공유 필터에 걸리는 행이 X+미진행이 아니면 400
+  (`_validate_layer_filter_rows`, MASTER 통과, `_validate_np_keyword_rows` 바로 뒤).
+- 작성 화면의 **개인 필터**(localStorage, 버튼으로 적용)는 그대로다(사용자 결정).
+- 참조 요청서 '없음'(변경전/변경후)과의 관계는 '자동 미진행'과 같다 — 공유 필터 행을 layer 추가 대상으로 적으면 '확정'(ST O) 뒤
+  '다음'이 다시 X·미진행으로 바꿔 상신이 `_validate_ref_doc_st` 에 막힌다.
 
-- `POST /api/documents/{id}/reset-layer-filter/` — `{table}` → 이번 회차 baseline(`round` 일치)이
-  있으면 `jayerRows`/`oayerRows` **전체**를 baseline 값으로 통째로 교체한다(부분 복원이 아니라
-  전체 치환 — 매칭 로직이 필요 없어 단순하고, 여러 필터를 몇 번을 적용했든 한 번에 원상복구된다).
-- baseline 이 없거나(이번 회차에 실제로 바뀐 적이 없음) `round` 가 현재 회차와 다르면(반려 후
-  재상신) **에러가 아니라** 200 + `{"reset": false, "message": "초기화할 내용이 없습니다."}` 를
-  돌려준다 — `apply_layer_filter` 가 매칭 0건일 때 에러 대신 안내만 하는 것과 동일한 방식. 실제로
-  복원했을 때는 `{"reset": true, "message": "상신 시점 값으로 초기화했습니다."}`.
-- 초기화해도 baseline 자체는 삭제하지 않는다 — 적용→초기화를 몇 번 반복해도 항상 같은 상신 시점
-  값으로 복원됨을 보장한다(baseline 은 "이번 회차 첫 유효 적용" 시점에만 쓰이고 그 외에는 읽기
-  전용).
+### 12-5. 결재 현황 화면
 
-### 12-4. 화면
+- `PagedDetailView.tsx` 의 'J-ayer 정보'/'O-ayer 정보' 탭 툴바에는 **'필터 관리' 버튼만** 남았다(필터별 적용 버튼·초기화 버튼 삭제).
+  노출 조건은 종전과 같은 `canUseLayerFilter`(역할 TE_J/TE_O/MASTER + 문서 `under_review`/`pause` + 이번 회차 그 팀 미합의) —
+  색상 적용 툴바(§13)도 같은 조건을 쓴다. 이력 조회(`HistoryPage.tsx`)에는 툴바가 없다.
+- 필터 관리 창(`FilterManageModal`, 작성 화면 개인 필터와 같은 컴포넌트) 위에 **자동 적용 안내**(`approval.layer_filter_manage_notice`)를
+  보여 준다 — 작성 시 적용·잠금, 아직 합의하지 않은 진행 중 의뢰서 즉시 적용, 삭제해도 되돌리지 않음.
+- **저장 흐름**: '+ 추가'/'수정 적용' → 미리보기 API → 확인창(`approval.layer_filter_preview_*`: "N건 M행이 바뀝니다" + 문서 목록,
+  0건이면 "앞으로 작성되는 의뢰서부터 적용") → '저장 및 적용'을 눌러야 저장·일괄 적용 → 결과 토스트
+  (`approval.layer_filter_applied_toast`) + 열려 있는 문서 새로고침. 취소하면 저장하지 않고 입력도 그대로 둔다.
+  미리보기·저장이 실패하면 서버 사유를 안내 모달(`layerFilterErrorNotice`)로 보여 준다.
+  `FilterManageModal` 의 `onAdd`/`onEdit` 은 `Promise<boolean>` 을 돌려줄 수 있고, `false`(취소·실패)면 입력을 비우지 않고 성공 토스트도 띄우지 않는다.
+- 삭제·전체 삭제는 종전과 같다(확인 모달 → API).
+- ⚠️ **알려진 한계(2026-11-23 기록, 사용자 결정 — 기록만, 미수정)**: `validate_words` 는 `words.sp/sd/pp` 가 배열인지만 보고
+  **각 키워드가 문자열인지는 검사하지 않는다**. 화면 경로로는 발생하지 않는다(키워드 입력값은 항상 문자열 — `123` 을 넣어도 `"123"`).
+  API 를 직접 호출해 숫자 등을 넣었을 때의 동작은 이번 전환으로 바뀌었다(2026-11-27 재현 확인, **사용자 확인 대기**):
+  진행 중 대상 문서가 있으면 저장 시 일괄 적용에서 `AttributeError` → 500 + 저장 롤백(필터가 남지 않음),
+  대상 문서가 하나도 없을 때 저장되면 이후 **모든 상신이 `_validate_layer_filter_rows` 에서 500** 이 된다.
 
-- `frontend/src/components/PagedDetailView.tsx`의 'J-ayer 정보'/'O-ayer 정보' 탭 표 위에 공유 필터
-  버튼 + "필터 관리" 버튼 + "초기화" 버튼을 노출한다. 노출 조건은 셋 다 동일하게
-  `canUseJayerFilter`/`canUseOayerFilter`(및 이와 완전히 같은 값인
-  `canResetJayerFilter`/`canResetOayerFilter`) — `under_review`/`pause` 둘 다에서 노출한다.
-  실제 동작 가능 여부(=`under_review`에서만)는 노출 조건이 아니라 클릭 핸들러가 판정한다 — 이
-  컴포넌트는 API를 직접 호출하지 않는 순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다.
-- `ApprovalPage.tsx`의 `handleApplyLayerFilter`/`handleResetLayerFilter`는 클라이언트에서 상태를
-  미리 판단해 API 호출을 건너뛰지 않는다 — 위에서 보듯 막아야 할 조건(중단/철회 확인 대기 중)이
-  `document.status` 하나로는 판정이 안 되므로, 항상 서버에 물어보고 거부되면 서버가 준 실제 사유
-  문구(`err.message` — API client `request()`가 백엔드 `{error: "..."}`를 그대로 담아 던진다)를
-  공통 `Modal`(단일 "확인" 버튼, `layerFilterErrorNotice` 상태)에 그대로 띄운다. 어떤 사유로
-  막히든(중단/철회 확인 대기, 이미 종료, 권한 없음, 단계 합의 완료 등) 항상 정확한 이유가 보인다.
-- 초기화 버튼 클릭은 이제 브라우저 네이티브 `window.confirm` 대신, 이 페이지의 다른 확인 절차
-  (`layerFilterDeleteConfirm` 등)와 같은 공통 `ConfirmModal`(`layerFilterResetConfirm` 상태)을 띄운다.
-  확인을 누르면 `documentsAPI.resetLayerFilter`를 호출하고, 응답의 `reset` 플래그로 토스트 톤을
-  정한다(`true`→success, `false`→info). 실패하면 위와 같이 `layerFilterErrorNotice` 모달로 사유를
-  보여준다.
-- 필터 관리 모달은 의뢰서 작성 화면과 같은 `FilterManageModal` 컴포넌트를 재사용한다(추가 저장
-  방식만 `onAdd` 콜백으로 외부화해 개인별 localStorage 대신 서버 API를 타도록 함).
-- 이력 조회(`HistoryPage.tsx`)에는 이 props 를 넘기지 않아 버튼 자체가 뜨지 않는다(완료된 문서를
-  편집하는 것은 의미가 없으므로).
+### 12-6. 테스트
 
-### 12-5. 테스트
-
-`backend/api/tests.py::LayerFilterSetTest`(31건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
-파라미터 누락 시 거부, 대상 표(`table`) 변경은 TE_J/TE_O 400·MASTER 200·같은 값 수정은 허용 — 2026-11-23), 적용 권한(TE_J/TE_O/MASTER, 그 외 역할 거부), 문서 상태·단계 게이트, 필드
-초기화, 이미 비활성인 행 재매칭 안 함, 다른 테이블 필터로 적용 시도 거부, O-layer 행에 `item_id`
-키가 생기지 않음. 초기화: 필터 여러 번 적용 후에도 baseline 은 최초 상신 시점 값 그대로 남아
-초기화 시 완전히 복원됨, baseline 없을 때/회차 변경 후 200+`reset:false`(에러 아님), 적용→초기화
-반복 시 baseline 불변, 매칭 0건이면 baseline 자체가 안 생김, `status=='pause'`(중단 확정) 상태에서는
-적용·초기화 모두 거부, **`PauseRequest`/`WithdrawRequest`가 `state='requested'`(확인 대기 중,
-`status`는 아직 `under_review`)일 때도 적용·초기화가 거부됨**(2026-09 버그 수정 회귀 테스트),
-권한 게이트가 apply/reset 동일함.
+- `backend/api/tests.py::LayerFilterSetTest` — 조회 권한(PL 포함 전원 조회, 관리·미리보기는 팀/MASTER), 대상 표 변경(TE_J/TE_O 400·MASTER 200·같은 값 허용),
+  일괄 적용 대상(상태별·현재 회차·J 단계 여럿 중 일부 미합의), O 필터는 O 표만·`item_id` 키 안 생김, X+기등록 → X+미진행, 이미 X+미진행은 미집계,
+  수정 시 새 키워드 적용, 삭제는 되돌리지 않음, 손상 문서 건너뜀, 미리보기(저장·변경 없음), 문서별 적용·초기화 API 404.
+- `backend/api/tests.py::LayerFilterSubmitValidationTest` — 실제 submit API: 미적용 행 400, X+기등록 400, X+미진행 통과, MASTER 예외.
+- `frontend/src/pages/RequestPage/sharedFilterAutoApply.test.tsx`(5) — STEP3 '다음' 자동 적용·잠금·머묾·저장값·bb 매핑 해제,
+  STEP4 는 O 필터만, '전체 O' 일괄 버튼이 잠긴 행 건너뜀, MASTER 예외, 조회 실패 시 경고만.
 
 ## 13. 결재 상세페이지 J/O-layer 색상 적용 (2026-09)
 
-§12 의 공유 필터(LayerFilterSet)는 매칭된 행의 `st`를 `'X'`로 바꾸는 **데이터 변경**형 기능이다.
+§12 의 공유 필터(LayerFilterSet)는 매칭된 행을 ST X·미진행으로 바꾸는 **데이터 변경**형 기능이다(2026-11-27 부터 자동 적용).
 "색상 적용"은 겉보기엔 같은 자리(같은 탭, 같은 툴바)에 있지만 완전히 다른 성격의 기능이다 —
 문서 데이터는 전혀 건드리지 않고, 매칭된 셀의 **배경색만** 화면에 표시한다. 그래서 §12 와 달리
 서버에 아무것도 저장하지 않는다(개인별 localStorage) — 백엔드/API/마이그레이션 변경이 없다.
