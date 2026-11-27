@@ -385,11 +385,11 @@ export const matchesSharedFilters = (
   sets: { words: { sp: string[]; sd: string[]; pp: string[] } }[],
 ): boolean => sets.some((fs) => shouldDisableRow(fs.words, row));
 
-/** 공유 필터에 걸리는데 아직 ST X 가 아닌 행 id — '다음'·'상신' 때 자동으로 바꿀 대상 */
+/** 공유 필터에 걸리는데 아직 ST X + 요청 기준 미진행 이 아닌 행 id — '다음'·'상신' 때 자동으로 바꿀 대상('자동 미진행'과 같은 규칙) */
 export const findSharedFilterRowIds = (
-  rows: { id: string; sp: string; sd: string; pp: string; st: string }[],
+  rows: { id: string; sp: string; sd: string; pp: string; st: string; new_or_copy: string }[],
   sets: { words: { sp: string[]; sd: string[]; pp: string[] } }[],
-): string[] => rows.filter((r) => !isRowInactive(r.st) && matchesSharedFilters(r, sets)).map((r) => r.id);
+): string[] => rows.filter((r) => !isNpRow(r) && matchesSharedFilters(r, sets)).map((r) => r.id);
 
 /** 키워드에 걸리는데 아직 ST X + 미진행 이 아닌 행 id — '다음'·'상신' 때 자동으로 바꿀 대상 */
 export const findNpKeywordRowIds = (
