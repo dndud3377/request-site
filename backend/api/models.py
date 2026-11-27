@@ -807,7 +807,8 @@ class LayerFilterSet(models.Model):
     """J/O-layer 공유 필터 — 항상 적용되는 규칙(2026-11-27 프로세스 전환).
 
     table='J' 인 필터는 TE_J/MASTER, table='O' 인 필터는 TE_O/MASTER 가 관리하고(목록 조회는 로그인 사용자 전원),
-    저장된 필터는 전부 다음 두 곳에 자동 적용된다 — 매칭된 행의 st 를 'X' 로 바꾸고 관련 칸을 비운다.
+    저장된 필터는 전부 다음 두 곳에 자동 적용된다 — 매칭된 행을 st 'X' + 요청 기준 '미진행' 으로 바꾸고 관련 칸을 비운다
+    ('자동 미진행' 키워드와 같은 결과, 사용자 결정 2026-11-27).
       - 의뢰서 작성: STEP3(J)/STEP4(O) '다음'·'상신' 때 화면이 적용하고, 상신 API 가 다시 검증한다
         (`RequestDocumentViewSet._validate_layer_filter_rows`).
       - 필터 추가·수정 저장 시: `target_documents` 의 진행 중 문서 전체에 일괄 적용한다
@@ -820,6 +821,7 @@ class LayerFilterSet(models.Model):
     MATCH_FIELDS = ('sp', 'sd', 'pp')
     ROWS_KEYS = {'J': 'jayerRows', 'O': 'oayerRows'}
     ST_INACTIVE = 'X'
+    NOC_NOT_PROCEEDING = '미진행'
     # 일괄 적용 대상 상태(사용자 결정 2026-11-27) — 승인 완료(approved)만 제외한다.
     #  - 임시저장·반려됨: 항상 대상(재상신하면 새 회차에서 다시 검토된다)
     #  - 상신됨·검토중·중단: 이번 회차에 그 팀(J/O)이 아직 합의를 끝내지 않았을 때만 대상
@@ -839,20 +841,26 @@ class LayerFilterSet(models.Model):
         return False
 
     @classmethod
-    def clear_matched_rows(cls, table, rows, words_list):
-        """rows(행 dict 리스트)에서 필터(words 목록) 중 하나라도 매칭되는 활성 행을 제자리에서 비활성화한다.
+    def is_applied_row(cls, row):
+        """이미 공유 필터가 적용된 모양(st 'X' + 요청 기준 '미진행')인가."""
+        return row.get('st') == cls.ST_INACTIVE and row.get('new_or_copy') == cls.NOC_NOT_PROCEEDING
 
-        st 'X' + new_or_copy·product_name·step(J 는 item_id 도) 비움 — 의뢰서 작성 화면에서 ST 를 X 로 바꿀 때와 같다.
-        이미 st 'X' 인 행은 건너뛴다(중복 집계 없음). 반환값은 바뀐 행 수.
+    @classmethod
+    def clear_matched_rows(cls, table, rows, words_list):
+        """rows(행 dict 리스트)에서 필터(words 목록) 중 하나라도 매칭되는 행을 제자리에서 st 'X' + 요청 기준 '미진행' 으로 바꾼다.
+
+        product_name·step(J 는 item_id 도)은 비운다 — '자동 미진행' 키워드(`RequestPage/index.tsx` applyNpKeyword)와 같다.
+        이미 X + 미진행 인 행은 건너뛰고(중복 집계 없음), X 지만 요청 기준이 다른 행(기등록 등)은 미진행으로 바꾼다.
+        반환값은 바뀐 행 수.
         """
         count = 0
         for row in rows:
-            if row.get('st') == cls.ST_INACTIVE:
+            if cls.is_applied_row(row):
                 continue
             if not any(cls.row_matches(words, row) for words in words_list):
                 continue
             row['st'] = cls.ST_INACTIVE
-            row['new_or_copy'] = ''
+            row['new_or_copy'] = cls.NOC_NOT_PROCEEDING
             row['product_name'] = ''
             row['step'] = ''
             if table == 'J':
@@ -862,11 +870,11 @@ class LayerFilterSet(models.Model):
 
     @classmethod
     def violating_rows(cls, table, rows):
-        """저장된 공유 필터(table) 중 하나라도 매칭되는데 st 가 'X' 가 아닌 행(상신 서버 검증용)."""
+        """저장된 공유 필터(table) 중 하나라도 매칭되는데 st 'X' + 요청 기준 '미진행' 이 아닌 행(상신 서버 검증용)."""
         words_list = list(cls.objects.filter(table=table).values_list('words', flat=True))
         if not words_list:
             return []
-        return [r for r in rows if r.get('st') != cls.ST_INACTIVE and any(cls.row_matches(w, r) for w in words_list)]
+        return [r for r in rows if not cls.is_applied_row(r) and any(cls.row_matches(w, r) for w in words_list)]
 
     @classmethod
     def target_documents(cls, table):
