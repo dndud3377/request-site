@@ -858,7 +858,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
           적이 없거나(R 반려), 최종 관문인 고정후결자가 반려했으므로 전체를 다시 확인해야 한다.
         - `PL`/`SA` 반려는 애초에 R을 만들기 전이라 생략 대상이 아니다(항상 정상 생성됨).
         - `P`/`J`/`O`/`E`, 또는 `RA`(고정이 아닌 추가 후결자) 반려는 R 이 이미 그 내용을
-          승인한 뒤라 — MAP 정보(`MAP_INFO_FIELDS`)·Jayer 정보(`jayerRows`)·의뢰 상세
+          승인한 뒤라 — MAP 정보(`MAP_INFO_REVIEWED_FIELDS` — CC 적용 여부 제외)·Jayer 정보(`jayerRows`)·의뢰 상세
           line~process_id 구간(`DETAIL_LINE_TO_PROCESS_ID_FIELDS`)이 반려 시점과 지금
           재상신하려는 내용 사이에 **하나도 바뀌지 않았을 때만** R을 생략한다.
         - (2026-11-20) `jayerRows` 는 내용만 비교한다(`RequestDocument.layer_rows_content_same` —
@@ -890,7 +890,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         prev_detail = prev.get('detail') or {}
         curr_detail = curr.get('detail') or {}
-        compare_fields = RequestDocument.MAP_INFO_FIELDS + RequestDocument.DETAIL_LINE_TO_PROCESS_ID_FIELDS
+        # claude 수정 (2026-11-27): CC 적용 여부(mshot_change_cc)는 R 검토 대상이 아니라 비교에서 제외(MAP_INFO_REVIEWED_FIELDS)
+        compare_fields = RequestDocument.MAP_INFO_REVIEWED_FIELDS + RequestDocument.DETAIL_LINE_TO_PROCESS_ID_FIELDS
         return all(prev_detail.get(f) == curr_detail.get(f) for f in compare_fields)
 
     # claude 수정 (2026-11-16): J/O 표가 전부 '자동 미진행' 키워드 행이거나 0행이면 그 단계를 건너뛰는 판정 신설
