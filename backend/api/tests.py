@@ -8715,7 +8715,7 @@ class LayerFilterSetTest(TestCase):
             rows = self._rows_of(doc)
             self.assertEqual(rows['r1']['st'], 'X', doc.status)
             self.assertEqual((rows['r1']['new_or_copy'], rows['r1']['product_name'], rows['r1']['step'], rows['r1']['item_id']),
-                             ('', '', '', ''))
+                             ('미진행', '', '', ''))
             self.assertEqual(rows['r2']['st'], 'O', '매칭되지 않은 행은 그대로')
         for doc in (j_agreed, done):
             self.assertEqual(self._rows_of(doc)['r1']['st'], 'O', '합의 끝난 문서·승인 완료 문서는 바꾸지 않는다')
@@ -8747,8 +8747,15 @@ class LayerFilterSetTest(TestCase):
         self.assertEqual(r.data['applied']['row_count'], 1)
         self.assertEqual(self._rows_of(doc)['j1']['st'], 'O', 'O 필터는 J 표를 건드리지 않는다')
         o1 = self._rows_of(doc, 'oayerRows')['o1']
-        self.assertEqual(o1['st'], 'X')
+        self.assertEqual((o1['st'], o1['new_or_copy']), ('X', '미진행'))
         self.assertNotIn('item_id', o1)
+
+    def test_x_row_with_other_request_criteria_becomes_not_proceeding(self):
+        """이미 X 지만 요청 기준이 미진행이 아닌(기등록 등) 매칭 행도 X + 미진행으로 바꾼다('자동 미진행'과 같은 규칙)."""
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01', st='X', new_or_copy='기등록')], status='under_review')
+        r = self._create(self.j_user, 'J', {'sp': ['SP01'], 'sd': [], 'pp': []})
+        self.assertEqual(r.data['applied'], {'document_count': 1, 'row_count': 1})
+        self.assertEqual((self._rows_of(doc)['r1']['st'], self._rows_of(doc)['r1']['new_or_copy']), ('X', '미진행'))
 
     def test_already_x_row_is_not_counted_again(self):
         doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01', st='X', new_or_copy='미진행')], status='under_review')
@@ -8812,7 +8819,7 @@ class LayerFilterSetTest(TestCase):
 # claude 수정 (2026-11-27): 상신 시 공유 필터 서버 검증 — 실제 submit API 로 확인(LayerNpSkipIntegrationTest 와 같은 구성)
 @override_settings(POST_APPROVER_LOGINID='')
 class LayerFilterSubmitValidationTest(TestCase):
-    """공유 필터에 걸리는 J/O 행이 ST X 가 아니면 상신 400(MASTER 예외), X 면 통과."""
+    """공유 필터에 걸리는 J/O 행이 ST X + 요청 기준 미진행이 아니면 상신 400(MASTER 예외), 맞으면 통과."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -8822,11 +8829,11 @@ class LayerFilterSubmitValidationTest(TestCase):
         self.pl_user = UserProfile.objects.create(loginid='lfs_pl', mail='lfs_pl@c.com', role='PL')
         LayerFilterSet.objects.create(table='O', label='o', words={'sp': [], 'sd': ['GATE'], 'pp': []})
 
-    def _doc(self, st):
+    def _doc(self, st, noc=''):
         payload = {
             'detail': {'line': 'line1', 'process_id': 'PID-1', 'map_type': 'NEW'},
             'jayerRows': [],
-            'oayerRows': [{'id': 'o1', 'sp': 'S1', 'sd': 'GATE-1', 'pp': 'R1', 'layerid': '', 'st': st, 'new_or_copy': ''}],
+            'oayerRows': [{'id': 'o1', 'sp': 'S1', 'sd': 'GATE-1', 'pp': 'R1', 'layerid': '', 'st': st, 'new_or_copy': noc}],
         }
         return RequestDocument.objects.create(
             title='doc', requester=self.requester, requester_name='요청자', requester_email='lfs_req@c.com',
@@ -8843,8 +8850,13 @@ class LayerFilterSubmitValidationTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
         self.assertIn('공유 필터', r.data['error'])
 
+    def test_x_without_not_proceeding_is_rejected(self):
+        r = self._submit(self.requester, self._doc('X', '기등록'))
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('공유 필터', r.data['error'])
+
     def test_applied_filter_row_passes(self):
-        r = self._submit(self.requester, self._doc('X'))
+        r = self._submit(self.requester, self._doc('X', '미진행'))
         self.assertEqual(r.status_code, 200, r.content)
 
     def test_master_is_exempt(self):
