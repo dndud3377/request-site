@@ -378,6 +378,19 @@ export const matchesNpKeyword = (row: { sd: string; pp: string }, words: NpKeywo
 export const isNpRow = (row: { st: string; new_or_copy: string }): boolean =>
   (row.st ?? '').trim() === ST_X && (row.new_or_copy ?? '').trim() === NOC_NOT_PROCEEDING;
 
+// claude 수정 (2026-11-27): J/O 공유 필터 자동 적용 — 저장된 공유 필터 매칭 판정(백엔드 LayerFilterSet.row_matches 와 같은 규칙)
+/** 행이 공유 필터(words 목록) 중 하나라도 매칭되는가 — SP·SD·PP 부분 일치, 대소문자 무시 */
+export const matchesSharedFilters = (
+  row: { sp: string; sd: string; pp: string },
+  sets: { words: { sp: string[]; sd: string[]; pp: string[] } }[],
+): boolean => sets.some((fs) => shouldDisableRow(fs.words, row));
+
+/** 공유 필터에 걸리는데 아직 ST X 가 아닌 행 id — '다음'·'상신' 때 자동으로 바꿀 대상 */
+export const findSharedFilterRowIds = (
+  rows: { id: string; sp: string; sd: string; pp: string; st: string }[],
+  sets: { words: { sp: string[]; sd: string[]; pp: string[] } }[],
+): string[] => rows.filter((r) => !isRowInactive(r.st) && matchesSharedFilters(r, sets)).map((r) => r.id);
+
 /** 키워드에 걸리는데 아직 ST X + 미진행 이 아닌 행 id — '다음'·'상신' 때 자동으로 바꿀 대상 */
 export const findNpKeywordRowIds = (
   rows: { id: string; sd: string; pp: string; st: string; new_or_copy: string }[],
