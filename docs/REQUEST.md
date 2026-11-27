@@ -322,6 +322,25 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-11-27 — J/O 공유 필터를 '항상 자동 적용'으로 전환: 작성 시 ST X·미진행 자동 변경·잠금 + 진행 중 의뢰서 일괄 적용)
+
+- **의도(사용자)**: A·B·C 같은 공유 필터는 항상 적용할 규칙인데, 결재 현황에서 요청서마다 필터 버튼을 눌러 적용할 필요가 없다.
+  의뢰서 작성 때부터 적용되고, 결재 현황에서 D 를 추가하면 진행 중 요청서에도 바로 반영돼야 한다.
+- **작성 화면**: STEP3(J)·STEP4(O) '다음'·'상신' 때 공유 필터(서버 `LayerFilterSet`)에 걸리는 행을 **ST 'X' + 요청 기준 '미진행'**으로
+  바꾸고(제품 이름·STEP·ID 비움, J 는 bb 매핑 해제) ST·요청 기준을 잠근다. '자동 미진행' 키워드(2026-11-16)와 같은 방식·같은 예외
+  (MASTER·가이드 투어)이며, 키워드 확인 바로 다음·'차용' 자동 변경 전에 확인한다. 서버도 상신 4곳에서 검증한다(MASTER 통과).
+- **요청 기준을 '미진행'으로 채우는 이유(사용자 결정)**: 2026-11-06 규칙상 X 행도 요청 기준이 필수라, 비워 두면 작성자가 행마다 골라야
+  '다음'으로 갈 수 있다. 부수효과로 이 행들은 '변경 감지' 비교에서 빠진다(미진행 제외 규칙).
+- **진행 중 의뢰서**: 결재 현황 '필터 관리'에서 추가·수정 저장 시 미리보기 확인창 → '저장 및 적용'으로 그 팀이 아직 합의하지 않은 의뢰서
+  (임시저장·반려 포함, 승인 완료 제외) 전부에 일괄 적용. 삭제는 되돌리지 않는다. 문서별 적용·초기화 버튼과 API 는 삭제했다.
+- **개인 필터**(localStorage, 버튼 적용)는 그대로다.
+- 규칙·API·대상 문서·테스트 전체는 `docs/APPROVAL.md` **§12**.
+- **i18n(ko/en 동시)**: `request.toast_shared_filter_applied`·`shared_filter_locked_title`·`shared_filter_locked`·`toast_shared_filter_load_error`,
+  `approval.layer_filter_manage_notice`·`layer_filter_applied_toast`·`layer_filter_preview_{title,message,empty,confirm_btn,col_title,col_status,col_rows}`.
+  미사용이 된 `approval.layer_filter_reset_confirm` 삭제(`layer_filter_reset_btn` 은 색상 적용 초기화가 계속 쓴다).
+- **가이드 기능 키**: 추가하지 않는다(사용자 결정) — 대신 필터 관리 창에 자동 적용 안내 문구를 넣었다.
+- **테스트**: `RequestPage/sharedFilterAutoApply.test.tsx`(5), `backend/api/tests.py` `LayerFilterSetTest`·`LayerFilterSubmitValidationTest`.
+
 ### 기능 추가 (2026-11-22 — 임시저장 문서 60일 자동 삭제 + 저장 안내 문구 + 20분 자동저장 안내 모달)
 
 - **자동 삭제(백엔드)**: 마지막 임시저장 후 60일이 지난 임시저장(`draft`) 문서를 매일 03:00 스케줄러 잡
