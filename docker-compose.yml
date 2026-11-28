@@ -42,6 +42,8 @@ services:
       - DJANGO_SETTINGS_MODULE=config.settings.production
       - MYSQL_HOST=db
       - SKIP_SCHEDULER=false
+      # claude 수정 (2026-11-28): 운영 로그 파일(app/request, 날짜별·30일 보관) 위치 — 호스트 ./logs 에 남는다(docs/LOGGING.md)
+      - LOG_DIR=/app/logs
       # ODBC 설정
       - ODBC_HOST=${ODBC_HOST}
       - ODBC_PORT=${ODBC_PORT}
@@ -59,6 +61,7 @@ services:
     volumes:
       - media_data:/app/media
       - static_data:/app/staticfiles
+      - ./logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -81,6 +84,8 @@ services:
       - DJANGO_SETTINGS_MODULE=config.settings.production
       - MYSQL_HOST=db
       - SKIP_SCHEDULER=false
+      # claude 수정 (2026-11-28): backend 와 같은 로그 폴더 — 30일 지난 로그 정리 잡(매일 03:10)도 여기서 돈다(docs/LOGGING.md)
+      - LOG_DIR=/app/logs
       # ODBC 설정 (DCQ/Impala 조회에 필요 - 웹과 동일)
       - ODBC_HOST=${ODBC_HOST}
       - ODBC_PORT=${ODBC_PORT}
@@ -95,6 +100,8 @@ services:
       - ODBC_SSL=${ODBC_SSL}
       - ODBC_TSASL_BUFFER_SIZE=${ODBC_TSASL_BUFFER_SIZE}
       - ODBC_ROWS_PER_BLOCK=${ODBC_ROWS_PER_BLOCK}
+    volumes:
+      - ./logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -131,6 +138,8 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
       - static_data:/var/www/static
       - media_data:/var/www/media
+      # claude 수정 (2026-11-28): nginx 접근 로그 날짜별 파일(30일 보관) — 호스트 ./logs/nginx(docs/LOGGING.md)
+      - ./logs/nginx:/var/log/nginx-archive
     depends_on:
       - backend
       - frontend
