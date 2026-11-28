@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey, TbvtlvNoteRow } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId, isRowInactive, NOC_NEW, NOC_BORROW, NOC_NOT_PROCEEDING, NOC_REGISTERED, NOC_LAYER_DELETE, AUTO_BORROW_HIGHLIGHT_COLOR } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId, isRowInactive, NOC_NEW, NOC_BORROW, NOC_NOT_PROCEEDING, NOC_REGISTERED, NOC_LAYER_DELETE, AUTO_BORROW_HIGHLIGHT_COLOR, AUTO_CHANGE_FLASH_CLASS } from '../constants';
 import { isValidationKeywordRow, nocOptionsForSt, isNocEditable } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
@@ -41,6 +41,8 @@ interface Step3Props {
   cellSel: CellSelectionApi;
   /** claude 수정 (2026-11-12): '다음'·'상신' 때 요청 기준이 '차용'으로 자동 변경된 행 id — 그 요청 기준 칸을 강조한다 */
   autoBorrowRowIds?: ReadonlySet<string>;
+  /** claude 수정 (2026-11-28): 방금 자동 변경('자동 미진행'·공유 필터·'차용')으로 바뀐 행 id — 그 행을 빨간 박스로 잠깐 강조한다 */
+  autoChangeFlashRowIds?: ReadonlySet<string>;
   /** claude 수정 (2026-11-16): '자동 미진행' 키워드로 ST X·미진행이 돼 잠긴 행 id — ST·요청 기준 칸을 비활성으로 두고 이유를 툴팁으로 보여 준다 */
   npLockedRowIds?: ReadonlySet<string>;
   /** claude 수정 (2026-11-27): 공유 필터로 ST X·미진행이 돼 잠긴 행 id — ST·요청 기준 칸을 비활성으로 두고 이유를 툴팁으로 보여 준다 */
@@ -75,6 +77,7 @@ const Step3: React.FC<Step3Props> = ({
   handleOayerChange,
   cellSel,
   autoBorrowRowIds = EMPTY_ID_SET,
+  autoChangeFlashRowIds = EMPTY_ID_SET,
   npLockedRowIds = EMPTY_ID_SET,
   sharedFilterLockedRowIds = EMPTY_ID_SET,
   GuideTourBadge,
@@ -268,7 +271,7 @@ const Step3: React.FC<Step3Props> = ({
                     } as React.CSSProperties,
                   });
                   return (
-                    <tr key={row.id}>
+                    <tr key={row.id} className={autoChangeFlashRowIds.has(row.id) ? AUTO_CHANGE_FLASH_CLASS : undefined}>
                       <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{idx + 1}</td>
                       <td style={{ backgroundColor: greyBg ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: greyBg ? regBg : undefined, color: '#666' }} /></td>
                       <td {...cellProps('process_id', greyBg ? regBg : undefined)}><input value={row.process_id} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
