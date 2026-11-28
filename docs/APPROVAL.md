@@ -2445,6 +2445,19 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   액션 처리 상태를 홈에 새로 만들지 않았다. 결재 액션이 필요하면 여전히 결재현황(`/approval`)에서
   진행한다. 모달 크기는 액션 버튼이 없는 이 용도에 맞춰 `size="lg"`(ApprovalPage 는 액션 버튼 때문에
   `xl`).
+  ✅ **(2026-11-28) 홈에서 바로 수정·재상신/수정 후 재상신/수정 후 재개** — 제품 담당자가 반려·중단된 내 의뢰서를
+  보고도 결재현황까지 찾아가야 해서 번거롭다는 요청으로, 위 '결재 액션 없음' 원칙은 유지하되 **수정 계열 이동 버튼만**
+  홈 표 행(맨 끝 버튼 칸, 헤더 비움 — 결재현황 표와 동일)과 상세 모달 footer(`[닫기]` 왼쪽) **양쪽**에 추가했다.
+  노출 조건은 결재현황과 같다(`HomePage.getHomeEditActions`):
+  - `[수정·재상신]`(`approval.edit_resubmit`): `can_edit` && 철회 요청 없음(`!withdraw_request`) && `status ∈ {rejected, draft}`
+  - `[수정 후 재상신]`(`approval.requester_resubmit`): `can_requester_resubmit`(PL 검토(+SA) 단계 작성자 재상신, Case R)
+  - `[▶ 수정 후 재개]`(`approval.resume`): `can_resume`(중단 문서, Case J)
+  세 버튼 모두 상세 모달을 닫고 `/request` 로 `{ editDocId }` state 를 들고 이동한다(결재현황 `handleEditResubmit`/
+  `handleResumeNav` 와 같은 이동). 재상신·재개 API 호출과 검증은 기존처럼 `RequestPage` 가 문서 상태로 결정하므로
+  백엔드·목록 API 변경은 없다(목록 응답 `RequestDocumentListSerializer` 가 이미 `can_edit`/`can_requester_resubmit`/
+  `can_resume`/`withdraw_request` 를 내려준다). i18n 은 결재현황 키를 그대로 써서 새 키가 없다.
+  ⚠️ 차이: 결재현황 **표 행**에는 `[수정 후 재개]` 가 없고 상세 모달에만 있다. 홈은 사용자 결정으로 표 행·모달 둘 다 둔다.
+  테스트: `frontend/src/pages/HomePage.editResubmit.test.tsx`.
   **필터 바·컬럼 헤더 정렬은 홈에는 없다** — 검색·탭·페이지네이션 없이 최대 5건만 보여주는 미리보기
   위젯이라 필요하지 않다고 판단했다.
 - **'전체 보기 →'**: `/approval?filter=my` 로 이동해 **MY 탭이 열린 상태**로 결재현황을 연다(홈에서
