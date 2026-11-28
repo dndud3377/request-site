@@ -573,6 +573,20 @@ export interface ColorFilterSet {
   words: { sp: ColorFilterKeyword[]; sd: ColorFilterKeyword[]; pp: ColorFilterKeyword[] };
 }
 
+// claude 수정 (2026-11-28): 개인 J/O 필터·색상 필터를 서버에 저장 — /api/personal-layer-filters/ 응답 타입
+/** 개인 필터 종류 — 'filter' = 의뢰서 STEP3/4 개인 필터(FilterSet), 'color' = 결재 상세 색상 적용(ColorFilterSet). */
+export type PersonalLayerFilterKind = 'filter' | 'color';
+
+/** /api/personal-layer-filters/ 한 건. 본인 것만 내려오며 id 순(추가한 순서)이다. kind 에 따라 words 칸의 원소 형식이 다르다. */
+export interface PersonalLayerFilterResponse<K extends PersonalLayerFilterKind = PersonalLayerFilterKind> {
+  id: number;
+  kind: K;
+  table: 'J' | 'O';
+  label: string;
+  words: K extends 'color' ? ColorFilterSet['words'] : FilterSet['words'];
+  created_at: string;
+}
+
 export interface JayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식
