@@ -335,6 +335,17 @@ describe('J/O 공유 필터 → ST X·미진행 자동 변경·잠금', () => {
     expect(saved.bbRows.map((r) => r.sourceJayerRowId)).toEqual(['j1']);
   });
 
+  // claude 수정 (2026-11-28): 자동 변경된 행만 빨간 박스로 잠깐 강조했다가 약 1.6초 뒤 뗀다
+  it("자동 적용으로 바뀐 행만 빨간 박스 클래스가 붙었다가 잠시 뒤 사라진다", async () => {
+    const { container } = await renderAtStep(J_TABLE);
+    await clickButton('다음');
+    expect(rowOf(container, J_TABLE, 'SP02').classList.contains('row-auto-change-flash')).toBe(true);
+    expect(rowOf(container, J_TABLE, 'SP01').classList.contains('row-auto-change-flash')).toBe(false);
+    expect(rowOf(container, J_TABLE, 'SP03').classList.contains('row-auto-change-flash')).toBe(false);
+    await act(async () => { await new Promise((r) => setTimeout(r, 1700)); });
+    expect(rowOf(container, J_TABLE, 'SP02').classList.contains('row-auto-change-flash')).toBe(false);
+  });
+
   it('STEP4 는 O 공유 필터만 적용한다 — J 필터 문구가 든 O 행은 그대로', async () => {
     const { container } = await renderAtStep(O_TABLE);
     await clickButton('다음');
