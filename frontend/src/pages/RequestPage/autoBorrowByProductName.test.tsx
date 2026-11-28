@@ -306,6 +306,9 @@ describe("J/O 제품 이름 ≠ STEP1 제품 이름 → 요청 기준 '차용' �
     expect(nocInputOf(j3).value).toBe('미진행');
     expect(nocTdOf(j2).getAttribute('data-auto-borrow')).toBe('true');
     expect(nocTdOf(j1).getAttribute('data-auto-borrow')).toBeNull();
+    // claude 수정 (2026-11-28): 자동 변경된 행만 빨간 박스 강조
+    expect(j2.classList.contains('row-auto-change-flash')).toBe(true);
+    expect(j1.classList.contains('row-auto-change-flash')).toBe(false);
     expect(toastsOf('warning')).toContain("요청 기준을 '차용'으로 변경했습니다");
 
     await clickButton('다음');
