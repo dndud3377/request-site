@@ -267,3 +267,33 @@ LOGGING = {
         },
     },
 }
+
+# claude 수정 (2026-11-28): LOG_DIR 이 있으면(운영만) 날짜별 로그 파일(app/request)을 남기고 쓰기 요청을 기록한다 — 30일 보관, docs/LOGGING.md
+LOG_DIR = os.environ.get('LOG_DIR', '')
+if LOG_DIR:
+    MIDDLEWARE.insert(0, 'api.logging_utils.RequestLogMiddleware')
+    LOGGING['formatters']['file'] = {
+        'format': '{asctime} {levelname} [{process}] {name} {message}',
+        'style': '{',
+    }
+    LOGGING['handlers']['app_file'] = {
+        'level': 'INFO',
+        'class': 'api.logging_utils.DailyFileHandler',
+        'directory': LOG_DIR,
+        'prefix': 'app',
+        'formatter': 'file',
+    }
+    LOGGING['handlers']['request_file'] = {
+        'level': 'INFO',
+        'class': 'api.logging_utils.DailyFileHandler',
+        'directory': LOG_DIR,
+        'prefix': 'request',
+        'formatter': 'file',
+    }
+    LOGGING['root']['handlers'].append('app_file')
+    LOGGING['loggers']['api.auth_views']['handlers'].append('app_file')
+    LOGGING['loggers']['api.request_log'] = {
+        'handlers': ['request_file'],
+        'level': 'INFO',
+        'propagate': False,
+    }
