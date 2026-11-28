@@ -14993,3 +14993,171 @@ class StaleDraftCleanupTest(TestCase):
             trigger = ids[scheduler.DELETE_STALE_DRAFTS_JOB_ID].kwargs['trigger']
             self.assertEqual(str(trigger.fields[5]), '3', starter.__name__)  # hour
             self.assertEqual(str(trigger.fields[6]), '0', starter.__name__)  # minute
+
+
+# claude 수정 (2026-11-28): 운영 로그 30일 보관(api/logging_utils.py) 테스트 — 날짜별 파일·쓰기 요청 기록·30일 삭제·설정 연결
+class OperationLogFilesTest(TestCase):
+    """운영 로그 파일 보관 (docs/LOGGING.md)."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.log_dir = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _record(self, message, created):
+        import logging
+        record = logging.LogRecord('api.test', logging.INFO, __file__, 1, message, None, None)
+        record.created = created
+        return record
+
+    def _read(self, name):
+        import os
+        with open(os.path.join(self.log_dir, name), encoding='utf-8') as f:
+            return f.read()
+
+    def test_daily_handler_switches_file_by_record_date(self):
+        """레코드 날짜가 바뀌면 이름을 바꾸지 않고 새 날짜 파일에 쓴다."""
+        import time
+        from .logging_utils import DailyFileHandler
+        handler = DailyFileHandler(self.log_dir, 'app')
+        day1 = time.mktime((2026, 11, 27, 23, 59, 0, 0, 0, -1))
+        day2 = time.mktime((2026, 11, 28, 0, 1, 0, 0, 0, -1))
+        handler.handle(self._record('first', day1))
+        handler.handle(self._record('second', day2))
+        handler.close()
+        self.assertEqual(self._read('app-2026-11-27.log').strip(), 'first')
+        self.assertEqual(self._read('app-2026-11-28.log').strip(), 'second')
+
+    def test_two_handlers_on_same_file_keep_both_lines(self):
+        """여러 프로세스(핸들러 2개)가 같은 날짜 파일에 써도 서로의 로그를 지우지 않는다."""
+        import time
+        from .logging_utils import DailyFileHandler
+        now = time.time()
+        a = DailyFileHandler(self.log_dir, 'app')
+        b = DailyFileHandler(self.log_dir, 'app')
+        a.handle(self._record('from-a', now))
+        b.handle(self._record('from-b', now))
+        a.handle(self._record('from-a-again', now))
+        a.close()
+        b.close()
+        name = f"app-{time.strftime('%Y-%m-%d', time.localtime(now))}.log"
+        self.assertEqual(self._read(name).split(), ['from-a', 'from-b', 'from-a-again'])
+
+    def test_delete_old_log_files_by_file_name_date(self):
+        """파일 이름 날짜가 30일보다 오래된 날짜 로그만 지운다(하위 폴더 포함, 다른 파일은 그대로)."""
+        import os
+        from datetime import date
+        from .logging_utils import delete_old_log_files
+        os.makedirs(os.path.join(self.log_dir, 'nginx'))
+        names = {
+            'app-2026-10-28.log': False,           # 31일 전 → 삭제
+            'request-2026-10-29.log': True,        # 30일 전 → 보관
+            'app-2026-11-28.log': True,            # 오늘
+            os.path.join('nginx', 'access-2026-09-01.log'): False,
+            os.path.join('nginx', 'access-2026-11-27.log'): True,
+            'notes.txt': True,                     # 날짜 로그가 아님
+            'app.log': True,
+        }
+        for name in names:
+            with open(os.path.join(self.log_dir, name), 'w', encoding='utf-8') as f:
+                f.write('x')
+        deleted = delete_old_log_files(self.log_dir, today=date(2026, 11, 28))
+        self.assertEqual(deleted, 2)
+        for name, kept in names.items():
+            self.assertEqual(os.path.exists(os.path.join(self.log_dir, name)), kept, name)
+
+    def test_delete_old_log_files_without_log_dir_does_nothing(self):
+        """LOG_DIR 이 없는 개발·테스트 환경에서는 아무것도 지우지 않는다."""
+        from .logging_utils import delete_old_log_files
+        with patch.dict('os.environ', {'LOG_DIR': ''}):
+            self.assertEqual(delete_old_log_files(), 0)
+
+    def test_settings_with_log_dir_write_app_and_request_files(self):
+        """LOG_DIR 을 주고 Django 를 띄우면 app·request 날짜 파일이 생기고, 요청 기록은 request 파일에만 간다."""
+        import os
+        import subprocess
+        import sys
+        import time
+        from django.conf import settings
+        code = (
+            "import django, logging; django.setup();"
+            "from django.conf import settings;"
+            "assert settings.MIDDLEWARE[0] == 'api.logging_utils.RequestLogMiddleware';"
+            "logging.getLogger('api.views').warning('app-line');"
+            "logging.getLogger('api.request_log').info('request-line')"
+        )
+        env = dict(os.environ, LOG_DIR=self.log_dir)
+        result = subprocess.run([sys.executable, '-c', code], cwd=str(settings.BASE_DIR), env=env,
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        today = time.strftime('%Y-%m-%d')
+        app_log = self._read(f'app-{today}.log')
+        request_log = self._read(f'request-{today}.log')
+        self.assertIn('WARNING', app_log)
+        self.assertIn('api.views app-line', app_log)
+        self.assertNotIn('request-line', app_log)
+        self.assertIn('api.request_log request-line', request_log)
+
+    def test_settings_without_log_dir_keep_console_only(self):
+        """LOG_DIR 이 없으면(개발·테스트) 미들웨어·파일 핸들러를 붙이지 않는다."""
+        from django.conf import settings
+        self.assertNotIn('api.logging_utils.RequestLogMiddleware', settings.MIDDLEWARE)
+        self.assertEqual(settings.LOGGING['root']['handlers'], ['console'])
+
+    def test_cleanup_job_registered_only_in_full_scheduler(self):
+        """로그 정리 잡은 운영 스케줄러(start)에만 매일 03:10 으로 등록되고, 메일 전용(개발)에는 없다."""
+        from . import scheduler
+        registered = {}
+        for starter in (scheduler.start, scheduler.start_mail_only):
+            with patch('apscheduler.schedulers.background.BackgroundScheduler.start'), \
+                 patch('threading.Thread'), \
+                 patch('apscheduler.schedulers.background.BackgroundScheduler.add_job') as add_job:
+                starter()
+            registered[starter.__name__] = {c.kwargs.get('id'): c for c in add_job.call_args_list}
+        self.assertNotIn(scheduler.DELETE_OLD_LOG_FILES_JOB_ID, registered['start_mail_only'])
+        job = registered['start'][scheduler.DELETE_OLD_LOG_FILES_JOB_ID]
+        self.assertEqual(str(job.kwargs['trigger'].fields[5]), '3')   # hour
+        self.assertEqual(str(job.kwargs['trigger'].fields[6]), '10')  # minute
+
+
+# claude 수정 (2026-11-28): 쓰기 요청 기록 미들웨어 — 실제 API 요청으로 loginid·메서드·경로·응답코드가 남는지 확인
+class RequestLogMiddlewareTest(TestCase):
+    """`RequestLogMiddleware` (docs/LOGGING.md §2)."""
+
+    def setUp(self):
+        from django.conf import settings
+        from rest_framework.test import APIClient
+        self.user = UserProfile.objects.create_user(
+            loginid='log_tester', password='pw', username='로그 테스터',
+            mail='log_tester@company.com', role='PL',
+        )
+        self.client = APIClient()
+        self._mw = override_settings(
+            MIDDLEWARE=['api.logging_utils.RequestLogMiddleware'] + list(settings.MIDDLEWARE)
+        )
+        self._mw.enable()
+
+    def tearDown(self):
+        self._mw.disable()
+
+    def test_write_request_logs_loginid_path_and_status(self):
+        self.client.force_authenticate(user=self.user)
+        with self.assertLogs('api.request_log', level='INFO') as cm:
+            r = self.client.post('/api/documents/?src=test', {}, format='json')
+        self.assertEqual(len(cm.records), 1)
+        line = cm.records[0].getMessage()
+        self.assertRegex(line, rf'^log_tester POST /api/documents/\?src=test {r.status_code} \d+ms$')
+
+    def test_anonymous_write_request_logs_dash(self):
+        with self.assertLogs('api.request_log', level='INFO') as cm:
+            r = self.client.post('/api/documents/', {}, format='json')
+        self.assertTrue(cm.records[0].getMessage().startswith(f'- POST /api/documents/ {r.status_code} '))
+
+    def test_read_request_is_not_logged(self):
+        self.client.force_authenticate(user=self.user)
+        with patch('api.logging_utils.request_logger.info') as info:
+            self.client.get('/api/documents/')
+        info.assert_not_called()
