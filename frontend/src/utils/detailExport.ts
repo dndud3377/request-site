@@ -113,14 +113,17 @@ function addJobSheet(
       product_name: r.product_name, step: r.step, item_id: r.item_id,
     });
     const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
-    row.eachCell((cell, col) => {
-      if (reg) { applyFill(cell, '#e5e7eb'); return; }
+    // claude 수정 (2026-11-28): row.eachCell 은 값이 없는 칸(예전 행의 Layer·ID 등)을 건너뛰어 회색 행 중간·끝 칸이 흰색으로 남았다 —
+    // 열 수만큼 직접 돌며 칠해 화면(행 전체 회색)과 같게 한다(사용자 결정, includeEmpty 는 끝 빈 칸을 여전히 건너뛰어 쓰지 않음).
+    for (let col = 1; col <= ws.columns.length; col += 1) {
+      const cell = row.getCell(col);
+      if (reg) { applyFill(cell, '#e5e7eb'); continue; }
       if (col === 3) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sp', r.sp));
       else if (col === 4) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sd', r.sd));
       else if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : matchLayerColor(colorFilterSets, activeColorFilterIds, 'pp', r.pp));
       else if (col === 7) applyFill(cell, ST_CELL_COLOR[r.st]);
       else if (col === 8) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
-    });
+    }
   });
 }
 
@@ -148,14 +151,17 @@ function addOvlSheet(
       product_name: r.product_name, step: r.step,
     });
     const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
-    row.eachCell((cell, col) => {
-      if (reg) { applyFill(cell, '#e5e7eb'); return; }
+    // claude 수정 (2026-11-28): row.eachCell 은 값이 없는 칸(예전 행의 Layer·ID 등)을 건너뛰어 회색 행 중간·끝 칸이 흰색으로 남았다 —
+    // 열 수만큼 직접 돌며 칠해 화면(행 전체 회색)과 같게 한다(사용자 결정, includeEmpty 는 끝 빈 칸을 여전히 건너뛰어 쓰지 않음).
+    for (let col = 1; col <= ws.columns.length; col += 1) {
+      const cell = row.getCell(col);
+      if (reg) { applyFill(cell, '#e5e7eb'); continue; }
       if (col === 3) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sp', r.sp));
       else if (col === 4) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sd', r.sd));
       else if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : matchLayerColor(colorFilterSets, activeColorFilterIds, 'pp', r.pp));
       else if (col === 7) applyFill(cell, ST_CELL_COLOR[r.st]);
       else if (col === 8) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
-    });
+    }
   });
 }
 
