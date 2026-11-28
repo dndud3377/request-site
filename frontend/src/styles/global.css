@@ -575,6 +575,24 @@ select.form-control option {
   }
 }
 
+/* claude 수정 (2026-11-28): 의뢰서 작성 J/O 표 — '다음'·'상신' 자동 변경('자동 미진행'·공유 필터·'차용')으로 바뀐 행을
+   빨간 박스로 잠깐 강조했다가 사라지게 한다(field-error-flash 와 같은 색·길이). 클래스는 AUTO_CHANGE_FLASH_MS 뒤에 떼어진다. */
+tr.row-auto-change-flash {
+  animation: row-auto-change-flash 1.5s ease-out;
+  outline-offset: -2px;
+}
+
+@keyframes row-auto-change-flash {
+  0%, 40% {
+    outline: 2px solid var(--danger);
+    background-color: rgba(220, 53, 69, 0.08);
+  }
+  100% {
+    outline: 2px solid transparent;
+    background-color: transparent;
+  }
+}
+
 .form-actions {
   display: flex;
   gap: 12px;

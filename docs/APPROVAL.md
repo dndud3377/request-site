@@ -2465,7 +2465,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 > 값은 지우지 않으며 아무 곳에서도 읽지 않는다.
 
 **한 줄 요약**: TE_J/TE_O/MASTER 가 결재 현황 '필터 관리'에서 만든 공유 필터(A·B·C…)는 저장하는 즉시
-① 앞으로 작성하는 모든 의뢰서와 ② 그 팀이 아직 합의하지 않은 진행 중 의뢰서 전부에 적용된다.
+① 앞으로 작성하는 모든 의뢰서와 ② 결재가 진행 중이고 그 팀이 아직 합의하지 않은 의뢰서 전부에 적용된다
+(임시저장·반려 문서는 일괄 적용하지 않고 재상신 때 작성 화면·서버 검증이 적용한다 — 2026-11-27 사용자 결정).
 매칭된 행은 **ST 'X' + 요청 기준 '미진행'**(제품 이름·STEP, J 는 ID 도 비움)이 되고 ST·요청 기준이 잠긴다 —
 `.env` '자동 미진행' 키워드(`docs/REQUEST.md` 2026-11-16)와 결과가 같다(사용자 결정).
 
@@ -2493,13 +2494,15 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ### 12-3. 진행 중 의뢰서 일괄 적용 (필터 추가·수정 저장 시)
 
-- `POST /api/layer-filter-sets/`·`PATCH|PUT /api/layer-filter-sets/{id}/` 를 저장하면 **같은 트랜잭션**에서 그 필터를
-  `target_documents` 전부에 적용하고, 응답에 `applied: {document_count, row_count}` 를 싣는다. 적용 중 오류가 나면 필터 저장도 함께 롤백된다.
+- `POST /api/layer-filter-sets/`·`PATCH|PUT /api/layer-filter-sets/{id}/` 를 저장하면 **같은 트랜잭션**에서 그 표의 **공유 필터 전체**
+  (방금 저장한 것 포함)를 `target_documents` 전부에 한 번에 적용하고, 응답에 `applied: {document_count, row_count}` 를 싣는다.
+  적용 중 오류가 나면 필터 저장도 함께 롤백된다. (2026-11-28 수정 — 예전에는 저장한 필터 하나만 적용해, 먼저 만든 필터가 아직
+  적용되지 않은 문서(배포 전부터 진행 중·MASTER 상신 등)에는 필터가 '하나씩' 들어갔다. 배포 뒤 첫 저장 때 그동안 빠진 필터도 함께 적용된다.)
 - **대상 문서**(사용자 결정 2026-11-27):
 
   | 상태 | 대상 여부 |
   |---|---|
-  | 임시저장(`draft`)·반려됨(`rejected`) | 항상 대상(재상신하면 새 회차에서 다시 검토된다) |
+  | 임시저장(`draft`)·반려됨(`rejected`) | **대상 아님**(2026-11-27 사용자 결정 — 작성자 손에 있는 문서는 건드리지 않는다). 재상신할 때 작성 화면 '다음'·'상신' 자동 적용(§12-4)과 상신 서버 검증이 적용한다 |
   | 상신됨(`submitted`)·검토중(`under_review`)·중단(`pause`) | **이번 회차에 그 팀(J/O)이 아직 합의를 끝내지 않았을 때만**. '합의를 끝냈다' = 현재 회차의 그 팀 단계가 있고 **전부** `approved`. J/O 단계가 아직 없는 1·2구역, 생략·제외로 단계가 없는 회차(O 재합의 생략 Case U, J 제외 등), 중단·철회 확인 대기도 대상이다 |
   | 승인 완료(`approved`) | 대상 아님 |
 
@@ -2510,8 +2513,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **삭제·키워드 제거는 되돌리지 않는다**(사용자 결정): 필터를 지우거나 키워드를 빼도 이미 X+미진행이 된 행은 그대로이고,
   작성 화면 잠금만 풀린다.
 - 적용 사실은 따로 기록하지 않는다(기존 결정 유지 — 결재 단계 코멘트·감사 로그 없음).
-- **미리보기**: `POST /api/layer-filter-sets/preview/` `{table, words}` → `{document_count, row_count, documents: [{id, title, status, row_count}]}`.
-  저장·변경 없이, 지금 저장하면 바뀔 문서·행 수만 계산한다(수정 미리보기도 바뀐 뒤의 words 를 그대로 보낸다).
+- **미리보기**: `POST /api/layer-filter-sets/preview/` `{table, words, id?}` → `{document_count, row_count, documents: [{id, title, status, row_count}]}`.
+  저장·변경 없이, 지금 저장하면 바뀔 문서·행 수를 **그 표의 공유 필터 전체 + 입력 키워드**로 계산한다(저장 시 적용과 같은 기준).
+  수정 미리보기는 `id`(수정 중인 필터)를 보내 그 필터의 옛 키워드 대신 새 키워드를 쓴다(숫자가 아니면 400).
 - 부수효과(기록): 미진행 행은 '변경 감지' 자동 반려 비교(`layer_drift`)에서 빠진다(`DRIFT_EXCLUDED_NEW_OR_COPY`).
   J/O 결재 건너뛰기(Case V)는 `.env` 키워드 기준이라 공유 필터 행만으로는 건너뛰지 않는다.
 
@@ -2522,6 +2526,10 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **자동 적용 시점**: STEP3(J)·STEP4(O)에서 '다음'을 누를 때, 그리고 '상신'을 누를 때(STEP5 에서 시작한 임시저장 대비).
   순서는 '자동 미진행' 키워드 → **공유 필터** → '차용' 자동 변경이며, 바꾼 행이 있으면 경고 토스트
   (`request.toast_shared_filter_applied`)를 띄우고 그 단계에 머문다(상신이면 그 표의 단계로 이동). J 는 bb 매핑을 푼다.
+  그 표의 공유 필터 **전체**를 한 번에 적용한다(필터가 여럿이어도 '다음' 한 번).
+- **바뀐 행 빨간 박스(2026-11-28)**: 세 자동 변경('자동 미진행'·공유 필터·'차용') 모두 바뀐 행 전체를 빨간 박스로 약 1.5초 강조했다가 지운다
+  (`index.tsx` `flashAutoChangedRows` → `Step2`/`Step3` `autoChangeFlashRowIds` → `tr.row-auto-change-flash`, `global.css`,
+  `constants.ts` `AUTO_CHANGE_FLASH_CLASS`·`AUTO_CHANGE_FLASH_MS`). 결재 현황 화면에는 붙이지 않는다(사용자 결정).
 - **잠금**: 공유 필터에 걸리면서 이미 X+미진행인 행은 ST·요청 기준을 바꿀 수 없다 — 칸 비활성 + 툴팁(`request.shared_filter_locked_title`),
   직접 입력 시 토스트(`request.shared_filter_locked`), 붙여넣기·Delete(`isJayer/OayerCellLocked`), ST·요청 기준 일괄 버튼(`isBulkTarget`)에서 건너뛴다.
 - **예외**: MASTER 와 가이드 투어 미리보기는 자동 적용·잠금 대상이 아니다('자동 미진행'과 같다).
@@ -2533,7 +2541,10 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ### 12-5. 결재 현황 화면
 
-- `PagedDetailView.tsx` 의 'J-ayer 정보'/'O-ayer 정보' 탭 툴바에는 **'필터 관리' 버튼만** 남았다(필터별 적용 버튼·초기화 버튼 삭제).
+- `PagedDetailView.tsx` 의 'J-ayer 정보'/'O-ayer 정보' 탭 툴바: `공유 필터:` 뒤에 **저장된 필터 이름 칩**(`SharedFilterChips`, 누를 수 없는
+  표시 전용, 마우스를 올리면 STEPSEQ/STEP 설명/PPID 키워드 툴팁, 없으면 `request.filter_saved_empty`) + **'필터 관리' 버튼**
+  (필터별 적용 버튼·초기화 버튼은 삭제, 칩 표시는 2026-11-27 사용자 요청 — "설정해 놓은 필터가 보이지 않는다"). 목록은 `ApprovalPage` 가
+  이미 불러 둔 `jayer/oayerLayerFilterSets` 를 그대로 넘긴다(추가 API 호출 없음).
   노출 조건은 종전과 같은 `canUseLayerFilter`(역할 TE_J/TE_O/MASTER + 문서 `under_review`/`pause` + 이번 회차 그 팀 미합의) —
   색상 적용 툴바(§13)도 같은 조건을 쓴다. 이력 조회(`HistoryPage.tsx`)에는 툴바가 없다.
 - 필터 관리 창(`FilterManageModal`, 작성 화면 개인 필터와 같은 컴포넌트) 위에 **자동 적용 안내**(`approval.layer_filter_manage_notice`)를
@@ -2543,7 +2554,11 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   (`approval.layer_filter_applied_toast`) + 열려 있는 문서 새로고침. 취소하면 저장하지 않고 입력도 그대로 둔다.
   미리보기·저장이 실패하면 서버 사유를 안내 모달(`layerFilterErrorNotice`)로 보여 준다.
   `FilterManageModal` 의 `onAdd`/`onEdit` 은 `Promise<boolean>` 을 돌려줄 수 있고, `false`(취소·실패)면 입력을 비우지 않고 성공 토스트도 띄우지 않는다.
-- 삭제·전체 삭제는 종전과 같다(확인 모달 → API).
+- **삭제·전체 삭제(2026-11-27 오류 처리 추가 — 사용자 결정, 2026-11-23 검토 '발견 4')**: 확인 모달 → API. 다른 팀원이 먼저 지운 필터(404)는
+  오류 대신 안내 토스트(`approval.layer_filter_already_deleted`), 그 밖의 실패는 서버 사유를 안내 모달(`layerFilterErrorNotice`)로 보여 준다.
+  전체 삭제는 `Promise.allSettled` 로 하나가 실패해도 나머지를 계속 지운다. 성공·실패와 관계없이 끝나면 **서버 목록을 다시 불러와** 화면을 맞춘다
+  (예전에는 실패하면 안내 없이 확인창만 닫히고, 전체 삭제는 서버에선 지워졌는데 화면 목록이 그대로 남았다). 공유 필터 목록은 여전히 화면을 열 때
+  한 번 불러오므로, 다른 팀원의 추가·삭제는 새로고침·삭제 뒤 다시 불러올 때 반영된다.
 - ✅ **키워드 문자열 검사(2026-11-27 수정 — 사용자 결정)**: `validate_words` 가 `words.sp/sd/pp` 의 **각 키워드가 문자열인지** 검사해,
   아니면 추가·수정·미리보기 모두 400(`words.{칸} 의 키워드는 문자열이어야 합니다.`). 이전(2026-11-23)에는 '기록만' 했으나, 자동 적용 전환 뒤
   API 직접 조작으로 숫자 키워드 필터가 저장되면 일반 작성자의 작성 화면이 STEP3 에서 멈추거나(`e.toLowerCase is not a function`)
@@ -2553,10 +2568,11 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 ### 12-6. 테스트
 
 - `backend/api/tests.py::LayerFilterSetTest` — 조회 권한(PL 포함 전원 조회, 관리·미리보기는 팀/MASTER), 대상 표 변경(TE_J/TE_O 400·MASTER 200·같은 값 허용),
-  일괄 적용 대상(상태별·현재 회차·J 단계 여럿 중 일부 미합의), 문자열이 아닌 키워드 생성·수정·미리보기 400, O 필터는 O 표만·`item_id` 키 안 생김, X+기등록 → X+미진행, 이미 X+미진행은 미집계,
+  저장 시 그 표의 공유 필터 전체 한 번에 적용, 미리보기 = 기존 전체 + 입력(수정 id 는 옛 키워드 제외)·미리보기 수 = 적용 수,
+  일괄 적용 대상(상태별 — 임시저장·반려 제외·현재 회차·J 단계 여럿 중 일부 미합의), 미리보기에 임시저장·반려 문서 안 나옴, 문자열이 아닌 키워드 생성·수정·미리보기 400, O 필터는 O 표만·`item_id` 키 안 생김, X+기등록 → X+미진행, 이미 X+미진행은 미집계,
   수정 시 새 키워드 적용, 삭제는 되돌리지 않음, 손상 문서 건너뜀, 미리보기(저장·변경 없음), 문서별 적용·초기화 API 404.
 - `backend/api/tests.py::LayerFilterSubmitValidationTest` — 실제 submit API: 미적용 행 400, X+기등록 400, X+미진행 통과, MASTER 예외.
-- `frontend/src/pages/RequestPage/sharedFilterAutoApply.test.tsx`(5) — STEP3 '다음' 자동 적용·잠금·머묾·저장값·bb 매핑 해제,
+- `frontend/src/pages/RequestPage/sharedFilterAutoApply.test.tsx`(6) — STEP3 '다음' 자동 적용·잠금·머묾·저장값·bb 매핑 해제, 바뀐 행 빨간 박스 붙었다 사라짐,
   STEP4 는 O 필터만, '전체 O' 일괄 버튼이 잠긴 행 건너뜀, MASTER 예외, 조회 실패 시 경고만.
 
 ## 13. 결재 상세페이지 J/O-layer 색상 적용 (2026-09)
@@ -2630,6 +2646,14 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 호출부(`PagedDetailView.tsx`/`ApprovalPage.tsx`)가 지금 화면에 켜져 있는 값을 그대로 넘긴다.
 색상 적용을 하나도 켜지 않은 상태로 내보내면(`activeColorFilterIds` 비어있음) `matchLayerColor`
 가 항상 `undefined` 를 돌려주므로 이 기능 도입 이전과 동일하게 동작한다(회귀 없음).
+
+- **회색 행 빈 칸 수정(2026-11-28, 2026-11-23 검토 '발견 6' — 사용자 결정)**: 예전에는 `row.eachCell` 로 칠해, 값이 없는 칸
+  (2026-09-30 Layer 열 추가 이전 행의 Layer·ID 등)을 건너뛰었다 — 화면은 기등록·비활성 행 전체가 회색인데 엑셀은 그 칸만 흰색이었다.
+  `addJobSheet`/`addOvlSheet` 모두 **열 수만큼 직접 돌며**(`row.getCell(1..ws.columns.length)`) 칠한다. exceljs 의 `includeEmpty` 옵션은
+  행 맨 끝 빈 칸(J 의 ID)을 여전히 건너뛰어 쓰지 않았다(실행 확인). 활성 행의 색 규칙은 그대로다. 테스트 `utils/detailExport.greyRows.test.ts`.
+- **켜 둔 색상 유지(2026-11-28 기록, 사용자 결정 — 그대로 둔다, 2026-11-23 검토 '발견 5')**: J/O 합의 뒤 같은 의뢰서를 바로 다시 열면 색상 툴바는
+  숨겨지지만(§13-3 노출 조건) 켜 둔 색은 표·엑셀에 남는다. 개인별 표시라 사용자 의도에 맞다. 단 켜짐 상태는 저장하지 않으므로(§13-1)
+  다른 의뢰서를 열거나 새로고침하면 꺼진다 — 요청서별로 계속 유지하려면 별도 기능이 필요하다(사용자 확인 대기).
 
 ### 13-6. 이력 조회(HistoryPage)
 

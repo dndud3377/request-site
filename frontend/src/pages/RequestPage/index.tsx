@@ -88,6 +88,7 @@ import {
   ST_X,
   isStO,
   isRowInactive,
+  AUTO_CHANGE_FLASH_MS,
   makeTourDetail,
   makeTourJayerRows,
   makeTourOayerRows,
@@ -5196,6 +5197,7 @@ export default function RequestPage(): React.ReactElement {
       setOayerRows(toBorrow);
       setAutoBorrowOayerIds(idSet);
     }
+    flashAutoChangedRows(table, ids); // claude 수정 (2026-11-28): 바뀐 행 빨간 박스
     addToast(t('request.toast_auto_borrow', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
     return ids.length;
   };
@@ -5218,6 +5220,7 @@ export default function RequestPage(): React.ReactElement {
         ? { ...r, st: ST_X, new_or_copy: NOC_NOT_PROCEEDING, product_name: '', step: '' }
         : r)));
     }
+    flashAutoChangedRows(table, ids); // claude 수정 (2026-11-28): 바뀐 행 빨간 박스
     addToast(t('request.toast_np_keyword_applied', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
     return ids.length;
   };
@@ -5240,8 +5243,26 @@ export default function RequestPage(): React.ReactElement {
         ? { ...r, st: ST_X, new_or_copy: NOC_NOT_PROCEEDING, product_name: '', step: '' }
         : r)));
     }
+    flashAutoChangedRows(table, ids); // claude 수정 (2026-11-28): 바뀐 행 빨간 박스
     addToast(t('request.toast_shared_filter_applied', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
     return ids.length;
+  };
+
+  // claude 수정 (2026-11-28): 자동 변경('자동 미진행'·공유 필터·'차용')으로 바뀐 행 id — 표에서 그 행을 빨간 박스로 잠깐 강조한다
+  const [autoChangeFlashIds, setAutoChangeFlashIds] = useState<{ jayer: ReadonlySet<string>; oayer: ReadonlySet<string> }>(
+    { jayer: new Set(), oayer: new Set() },
+  );
+  const autoChangeFlashTimers = useRef<{ jayer?: ReturnType<typeof setTimeout>; oayer?: ReturnType<typeof setTimeout> }>({});
+  useEffect(() => () => {
+    clearTimeout(autoChangeFlashTimers.current.jayer);
+    clearTimeout(autoChangeFlashTimers.current.oayer);
+  }, []);
+  const flashAutoChangedRows = (table: 'jayer' | 'oayer', ids: string[]) => {
+    clearTimeout(autoChangeFlashTimers.current[table]);
+    setAutoChangeFlashIds((prev) => ({ ...prev, [table]: new Set(ids) }));
+    autoChangeFlashTimers.current[table] = setTimeout(() => {
+      setAutoChangeFlashIds((prev) => ({ ...prev, [table]: new Set<string>() }));
+    }, AUTO_CHANGE_FLASH_MS);
   };
 
   const clearAutoBorrowHighlight = () => {
@@ -5877,6 +5898,7 @@ export default function RequestPage(): React.ReactElement {
           handleJayerChange={handleJayerChange}
           cellSel={jayerCellSel}
           autoBorrowRowIds={autoBorrowJayerIds}
+          autoChangeFlashRowIds={autoChangeFlashIds.jayer}
           npLockedRowIds={new Set(jayerRows.filter((r) => isNpLocked('jayer', r)).map((r) => r.id))}
           sharedFilterLockedRowIds={new Set(jayerRows.filter((r) => isSharedFilterLocked('jayer', r)).map((r) => r.id))}
           GuideTourBadge={<StepTourBadge step={3} />}
@@ -5913,6 +5935,7 @@ export default function RequestPage(): React.ReactElement {
           handleOayerChange={handleOayerChange}
           cellSel={oayerCellSel}
           autoBorrowRowIds={autoBorrowOayerIds}
+          autoChangeFlashRowIds={autoChangeFlashIds.oayer}
           npLockedRowIds={new Set(oayerRows.filter((r) => isNpLocked('oayer', r)).map((r) => r.id))}
           sharedFilterLockedRowIds={new Set(oayerRows.filter((r) => isSharedFilterLocked('oayer', r)).map((r) => r.id))}
           GuideTourBadge={<StepTourBadge step={4} />}
