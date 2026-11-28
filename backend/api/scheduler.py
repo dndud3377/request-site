@@ -979,6 +979,26 @@ def _add_delete_stale_drafts_job(scheduler):
     )
 
 
+# claude 수정 (2026-11-28): 30일 지난 운영 로그 파일 삭제 잡 추가 — 운영(start())에서만 등록, LOG_DIR 이 없으면 아무것도 하지 않는다(docs/LOGGING.md)
+DELETE_OLD_LOG_FILES_JOB_ID = 'delete_old_log_files'
+DELETE_OLD_LOG_FILES_HOUR = 3
+DELETE_OLD_LOG_FILES_MINUTE = 10
+
+
+def _add_delete_old_log_files_job(scheduler):
+    """`logging_utils.delete_old_log_files` 를 매일 03:10(KST) 잡으로 등록한다."""
+    from apscheduler.triggers.cron import CronTrigger
+    from .logging_utils import delete_old_log_files
+    scheduler.add_job(
+        delete_old_log_files,
+        trigger=CronTrigger(hour=DELETE_OLD_LOG_FILES_HOUR, minute=DELETE_OLD_LOG_FILES_MINUTE),
+        id=DELETE_OLD_LOG_FILES_JOB_ID,
+        name='30일 지난 운영 로그 파일 삭제',
+        replace_existing=True,
+        max_instances=1,
+    )
+
+
 # start_mail_only()(SKIP_SCHEDULER=true, 예: 개발)에서는 add_job 하지 않는 무거운 외부 동기화
 # 잡 ID. DjangoJobStore 는 DB(django_apscheduler_djangojob 테이블)에 저장된 잡을 연결 시 그대로
 # 복원하므로, 이 잡들이 (예: db-sync 로 운영 잡 상태가 dev DB 에 유입되는 등) DB 에 남아있으면
@@ -1071,6 +1091,8 @@ def start():
 
         # claude 수정 (2026-11-22): 오래된 임시저장 자동 삭제 잡(매일 03:00) 등록
         _add_delete_stale_drafts_job(scheduler)
+        # claude 수정 (2026-11-28): 30일 지난 운영 로그 파일 삭제 잡(매일 03:10) 등록
+        _add_delete_old_log_files_job(scheduler)
 
         # 구(舊) 단독 잡(process_product 전용)이 통합 잡으로 대체되어 남아있으면 제거한다.
         try:
@@ -1079,8 +1101,8 @@ def start():
             pass
 
         scheduler.start()
-        # claude 수정 (2026-11-22): 기동 로그에 매일 03:00 오래된 임시저장 자동 삭제 추가(2026-11-16: DCQ 주기 문구 1 시간 → 10 분)
-        logger.info(_("[scheduler] APScheduler 시작 - 10 분 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰·MAP 예정일 동기화 / 매일 03:00 오래된 임시저장 자동 삭제 등록"))
+        # claude 수정 (2026-11-28): 기동 로그에 매일 03:10 운영 로그 파일 정리 추가(2026-11-22: 03:00 임시저장 삭제, 2026-11-16: DCQ 주기 1 시간 → 10 분)
+        logger.info(_("[scheduler] APScheduler 시작 - 10 분 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰·MAP 예정일 동기화 / 매일 03:00 오래된 임시저장 자동 삭제 / 매일 03:10 30일 지난 로그 파일 삭제 등록"))
 
         # claude 수정 (2026-10-29): 기동 시 순차 실행 DCQ 잡에 sync_map_schedule 추가
         def _run_dcq_jobs_sequentially():
