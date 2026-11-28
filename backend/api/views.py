@@ -4662,8 +4662,8 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
 class LayerFilterSetViewSet(viewsets.ModelViewSet):
     """J/O-layer 공유 필터 CRUD + 미리보기. 목록 조회는 ?table=J|O 쿼리 파라미터 필수.
 
-    추가(POST)·수정(PATCH/PUT)을 저장하면 같은 트랜잭션에서 그 필터를 `LayerFilterSet.target_documents` 의
-    문서 전체에 적용하고, 응답에 `applied: {document_count, row_count}` 를 싣는다. 삭제는 이미 바뀐 행을 되돌리지 않는다.
+    추가(POST)·수정(PATCH/PUT)을 저장하면 같은 트랜잭션에서 그 표의 공유 필터 **전체**를 `LayerFilterSet.target_documents` 의
+    문서 전체에 적용하고(2026-11-28), 응답에 `applied: {document_count, row_count}` 를 싣는다. 삭제는 이미 바뀐 행을 되돌리지 않는다.
     화면은 저장 전에 `preview/` 로 바뀔 문서·행 수를 먼저 보여 준다(사용자 결정 2026-11-27).
     """
     queryset = LayerFilterSet.objects.all()
@@ -4677,9 +4677,10 @@ class LayerFilterSetViewSet(viewsets.ModelViewSet):
         table = self.request.query_params.get('table')
         return qs.filter(table=table) if table else qs
 
+    # claude 수정 (2026-11-28): 필터 하나가 아니라 그 표의 공유 필터 전체(words 목록)를 한 번에 적용하도록 변경
     @staticmethod
-    def _collect_changes(table, words, lock=False):
-        """words(필터 하나)를 대상 문서에 적용했을 때 바뀌는 문서별 (문서, 바뀐 data, 바뀐 행 수) 목록.
+    def _collect_changes(table, words_list, lock=False):
+        """words_list(필터 키워드 목록)를 대상 문서에 한 번에 적용했을 때 바뀌는 문서별 (문서, 바뀐 data, 바뀐 행 수) 목록.
 
         lock=True 면 대상 문서를 select_for_update 로 다시 읽어 잠근 뒤 계산한다(실제 적용용).
         """
@@ -4693,15 +4694,20 @@ class LayerFilterSetViewSet(viewsets.ModelViewSet):
             except (json.JSONDecodeError, TypeError):
                 continue  # 손상된 문서는 건너뛴다(다른 문서 적용을 막지 않는다)
             rows = data.get(rows_key) or []
-            count = LayerFilterSet.clear_matched_rows(table, rows, [words])
+            count = LayerFilterSet.clear_matched_rows(table, rows, words_list)
             if count:
                 data[rows_key] = rows
                 changes.append((doc, data, count))
         return changes
 
-    def _apply_to_documents(self, filter_set):
-        """저장된 필터를 대상 문서 전체에 적용하고 {document_count, row_count} 를 돌려준다."""
-        changes = self._collect_changes(filter_set.table, filter_set.words, lock=True)
+    def _apply_to_documents(self, table):
+        """그 표(table)의 저장된 공유 필터 **전체**를 대상 문서에 한 번에 적용하고 {document_count, row_count} 를 돌려준다.
+
+        필터 하나만 적용하면 그보다 먼저 만든 필터가 아직 적용되지 않은 문서(배포 전부터 진행 중·MASTER 상신 등)가
+        남는다 — 공유 필터는 항상 전부 적용되는 규칙이므로 저장할 때마다 전체를 다시 확인한다(사용자 결정 2026-11-28).
+        """
+        words_list = list(LayerFilterSet.objects.filter(table=table).values_list('words', flat=True))
+        changes = self._collect_changes(table, words_list, lock=True)
         for doc, data, _count in changes:
             doc.additional_notes = json.dumps(data, ensure_ascii=False)
             doc.save(update_fields=['additional_notes'])
@@ -4710,27 +4716,35 @@ class LayerFilterSetViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)
-        filter_set = LayerFilterSet.objects.get(pk=response.data['id'])
-        response.data['applied'] = self._apply_to_documents(filter_set)
+        response.data['applied'] = self._apply_to_documents(response.data['table'])
         return response
 
     @transaction.atomic
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
-        response.data['applied'] = self._apply_to_documents(self.get_object())
+        response.data['applied'] = self._apply_to_documents(response.data['table'])
         return response
 
     @action(detail=False, methods=['post'], url_path='preview')
     def preview(self, request):
-        """`{table, words}` 필터를 지금 저장하면 바뀔 진행 중 문서·행 수(저장·변경 없음).
+        """`{table, words, id?}` 필터를 지금 저장하면 바뀔 진행 중 문서·행 수(저장·변경 없음).
 
+        저장 시와 같이 **그 표의 공유 필터 전체 + 지금 입력한 키워드**로 계산한다. 수정 미리보기는 `id`(수정 중인 필터)를
+        보내면 그 필터의 옛 키워드 대신 새 키워드를 쓴다. 이미 X+미진행인 행은 세지 않는다.
         응답: `{document_count, row_count, documents: [{id, title, status, row_count}]}`.
-        수정 미리보기도 바뀐 뒤의 words 를 그대로 보내면 된다(이미 X 인 행은 세지 않는다).
         """
         table = request.data.get('table')
         serializer = self.get_serializer(data={'table': table, 'label': 'preview', 'words': request.data.get('words')})
         serializer.is_valid(raise_exception=True)
-        changes = self._collect_changes(table, serializer.validated_data['words'])
+        others = LayerFilterSet.objects.filter(table=table)
+        editing_id = request.data.get('id')
+        if editing_id not in (None, ''):
+            try:
+                others = others.exclude(pk=int(editing_id))
+            except (TypeError, ValueError):
+                return Response({'error': 'id 는 숫자여야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        words_list = list(others.values_list('words', flat=True)) + [serializer.validated_data['words']]
+        changes = self._collect_changes(table, words_list)
         return Response({
             'document_count': len(changes),
             'row_count': sum(c for _d, _data, c in changes),
