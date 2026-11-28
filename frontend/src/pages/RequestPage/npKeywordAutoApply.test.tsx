@@ -314,6 +314,9 @@ describe("J/O-ayer '자동 미진행' 키워드 → ST X·미진행 자동 변�
     expect(stTdOf(j2).getAttribute('title')).toContain(LOCK_TITLE);
     expect(nocTdOf(j2).getAttribute('title')).toContain(LOCK_TITLE);
     expect(stInputOf(j1).disabled).toBe(false);
+    // claude 수정 (2026-11-28): 자동 변경된 행만 빨간 박스 강조
+    expect(j2.classList.contains('row-auto-change-flash')).toBe(true);
+    expect(j1.classList.contains('row-auto-change-flash')).toBe(false);
     expect(toastsOf('warning')).toContain("자동 미진행 키워드가 포함된 1개 행을");
 
     await clickButton('다음');
