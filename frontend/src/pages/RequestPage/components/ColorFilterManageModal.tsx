@@ -22,9 +22,10 @@ interface ColorFilterManageModalProps {
   setNewFilter: React.Dispatch<React.SetStateAction<ColorFilterDraft>>;
   onAllDelete: () => void;
   onRequestDelete: (fs: ColorFilterSet) => void;
-  onEdit: (filterId: string, label: string, words: ColorFilterDraft['words']) => void;
-  /** 새 색상 필터 추가 — 저장 방식(localStorage)은 호출부가 결정한다. */
-  onAdd: (label: string, words: ColorFilterDraft['words']) => void;
+  // claude 수정 (2026-11-28): 서버 저장으로 바뀌어 Promise<boolean> 도 받는다 — false(실패)면 입력을 유지하고 성공 토스트를 띄우지 않는다
+  onEdit: (filterId: string, label: string, words: ColorFilterDraft['words']) => void | Promise<boolean>;
+  /** 새 색상 필터 추가 — 저장 방식(서버 API 등)은 호출부가 결정한다. Promise 규칙은 onEdit 과 같다. */
+  onAdd: (label: string, words: ColorFilterDraft['words']) => void | Promise<boolean>;
 }
 
 const ColorFilterManageModal: React.FC<ColorFilterManageModalProps> = ({
@@ -141,17 +142,22 @@ const ColorFilterManageModal: React.FC<ColorFilterManageModalProps> = ({
               type="button"
               className="btn btn-primary"
               disabled={newFilter.words.sp.length === 0 && newFilter.words.sd.length === 0 && newFilter.words.pp.length === 0}
-              onClick={() => {
+              onClick={async () => {
                 const label = newFilter.label || t('request.color_filter_default_label');
-                if (editingId) {
-                  onEdit(editingId, label, newFilter.words);
-                  cancelEdit();
-                  addToast(t('request.color_filter_edit_success_toast', { label }), 'success');
-                  return;
+                // claude 수정 (2026-11-28): 호출부가 저장하지 못했으면(false) 입력을 그대로 두고 성공 토스트도 띄우지 않는다
+                try {
+                  if (editingId) {
+                    if ((await onEdit(editingId, label, newFilter.words)) === false) return;
+                    cancelEdit();
+                    addToast(t('request.color_filter_edit_success_toast', { label }), 'success');
+                    return;
+                  }
+                  if ((await onAdd(label, newFilter.words)) === false) return;
+                  setNewFilter({ label: '', words: emptyColorDraftWords() });
+                  addToast(t('request.color_filter_add_success_toast', { label }), 'success');
+                } catch {
+                  addToast(t('common.process_error'), 'error');
                 }
-                onAdd(label, newFilter.words);
-                setNewFilter({ label: '', words: emptyColorDraftWords() });
-                addToast(t('request.color_filter_add_success_toast', { label }), 'success');
               }}
             >{editingId ? t('request.filter_apply_edit') : t('request.filter_add_btn')}</button>
             <button className="btn btn-secondary" onClick={onClose}>
