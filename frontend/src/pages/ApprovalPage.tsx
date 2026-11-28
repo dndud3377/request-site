@@ -1040,7 +1040,7 @@ export default function ApprovalPage(): React.ReactElement {
     table: 'J' | 'O', filterId: number | null, label: string, words: LayerFilterSet['words'],
   ): Promise<boolean> => {
     try {
-      const preview = await layerFilterSetsAPI.preview(table, words);
+      const preview = await layerFilterSetsAPI.preview(table, words, filterId); // claude 수정 (2026-11-28): 공유 필터 전체 기준 미리보기
       return await new Promise<boolean>((resolve) => {
         setSharedFilterSaveConfirm({ table, filterId, label, words, preview, resolve });
       });
