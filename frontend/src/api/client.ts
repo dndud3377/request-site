@@ -861,8 +861,9 @@ export const layerFilterSetsAPI = {
     post<LayerFilterSaveResult>('/layer-filter-sets/', { table, label, words }),
   update: (id: number, label: string, words: LayerFilterSet['words']): Promise<LayerFilterSaveResult> =>
     patch<LayerFilterSaveResult>(`/layer-filter-sets/${id}/`, { label, words }),
-  preview: (table: 'J' | 'O', words: LayerFilterSet['words']): Promise<LayerFilterPreview> =>
-    post<LayerFilterPreview>('/layer-filter-sets/preview/', { table, words }),
+  // claude 수정 (2026-11-28): 수정 미리보기는 수정 중인 필터 id 를 보내 그 필터의 옛 키워드 대신 새 키워드로 계산한다
+  preview: (table: 'J' | 'O', words: LayerFilterSet['words'], id: number | null = null): Promise<LayerFilterPreview> =>
+    post<LayerFilterPreview>('/layer-filter-sets/preview/', id === null ? { table, words } : { table, words, id }),
   delete: (id: number): Promise<void> => request(`/layer-filter-sets/${id}/`, { method: 'DELETE' }),
 };
 
