@@ -64,6 +64,8 @@ jest.mock('../../api/client', () => ({
   usersAPI: { list: () => Promise.resolve({ data: [] }) },
   addressBooksAPI: { list: () => Promise.resolve([]) },
   userGroupsAPI: { list: () => Promise.resolve([]) },
+  // claude 수정 (2026-11-28): 개인 필터가 서버 조회로 바뀌어 빈 목록 mock 추가(없으면 불러오기 실패 토스트가 검증 토스트를 가린다)
+  personalLayerFiltersAPI: { list: () => Promise.resolve([]), importItems: () => Promise.resolve([]) },
 }));
 
 // ---- 픽스처: 모든 detail 항목을 기본값과 다른 값으로 채운 문서 ----

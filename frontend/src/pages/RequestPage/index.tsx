@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI, layerFilterSetsAPI } from '../../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI, layerFilterSetsAPI, personalLayerFiltersAPI } from '../../api/client';
+import { loadPersonalLayerFilters, toPersonalLayerSet } from '../../utils/personalLayerFilters';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import { useCellSelection } from '../../hooks/useCellSelection';
@@ -689,36 +690,43 @@ export default function RequestPage(): React.ReactElement {
       })
       .catch(console.error);
 
-    // localStorage에서 비활성화 FilterSet 로드 (구버전 jayerFilterWords 마이그레이션 포함)
+    // claude 수정 (2026-11-28): 개인 필터를 localStorage 대신 서버에서 불러온다. 구버전 jayerFilterWords 는 먼저 옛 키
+    // (jayerFilterSets)로 바꿔 두고, 옛 키에 남은 목록은 서버로 자동 이전한다(성공 시 localStorage 삭제). 가이드 투어는 부르지 않는다.
     const savedJayerSets = localStorage.getItem('jayerFilterSets');
-    if (savedJayerSets) {
-      try { setJayerFilterSets(JSON.parse(savedJayerSets)); } catch { /* 파싱 실패 시 기본값 유지 */ }
-    } else {
+    if (!savedJayerSets) {
       const oldJayer = localStorage.getItem('jayerFilterWords');
       if (oldJayer) {
         try {
           const w = JSON.parse(oldJayer);
           const migrated: FilterSet[] = [{ id: String(Date.now()), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
-          setJayerFilterSets(migrated);
           localStorage.setItem('jayerFilterSets', JSON.stringify(migrated));
           localStorage.removeItem('jayerFilterWords');
         } catch { /* noop */ }
       }
     }
     const savedOayerSets = localStorage.getItem('oayerFilterSets');
-    if (savedOayerSets) {
-      try { setOayerFilterSets(JSON.parse(savedOayerSets)); } catch { /* 파싱 실패 시 기본값 유지 */ }
-    } else {
+    if (!savedOayerSets) {
       const oldOayer = localStorage.getItem('oayerFilterWords');
       if (oldOayer) {
         try {
           const w = JSON.parse(oldOayer);
           const migrated: FilterSet[] = [{ id: String(Date.now() + 1), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
-          setOayerFilterSets(migrated);
           localStorage.setItem('oayerFilterSets', JSON.stringify(migrated));
           localStorage.removeItem('oayerFilterWords');
         } catch { /* noop */ }
       }
+    }
+    if (!isTourMode) {
+      ([['J', setJayerFilterSets], ['O', setOayerFilterSets]] as const).forEach(async ([table, setter]) => {
+        try {
+          const { sets, migrated, migrateFailed } = await loadPersonalLayerFilters('filter', table);
+          setter(sets);
+          if (migrated > 0) addToast(t('request.personal_filter_migrated', { count: migrated }), 'info');
+          if (migrateFailed) addToast(t('request.personal_filter_migrate_error'), 'warning');
+        } catch {
+          addToast(t('request.personal_filter_load_error'), 'error');
+        }
+      });
     }
 
     // 기능 가이드 키 목록 로드 — 필드 배지는 글 가이드가 실제로 있는 기능에만 노출한다
@@ -4284,33 +4292,51 @@ export default function RequestPage(): React.ReactElement {
 
   // 필터는 적용 시 행의 st 를 즉시 기록하는 일회성 동작이라, 필터 "정의"를 지워도
   // 이미 st='X' 로 기록된 행에는 영향이 없다.
-  const handleFilterDeleteConfirm = () => {
+  // claude 수정 (2026-11-28): 개인 필터 삭제·전체 삭제를 localStorage 대신 서버 API 로 처리한다(실패 시 목록 유지 + 에러 토스트)
+  const handleFilterDeleteConfirm = async () => {
     if (!filterDeleteConfirm) return;
     const { type, filterId, label } = filterDeleteConfirm;
-    if (type === 'jayer') {
-      const updated = jayerFilterSets.filter(f => f.id !== filterId);
-      setJayerFilterSets(updated);
-      localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
-    } else {
-      const updated = oayerFilterSets.filter(f => f.id !== filterId);
-      setOayerFilterSets(updated);
-      localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
+    try {
+      await personalLayerFiltersAPI.delete(Number(filterId));
+    } catch {
+      addToast(t('request.personal_filter_delete_error'), 'error');
+      return;
     }
-    // claude 수정 (2026-10-27): 하드코딩 한글 토스트를 i18n 키로 교체(규칙 G)
+    (type === 'jayer' ? setJayerFilterSets : setOayerFilterSets)((prev) => prev.filter((f) => f.id !== filterId));
     addToast(t('request.filter_delete_toast', { label }), 'info');
   };
 
-  const handleFilterAllDeleteConfirm = () => {
+  const handleFilterAllDeleteConfirm = async () => {
     if (!filterAllDeleteConfirm) return;
-    if (filterAllDeleteConfirm === 'jayer') {
-      setJayerFilterSets([]);
-      localStorage.removeItem('jayerFilterSets');
-    } else {
-      setOayerFilterSets([]);
-      localStorage.removeItem('oayerFilterSets');
+    const type = filterAllDeleteConfirm;
+    try {
+      await personalLayerFiltersAPI.clear('filter', type === 'jayer' ? 'J' : 'O');
+    } catch {
+      addToast(t('request.personal_filter_delete_error'), 'error');
+      return;
     }
-    // claude 수정 (2026-10-27): 하드코딩 한글 토스트를 i18n 키로 교체(규칙 G)
+    (type === 'jayer' ? setJayerFilterSets : setOayerFilterSets)([]);
     addToast(t('request.filter_all_delete_toast'), 'info');
+  };
+
+  // claude 수정 (2026-11-28): 개인 필터 추가·수정을 서버에 저장한다 — false 를 돌려주면 FilterManageModal 이 입력을 유지한다
+  const savePersonalFilter = async (
+    type: 'jayer' | 'oayer', filterId: string | null, label: string, words: FilterSet['words'],
+  ): Promise<boolean> => {
+    const setter = type === 'jayer' ? setJayerFilterSets : setOayerFilterSets;
+    try {
+      if (filterId === null) {
+        const created = toPersonalLayerSet(await personalLayerFiltersAPI.create('filter', type === 'jayer' ? 'J' : 'O', label, words));
+        setter((prev) => [...prev, created]);
+      } else {
+        const updated = toPersonalLayerSet(await personalLayerFiltersAPI.update<'filter'>(Number(filterId), label, words));
+        setter((prev) => prev.map((f) => (f.id === filterId ? updated : f)));
+      }
+      return true;
+    } catch {
+      addToast(t('request.personal_filter_save_error'), 'error');
+      return false;
+    }
   };
 
   // claude 수정 (2026-10-28): 수동 정렬(bb SP 헤더 클릭·J/O 'STEP 정렬' 토글)을 없애고 '다음'·'상신' 시 SP 자동 정렬로 대체.
@@ -6043,16 +6069,8 @@ export default function RequestPage(): React.ReactElement {
         setNewFilter={setJayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('jayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'jayer', filterId: fs.id, label: fs.label })}
-        onAdd={(label, words) => {
-          const updated = [...jayerFilterSets, { id: String(Date.now()), label, words }];
-          setJayerFilterSets(updated);
-          localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
-        }}
-        onEdit={(filterId, label, words) => {
-          const updated = jayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
-          setJayerFilterSets(updated);
-          localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
-        }}
+        onAdd={(label, words) => savePersonalFilter('jayer', null, label, words)}
+        onEdit={(filterId, label, words) => savePersonalFilter('jayer', filterId, label, words)}
       />
 
       {/* O-ayer 필터 관리 모달 */}
@@ -6065,16 +6083,8 @@ export default function RequestPage(): React.ReactElement {
         setNewFilter={setOayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('oayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'oayer', filterId: fs.id, label: fs.label })}
-        onAdd={(label, words) => {
-          const updated = [...oayerFilterSets, { id: String(Date.now()), label, words }];
-          setOayerFilterSets(updated);
-          localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
-        }}
-        onEdit={(filterId, label, words) => {
-          const updated = oayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
-          setOayerFilterSets(updated);
-          localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
-        }}
+        onAdd={(label, words) => savePersonalFilter('oayer', null, label, words)}
+        onEdit={(filterId, label, words) => savePersonalFilter('oayer', filterId, label, words)}
       />
 
       {/* claude 수정 (2026-11-22): 20분 무조작 자동저장 안내 모달(자동 삭제 규칙 포함) */}

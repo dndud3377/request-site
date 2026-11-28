@@ -349,7 +349,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   그 팀이 아직 합의하지 않은 의뢰서 전부에 일괄 적용. **임시저장·반려 문서는 건드리지 않는다**(같은 날 후속 사용자 결정 — 재상신 때 작성 화면·
   서버 검증이 적용). 삭제는 되돌리지 않는다. 문서별 적용·초기화 버튼과 API 는 삭제했고, 결재 현황 툴바에는 저장된 필터 이름 칩(표시 전용)과
   '필터 관리' 버튼이 있다.
-- **개인 필터**(localStorage, 버튼 적용)는 그대로다.
+- **개인 필터**(버튼 적용)는 그대로다. 저장 위치는 2026-11-28 부터 서버(본인만, 아래 "개인 필터 서버 저장" 절)다.
 - 규칙·API·대상 문서·테스트 전체는 `docs/APPROVAL.md` **§12**.
 - **i18n(ko/en 동시)**: `request.toast_shared_filter_applied`·`shared_filter_locked_title`·`shared_filter_locked`·`toast_shared_filter_load_error`,
   `approval.layer_filter_manage_notice`·`layer_filter_applied_toast`·`layer_filter_preview_{title,message,empty,confirm_btn,col_title,col_status,col_rows}`.
@@ -3648,7 +3648,8 @@ direct-approve)는 그대로다.
   - 필터로 비활성화된 행은 필터 "정의"(`FilterSet`)가 브라우저 `localStorage` 에만 저장돼 있어, 다른
     PC·브라우저에서 같은 문서를 열면 그 필터가 계속 켜져 있는지 판정 자체가 달라질 수 있다(기존
     `docs/E2E_TEST_AND_BUGS.md` B-58 권고 ②·③ 항목 — 필터 정의를 서버 저장으로 옮기는 것은 이번
-    수정 범위 밖이라 아직 남아 있다).
+    수정 범위 밖이라 아직 남아 있다). → 2026-11-28 개인 필터 정의가 서버(사용자별)로 옮겨져, 같은 사용자는 어느 PC 에서나
+    같은 필터 목록을 본다(아래 "개인 필터 서버 저장" 절).
   - 필터로 비활성화된 J행에 Backbone 매핑이 걸려 있었다면, 필터 비활성화 경로가 `unmapJayerRows` 를
     호출하지 않는 기존 문제(B-59)로 인해 그 매핑이 정리되지 않은 채 남을 수 있다 — 이번 수정과는
     별개의 기존 이슈로, 손대지 않았다(`docs/E2E_TEST_AND_BUGS.md` B-59 참조).
@@ -7403,6 +7404,27 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   (display:contents fieldset, 잠기면 `disabled` + `.map-info-locked > *` 흐림·마우스 차단 — `global.css`). CC 선택칸만 구간 밖이라
   잠긴 문서에서도 같은 자리에서 선택할 수 있다. 레이아웃·i18n 변경 없음.
 - **테스트·수동 검증**: `docs/APPROVAL.md` "CC 적용 여부 — 잠금·R/O 재합의 제외 (2026-11-27)" 절.
+
+### 기능 변경 (2026-11-28 — 개인 필터 서버 저장)
+
+- **배경(사용자 결정)**: STEP3(J)·STEP4(O) 개인 필터가 localStorage 에만 있어 PC 에 문제가 생기면 모두 사라졌다. 결재 상세 색상 필터와 함께
+  서버에 사용자별로 저장한다. 모델·API·자동 이전 규칙 전체는 `docs/APPROVAL.md` **§13-8**(kind `'filter'`).
+- **동작 변화 없음**: 필터는 여전히 버튼을 눌렀을 때만 적용되고(일회성 st='X' 기록), 공유 필터 자동 적용(§12)과 무관하다. 목록 순서는 추가한 순서.
+- **프론트(`RequestPage/index.tsx`)**: 마운트 시 `loadPersonalLayerFilters('filter', 'J'|'O')` 로 불러오며(가이드 투어 제외), 옛 키
+  `jayerFilterSets`/`oayerFilterSets` 의 목록은 서버에 덧붙여 올리고 지운다. 더 옛 키 `jayerFilterWords`/`oayerFilterWords` 는 종전처럼 먼저
+  `jayerFilterSets` 형태('기존 필터')로 바꾼 뒤 같은 이전을 탄다. 추가·수정은 `savePersonalFilter`, 삭제·전체 삭제는 API 호출 후 목록 갱신
+  (실패 시 에러 토스트, 관리 창 입력 유지).
+- **i18n(ko/en 동시)**: `request.personal_filter_load_error`·`personal_filter_save_error`·`personal_filter_delete_error`·
+  `personal_filter_migrated`·`personal_filter_migrate_error`.
+- **테스트**: `RequestPage` 테스트 중 `api/client` 를 직접 mock 하는 `adiCdUnregisteredAndVs`·`errorScrollTarget`·`productOptionsBroadValidity`
+  에 `personalLayerFiltersAPI` 빈 목록 mock 을 추가했다(없으면 '불러오지 못했습니다' 토스트가 검증하던 토스트를 가린다). 다른 RequestPage 테스트의
+  mock 에는 넣지 않았다 — 그 테스트들은 토스트를 검사하지 않아 통과하지만, 앞으로 에러 토스트를 검사하는 테스트를 만들 때는 같은 mock 이 필요하다.
+- **수동 검증**:
+  1. [이전] 개발자도구 Local Storage 에 `jayerFilterSets` 가 있는 PC 에서 의뢰서 작성 → 기대: "서버로 옮겼습니다" 토스트, 키 삭제,
+     STEP3 필터 버튼 목록이 그대로.
+  2. [추가] STEP3 '필터 관리' → 키워드 입력 → 추가 → 새로고침 후 다시 의뢰서 작성 STEP3 → 기대: 필터 버튼이 남아 있다. 다른 PC 에서도 보인다.
+  3. [적용] 그 필터 버튼 클릭 → 기대: 매칭 행이 st=X 로 바뀌는 종전 동작 그대로.
+  4. [삭제] 삭제·전체 삭제 → 새로고침 후에도 사라져 있다. STEP4(O) 도 같은 순서로 확인.
 
 ## 5. 검증 방법
 ```bash

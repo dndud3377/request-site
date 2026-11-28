@@ -5,7 +5,7 @@ from .views import (
     VOCViewSet, LineViewSet, LayerFilterSetViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet, GuideViewSet, UserGroupViewSet, AddressBookViewSet,
     ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet, PersonalMarkCategoryViewSet,
-    PersonalFilterPresetViewSet,
+    PersonalFilterPresetViewSet, PersonalLayerFilterViewSet,
     health_check, upload_image, upload_video,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_extra_layer, form_options_bb_external,
@@ -34,6 +34,8 @@ router.register(r'design-rule-documents', DocumentDesignRuleOverrideViewSet, bas
 router.register(r'mark-categories', PersonalMarkCategoryViewSet, basename='mark-category')
 # claude 수정 (2026-11-09): 결재 현황 '나만의 필터'
 router.register(r'filter-presets', PersonalFilterPresetViewSet, basename='filter-preset')
+# claude 수정 (2026-11-28): 개인 J/O 필터·색상 필터 서버 저장(종전 localStorage)
+router.register(r'personal-layer-filters', PersonalLayerFilterViewSet, basename='personal-layer-filter')
 
 # 외부 API Key 전용 read-only 라우트 — 내부 documents 라우트와 완전히 분리된 네임스페이스
 external_router = DefaultRouter()

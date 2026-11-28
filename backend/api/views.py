@@ -36,7 +36,7 @@ from .models import (
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
     PersonalMarkCategory, PersonalDocumentMark, RoundSubmission, PersonalFilterPreset,
-    WithdrawSnapshot, VocMention,
+    WithdrawSnapshot, VocMention, PersonalLayerFilter,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
 from .search_filters import AdiCdTargetSearchFilter
@@ -55,7 +55,7 @@ from .serializers import (
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
     RejectionSnapshotSerializer, LayerFilterSetSerializer, PersonalMarkCategorySerializer,
-    PersonalFilterPresetSerializer, WithdrawSnapshotSerializer,
+    PersonalFilterPresetSerializer, WithdrawSnapshotSerializer, PersonalLayerFilterSerializer,
 )
 import os
 import uuid
@@ -4352,6 +4352,90 @@ class PersonalFilterPresetViewSet(viewsets.ModelViewSet):
                     preset.order = order
                     preset.save(update_fields=['order'])
         return Response(self.get_serializer(self.get_queryset(), many=True).data)
+
+
+# claude 수정 (2026-11-28): 개인 J/O 필터·색상 필터 서버 저장(종전 localStorage) — 본인 것만 다룬다
+class PersonalLayerFilterViewSet(viewsets.ModelViewSet):
+    """개인 J/O 필터·색상 필터 CRUD. 항상 요청한 사용자 것만 조회·수정·삭제한다(남의 것은 404).
+
+    목록은 ?kind=filter|color&table=J|O 로 좁힌다. 'clear' 는 한 종류·한 표의 목록 전체 삭제,
+    'import' 는 브라우저 localStorage 에 남아 있던 목록을 순서 그대로 한 번에 등록한다(자동 이전용).
+    """
+    serializer_class = PersonalLayerFilterSerializer
+    permission_classes = [IsAuthenticatedInProd]
+    pagination_class = None
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        user = self.request.user
+        if not getattr(user, 'is_authenticated', False):
+            return PersonalLayerFilter.objects.none()
+        qs = PersonalLayerFilter.objects.filter(user=user)
+        if self.action == 'list':
+            kind, table = self._kind_table(self.request.query_params, required=False)
+            if kind:
+                qs = qs.filter(kind=kind)
+            if table:
+                qs = qs.filter(table=table)
+        return qs
+
+    @staticmethod
+    def _kind_table(data, required=True):
+        """kind·table 값을 꺼내 검사한다. required 면 둘 다 있어야 한다."""
+        kind = data.get('kind') or None
+        table = data.get('table') or None
+        kinds = {k for k, _ in PersonalLayerFilter.KIND_CHOICES}
+        tables = {t for t, _ in PersonalLayerFilter.TABLE_CHOICES}
+        if (required or kind is not None) and kind not in kinds:
+            raise ValidationError({'kind': 'kind 는 filter 또는 color 여야 합니다.'})
+        if (required or table is not None) and table not in tables:
+            raise ValidationError({'table': 'table 은 J 또는 O 여야 합니다.'})
+        return kind, table
+
+    def _require_login(self):
+        # 개발 모드는 IsAuthenticatedInProd 가 비인증 요청도 통과시키므로 쓰기는 여기서 막는다(나만의 필터와 동일).
+        if not getattr(self.request.user, 'is_authenticated', False):
+            raise NotAuthenticated()
+
+    def perform_create(self, serializer):
+        self._require_login()
+        serializer.save()
+
+    @action(detail=False, methods=['post'])
+    def clear(self, request):
+        """body {kind, table} — 내 그 종류·그 표 필터를 모두 지운다. 다른 종류·표·사용자 것은 남는다."""
+        self._require_login()
+        kind, table = self._kind_table(request.data)
+        deleted, _ = PersonalLayerFilter.objects.filter(user=request.user, kind=kind, table=table).delete()
+        return Response({'deleted': deleted})
+
+    @action(detail=False, methods=['post'], url_path='import')
+    def import_items(self, request):
+        """body {kind, table, items: [{label, words}, ...]} — 순서대로 한 트랜잭션에 등록하고 그 표의 내 목록을 돌려준다.
+
+        이미 서버에 있는 필터는 그대로 두고 뒤에 덧붙인다(여러 PC 의 목록을 잃지 않기 위함 — 중복은 사용자가 지운다).
+        하나라도 형식이 틀리면 아무것도 저장하지 않는다.
+        """
+        self._require_login()
+        kind, table = self._kind_table(request.data)
+        items = request.data.get('items')
+        if not isinstance(items, list):
+            raise ValidationError({'items': 'items 는 배열이어야 합니다.'})
+        serializers_ = []
+        for idx, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValidationError({'items': f'items[{idx}] 형식이 올바르지 않습니다.'})
+            ser = self.get_serializer(data={
+                'kind': kind, 'table': table, 'label': item.get('label', ''), 'words': item.get('words', {}),
+            })
+            if not ser.is_valid():
+                raise ValidationError({'items': {idx: ser.errors}})
+            serializers_.append(ser)
+        with transaction.atomic():
+            for ser in serializers_:
+                ser.save()
+        qs = PersonalLayerFilter.objects.filter(user=request.user, kind=kind, table=table)
+        return Response(self.get_serializer(qs, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):

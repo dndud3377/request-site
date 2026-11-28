@@ -52,6 +52,8 @@ import {
   PersonalMarkCategory,
   PersonalFilterPreset,
   PersonalFilterPresetInput,
+  PersonalLayerFilterKind,
+  PersonalLayerFilterResponse,
   PhotoStepChangeListResponse,
   PhotoStepChangeTableType,
   LayerDriftResponse,
@@ -717,6 +719,30 @@ export const filterPresetsAPI = {
   delete: (id: number): Promise<void> => request(`/filter-presets/${id}/`, { method: 'DELETE' }),
   reorder: (ids: number[]): Promise<PersonalFilterPreset[]> =>
     post<PersonalFilterPreset[]>('/filter-presets/reorder/', { ids }),
+};
+
+// claude 수정 (2026-11-28): 개인 J/O 필터·색상 필터 API — 종전 localStorage 저장을 서버(본인 것만)로 옮긴다
+type PersonalLayerWords<K extends PersonalLayerFilterKind> = PersonalLayerFilterResponse<K>['words'];
+
+export const personalLayerFiltersAPI = {
+  list: <K extends PersonalLayerFilterKind>(kind: K, table: 'J' | 'O'): Promise<PersonalLayerFilterResponse<K>[]> =>
+    get<PersonalLayerFilterResponse<K>[]>(`/personal-layer-filters/?kind=${kind}&table=${table}`),
+  create: <K extends PersonalLayerFilterKind>(
+    kind: K, table: 'J' | 'O', label: string, words: PersonalLayerWords<K>,
+  ): Promise<PersonalLayerFilterResponse<K>> =>
+    post<PersonalLayerFilterResponse<K>>('/personal-layer-filters/', { kind, table, label, words }),
+  update: <K extends PersonalLayerFilterKind>(
+    id: number, label: string, words: PersonalLayerWords<K>,
+  ): Promise<PersonalLayerFilterResponse<K>> =>
+    patch<PersonalLayerFilterResponse<K>>(`/personal-layer-filters/${id}/`, { label, words }),
+  delete: (id: number): Promise<void> => request(`/personal-layer-filters/${id}/`, { method: 'DELETE' }),
+  clear: (kind: PersonalLayerFilterKind, table: 'J' | 'O'): Promise<{ deleted: number }> =>
+    post<{ deleted: number }>('/personal-layer-filters/clear/', { kind, table }),
+  /** localStorage 에 남아 있던 목록을 순서대로 서버 목록 뒤에 덧붙이고, 그 표의 내 전체 목록을 돌려준다. */
+  importItems: <K extends PersonalLayerFilterKind>(
+    kind: K, table: 'J' | 'O', items: { label: string; words: PersonalLayerWords<K> }[],
+  ): Promise<PersonalLayerFilterResponse<K>[]> =>
+    post<PersonalLayerFilterResponse<K>[]>('/personal-layer-filters/import/', { kind, table, items }),
 };
 
 // ===== 디자인룰 수동 매핑 API (쓰기는 MASTER 전용) =====

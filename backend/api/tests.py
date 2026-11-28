@@ -24,7 +24,7 @@ from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
     UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
-    RoundSubmission, PersonalFilterPreset, VOC, WithdrawSnapshot, VocMention,
+    RoundSubmission, PersonalFilterPreset, VOC, WithdrawSnapshot, VocMention, PersonalLayerFilter,
 )
 
 
@@ -15040,3 +15040,120 @@ class StaleDraftCleanupTest(TestCase):
             trigger = ids[scheduler.DELETE_STALE_DRAFTS_JOB_ID].kwargs['trigger']
             self.assertEqual(str(trigger.fields[5]), '3', starter.__name__)  # hour
             self.assertEqual(str(trigger.fields[6]), '0', starter.__name__)  # minute
+
+
+# claude 수정 (2026-11-28): 개인 J/O 필터·색상 필터 서버 저장 API 검증
+class PersonalLayerFilterApiTest(TestCase):
+    """/api/personal-layer-filters/ — 사용자별 개인 J/O 필터·색상 필터 저장·조회·수정·삭제·전체 삭제·일괄 이전."""
+
+    URL = '/api/personal-layer-filters/'
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.me = UserProfile.objects.create(loginid='me', mail='me@c.com', role='TE_J')
+        self.other = UserProfile.objects.create(loginid='other', mail='other@c.com', role='TE_J')
+        self.client.force_authenticate(user=self.me)
+
+    def _create(self, kind='filter', table='J', label='필터', words=None):
+        body = {'kind': kind, 'table': table, 'label': label, 'words': words if words is not None else {'sp': ['a']}}
+        return self.client.post(self.URL, body, format='json')
+
+    def test_create_fills_missing_word_fields_and_lists_only_mine(self):
+        r = self._create(label=' 내 필터 ', words={'sp': ['ABC']})
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()['label'], '내 필터')
+        self.assertEqual(r.json()['words'], {'sp': ['ABC'], 'sd': [], 'pp': []})
+        PersonalLayerFilter.objects.create(user=self.other, kind='filter', table='J', label='남의 것', words={})
+        self.assertEqual([f['label'] for f in self.client.get(self.URL).json()], ['내 필터'])
+
+    def test_list_filters_by_kind_and_table_in_creation_order(self):
+        self._create(kind='filter', table='J', label='J1')
+        self._create(kind='color', table='J', label='C1', words={'sp': [{'word': 'a', 'color': '#FF0000'}]})
+        self._create(kind='filter', table='O', label='O1')
+        self._create(kind='filter', table='J', label='J2')
+        labels = [f['label'] for f in self.client.get(self.URL, {'kind': 'filter', 'table': 'J'}).json()]
+        self.assertEqual(labels, ['J1', 'J2'])
+        self.assertEqual([f['label'] for f in self.client.get(self.URL, {'kind': 'color', 'table': 'J'}).json()], ['C1'])
+        self.assertEqual(self.client.get(self.URL, {'kind': 'xxx'}).status_code, 400)
+
+    def test_word_format_validation_by_kind(self):
+        self.assertEqual(self._create(words={'sp': [1]}).status_code, 400)
+        self.assertEqual(self._create(words={'zz': []}).status_code, 400)
+        self.assertEqual(self._create(words={'sp': 'abc'}).status_code, 400)
+        self.assertEqual(self._create(kind='color', words={'sp': ['abc']}).status_code, 400)
+        self.assertEqual(self._create(kind='color', words={'sp': [{'word': 'a', 'color': 1}]}).status_code, 400)
+        self.assertEqual(self._create(label='  ').status_code, 400)
+        self.assertEqual(self._create(kind='bad').status_code, 400)
+        self.assertEqual(self._create(table='X').status_code, 400)
+        self.assertEqual(PersonalLayerFilter.objects.count(), 0)
+
+    def test_no_length_or_count_limit(self):
+        long_label = '가' * 500
+        self.assertEqual(self._create(label=long_label).status_code, 201)
+        for i in range(15):
+            self.assertEqual(self._create(label=f'f{i}').status_code, 201)
+        self.assertEqual(PersonalLayerFilter.objects.filter(user=self.me).count(), 16)
+
+    def test_patch_updates_but_kind_table_are_fixed(self):
+        fid = self._create().json()['id']
+        r = self.client.patch(f'{self.URL}{fid}/', {'label': '새 이름', 'words': {'pp': ['X']}}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['words'], {'sp': [], 'sd': [], 'pp': ['X']})
+        self.assertEqual(self.client.patch(f'{self.URL}{fid}/', {'kind': 'color'}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(f'{self.URL}{fid}/', {'table': 'O'}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(f'{self.URL}{fid}/', {'words': {'sp': [3]}}, format='json').status_code, 400)
+
+    def test_cannot_touch_others_filter(self):
+        theirs = PersonalLayerFilter.objects.create(user=self.other, kind='filter', table='J', label='남의 것', words={})
+        self.assertEqual(self.client.get(f'{self.URL}{theirs.id}/').status_code, 404)
+        self.assertEqual(self.client.patch(f'{self.URL}{theirs.id}/', {'label': 'x'}, format='json').status_code, 404)
+        self.assertEqual(self.client.delete(f'{self.URL}{theirs.id}/').status_code, 404)
+        self.assertTrue(PersonalLayerFilter.objects.filter(pk=theirs.pk, label='남의 것').exists())
+
+    def test_delete_one(self):
+        fid = self._create().json()['id']
+        self.assertEqual(self.client.delete(f'{self.URL}{fid}/').status_code, 204)
+        self.assertFalse(PersonalLayerFilter.objects.filter(pk=fid).exists())
+
+    def test_clear_only_that_kind_table_of_mine(self):
+        self._create(kind='filter', table='J', label='지울 것')
+        self._create(kind='filter', table='O', label='O 남김')
+        self._create(kind='color', table='J', label='색 남김', words={})
+        PersonalLayerFilter.objects.create(user=self.other, kind='filter', table='J', label='남의 것', words={})
+        r = self.client.post(f'{self.URL}clear/', {'kind': 'filter', 'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['deleted'], 1)
+        self.assertEqual(
+            sorted(PersonalLayerFilter.objects.values_list('label', flat=True)), ['O 남김', '남의 것', '색 남김'])
+        self.assertEqual(self.client.post(f'{self.URL}clear/', {'kind': 'filter'}, format='json').status_code, 400)
+
+    def test_import_appends_in_order_after_existing(self):
+        self._create(kind='color', table='O', label='기존', words={})
+        items = [
+            {'label': '첫째', 'words': {'sp': [{'word': 'a', 'color': '#111111'}]}},
+            {'label': '둘째', 'words': {'pp': [{'word': 'b', 'color': '#222222'}], 'sd': []}},
+        ]
+        r = self.client.post(f'{self.URL}import/', {'kind': 'color', 'table': 'O', 'items': items}, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual([f['label'] for f in r.json()], ['기존', '첫째', '둘째'])
+        self.assertEqual(r.json()[2]['words'], {'sp': [], 'sd': [], 'pp': [{'word': 'b', 'color': '#222222'}]})
+        self.assertTrue(all(f.user_id == self.me.id for f in PersonalLayerFilter.objects.all()))
+
+    def test_import_is_all_or_nothing(self):
+        items = [{'label': '정상', 'words': {'sp': ['a']}}, {'label': '잘못', 'words': {'sp': [7]}}]
+        r = self.client.post(f'{self.URL}import/', {'kind': 'filter', 'table': 'J', 'items': items}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(PersonalLayerFilter.objects.count(), 0)
+        self.assertEqual(
+            self.client.post(f'{self.URL}import/', {'kind': 'filter', 'table': 'J', 'items': 'x'}, format='json').status_code,
+            400)
+
+    def test_unauthenticated_writes_rejected(self):
+        from rest_framework.test import APIClient
+        anon = APIClient()
+        self.assertIn(anon.post(self.URL, {'kind': 'filter', 'table': 'J', 'label': 'x', 'words': {}}, format='json').status_code,
+                      (401, 403))
+        self.assertIn(anon.post(f'{self.URL}import/', {'kind': 'filter', 'table': 'J', 'items': []}, format='json').status_code,
+                      (401, 403))
+        self.assertEqual(PersonalLayerFilter.objects.count(), 0)

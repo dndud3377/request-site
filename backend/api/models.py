@@ -2395,3 +2395,38 @@ class PersonalFilterPreset(models.Model):
 
     def __str__(self):
         return f"{self.user.loginid} · {self.name}"
+
+
+# claude 수정 (2026-11-28): localStorage 에만 있던 개인 J/O 필터·색상 필터를 PC 문제로 잃지 않도록 서버에 사용자별로 저장
+class PersonalLayerFilter(models.Model):
+    """J/O-layer 표의 개인별 필터 한 건 — 본인만 보고 다른 사용자와 공유되지 않는다.
+
+    kind 로 두 기능을 함께 담는다.
+    - 'filter': 의뢰서 작성 STEP3/4 개인 필터. words = {sp, sd, pp} 각각 키워드 문자열 배열.
+      버튼을 눌렀을 때만 적용된다(공유 필터 LayerFilterSet 과 달리 자동 적용 없음).
+    - 'color' : 결재 상세 '색상 적용'. words = {sp, sd, pp} 각각 {word, color} 배열. 데이터를 바꾸지 않는다.
+    목록 순서(= id 순, 추가한 순서)가 색상 필터의 색 우선순위이므로 정렬을 바꾸지 않는다.
+    이름 길이·개수 제한은 두지 않는다(사용자 결정).
+    """
+
+    KIND_FILTER = 'filter'
+    KIND_COLOR = 'color'
+    KIND_CHOICES = [(KIND_FILTER, '개인 필터'), (KIND_COLOR, '색상 필터')]
+    TABLE_CHOICES = [('J', 'J-layer'), ('O', 'O-layer')]
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='personal_layer_filters', verbose_name='소유자')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, verbose_name='종류')
+    table = models.CharField(max_length=1, choices=TABLE_CHOICES, verbose_name='대상 표')
+    label = models.TextField(verbose_name='필터 이름')
+    words = models.JSONField(default=dict, verbose_name='키워드(sp/sd/pp)')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
+
+    class Meta:
+        verbose_name = '개인 J/O 필터'
+        verbose_name_plural = '개인 J/O 필터 목록'
+        ordering = ['id']
+        indexes = [models.Index(fields=['user', 'kind', 'table'], name='personal_layer_filter_idx')]
+
+    def __str__(self):
+        return f"{self.user.loginid} · {self.kind}/{self.table} · {self.label}"

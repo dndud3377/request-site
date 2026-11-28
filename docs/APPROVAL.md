@@ -2548,7 +2548,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **예외**: MASTER 와 가이드 투어 미리보기는 자동 적용·잠금 대상이 아니다('자동 미진행'과 같다).
 - **서버 검증**: 상신·재상신·의뢰자 재상신·이력 바로 등록에서 공유 필터에 걸리는 행이 X+미진행이 아니면 400
   (`_validate_layer_filter_rows`, MASTER 통과, `_validate_np_keyword_rows` 바로 뒤).
-- 작성 화면의 **개인 필터**(localStorage, 버튼으로 적용)는 그대로다(사용자 결정).
+- 작성 화면의 **개인 필터**(버튼으로 적용)는 그대로다(사용자 결정). 저장 위치는 2026-11-28 부터 서버(본인만, §13-8)다.
 - 참조 요청서 '없음'(변경전/변경후)과의 관계는 '자동 미진행'과 같다 — 공유 필터 행을 layer 추가 대상으로 적으면 '확정'(ST O) 뒤
   '다음'이 다시 X·미진행으로 바꿔 상신이 `_validate_ref_doc_st` 에 막힌다.
 
@@ -2592,18 +2592,19 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 §12 의 공유 필터(LayerFilterSet)는 매칭된 행을 ST X·미진행으로 바꾸는 **데이터 변경**형 기능이다(2026-11-27 부터 자동 적용).
 "색상 적용"은 겉보기엔 같은 자리(같은 탭, 같은 툴바)에 있지만 완전히 다른 성격의 기능이다 —
-문서 데이터는 전혀 건드리지 않고, 매칭된 셀의 **배경색만** 화면에 표시한다. 그래서 §12 와 달리
-서버에 아무것도 저장하지 않는다(개인별 localStorage) — 백엔드/API/마이그레이션 변경이 없다.
+문서 데이터는 전혀 건드리지 않고, 매칭된 셀의 **배경색만** 화면에 표시한다. 색상 필터 **목록**은 2026-11-28 부터
+서버에 사용자별로(본인만 보이게) 저장한다(§13-8 — 종전 localStorage 는 PC 문제 시 사라졌다). 문서 데이터·결재 흐름에는 영향이 없다.
 
 ### 13-1. 데이터 모델과 저장 위치
 
 - `ColorFilterSet`(`frontend/src/types/index.ts`) — `{ id, label, words: { sp, sd, pp } }`. §12 의
   `LayerFilterSet.words`(문자열 배열)와 달리, 여기서는 `words.sp/sd/pp` 각각이
   `{ word, color }[]` — **키워드마다 색을 따로 지정**할 수 있다(한 필터 = 한 색이 아니다).
-- 저장 위치는 STEP3/4 의뢰서 작성 화면의 개인별 필터(`FilterSet`, localStorage 키
-  `jayerFilterSets`/`oayerFilterSets`)와 같은 방식 — `localStorage` 키
-  `jayerColorFilterSets`/`oayerColorFilterSets`에 배열 그대로 저장한다. 브라우저(사용자)별로
-  독립이며, 같은 문서를 다른 팀원이 열어도 서로의 색상 필터 목록·적용 상태는 보이지 않는다.
+- 저장 위치는 **서버 DB**(`PersonalLayerFilter`, kind `'color'`, §13-8)다 — STEP3/4 개인 필터(kind `'filter'`)와 같은 표.
+  사용자별로 독립이며, 같은 문서를 다른 팀원이 열어도 서로의 색상 필터 목록·적용 상태는 보이지 않는다.
+  같은 사용자는 어느 PC·브라우저에서 로그인해도 같은 목록을 본다. (2026-11-27 까지는 localStorage 키
+  `jayerColorFilterSets`/`oayerColorFilterSets` — 지금은 자동 이전용으로만 읽는다.)
+- 화면 id 는 서버 id 를 문자열로 바꾼 값(`String(id)`)이다 — 켜짐 상태 `Set<string>`·표·엑셀 코드는 그대로다.
 - **"켜짐"(활성) 상태**는 저장하지 않는다 — `ApprovalPage.tsx` 의
   `activeJayerColorFilterIds`/`activeOayerColorFilterIds`(`Set<string>`)는 순수 화면 상태로,
   상세 모달에서 다른 문서를 선택하면(`selected?.id` 변경) 자동으로 비워진다.
@@ -2631,7 +2632,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   공유 필터 툴바 바로 아래에 한 줄 더 보여준다. 노출 조건은 공유 필터와 **완전히 동일**하게
   `canUseJayerColorFilter`/`canUseOayerColorFilter`(=`canUseLayerFilter(selected, 'J'|'O')` 그대로
   재사용, `ApprovalPage.tsx`)를 쓴다. 저장된 색상 필터 각각이 토글 칩 하나이고(여러 개 동시
-  ON 가능), 칩 안의 점들은 그 필터에 섞여 있는 서로 다른 색을 미리보기로 보여준다. "🎨 색상 관리"
+  ON 가능), 칩 안의 점들은 그 필터에 섞여 있는 서로 다른 색을 미리보기로 보여준다 — 중복을 뺀 뒤
+  sp→sd→pp 키워드 순으로 **최대 4개**까지만 그린다(`ColorFilterToolbar` 의 `.slice(0, 4)`, 5색 이상이면 나머지는
+  점으로 보이지 않지만 셀 색칠에는 모두 적용된다). "🎨 색상 관리"
   버튼과, 그 옆에 전용 "초기화" 버튼(§13-4)이 있다.
 - `ColorFilterManageModal.tsx`(`frontend/src/pages/RequestPage/components/`) — 공용 `Modal` 컴포넌트를
   그대로 쓴다(§12 의 `FilterManageModal`과 같은 레이아웃 패턴: 저장된 목록 + 새로 만들기 폼,
@@ -2677,8 +2680,47 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 `frontend/src/pages/RequestPage/helpers.test.ts::matchLayerColor` — 매칭 성공/대소문자 무시,
 꺼진 필터 제외, 매칭 없음 시 `undefined`, 값이 비어 있을 때 `undefined`, 필터 목록 순서 우선,
-같은 필터 안 키워드 등록 순서 우선을 검증한다. 백엔드 변경이 없어 `backend/api/tests.py` 추가는
-없다.
+같은 필터 안 키워드 등록 순서 우선을 검증한다. 서버 저장(§13-8) 테스트는
+`backend/api/tests.py::PersonalLayerFilterApiTest`(11)·`frontend/src/utils/personalLayerFilters.test.ts`(5).
+
+### 13-8. 서버 저장·자동 이전 (2026-11-28 — 사용자 결정)
+
+- **배경**: 색상 필터·STEP3/4 개인 필터가 브라우저 localStorage 에만 있어, PC 에 문제가 생기면(브라우저 초기화·PC 교체)
+  등록해 둔 필터가 모두 사라졌다. 서버에 사용자별로 저장해 어느 PC 에서든 그대로 보이게 한다.
+- **범위**: J/O 색상 필터(이 절) + 의뢰서 작성 STEP3/4 J/O 개인 필터(`docs/REQUEST.md` "개인 필터 서버 저장" 절). 칩 **켜짐 상태는
+  저장하지 않는다**(현행 유지 — 문서를 바꾸거나 새로고침하면 꺼진다).
+- **모델** `PersonalLayerFilter`(마이그레이션 `0068_personallayerfilter`, **운영 반영 시 `migrate` 필요**): user FK(CASCADE),
+  kind(`filter`|`color`), table(`J`|`O`), label(TextField), words(JSON `{sp, sd, pp}`), created_at. 정렬은 **id 순(추가한 순서)** —
+  색상 필터는 목록 순서가 색 우선순위(§13-2)라 바꾸지 않는다. **이름 길이·개수 제한 없음**(사용자 결정).
+- **형식 검사**(저장·수정·이전 공통 400): words 키는 sp/sd/pp 만, 각 칸은 배열. kind `filter` 는 문자열 배열, kind `color` 는
+  `{word: 문자열, color: 문자열}` 배열(키워드가 문자열이 아니면 화면 매칭이 깨진다 — §12-5 와 같은 이유). 빠진 칸은 빈 배열로 채운다.
+  이름은 앞뒤 공백 제거 후 비면 400. kind·table 은 만든 뒤 바꿀 수 없다.
+- **API** (본인 것만, `IsAuthenticatedInProd`, 남의 필터는 404, 쓰기는 비로그인 거부):
+  | 메서드 | 경로 | 설명 |
+  |---|---|---|
+  | GET | `/api/personal-layer-filters/?kind=&table=` | 내 목록(id 순). 값이 틀리면 400 |
+  | POST | `/api/personal-layer-filters/` | 생성 `{kind, table, label, words}` |
+  | PATCH | `/api/personal-layer-filters/{id}/` | 이름·키워드 수정 |
+  | DELETE | `/api/personal-layer-filters/{id}/` | 삭제 |
+  | POST | `/api/personal-layer-filters/clear/` | `{kind, table}` 내 그 목록 전체 삭제('전체 삭제') → `{deleted}` |
+  | POST | `/api/personal-layer-filters/import/` | `{kind, table, items:[{label, words}]}` 순서대로 **기존 목록 뒤에 덧붙임**, 하나라도 틀리면 전부 취소 → 그 표의 내 전체 목록 |
+- **자동 이전**(`frontend/src/utils/personalLayerFilters.ts` `loadPersonalLayerFilters`, 사용자 결정 A): 화면을 열 때 서버 목록을 받고,
+  옛 localStorage 키(`jayerColorFilterSets`/`oayerColorFilterSets`/`jayerFilterSets`/`oayerFilterSets`)에 목록이 남아 있으면
+  **서버에 이미 목록이 있어도 항상 뒤에 덧붙여** 올린 뒤 그 키를 지운다(여러 PC 에서 쓰던 필터를 잃지 않기 위함 — 같은 필터가 두 PC 에
+  있었다면 서버에 두 번 들어가며, 관리 창에서 지우면 된다). 성공하면 안내 토스트(`request.personal_filter_migrated`).
+  이전이 실패하면 localStorage 를 **지우지 않고** 경고 토스트(`request.personal_filter_migrate_error`) — 다음에 화면을 열 때 다시 시도한다.
+  localStorage 값이 깨져 있으면(JSON 아님) 옮길 것이 없는 것으로 본다.
+- **화면**: 결재 현황은 툴바를 볼 수 있는 역할(J: TE_J·MASTER, O: TE_O·MASTER)만 불러온다. 가이드 투어(`embed=tour`)는 API 를 부르지 않는다.
+  목록 조회 실패 → `request.personal_filter_load_error`(빈 목록으로 표시), 추가·수정 실패 → `request.personal_filter_save_error`
+  (관리 창 입력 유지 — `ColorFilterManageModal`/`FilterManageModal` 의 `onAdd`/`onEdit` 이 `false` 를 받으면 입력을 비우지 않는다),
+  삭제·전체 삭제 실패 → `request.personal_filter_delete_error`(목록 유지).
+- **수동 검증**:
+  1. [이전] TE_J 로 로그인한 PC 에서 개발자도구 → Application → Local Storage 에 `jayerColorFilterSets` 가 있는 상태로 결재 현황 진입
+     → 기대: "이 PC에 저장돼 있던 필터 N개를 서버로 옮겼습니다" 토스트, `jayerColorFilterSets` 키가 사라짐, 상세 J-ayer 탭 색상 칩이 그대로 보임.
+  2. [다른 PC] 다른 브라우저(또는 시크릿 창)에서 같은 계정으로 로그인 → 결재 현황 → 진행 중 의뢰서 J-ayer 탭 → 기대: 같은 색상 칩 목록.
+  3. [추가·수정·삭제] 🎨 색상 관리에서 추가 → 새로고침 → 그대로 남아 있으면 정상. 수정·삭제·전체 삭제도 새로고침 후 반영돼 있어야 한다.
+  4. [격리] 다른 TE_J 계정으로 로그인 → 기대: 1~3 의 필터가 보이지 않는다.
+  5. [실패] 백엔드를 내린 채 결재 현황 진입 → 기대: '불러오지 못했습니다' 토스트, 화면은 깨지지 않는다.
 
 ## 결재 상세 Jayer 표·엑셀 JOB 시트에 Layer 컬럼 추가 (2026-09-30)
 

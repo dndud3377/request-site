@@ -7,7 +7,7 @@ from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
     RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory, RoundSubmission,
-    MapSchedule, PersonalFilterPreset, WithdrawSnapshot,
+    MapSchedule, PersonalFilterPreset, WithdrawSnapshot, PersonalLayerFilter,
 )
 from . import doc_permissions
 from .pop3_mail import TARGET_STATUSES as MAP_BADGE_TARGET_STATUSES
@@ -962,6 +962,69 @@ class PersonalFilterPresetSerializer(serializers.ModelSerializer):
         last = PersonalFilterPreset.objects.filter(user=owner).aggregate(m=Max('order'))['m']
         validated_data['user'] = owner
         validated_data['order'] = 0 if last is None else last + 1
+        return super().create(validated_data)
+
+
+# claude 수정 (2026-11-28): 개인 J/O 필터·색상 필터를 서버에 저장 — 형식만 검사하고 이름 길이·개수 제한은 두지 않는다(사용자 결정)
+class PersonalLayerFilterSerializer(serializers.ModelSerializer):
+    """개인 J/O 필터 한 건. 소유자는 서버가 정하고, kind·table 은 만든 뒤 바꿀 수 없다.
+
+    words 는 {sp, sd, pp} 세 칸으로 맞춰 저장한다(빠진 칸은 빈 배열).
+    - kind 'filter': 각 칸이 키워드 문자열 배열
+    - kind 'color' : 각 칸이 {word: 문자열, color: 문자열} 배열
+    키워드가 문자열이 아니면 화면 매칭(toLowerCase)이 깨지므로 저장 단계에서 막는다(LayerFilterSet 과 같은 이유).
+    """
+
+    WORD_FIELDS = ('sp', 'sd', 'pp')
+
+    class Meta:
+        model = PersonalLayerFilter
+        fields = ['id', 'kind', 'table', 'label', 'words', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def validate_label(self, value):
+        label = value.strip()
+        if not label:
+            raise serializers.ValidationError('필터 이름을 입력하세요.')
+        return label
+
+    def validate(self, attrs):
+        if self.instance is not None:
+            for field in ('kind', 'table'):
+                if field in attrs and attrs[field] != getattr(self.instance, field):
+                    raise serializers.ValidationError({field: '만든 뒤에는 바꿀 수 없습니다.'})
+        kind = attrs.get('kind', getattr(self.instance, 'kind', None))
+        if 'words' in attrs:
+            attrs['words'] = self._clean_words(attrs['words'], kind)
+        elif self.instance is None:
+            attrs['words'] = {k: [] for k in self.WORD_FIELDS}
+        return attrs
+
+    def _clean_words(self, value, kind):
+        if not isinstance(value, dict) or not all(k in self.WORD_FIELDS for k in value.keys()):
+            raise serializers.ValidationError({'words': 'words 는 {sp, sd, pp} 형태여야 합니다.'})
+        cleaned = {}
+        for k in self.WORD_FIELDS:
+            items = value.get(k, [])
+            if not isinstance(items, list):
+                raise serializers.ValidationError({'words': f'words.{k} 는 배열이어야 합니다.'})
+            if kind == PersonalLayerFilter.KIND_COLOR:
+                ok = all(
+                    isinstance(e, dict) and isinstance(e.get('word'), str) and isinstance(e.get('color'), str)
+                    for e in items
+                )
+                if not ok:
+                    raise serializers.ValidationError(
+                        {'words': f'words.{k} 는 {{word, color}} 문자열 쌍의 배열이어야 합니다.'})
+                cleaned[k] = [{'word': e['word'], 'color': e['color']} for e in items]
+            else:
+                if not all(isinstance(e, str) for e in items):
+                    raise serializers.ValidationError({'words': f'words.{k} 의 키워드는 문자열이어야 합니다.'})
+                cleaned[k] = list(items)
+        return cleaned
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
 
