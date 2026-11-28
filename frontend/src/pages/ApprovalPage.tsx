@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI, markCategoriesAPI, filterPresetsAPI } from '../api/client';
+import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI, markCategoriesAPI, filterPresetsAPI, personalLayerFiltersAPI } from '../api/client';
+import { loadPersonalLayerFilters, toPersonalLayerSet } from '../utils/personalLayerFilters';
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
 import AdiCdTargetsCell from '../components/AdiCdTargetsCell';
@@ -428,8 +429,8 @@ export default function ApprovalPage(): React.ReactElement {
   }, [currentUser.role]);
 
   // ===== 결재 상세페이지 J/O-layer "색상 적용" — 위 공유 필터(LayerFilterSet, 데이터를 실제로
-  // 바꿈)와 달리 매칭된 셀의 배경색만 바꾸는 개인별(localStorage) 기능. 의뢰서 작성 화면의
-  // 개인별 필터(jayerFilterSets 등)와 같은 저장 방식이라 서버 조회는 필요 없다. =====
+  // 바꿈)와 달리 매칭된 셀의 배경색만 바꾸는 개인별 기능. 목록은 서버에 본인 것만 저장한다
+  // (/api/personal-layer-filters/, kind='color'). 켜짐 상태는 저장하지 않는다. =====
   const [jayerColorFilterSets, setJayerColorFilterSets] = useState<ColorFilterSet[]>([]);
   const [oayerColorFilterSets, setOayerColorFilterSets] = useState<ColorFilterSet[]>([]);
   // 지금 화면에 켜져 있는(체크된) 색상 필터 id — 문서를 바꿔 열면 초기화된다.
@@ -445,15 +446,28 @@ export default function ApprovalPage(): React.ReactElement {
   // 켜져 있는 표시(activeXayerColorFilterIds)만 비운다.
   const [colorFilterResetConfirm, setColorFilterResetConfirm] = useState<'J' | 'O' | null>(null);
 
+  // claude 수정 (2026-11-28): localStorage → 서버 목록 조회. 이 PC 에 남은 옛 목록은 서버로 자동 이전(성공 시 localStorage 삭제).
+  // 툴바를 볼 수 있는 역할(J: TE_J·MASTER, O: TE_O·MASTER)만 불러오고, 가이드 투어 화면에서는 부르지 않는다.
   useEffect(() => {
-    const loadColorSets = (key: string, setter: (v: ColorFilterSet[]) => void) => {
-      const saved = localStorage.getItem(key);
-      if (!saved) return;
-      try { setter(JSON.parse(saved)); } catch { /* 파싱 실패 시 기본값 유지 */ }
-    };
-    loadColorSets('jayerColorFilterSets', setJayerColorFilterSets);
-    loadColorSets('oayerColorFilterSets', setOayerColorFilterSets);
-  }, []);
+    if (isTourMode) return undefined;
+    let cancelled = false;
+    const tables: { table: 'J' | 'O'; setter: (v: ColorFilterSet[]) => void }[] = [];
+    if (currentUser.role === 'MASTER' || currentUser.role === 'TE_J') tables.push({ table: 'J', setter: setJayerColorFilterSets });
+    if (currentUser.role === 'MASTER' || currentUser.role === 'TE_O') tables.push({ table: 'O', setter: setOayerColorFilterSets });
+    tables.forEach(async ({ table, setter }) => {
+      try {
+        const { sets, migrated, migrateFailed } = await loadPersonalLayerFilters('color', table);
+        if (cancelled) return;
+        setter(sets);
+        if (migrated > 0) addToast(t('request.personal_filter_migrated', { count: migrated }), 'info');
+        if (migrateFailed) addToast(t('request.personal_filter_migrate_error'), 'warning');
+      } catch {
+        if (!cancelled) addToast(t('request.personal_filter_load_error'), 'error');
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser.role, isTourMode]);
 
   // 열려 있는 문서를 바꾸면 이전 문서에서 켜둔 색상 표시는 끈다(문서별 상태가 아니라
   // "지금 보고 있는 화면"의 표시 상태이므로).
@@ -1151,26 +1165,42 @@ export default function ApprovalPage(): React.ReactElement {
     addToast(t('request.color_filter_reset_toast'), 'info');
   };
 
-  const persistColorFilterSets = (table: 'J' | 'O', sets: ColorFilterSet[]) => {
-    (table === 'J' ? setJayerColorFilterSets : setOayerColorFilterSets)(sets);
-    localStorage.setItem(table === 'J' ? 'jayerColorFilterSets' : 'oayerColorFilterSets', JSON.stringify(sets));
+  // claude 수정 (2026-11-28): 추가·수정·삭제·전체 삭제를 localStorage 대신 서버 API 로 저장한다(실패 시 화면 목록은 그대로, 에러 토스트)
+  const colorSetter = (table: 'J' | 'O') => (table === 'J' ? setJayerColorFilterSets : setOayerColorFilterSets);
+
+  const addColorFilter = async (table: 'J' | 'O', label: string, words: ColorFilterSet['words']): Promise<boolean> => {
+    try {
+      const created = await personalLayerFiltersAPI.create('color', table, label, words);
+      colorSetter(table)((prev) => [...prev, toPersonalLayerSet(created)]);
+      return true;
+    } catch {
+      addToast(t('request.personal_filter_save_error'), 'error');
+      return false;
+    }
   };
 
-  const addColorFilter = (table: 'J' | 'O', label: string, words: ColorFilterSet['words']) => {
-    const sets = table === 'J' ? jayerColorFilterSets : oayerColorFilterSets;
-    persistColorFilterSets(table, [...sets, { id: String(Date.now()), label, words }]);
+  const editColorFilter = async (table: 'J' | 'O', filterId: string, label: string, words: ColorFilterSet['words']): Promise<boolean> => {
+    try {
+      const updated = toPersonalLayerSet(await personalLayerFiltersAPI.update<'color'>(Number(filterId), label, words));
+      colorSetter(table)((prev) => prev.map((f) => (f.id === filterId ? updated : f)));
+      return true;
+    } catch {
+      addToast(t('request.personal_filter_save_error'), 'error');
+      return false;
+    }
   };
 
-  const editColorFilter = (table: 'J' | 'O', filterId: string, label: string, words: ColorFilterSet['words']) => {
-    const sets = table === 'J' ? jayerColorFilterSets : oayerColorFilterSets;
-    persistColorFilterSets(table, sets.map((f) => (f.id === filterId ? { ...f, label, words } : f)));
-  };
-
-  const confirmColorFilterDelete = () => {
+  const confirmColorFilterDelete = async () => {
     if (!colorFilterDeleteConfirm) return;
     const { table, id, label } = colorFilterDeleteConfirm;
-    const sets = table === 'J' ? jayerColorFilterSets : oayerColorFilterSets;
-    persistColorFilterSets(table, sets.filter((f) => f.id !== id));
+    try {
+      await personalLayerFiltersAPI.delete(Number(id));
+    } catch {
+      setColorFilterDeleteConfirm(null);
+      addToast(t('request.personal_filter_delete_error'), 'error');
+      return;
+    }
+    colorSetter(table)((prev) => prev.filter((f) => f.id !== id));
     (table === 'J' ? setActiveJayerColorFilterIds : setActiveOayerColorFilterIds)((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
@@ -1181,10 +1211,17 @@ export default function ApprovalPage(): React.ReactElement {
     addToast(t('request.color_filter_delete_toast', { label }), 'info');
   };
 
-  const confirmColorFilterAllDelete = () => {
+  const confirmColorFilterAllDelete = async () => {
     if (!colorFilterAllDeleteConfirm) return;
     const table = colorFilterAllDeleteConfirm;
-    persistColorFilterSets(table, []);
+    try {
+      await personalLayerFiltersAPI.clear('color', table);
+    } catch {
+      setColorFilterAllDeleteConfirm(null);
+      addToast(t('request.personal_filter_delete_error'), 'error');
+      return;
+    }
+    colorSetter(table)([]);
     (table === 'J' ? setActiveJayerColorFilterIds : setActiveOayerColorFilterIds)(new Set());
     setColorFilterAllDeleteConfirm(null);
     addToast(t('request.color_filter_all_delete_toast'), 'info');
