@@ -2479,8 +2479,10 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ### 12-3. 진행 중 의뢰서 일괄 적용 (필터 추가·수정 저장 시)
 
-- `POST /api/layer-filter-sets/`·`PATCH|PUT /api/layer-filter-sets/{id}/` 를 저장하면 **같은 트랜잭션**에서 그 필터를
-  `target_documents` 전부에 적용하고, 응답에 `applied: {document_count, row_count}` 를 싣는다. 적용 중 오류가 나면 필터 저장도 함께 롤백된다.
+- `POST /api/layer-filter-sets/`·`PATCH|PUT /api/layer-filter-sets/{id}/` 를 저장하면 **같은 트랜잭션**에서 그 표의 **공유 필터 전체**
+  (방금 저장한 것 포함)를 `target_documents` 전부에 한 번에 적용하고, 응답에 `applied: {document_count, row_count}` 를 싣는다.
+  적용 중 오류가 나면 필터 저장도 함께 롤백된다. (2026-11-28 수정 — 예전에는 저장한 필터 하나만 적용해, 먼저 만든 필터가 아직
+  적용되지 않은 문서(배포 전부터 진행 중·MASTER 상신 등)에는 필터가 '하나씩' 들어갔다. 배포 뒤 첫 저장 때 그동안 빠진 필터도 함께 적용된다.)
 - **대상 문서**(사용자 결정 2026-11-27):
 
   | 상태 | 대상 여부 |
@@ -2496,8 +2498,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **삭제·키워드 제거는 되돌리지 않는다**(사용자 결정): 필터를 지우거나 키워드를 빼도 이미 X+미진행이 된 행은 그대로이고,
   작성 화면 잠금만 풀린다.
 - 적용 사실은 따로 기록하지 않는다(기존 결정 유지 — 결재 단계 코멘트·감사 로그 없음).
-- **미리보기**: `POST /api/layer-filter-sets/preview/` `{table, words}` → `{document_count, row_count, documents: [{id, title, status, row_count}]}`.
-  저장·변경 없이, 지금 저장하면 바뀔 문서·행 수만 계산한다(수정 미리보기도 바뀐 뒤의 words 를 그대로 보낸다).
+- **미리보기**: `POST /api/layer-filter-sets/preview/` `{table, words, id?}` → `{document_count, row_count, documents: [{id, title, status, row_count}]}`.
+  저장·변경 없이, 지금 저장하면 바뀔 문서·행 수를 **그 표의 공유 필터 전체 + 입력 키워드**로 계산한다(저장 시 적용과 같은 기준).
+  수정 미리보기는 `id`(수정 중인 필터)를 보내 그 필터의 옛 키워드 대신 새 키워드를 쓴다(숫자가 아니면 400).
 - 부수효과(기록): 미진행 행은 '변경 감지' 자동 반려 비교(`layer_drift`)에서 빠진다(`DRIFT_EXCLUDED_NEW_OR_COPY`).
   J/O 결재 건너뛰기(Case V)는 `.env` 키워드 기준이라 공유 필터 행만으로는 건너뛰지 않는다.
 
@@ -2508,6 +2511,10 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **자동 적용 시점**: STEP3(J)·STEP4(O)에서 '다음'을 누를 때, 그리고 '상신'을 누를 때(STEP5 에서 시작한 임시저장 대비).
   순서는 '자동 미진행' 키워드 → **공유 필터** → '차용' 자동 변경이며, 바꾼 행이 있으면 경고 토스트
   (`request.toast_shared_filter_applied`)를 띄우고 그 단계에 머문다(상신이면 그 표의 단계로 이동). J 는 bb 매핑을 푼다.
+  그 표의 공유 필터 **전체**를 한 번에 적용한다(필터가 여럿이어도 '다음' 한 번).
+- **바뀐 행 빨간 박스(2026-11-28)**: 세 자동 변경('자동 미진행'·공유 필터·'차용') 모두 바뀐 행 전체를 빨간 박스로 약 1.5초 강조했다가 지운다
+  (`index.tsx` `flashAutoChangedRows` → `Step2`/`Step3` `autoChangeFlashRowIds` → `tr.row-auto-change-flash`, `global.css`,
+  `constants.ts` `AUTO_CHANGE_FLASH_CLASS`·`AUTO_CHANGE_FLASH_MS`). 결재 현황 화면에는 붙이지 않는다(사용자 결정).
 - **잠금**: 공유 필터에 걸리면서 이미 X+미진행인 행은 ST·요청 기준을 바꿀 수 없다 — 칸 비활성 + 툴팁(`request.shared_filter_locked_title`),
   직접 입력 시 토스트(`request.shared_filter_locked`), 붙여넣기·Delete(`isJayer/OayerCellLocked`), ST·요청 기준 일괄 버튼(`isBulkTarget`)에서 건너뛴다.
 - **예외**: MASTER 와 가이드 투어 미리보기는 자동 적용·잠금 대상이 아니다('자동 미진행'과 같다).
@@ -2546,10 +2553,11 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 ### 12-6. 테스트
 
 - `backend/api/tests.py::LayerFilterSetTest` — 조회 권한(PL 포함 전원 조회, 관리·미리보기는 팀/MASTER), 대상 표 변경(TE_J/TE_O 400·MASTER 200·같은 값 허용),
+  저장 시 그 표의 공유 필터 전체 한 번에 적용, 미리보기 = 기존 전체 + 입력(수정 id 는 옛 키워드 제외)·미리보기 수 = 적용 수,
   일괄 적용 대상(상태별 — 임시저장·반려 제외·현재 회차·J 단계 여럿 중 일부 미합의), 미리보기에 임시저장·반려 문서 안 나옴, 문자열이 아닌 키워드 생성·수정·미리보기 400, O 필터는 O 표만·`item_id` 키 안 생김, X+기등록 → X+미진행, 이미 X+미진행은 미집계,
   수정 시 새 키워드 적용, 삭제는 되돌리지 않음, 손상 문서 건너뜀, 미리보기(저장·변경 없음), 문서별 적용·초기화 API 404.
 - `backend/api/tests.py::LayerFilterSubmitValidationTest` — 실제 submit API: 미적용 행 400, X+기등록 400, X+미진행 통과, MASTER 예외.
-- `frontend/src/pages/RequestPage/sharedFilterAutoApply.test.tsx`(5) — STEP3 '다음' 자동 적용·잠금·머묾·저장값·bb 매핑 해제,
+- `frontend/src/pages/RequestPage/sharedFilterAutoApply.test.tsx`(6) — STEP3 '다음' 자동 적용·잠금·머묾·저장값·bb 매핑 해제, 바뀐 행 빨간 박스 붙었다 사라짐,
   STEP4 는 O 필터만, '전체 O' 일괄 버튼이 잠긴 행 건너뜀, MASTER 예외, 조회 실패 시 경고만.
 
 ## 13. 결재 상세페이지 J/O-layer 색상 적용 (2026-09)
