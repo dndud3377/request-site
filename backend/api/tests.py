@@ -8840,6 +8840,44 @@ class LayerFilterSetTest(TestCase):
         r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': {'sp': [], 'sd': [], 'pp': [1]}}, format='json')
         self.assertEqual(r.status_code, 400, r.content)
 
+    # claude 수정 (2026-11-28): 저장·미리보기가 그 표의 공유 필터 전체를 한 번에 적용하는지 고정(사용자 결정)
+    def test_save_applies_all_filters_of_table_at_once(self):
+        """먼저 만든 필터가 아직 적용되지 않은 문서도, 새 필터 저장 때 공유 필터 전체가 한 번에 적용된다."""
+        LayerFilterSet.objects.create(table='J', label='A', words={'sp': [], 'sd': ['GATE'], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(id='g', sd='GATE'), self._row(id='m', sd='METAL'), self._row(id='d', sd='DUMMY')],
+                             status='under_review')
+        r = self._create(self.j_user, 'J', {'sp': [], 'sd': ['METAL'], 'pp': []}, label='B')
+        self.assertEqual(r.data['applied'], {'document_count': 1, 'row_count': 2})
+        rows = self._rows_of(doc)
+        self.assertEqual([rows[k]['st'] for k in ('g', 'm', 'd')], ['X', 'X', 'O'])
+
+    def test_preview_uses_all_filters_and_replaces_edited_words(self):
+        """미리보기 = 기존 필터 전체 + 입력 키워드. 수정(id) 미리보기는 그 필터의 옛 키워드를 빼고 새 키워드를 쓴다."""
+        LayerFilterSet.objects.create(table='J', label='A', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        b = LayerFilterSet.objects.create(table='J', label='B', words={'sp': ['OLD'], 'sd': [], 'pp': []})
+        self._make_doc(jayer_rows=[self._row(id='1', sp='SP01'), self._row(id='2', sp='OLD'), self._row(id='3', sp='NEW')],
+                       status='under_review')
+        self.client.force_authenticate(user=self.j_user)
+        new_words = {'sp': ['NEW'], 'sd': [], 'pp': []}
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': new_words, 'id': b.id}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['row_count'], 2, 'A(SP01) + 수정 후 B(NEW), 옛 B 키워드(OLD)는 빠진다')
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': new_words}, format='json')
+        self.assertEqual(r.data['row_count'], 3, '새 필터 추가 미리보기 = 기존 A·B 전체 + 새 키워드')
+        r = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': new_words, 'id': 'x'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_preview_count_matches_applied_count(self):
+        LayerFilterSet.objects.create(table='J', label='A', words={'sp': [], 'sd': ['GATE'], 'pp': []})
+        self._make_doc(jayer_rows=[self._row(id='g', sd='GATE'), self._row(id='m', sd='METAL')], status='under_review')
+        self._make_doc(jayer_rows=[self._row(id='m', sd='METAL')], status='pause')
+        words = {'sp': [], 'sd': ['METAL'], 'pp': []}
+        self.client.force_authenticate(user=self.j_user)
+        preview = self.client.post('/api/layer-filter-sets/preview/', {'table': 'J', 'words': words}, format='json').data
+        applied = self._create(self.j_user, 'J', words, label='B').data['applied']
+        self.assertEqual((preview['document_count'], preview['row_count']), (applied['document_count'], applied['row_count']))
+        self.assertEqual(applied, {'document_count': 2, 'row_count': 3})
+
     def test_per_document_apply_and_reset_api_removed(self):
         """문서별 적용·초기화 API 는 삭제됐다(사용자 결정 2026-11-27)."""
         doc = self._make_doc(jayer_rows=[self._row()], status='under_review')
