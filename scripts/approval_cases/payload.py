@@ -116,9 +116,9 @@ def _oayer_rows(combo, row_limit=3):
     return rows
 
 
-# claude 수정 (2026-11-16): 화면 '다음'·'상신'과 같이 키워드 행을 ST X + 미진행으로 바꾼다(제품 이름·STEP·ID 비움)
+# claude 수정 (2026-11-28): 화면 '다음'·'상신'과 같이 키워드 행을 ST X + 미진행으로 바꾼다(제품 이름·STEP·ID 비움) — 프론트 함수 참조를 applyNpRules 로 갱신
 def _apply_np_keywords(rows, words, has_item_id):
-    """SD·PP 가 키워드를 포함한 행을 ST 'X' + 요청 기준 '미진행'으로 바꾼다 — 프론트 index.tsx applyNpKeyword 와 같다."""
+    """SD·PP 가 키워드를 포함한 행을 ST 'X' + 요청 기준 '미진행'으로 바꾼다 — 프론트 index.tsx applyNpRules 와 같다."""
     for row in rows:
         if matches_np_keyword(words, row.get('sd'), row.get('pp')):
             row.update({'st': ST_X, 'new_or_copy': NOC_NOT_PROCEEDING, 'product_name': '', 'step': ''})
