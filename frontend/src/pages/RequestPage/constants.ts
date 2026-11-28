@@ -286,6 +286,10 @@ export const NOC_NOT_PROCEEDING = '미진행';
 export const EMPTY_NP_KEYWORDS: LayerNpKeywords = { jayer: { sd: [], pp: [] }, oayer: { sd: [], pp: [] } };
 // claude 수정 (2026-11-12): '다음'·'상신' 때 요청 기준이 '차용'으로 자동 변경된 칸의 강조 테두리 색 (J/O-ayer 표 공용)
 export const AUTO_BORROW_HIGHLIGHT_COLOR = '#ea580c';
+// claude 수정 (2026-11-28): '다음'·'상신' 자동 변경('자동 미진행'·공유 필터·'차용')으로 바뀐 행을 빨간 박스로 잠깐 강조 —
+// CSS(global.css .row-auto-change-flash)의 1.5초 애니메이션이 끝난 뒤 클래스를 뗀다.
+export const AUTO_CHANGE_FLASH_CLASS = 'row-auto-change-flash';
+export const AUTO_CHANGE_FLASH_MS = 1600;
 export const ST_O = 'O';
 /** st 의 또 다른 'O 계열' 값 — 표의 선택지는 'O' / 'O (D)' / 'X' 셋뿐이다. */
 export const ST_O_D = 'O (D)';
