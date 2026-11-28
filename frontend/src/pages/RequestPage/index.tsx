@@ -5202,12 +5202,17 @@ export default function RequestPage(): React.ReactElement {
     return ids.length;
   };
 
-  // claude 수정 (2026-11-16): SD·PP 가 '자동 미진행' 키워드를 포함한 J/O 행을 ST X + 요청 기준 미진행으로 바꾸고(잠금) 이유를 토스트로 알린다.
-  // ST X 로 바꿀 때와 같이 제품 이름·STEP(·ID)을 비우고 J 는 bb 매핑을 푼다. 반대편 표로는 전파하지 않는다(표마다 자기 키워드만 — 사용자 결정).
-  // 바꾼 행 수를 돌려준다(0 이면 아무것도 하지 않음). MASTER·가이드 투어 미리보기는 제외.
-  const applyNpKeyword = (table: 'jayer' | 'oayer'): number => {
+  // claude 수정 (2026-11-28): '자동 미진행' 키워드와 공유 필터를 '다음'·'상신' 한 번에 함께 적용하도록 두 함수를 합침(토스트도 1개 — 사용자 결정)
+  // SD·PP 가 '자동 미진행' 키워드를 포함하거나 공유 필터에 걸리는 J/O 행을 ST X + 요청 기준 미진행으로 바꾸고(잠금) 토스트로 알린다.
+  // ST X 로 바꿀 때와 같이 제품 이름·STEP(·ID)을 비우고 J 는 bb 매핑을 푼다. 반대편 표로는 전파하지 않는다(표마다 자기 키워드·필터만).
+  // 둘 다 걸리는 행은 키워드 쪽으로 한 번만 센다. 바꾼 행 수를 돌려준다(0 이면 아무것도 하지 않음). MASTER·가이드 투어 미리보기는 제외.
+  const applyNpRules = (table: 'jayer' | 'oayer'): number => {
     if (npKeywordExempt) return 0;
-    const ids = findNpKeywordRowIds(table === 'jayer' ? jayerRows : oayerRows, npKeywords[table]);
+    const tableRows = table === 'jayer' ? jayerRows : oayerRows;
+    const npIds = findNpKeywordRowIds(tableRows, npKeywords[table]);
+    const npIdSet = new Set(npIds);
+    const sharedIds = findSharedFilterRowIds(tableRows, sharedFilterSets[table]).filter((id) => !npIdSet.has(id));
+    const ids = [...npIds, ...sharedIds];
     if (ids.length === 0) return 0;
     const idSet = new Set(ids);
     if (table === 'jayer') {
@@ -5220,31 +5225,15 @@ export default function RequestPage(): React.ReactElement {
         ? { ...r, st: ST_X, new_or_copy: NOC_NOT_PROCEEDING, product_name: '', step: '' }
         : r)));
     }
-    flashAutoChangedRows(table, ids); // claude 수정 (2026-11-28): 바뀐 행 빨간 박스
-    addToast(t('request.toast_np_keyword_applied', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
-    return ids.length;
-  };
-
-  // claude 수정 (2026-11-27): 공유 필터에 걸리는 J/O 행을 ST X + 요청 기준 미진행으로 바꾸고(잠금) 토스트로 알린다 — '자동 미진행'과 같은 방식.
-  // 제품 이름·STEP(·ID)을 비우고 J 는 bb 매핑을 푼다. 반대편 표로는 전파하지 않는다
-  // (서버 일괄 적용과 같다). 바꾼 행 수를 돌려준다. MASTER·가이드 투어 미리보기는 제외.
-  const applySharedFilters = (table: 'jayer' | 'oayer'): number => {
-    if (npKeywordExempt) return 0;
-    const ids = findSharedFilterRowIds(table === 'jayer' ? jayerRows : oayerRows, sharedFilterSets[table]);
-    if (ids.length === 0) return 0;
-    const idSet = new Set(ids);
-    if (table === 'jayer') {
-      setJayerRows((rows) => rows.map((r) => (idSet.has(r.id)
-        ? { ...r, st: ST_X, new_or_copy: NOC_NOT_PROCEEDING, product_name: '', step: '', item_id: '' }
-        : r)));
-      unmapIfMapped(ids);
+    flashAutoChangedRows(table, ids);
+    const tableLabel = t(table === 'jayer' ? 'request.jayer' : 'request.oayer');
+    if (npIds.length > 0 && sharedIds.length > 0) {
+      addToast(t('request.toast_np_shared_applied', { table: tableLabel, npCount: npIds.length, sharedCount: sharedIds.length }), 'warning');
+    } else if (npIds.length > 0) {
+      addToast(t('request.toast_np_keyword_applied', { table: tableLabel, count: npIds.length }), 'warning');
     } else {
-      setOayerRows((rows) => rows.map((r) => (idSet.has(r.id)
-        ? { ...r, st: ST_X, new_or_copy: NOC_NOT_PROCEEDING, product_name: '', step: '' }
-        : r)));
+      addToast(t('request.toast_shared_filter_applied', { table: tableLabel, count: sharedIds.length }), 'warning');
     }
-    flashAutoChangedRows(table, ids); // claude 수정 (2026-11-28): 바뀐 행 빨간 박스
-    addToast(t('request.toast_shared_filter_applied', { table: t(table === 'jayer' ? 'request.jayer' : 'request.oayer'), count: ids.length }), 'warning');
     return ids.length;
   };
 
@@ -5281,14 +5270,8 @@ export default function RequestPage(): React.ReactElement {
     }
 
     for (let s = step; s < target; s++) {
-      // claude 수정 (2026-11-16): '자동 미진행' 키워드 행 변경을 '차용' 자동 변경보다 먼저 확인한다 — 바꾼 행이 있으면 그 단계에 머문다.
-      if ((s === STEP_JAYER || s === STEP_OAYER) && applyNpKeyword(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
-        if (s !== step) setStep(s);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
-      // claude 수정 (2026-11-27): 이어서 공유 필터 자동 적용 — 바꾼 행이 있으면 그 단계에 머문다('자동 미진행' 다음, '차용' 전)
-      if ((s === STEP_JAYER || s === STEP_OAYER) && applySharedFilters(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
+      // claude 수정 (2026-11-28): '자동 미진행' 키워드·공유 필터를 한 번에 확인한다('차용' 자동 변경보다 먼저) — 바꾼 행이 있으면 그 단계에 머문다.
+      if ((s === STEP_JAYER || s === STEP_OAYER) && applyNpRules(s === STEP_JAYER ? 'jayer' : 'oayer') > 0) {
         if (s !== step) setStep(s);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
@@ -5411,19 +5394,11 @@ export default function RequestPage(): React.ReactElement {
     // claude 수정 (2026-11-12): STEP5 에서 시작한 임시저장 문서 등 STEP3·4 '다음'을 거치지 않은 경우를 위해 상신 때도
     // 요청 기준 '차용' 자동 변경을 확인한다. 바꾼 행이 있으면 상신을 멈추고 먼저 바뀐 표의 단계로 이동한다.
     if (lastStep === STEP_LAST) {
-      // claude 수정 (2026-11-16): 상신 때도 '자동 미진행' 키워드 행 변경을 먼저 확인한다 — 바꾼 행이 있으면 그 표의 단계로 이동해 멈춘다.
-      const npJ = applyNpKeyword('jayer');
-      const npO = applyNpKeyword('oayer');
+      // claude 수정 (2026-11-28): 상신 때도 '자동 미진행' 키워드·공유 필터를 한 번에 먼저 확인한다 — 바꾼 행이 있으면 그 표의 단계로 이동해 멈춘다.
+      const npJ = applyNpRules('jayer');
+      const npO = applyNpRules('oayer');
       if (npJ + npO > 0) {
         setStep(npJ > 0 ? STEP_JAYER : STEP_OAYER);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
-      // claude 수정 (2026-11-27): 상신 때도 공유 필터 자동 적용을 확인한다 — 바꾼 행이 있으면 그 표의 단계로 이동해 멈춘다.
-      const sfJ = applySharedFilters('jayer');
-      const sfO = applySharedFilters('oayer');
-      if (sfJ + sfO > 0) {
-        setStep(sfJ > 0 ? STEP_JAYER : STEP_OAYER);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
