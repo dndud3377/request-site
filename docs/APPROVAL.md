@@ -2618,7 +2618,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   공유 필터 툴바 바로 아래에 한 줄 더 보여준다. 노출 조건은 공유 필터와 **완전히 동일**하게
   `canUseJayerColorFilter`/`canUseOayerColorFilter`(=`canUseLayerFilter(selected, 'J'|'O')` 그대로
   재사용, `ApprovalPage.tsx`)를 쓴다. 저장된 색상 필터 각각이 토글 칩 하나이고(여러 개 동시
-  ON 가능), 칩 안의 점들은 그 필터에 섞여 있는 서로 다른 색을 미리보기로 보여준다. "🎨 색상 관리"
+  ON 가능), 칩 안의 점들은 그 필터에 섞여 있는 서로 다른 색을 미리보기로 보여준다 — 중복을 뺀 뒤
+  sp→sd→pp 키워드 순으로 **최대 4개**까지만 그린다(`ColorFilterToolbar` 의 `.slice(0, 4)`, 5색 이상이면 나머지는
+  점으로 보이지 않지만 셀 색칠에는 모두 적용된다). "🎨 색상 관리"
   버튼과, 그 옆에 전용 "초기화" 버튼(§13-4)이 있다.
 - `ColorFilterManageModal.tsx`(`frontend/src/pages/RequestPage/components/`) — 공용 `Modal` 컴포넌트를
   그대로 쓴다(§12 의 `FilterManageModal`과 같은 레이아웃 패턴: 저장된 목록 + 새로 만들기 폼,
