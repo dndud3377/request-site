@@ -559,6 +559,7 @@
     "np_keyword_locked_title": "This row's SD or PP contains an auto 'Not Proceeding' keyword, so ST is fixed to 'X' and Request Criteria to 'Not Proceeding'.",
     "np_keyword_locked": "ST and Request Criteria cannot be changed on rows that contain an auto 'Not Proceeding' keyword.",
     "toast_shared_filter_applied": "Set {{count}} row(s) in the {{table}} table that match a shared filter to ST 'X' / Request Criteria 'Not Proceeding' and locked them. Check the table, then continue.",
+    "toast_np_shared_applied": "Set {{npCount}} row(s) in the {{table}} table that contain an auto 'Not Proceeding' keyword and {{sharedCount}} row(s) that match a shared filter to ST 'X' / Request Criteria 'Not Proceeding' and locked them. Check the table, then continue.",
     "shared_filter_locked_title": "This row matches a shared filter, so its ST and Request Criteria cannot be changed.",
     "shared_filter_locked": "ST and Request Criteria cannot be changed on rows that match a shared filter.",
     "toast_shared_filter_load_error": "Could not load shared filters, so they were not applied automatically. The server will check again on submission.",

@@ -322,13 +322,36 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-11-28 — '자동 미진행' 키워드와 공유 필터를 '다음'·'상신' 한 번에 함께 적용)
+
+- **의도(사용자)**: 같은 표에 '자동 미진행' 키워드 행과 공유 필터 행이 함께 있으면 '다음'을 여러 번 눌러야 했고, 누를 때마다 일부만
+  적용된 것처럼 보였다(수정 전 실행 결과: '다음' 1회 → 키워드 행만, 2회 → 공유 필터 행, 3회 → STEP4 로 이동). 한 번에 적용돼야 한다.
+- **변경**: `index.tsx` 의 `applyNpKeyword`·`applySharedFilters` 를 **`applyNpRules(table)`** 하나로 합쳤다. 키워드 행과 공유 필터 행을
+  함께 구해(둘 다 걸리는 행은 키워드 쪽으로 한 번만 셈) 한 번에 ST 'X' + 요청 기준 '미진행' 으로 바꾸고, bb 매핑 해제·빨간 박스도 한 번에 한다.
+  `goToStep`('다음')과 `handleSubmitClick`('상신')이 이 함수를 한 번만 부른다. 결과: '다음' 1회 → 둘 다 적용·머묾, 2회 → 다음 단계.
+- **바뀌지 않은 것**: '차용' 자동 변경은 종전처럼 그 **다음**에 따로 확인·정지한다(사용자 선택 범위). 서버 검증(`_validate_np_keyword_rows`·
+  `_validate_layer_filter_rows`), J/O 결재 건너뛰기(Case V — 키워드 행만 인정), 잠금·예외(MASTER·가이드 투어)는 그대로다.
+- **토스트(사용자 결정 — 1개)**: 둘 다 적용되면 새 문구 `request.toast_np_shared_applied`(`{{table}}`·`{{npCount}}`·`{{sharedCount}}`) 1개만 띄운다.
+  한쪽만 적용되면 종전 문구(`request.toast_np_keyword_applied` / `request.toast_shared_filter_applied`)를 그대로 쓴다.
+- **i18n(ko/en 동시 1개)**: `request.toast_np_shared_applied`.
+- **가이드 기능 키**: 추가하지 않음(새 입력 항목 아님 — 규칙 L 대상 아님).
+- **테스트**: `sharedFilterAutoApply.test.tsx` 2건 추가 — 키워드 행+공유 필터 행이 '다음' 1회에 함께 바뀌고 빨간 박스·토스트 1개·bb 매핑 해제·
+  다시 '다음'이면 STEP4(수정 전 코드에서 실패 확인), 둘 다 걸리는 행은 키워드로 한 번만 셈. 상신 경로는 같은 함수를 부르는 것을 코드로만 확인했다
+  (작성 화면에서 STEP3 을 거치지 않고 상신 단계에 도달하는 테스트 하네스가 없다).
+- **수동 검증**:
+  1. [`.env.dev` 에 `JAYER_AUTO_NP_SD_KEYWORDS` 가 있고(예: DUMMY), 결재 현황 → J-ayer 정보 탭 '필터 관리'에 다른 SD 문구(예: GATE)로 공유 필터가 있는 상태]
+  2. [의뢰서 작성 → STEP3 J-ayer 표에 SD 가 DUMMY 인 행과 GATE 인 행을 모두 둔다(ST O·신규) → '다음' 1회]
+     → [기대: STEP3 에 머물고 두 행이 **함께** ST X·미진행 + 빨간 박스, 경고 토스트 1개("…키워드가 포함된 1개 행과 공유 필터에 해당하는 1개 행을…")]
+     → [실패 신호: 한 행만 바뀌거나 토스트가 2개]
+  3. ['다음' 1회 더] → [기대: STEP4 로 이동]
+
 ### 기능 추가 (2026-11-28 — '다음'·'상신' 자동 변경으로 바뀐 J/O 행을 빨간 박스로 잠깐 강조)
 
 - **의도(사용자)**: 자동으로 바뀌는 행을 작성자가 바로 알아볼 수 있어야 한다. 자동 변경되는 것은 모두 같은 표시를 원한다.
 - **대상**: STEP3(J)·STEP4(O) '다음'·'상신' 때의 세 자동 변경 — '자동 미진행' 키워드(2026-11-16), 공유 필터(2026-11-27), '차용'(2026-11-12).
   바뀐 행 **전체**에 빨간 테두리 + 옅은 빨간 배경을 주고 약 **1.5초**에 걸쳐 사라진다(기존 검증 오류 강조 `field-error-flash` 와 같은 색·길이).
   '차용'의 요청 기준 칸 주황 강조(`data-auto-borrow`)는 그대로 유지된다(별개).
-- **구현**: `index.tsx` `flashAutoChangedRows(table, ids)` 가 세 적용 함수(`applyNpKeyword`·`applySharedFilters`·`applyAutoBorrow`)에서 바뀐 행 id 를
+- **구현**: `index.tsx` `flashAutoChangedRows(table, ids)` 가 적용 함수(`applyNpKeyword`·`applySharedFilters` — 2026-11-28 `applyNpRules` 로 통합 — ·`applyAutoBorrow`)에서 바뀐 행 id 를
   기억했다가 `AUTO_CHANGE_FLASH_MS`(1600ms, `constants.ts`) 뒤 비운다. `Step2`(J)·`Step3`(O) 표의 `<tr>` 에 `AUTO_CHANGE_FLASH_CLASS`
   (`row-auto-change-flash`, `global.css` 애니메이션)를 붙인다. 결재 현황 화면은 대상이 아니다(사용자 결정).
 - **같은 날 함께 바꾼 것**: 결재 현황 공유 필터 저장·미리보기가 그 표의 공유 필터 **전체**를 한 번에 적용한다(`docs/APPROVAL.md` §12-3).
@@ -413,7 +436,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **판정**: SD 또는 PP 가 그 표의 키워드 중 하나를 **포함**(대소문자 무관·부분 일치) — `helpers.ts` `matchesNpKeyword`
   (백엔드 `RequestDocument.matches_np_keyword` 와 같은 규칙). SP 는 보지 않는다. **표마다 자기 키워드만** 적용하고 반대편 표로
   전파하지 않는다(사용자 결정).
-- **자동 변경(`index.tsx` `applyNpKeyword`)**: STEP3(J)·STEP4(O)에서 '다음'을 누를 때, 그리고 '상신'을 누를 때(STEP5 에서 시작한
+- **자동 변경(`index.tsx` `applyNpKeyword` → 2026-11-28 공유 필터와 함께 `applyNpRules` 로 통합, 아래 2026-11-28 항목)**: STEP3(J)·STEP4(O)에서 '다음'을 누를 때, 그리고 '상신'을 누를 때(STEP5 에서 시작한
   임시저장 문서 대비) 키워드 행 중 아직 X·미진행이 아닌 행을 **ST 'X' + 요청 기준 '미진행'**으로 바꾼다. ST X 로 바꿀 때와 같이
   제품 이름·STEP(J 는 ID 도)을 비우고 J 는 bb 매핑을 푼다. 바꾼 행이 있으면 경고 토스트(`request.toast_np_keyword_applied`)를
   띄우고 그 단계에 머문다(상신이면 그 표의 단계로 이동) — 2026-11-12 '차용' 자동 변경과 같은 방식이며, 그보다 **먼저** 확인한다.

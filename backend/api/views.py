@@ -615,12 +615,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     return 'J-ayer/O-ayer 표의 ST 가 참조 요청서 내용과 다릅니다. STEP1 에서 참조 요청서를 다시 확정하세요.'
         return None
 
-    # claude 수정 (2026-11-16): J/O-ayer '자동 미진행' 키워드 행을 서버에서도 검증한다(API 직접 호출·화면 우회 대비)
+    # claude 수정 (2026-11-28): J/O-ayer '자동 미진행' 키워드 행을 서버에서도 검증한다(API 직접 호출·화면 우회 대비) — 프론트 함수 참조를 applyNpRules 로 갱신
     def _validate_np_keyword_rows(self, document, user):
         """키워드(.env `*_AUTO_NP_*_KEYWORDS`)에 걸리는 J/O 행은 ST 'X' + 요청 기준 '미진행' 이어야 한다.
 
         문제 있으면 error 문자열, 없으면 None. MASTER 가 상신·재상신하면 검사하지 않는다(사용자 결정
-        2026-11-16 — 'MASTER 가 누를 때만 예외'). 프론트 `RequestPage/index.tsx` applyNpKeyword 와 같은 규칙이다.
+        2026-11-16 — 'MASTER 가 누를 때만 예외'). 프론트 `RequestPage/index.tsx` applyNpRules 와 같은 규칙이다.
         """
         if getattr(user, 'role', None) == 'MASTER':
             return None
@@ -630,12 +630,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                         f'해당 단계에서 다음을 눌러 자동 변경을 적용한 뒤 상신하세요.')
         return None
 
-    # claude 수정 (2026-11-27): 공유 필터(LayerFilterSet)에 걸리는 J/O 행을 상신 시 서버에서도 검증한다
+    # claude 수정 (2026-11-28): 공유 필터(LayerFilterSet)에 걸리는 J/O 행을 상신 시 서버에서도 검증한다 — 프론트 함수 참조를 applyNpRules 로 갱신
     def _validate_layer_filter_rows(self, document, user):
         """저장된 공유 필터 중 하나라도 매칭되는 J/O 행은 ST 'X' + 요청 기준 '미진행' 이어야 한다.
 
         문제 있으면 error 문자열, 없으면 None. MASTER 가 상신·재상신하면 검사하지 않는다
-        ('자동 미진행' 키워드와 같은 예외). 프론트 `RequestPage/index.tsx` applySharedFilters 와 같은 규칙이다.
+        ('자동 미진행' 키워드와 같은 예외). 프론트 `RequestPage/index.tsx` applyNpRules 와 같은 규칙이다.
         """
         if getattr(user, 'role', None) == 'MASTER':
             return None

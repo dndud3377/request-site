@@ -559,6 +559,7 @@
     "np_keyword_locked_title": "SD 또는 PP 에 자동 미진행 키워드가 포함된 행이라 ST 'X'·요청 기준 '미진행'으로 고정됩니다.",
     "np_keyword_locked": "자동 미진행 키워드가 포함된 행은 ST·요청 기준을 바꿀 수 없습니다.",
     "toast_shared_filter_applied": "{{table}} 표에서 공유 필터에 해당하는 {{count}}개 행을 ST 'X'·요청 기준 '미진행'으로 바꾸고 잠갔습니다. 표를 확인한 뒤 다시 진행해 주세요.",
+    "toast_np_shared_applied": "{{table}} 표에서 자동 미진행 키워드가 포함된 {{npCount}}개 행과 공유 필터에 해당하는 {{sharedCount}}개 행을 ST 'X'·요청 기준 '미진행'으로 바꾸고 잠갔습니다. 표를 확인한 뒤 다시 진행해 주세요.",
     "shared_filter_locked_title": "공유 필터에 해당하는 행이라 ST·요청 기준을 바꿀 수 없습니다.",
     "shared_filter_locked": "공유 필터에 해당하는 행은 ST·요청 기준을 바꿀 수 없습니다.",
     "toast_shared_filter_load_error": "공유 필터를 불러오지 못해 자동 적용을 하지 못했습니다. 상신할 때 서버에서 다시 확인합니다.",

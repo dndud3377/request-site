@@ -825,7 +825,7 @@ class LayerFilterSet(models.Model):
     """
     TABLE_CHOICES = [('J', 'J'), ('O', 'O')]
 
-    # claude 수정 (2026-11-27): 공유 필터 자동 적용 전환 — 매칭·적용·일괄 대상 판정을 모델에 모은다
+    # claude 수정 (2026-11-28): 공유 필터 자동 적용 전환 — 매칭·적용·일괄 대상 판정을 모델에 모은다(프론트 함수 참조를 applyNpRules 로 갱신)
     MATCH_FIELDS = ('sp', 'sd', 'pp')
     ROWS_KEYS = {'J': 'jayerRows', 'O': 'oayerRows'}
     ST_INACTIVE = 'X'
@@ -856,7 +856,7 @@ class LayerFilterSet(models.Model):
     def clear_matched_rows(cls, table, rows, words_list):
         """rows(행 dict 리스트)에서 필터(words 목록) 중 하나라도 매칭되는 행을 제자리에서 st 'X' + 요청 기준 '미진행' 으로 바꾼다.
 
-        product_name·step(J 는 item_id 도)은 비운다 — '자동 미진행' 키워드(`RequestPage/index.tsx` applyNpKeyword)와 같다.
+        product_name·step(J 는 item_id 도)은 비운다 — '자동 미진행' 키워드(`RequestPage/index.tsx` applyNpRules)와 같다.
         이미 X + 미진행 인 행은 건너뛰고(중복 집계 없음), X 지만 요청 기준이 다른 행(기등록 등)은 미진행으로 바꾼다.
         반환값은 바뀐 행 수.
         """

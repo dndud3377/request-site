@@ -2537,8 +2537,10 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - 화면이 마운트 시 `GET /layer-filter-sets/?table=J`·`?table=O` 로 공유 필터를 읽는다(`RequestPage/index.tsx` `sharedFilterSets`).
   조회 실패 시 경고 토스트(`request.toast_shared_filter_load_error`)만 띄우고 자동 적용하지 않는다 — 서버 상신 검증이 막는다.
 - **자동 적용 시점**: STEP3(J)·STEP4(O)에서 '다음'을 누를 때, 그리고 '상신'을 누를 때(STEP5 에서 시작한 임시저장 대비).
-  순서는 '자동 미진행' 키워드 → **공유 필터** → '차용' 자동 변경이며, 바꾼 행이 있으면 경고 토스트
-  (`request.toast_shared_filter_applied`)를 띄우고 그 단계에 머문다(상신이면 그 표의 단계로 이동). J 는 bb 매핑을 푼다.
+  '자동 미진행' 키워드와 **공유 필터를 한 번에 함께** 적용한 뒤(`index.tsx` `applyNpRules`, 2026-11-28 — 예전에는 키워드에서 한 번,
+  공유 필터에서 또 한 번 멈춰 '다음'을 여러 번 눌러야 했다) '차용' 자동 변경을 따로 확인한다. 바꾼 행이 있으면 경고 토스트를 **1개** 띄우고
+  (둘 다면 `request.toast_np_shared_applied`, 공유 필터만이면 `request.toast_shared_filter_applied`, 둘 다 걸리는 행은 키워드로 센다)
+  그 단계에 머문다(상신이면 그 표의 단계로 이동). J 는 bb 매핑을 푼다.
   그 표의 공유 필터 **전체**를 한 번에 적용한다(필터가 여럿이어도 '다음' 한 번).
 - **바뀐 행 빨간 박스(2026-11-28)**: 세 자동 변경('자동 미진행'·공유 필터·'차용') 모두 바뀐 행 전체를 빨간 박스로 약 1.5초 강조했다가 지운다
   (`index.tsx` `flashAutoChangedRows` → `Step2`/`Step3` `autoChangeFlashRowIds` → `tr.row-auto-change-flash`, `global.css`,
@@ -2585,7 +2587,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   일괄 적용 대상(상태별 — 임시저장·반려 제외·현재 회차·J 단계 여럿 중 일부 미합의), 미리보기에 임시저장·반려 문서 안 나옴, 문자열이 아닌 키워드 생성·수정·미리보기 400, O 필터는 O 표만·`item_id` 키 안 생김, X+기등록 → X+미진행, 이미 X+미진행은 미집계,
   수정 시 새 키워드 적용, 삭제는 되돌리지 않음, 손상 문서 건너뜀, 미리보기(저장·변경 없음), 문서별 적용·초기화 API 404.
 - `backend/api/tests.py::LayerFilterSubmitValidationTest` — 실제 submit API: 미적용 행 400, X+기등록 400, X+미진행 통과, MASTER 예외.
-- `frontend/src/pages/RequestPage/sharedFilterAutoApply.test.tsx`(6) — STEP3 '다음' 자동 적용·잠금·머묾·저장값·bb 매핑 해제, 바뀐 행 빨간 박스 붙었다 사라짐,
+- `frontend/src/pages/RequestPage/sharedFilterAutoApply.test.tsx`(8) — STEP3 '다음' 자동 적용·잠금·머묾·저장값·bb 매핑 해제, 바뀐 행 빨간 박스 붙었다 사라짐,
+  키워드 행+공유 필터 행 '다음' 1회 동시 적용·토스트 1개, 둘 다 걸리는 행은 키워드로 한 번만 셈(2026-11-28),
   STEP4 는 O 필터만, '전체 O' 일괄 버튼이 잠긴 행 건너뜀, MASTER 예외, 조회 실패 시 경고만.
 
 ## 13. 결재 상세페이지 J/O-layer 색상 적용 (2026-09)
