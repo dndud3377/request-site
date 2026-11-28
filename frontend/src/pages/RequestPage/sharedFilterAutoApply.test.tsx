@@ -24,7 +24,8 @@ const mockState: {
   optionsFor: (line: string) => string[];
   role: string;
   sharedFail: boolean;
-} = { captured: null, doc: null, optionsFor: () => [], role: 'PL', sharedFail: false };
+  npJayerSd: string[];
+} = { captured: null, doc: null, optionsFor: () => [], role: 'PL', sharedFail: false, npJayerSd: [] };
 
 // RichTextEditor 는 tiptap(ESM) 을 끌어와 jest 가 파싱하지 못한다. 값 전달만 되면 충분하므로 대체한다.
 jest.mock('../../components/RichTextEditor', () => ({
@@ -57,8 +58,8 @@ jest.mock('../../api/client', () => ({
     getMapInfo: () => Promise.resolve({ AAA1: null, AAA2: null, AAA3: null }),
     getJobFileLayer: () => Promise.resolve([]),
     getOvlLayer: () => Promise.resolve([]),
-    // '자동 미진행' 키워드는 비워 공유 필터만 검증한다
-    getLayerNpKeywords: () => Promise.resolve({ jayer: { sd: [], pp: [] }, oayer: { sd: [], pp: [] } }),
+    // '자동 미진행' 키워드는 기본으로 비워 공유 필터만 검증한다(키워드와 함께 적용하는 테스트만 J SD 키워드를 넣는다)
+    getLayerNpKeywords: () => Promise.resolve({ jayer: { sd: mockState.npJayerSd, pp: [] }, oayer: { sd: [], pp: [] } }),
     getBbExternalData: () => Promise.resolve([]),
     getBarcodeCandidates: () => Promise.resolve([]),
   },
@@ -307,6 +308,7 @@ describe('J/O 공유 필터 → ST X·미진행 자동 변경·잠금', () => {
     mockState.captured = null;
     mockState.role = 'PL';
     mockState.sharedFail = false;
+    mockState.npJayerSd = [];
     localStorage.clear();
   });
 
@@ -385,6 +387,40 @@ describe('J/O 공유 필터 → ST X·미진행 자동 변경·잠금', () => {
     expect(toastsOf('warning')).toContain('공유 필터를 불러오지 못해');
     await clickButton('다음');
     expect(container.querySelector(O_TABLE)).not.toBeNull();
+    expect(toastsOf('warning')).not.toContain('공유 필터에 해당하는');
+  });
+
+  // claude 수정 (2026-11-28): '자동 미진행' 키워드와 공유 필터를 '다음' 한 번에 함께 적용하고 토스트는 1개만 띄운다(사용자 결정)
+  it("키워드 행과 공유 필터 행이 함께 있으면 '다음' 한 번에 둘 다 바꾸고 토스트 1개를 띄운다", async () => {
+    mockState.npJayerSd = ['SD01']; // j1 = 키워드 행, j2 = 공유 필터(GATE) 행
+    const { container } = await renderAtStep(J_TABLE);
+    await clickButton('다음');
+
+    expect(container.querySelector(J_TABLE)).not.toBeNull();
+    const j1 = rowOf(container, J_TABLE, 'SP01');
+    const j2 = rowOf(container, J_TABLE, 'SP02');
+    expect([stInputOf(j1).value, nocInputOf(j1).value]).toEqual(['X', '미진행']);
+    expect([stInputOf(j2).value, nocInputOf(j2).value]).toEqual(['X', '미진행']);
+    expect(j1.classList.contains('row-auto-change-flash')).toBe(true);
+    expect(j2.classList.contains('row-auto-change-flash')).toBe(true);
+    const warnings = Array.from(document.querySelectorAll('.toast-warning')).map((el) => el.textContent ?? '')
+      .filter((text) => text.includes('미진행'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('자동 미진행 키워드가 포함된 1개 행과 공유 필터에 해당하는 1개 행을');
+
+    await clickButton('다음');
+    expect(container.querySelector(O_TABLE)).not.toBeNull();
+    const saved = await saveDraftAndCapture();
+    expect(saved.jayerRows.map((r) => [r.id, r.st, r.new_or_copy])).toEqual([['j1', 'X', '미진행'], ['j2', 'X', '미진행'], ['j3', 'X', '미진행']]);
+    expect(saved.bbRows).toEqual([]);
+  });
+
+  it('키워드와 공유 필터에 모두 걸리는 행은 키워드 쪽으로 한 번만 센다', async () => {
+    mockState.npJayerSd = ['gate']; // j2 의 SD 'A_gate' 가 키워드·공유 필터 둘 다에 걸린다
+    const { container } = await renderAtStep(J_TABLE);
+    await clickButton('다음');
+    expect(container.querySelector(J_TABLE)).not.toBeNull();
+    expect(toastsOf('warning')).toContain('자동 미진행 키워드가 포함된 1개 행을');
     expect(toastsOf('warning')).not.toContain('공유 필터에 해당하는');
   });
 });
