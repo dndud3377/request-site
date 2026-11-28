@@ -29,6 +29,27 @@ const MY_REQUESTS_LIMIT = 5;
 type HomeRequestsFilter = 'all' | 'submitted' | 'approval' | 'shared';
 const HOME_REQUESTS_FILTERS: HomeRequestsFilter[] = ['all', 'submitted', 'approval', 'shared'];
 
+// claude 수정 (2026-11-28): 홈에서도 결재현황(ApprovalPage)과 같은 조건으로 수정·재상신/수정 후 재상신/수정 후 재개 버튼을 노출한다
+// [수정·재상신] 을 노출하는 문서 상태 — 결재현황과 동일(반려·임시저장)
+const EDIT_RESUBMIT_STATUSES: ReadonlyArray<RequestDocument['status']> = ['rejected', 'draft'];
+
+type HomeEditActionKey = 'edit_resubmit' | 'requester_resubmit' | 'resume';
+
+/**
+ * 홈 '나의 의뢰 현황'에서 이 문서에 보여줄 수정 계열 버튼 목록(결재현황 표·상세 모달과 같은 판정).
+ * 세 버튼 모두 `/request` 편집 화면으로 이동하며, 재상신·재개 처리는 RequestPage 가 문서 상태로 결정한다.
+ */
+export function getHomeEditActions(doc: RequestDocument): HomeEditActionKey[] {
+  const actions: HomeEditActionKey[] = [];
+  // 철회 요청 확인 대기 중에는 수정·재상신을 숨긴다(서버도 400)
+  if (doc.can_edit && !doc.withdraw_request && EDIT_RESUBMIT_STATUSES.includes(doc.status)) {
+    actions.push('edit_resubmit');
+  }
+  if (doc.can_requester_resubmit) actions.push('requester_resubmit');
+  if (doc.can_resume) actions.push('resume');
+  return actions;
+}
+
 const CATEGORY_ICON: Record<ReleaseCategory, string> = {
   new: '🆕',
   updated: '✏️',
@@ -508,7 +529,7 @@ export default function HomePage(): React.ReactElement {
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
-  // 의뢰 상세 모달(읽기 전용) — HistoryPage 와 같은 방식: 결재 액션 없이 상세 내용만 보여준다.
+  // 의뢰 상세 모달 — HistoryPage 와 같은 방식: 합의·반려 등 결재 액션 없이 상세 내용 + 수정 계열 이동 버튼만 보여준다.
   const [selectedDoc, setSelectedDoc] = useState<RequestDocument | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailPageIdx, setDetailPageIdx] = useState(0);
@@ -523,6 +544,24 @@ export default function HomePage(): React.ReactElement {
     setDetailPageIdx(0);
     setDetailModalOpen(true);
   }, []);
+
+  // claude 수정 (2026-11-28): 홈에서 수정·재상신/재개 — 결재현황 handleEditResubmit 과 같이 /request 편집 화면으로 이동
+  const handleEditNav = useCallback((doc: RequestDocument) => {
+    setDetailModalOpen(false);
+    navigate('/request', { state: { editDocId: doc.id } });
+  }, [navigate]);
+
+  const renderEditActions = (doc: RequestDocument, small: boolean): React.ReactNode =>
+    getHomeEditActions(doc).map((key) => (
+      <button
+        key={key}
+        type="button"
+        className={`btn btn-primary${small ? ' btn-sm' : ''}`}
+        onClick={() => handleEditNav(doc)}
+      >
+        {t(`approval.${key}`)}
+      </button>
+    ));
 
   const goOrAlert = useCallback((path: string) => {
     if (hasNoRole) {
@@ -645,7 +684,8 @@ export default function HomePage(): React.ReactElement {
         />
       )}
 
-      {/* 나의 의뢰 현황 상세 모달(읽기 전용) — HistoryPage 와 같은 방식, 결재 액션 없이 상세 내용만 */}
+      {/* 나의 의뢰 현황 상세 모달 — HistoryPage 와 같은 방식, 결재 액션 없이 상세 내용만 */}
+      {/* claude 수정 (2026-11-28): footer 에 수정·재상신/수정 후 재상신/수정 후 재개 버튼 추가(결재현황 상세 모달과 같은 조건) */}
       {selectedDoc && (
         <Modal
           isOpen={detailModalOpen}
@@ -653,9 +693,12 @@ export default function HomePage(): React.ReactElement {
           title={selectedDoc.title}
           size="lg"
           footer={
-            <button className="btn btn-secondary" onClick={() => setDetailModalOpen(false)}>
-              {t('common.close')}
-            </button>
+            <>
+              {renderEditActions(selectedDoc, false)}
+              <button className="btn btn-secondary" onClick={() => setDetailModalOpen(false)}>
+                {t('common.close')}
+              </button>
+            </>
           }
         >
           <PagedDetailView
@@ -761,6 +804,8 @@ export default function HomePage(): React.ReactElement {
                     <th>{t('approval.col_current_stage')}</th>
                     <th>{t('approval.col_final_completion')}</th>
                     <th>{t('approval.col_production_date')}</th>
+                    {/* claude 수정 (2026-11-28): 수정·재상신/재개 버튼 칸 — 결재현황 표처럼 헤더는 비운다 */}
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -835,6 +880,11 @@ export default function HomePage(): React.ReactElement {
                         </td>
                         <td>{isPaused ? <span style={{ color: 'var(--text-muted)' }}>{t('approval.filter_pause')}</span> : getFinalCompletionDate(doc)}</td>
                         <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {renderEditActions(doc, true)}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
